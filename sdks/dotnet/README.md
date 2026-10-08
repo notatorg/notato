@@ -10,7 +10,7 @@ Works on iOS, Android and Mac Catalyst with .NET 10 and later. Windows builds, b
 npx notato dev           # the server your agent reads, on http://localhost:4747
 ```
 
-Add the package to the app (until it is published, from a local folder: `dotnet pack sdks/dotnet/src/Notato.Maui -o ./packages`, then add that folder as a NuGet source), and in `MauiProgram.cs`:
+Add the package to the app (`dotnet add package Notato.Maui`), and in `MauiProgram.cs`:
 
 ```csharp
 using Notato.Maui;

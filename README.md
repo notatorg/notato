@@ -16,8 +16,6 @@ Every piece of feedback is an **annotation**: an element, a note and screenshots
 | **test**  | A tester                    | A zip bundle, or posted to a shared server                 |
 | **agent** | An AI agent driving the app | Same as test, plus the steps the agent took                |
 
-> **Not released yet.** The packages are not on npm, Maven Central, NuGet or pub.dev yet, so the install commands below work from the first release on. Until then, run Notato from source: [CONTRIBUTING.md](CONTRIBUTING.md) says how.
-
 ## Run it
 
 ```bash

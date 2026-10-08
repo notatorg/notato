@@ -14,7 +14,7 @@ npx notato dev                      # the server your agent reads, on http://loc
 adb reverse tcp:4747 tcp:4747        # makes it localhost on the emulator or a USB device too
 ```
 
-Add the artifacts to debug builds only, so release builds ship nothing of Notato. Until they are published, `./gradlew publishToMavenLocal` in this folder puts them in `~/.m2` (add `mavenLocal()` to the app's repositories):
+Add the artifacts from Maven Central to debug builds only, so release builds ship nothing of Notato:
 
 ```kotlin
 dependencies {
