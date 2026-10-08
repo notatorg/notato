@@ -10,7 +10,8 @@ name: Release
 #                                                                              MAVEN_CENTRAL_PASSWORD (a Central Portal
 #                                                                              user token), SIGNING_KEY (ASCII-armoured
 #                                                                              private key), SIGNING_KEY_PASSWORD
-#   PUBLISH_NUGET   nuget.org: Notato.Maui                                     secret NUGET_API_KEY
+#   PUBLISH_NUGET   nuget.org: Notato.Maui                                     variable NUGET_USER: no key, nuget.org trusts
+#                                                                              this workflow (a Trusted Publishing policy)
 #   PUBLISH_PUB     pub.dev: notato (Flutter)                                  none: pub.dev trusts this repository's tags
 #                                                                              (its admin page, "Automated publishing")
 #   PUBLISH_SITE    the website and docs on GitHub Pages                       (Pages set to "GitHub Actions")
@@ -195,6 +196,9 @@ jobs:
     nuget:
         name: NuGet${{ vars.PUBLISH_NUGET != 'true' && ' (pack only)' || '' }}
         needs: version
+        permissions:
+            contents: read
+            id-token: write # nuget.org Trusted Publishing: a key that lasts an hour, for this workflow only
         # iOS and Mac Catalyst targets build only on macOS; Xcode 26.6 by default, which the pinned workload builds with.
         runs-on: macos-26
         defaults:
@@ -212,10 +216,16 @@ jobs:
               with:
                   name: nuget
                   path: sdks/dotnet/artifacts/*
+            - name: Sign in to nuget.org
+              id: nuget
+              if: vars.PUBLISH_NUGET == 'true'
+              uses: NuGet/login@8d196754b4036150537f80ac539e15c2f1028841 # v1.2.0
+              with:
+                  user: ${{ vars.NUGET_USER }}
             - name: Push to nuget.org
               if: vars.PUBLISH_NUGET == 'true'
               env:
-                  NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
+                  NUGET_API_KEY: ${{ steps.nuget.outputs.NUGET_API_KEY }}
               # The .snupkg beside each package goes up with it.
               run: dotnet nuget push "artifacts/*.nupkg" --api-key "$NUGET_API_KEY" --source https://api.nuget.org/v3/index.json --skip-duplicate
 
