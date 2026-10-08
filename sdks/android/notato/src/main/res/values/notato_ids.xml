@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Notato.mask(view, masked): true (private, in screenshots and text), false (a field shown even when inputs are masked), or none. -->
+    <item name="notato_mask" type="id" />
+</resources>

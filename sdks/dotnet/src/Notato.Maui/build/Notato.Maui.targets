@@ -1,0 +1,78 @@
+<Project>
+  <!--
+    Where this project sits in its repository. `.git/HEAD` finds a repository's folder; past a submodule (whose .git is
+    a file) it finds the superproject. Override the guess with <NotatoRepositoryRoot>.
+  -->
+  <PropertyGroup>
+    <_NotatoRepositoryRoot>$(NotatoRepositoryRoot)</_NotatoRepositoryRoot>
+    <_NotatoRepositoryRoot Condition="'$(_NotatoRepositoryRoot)' == ''">$([MSBuild]::GetDirectoryNameOfFileAbove('$(MSBuildProjectDirectory)', '.git/HEAD'))</_NotatoRepositoryRoot>
+    <_NotatoRepositoryRoot Condition="'$(_NotatoRepositoryRoot)' == ''">$([MSBuild]::GetDirectoryNameOfFileAbove('$(MSBuildProjectDirectory)', '.git'))</_NotatoRepositoryRoot>
+
+    <!--
+      What `notato dev` writes when started with its tunnel option: its dev tunnel's URL and device token, so a phone can reach it. Recorded into
+      debug builds only (the token is a secret for this machine's server). Off with <NotatoDeviceAccess>false</NotatoDeviceAccess>;
+      on in any configuration with true. The data folder is `.notato` at the repository root unless <NotatoDataDirectory> says otherwise.
+    -->
+    <NotatoDataDirectory Condition="'$(NotatoDataDirectory)' == '' and '$(_NotatoRepositoryRoot)' != ''">$([MSBuild]::EnsureTrailingSlash('$(_NotatoRepositoryRoot)')).notato</NotatoDataDirectory>
+    <_NotatoDeviceFile Condition="'$(NotatoDataDirectory)' != ''">$([MSBuild]::EnsureTrailingSlash('$(NotatoDataDirectory)'))device.json</_NotatoDeviceFile>
+    <_NotatoRecordDevice>false</_NotatoRecordDevice>
+    <_NotatoRecordDevice Condition="'$(NotatoDeviceAccess)' == 'true' or ('$(NotatoDeviceAccess)' != 'false' and '$(Configuration)' == 'Debug')">true</_NotatoRecordDevice>
+  </PropertyGroup>
+
+  <!-- Visual Studio's fast up-to-date check: a new tunnel URL or token means a new build. -->
+  <ItemGroup Condition="'$(_NotatoRecordDevice)' == 'true' and '$(_NotatoDeviceFile)' != ''">
+    <UpToDateCheckInput Include="$(_NotatoDeviceFile)" />
+  </ItemGroup>
+
+  <!--
+    Records where this project sits in its repository, so Notato can give XAML file paths from the repository root
+    ("src/MyApp/Views/LoginPage.xaml:42") the way Claude Code sees the code. Off with <NotatoSourceInfo>false</NotatoSourceInfo>.
+  -->
+  <Target Name="_NotatoRecordProjectPath"
+          BeforeTargets="GetAssemblyAttributes"
+          Condition="'$(NotatoSourceInfo)' != 'false' and '$(GenerateAssemblyInfo)' != 'false' and '$(_NotatoRepositoryRoot)' != ''">
+    <PropertyGroup>
+      <_NotatoProjectPath>$([MSBuild]::MakeRelative('$([MSBuild]::EnsureTrailingSlash($(_NotatoRepositoryRoot)))', '$(MSBuildProjectDirectory)').Replace('\', '/'))</_NotatoProjectPath>
+    </PropertyGroup>
+    <ItemGroup>
+      <AssemblyAttribute Include="System.Reflection.AssemblyMetadataAttribute">
+        <_Parameter1>Notato.ProjectPath</_Parameter1>
+        <_Parameter2>$(_NotatoProjectPath)</_Parameter2>
+      </AssemblyAttribute>
+      <AssemblyAttribute Include="System.Reflection.AssemblyMetadataAttribute">
+        <_Parameter1>Notato.RepositoryRoot</_Parameter1>
+        <_Parameter2>$(_NotatoRepositoryRoot.TrimEnd('/').TrimEnd('\'))</_Parameter2>
+      </AssemblyAttribute>
+    </ItemGroup>
+  </Target>
+
+  <!-- The dev tunnel `notato dev` is serving (with its tunnel option), read from its device.json when this build runs. -->
+  <Target Name="_NotatoRecordDeviceAccess"
+          BeforeTargets="GetAssemblyAttributes"
+          Condition="'$(_NotatoRecordDevice)' == 'true' and '$(GenerateAssemblyInfo)' != 'false' and '$(_NotatoDeviceFile)' != '' and Exists('$(_NotatoDeviceFile)')">
+    <PropertyGroup>
+      <_NotatoDeviceJson>$([System.IO.File]::ReadAllText('$(_NotatoDeviceFile)'))</_NotatoDeviceJson>
+      <_NotatoDeviceServer>$([System.Text.RegularExpressions.Regex]::Match('$(_NotatoDeviceJson)', '"server"\s*:\s*"[^"]*"'))</_NotatoDeviceServer>
+      <_NotatoDeviceServer>$([System.Text.RegularExpressions.Regex]::Replace('$(_NotatoDeviceServer)', '^"server"\s*:\s*"|"$', ''))</_NotatoDeviceServer>
+      <_NotatoDeviceToken>$([System.Text.RegularExpressions.Regex]::Match('$(_NotatoDeviceJson)', '"token"\s*:\s*"[^"]*"'))</_NotatoDeviceToken>
+      <_NotatoDeviceToken>$([System.Text.RegularExpressions.Regex]::Replace('$(_NotatoDeviceToken)', '^"token"\s*:\s*"|"$', ''))</_NotatoDeviceToken>
+      <_NotatoLocalServer>$([System.Text.RegularExpressions.Regex]::Match('$(_NotatoDeviceJson)', '"local"\s*:\s*"[^"]*"'))</_NotatoLocalServer>
+      <_NotatoLocalServer>$([System.Text.RegularExpressions.Regex]::Replace('$(_NotatoLocalServer)', '^"local"\s*:\s*"|"$', ''))</_NotatoLocalServer>
+    </PropertyGroup>
+    <ItemGroup>
+      <AssemblyAttribute Include="System.Reflection.AssemblyMetadataAttribute" Condition="'$(_NotatoDeviceServer)' != ''">
+        <_Parameter1>Notato.DeviceServer</_Parameter1>
+        <_Parameter2>$(_NotatoDeviceServer)</_Parameter2>
+      </AssemblyAttribute>
+      <AssemblyAttribute Include="System.Reflection.AssemblyMetadataAttribute" Condition="'$(_NotatoDeviceToken)' != ''">
+        <_Parameter1>Notato.DeviceToken</_Parameter1>
+        <_Parameter2>$(_NotatoDeviceToken)</_Parameter2>
+      </AssemblyAttribute>
+      <AssemblyAttribute Include="System.Reflection.AssemblyMetadataAttribute" Condition="'$(_NotatoLocalServer)' != ''">
+        <_Parameter1>Notato.LocalServer</_Parameter1>
+        <_Parameter2>$(_NotatoLocalServer)</_Parameter2>
+      </AssemblyAttribute>
+    </ItemGroup>
+    <Message Importance="normal" Text="Notato: this build reaches notato dev through $(_NotatoDeviceServer) on a phone ($(_NotatoDeviceFile))" Condition="'$(_NotatoDeviceServer)' != ''" />
+  </Target>
+</Project>

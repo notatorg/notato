@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             xmlns:vm="clr-namespace:Notato.Maui.Sample.ViewModels"
+             x:Class="Notato.Maui.Sample.Views.ProductDetailsPage"
+             x:DataType="vm:ProductDetailsViewModel"
+             Title="{Binding Product.Name}">
+    <ScrollView>
+        <VerticalStackLayout Padding="20" Spacing="14">
+            <Border HeightRequest="180" StrokeShape="RoundRectangle 18" StrokeThickness="0" BackgroundColor="{Binding Product.Color}">
+                <Image Source="dotnet_bot.png" HeightRequest="140" Aspect="AspectFit" SemanticProperties.Description="Product photo" />
+            </Border>
+            <Label x:Name="TitleLabel" Text="{Binding Product.Name}" FontSize="26" FontAttributes="Bold" SemanticProperties.HeadingLevel="Level1" />
+            <Label Text="{Binding Product.Tagline}" FontSize="15" />
+            <HorizontalStackLayout Spacing="10">
+                <Label Text="{Binding Product.PriceText}" FontSize="22" FontAttributes="Bold" VerticalOptions="Center" />
+                <Label Text="{Binding Product.StockText}" FontSize="13" TextColor="#d97706" VerticalOptions="Center" />
+            </HorizontalStackLayout>
+            <Stepper x:Name="Quantity" Minimum="1" Maximum="9" Value="1" />
+            <Button x:Name="AddToCart" AutomationId="AddToCart" Text="Add to cart" IsEnabled="{Binding Product.InStock}" Clicked="OnAddToCart" />
+            <Button Text="Checkout" AutomationId="Checkout" BackgroundColor="#111827" Clicked="OnCheckout" />
+        </VerticalStackLayout>
+    </ScrollView>
+</ContentPage>

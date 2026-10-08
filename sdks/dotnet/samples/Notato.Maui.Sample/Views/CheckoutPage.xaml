@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             x:Class="Notato.Maui.Sample.Views.CheckoutPage"
+             BackgroundColor="{AppThemeBinding Light=#f3f4f6, Dark=#111827}">
+    <VerticalStackLayout Padding="24,60,24,24" Spacing="14">
+        <Label Text="Checkout" FontSize="28" FontAttributes="Bold" SemanticProperties.HeadingLevel="Level1" />
+        <Label Text="Card number" FontSize="13" />
+        <Entry x:Name="CardNumber" AutomationId="CardNumber" Placeholder="1234 5678 9012 3456" Keyboard="Numeric" />
+        <Label Text="Delivery note" FontSize="13" />
+        <Editor x:Name="DeliveryNote" HeightRequest="90" Placeholder="Leave it with a neighbour" />
+        <Button x:Name="PayButton" AutomationId="PayButton" Text="Pay now" />
+        <Button Text="Close" AutomationId="CloseCheckout" BackgroundColor="Transparent" TextColor="#2563eb" Clicked="OnClose" />
+    </VerticalStackLayout>
+</ContentPage>

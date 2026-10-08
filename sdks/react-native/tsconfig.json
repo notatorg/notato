@@ -1,0 +1,9 @@
+{
+    // A program of its own: React Native's types declare globals the rest of the repository must not see.
+    "extends": "../../tsconfig.json",
+    "compilerOptions": {
+        "types": []
+    },
+    "include": ["src", "test"],
+    "exclude": []
+}

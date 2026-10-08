@@ -1,0 +1,41 @@
+{
+    "$schema": "https://biomejs.dev/schemas/2.5.15/schema.json",
+    "files": {
+        "includes": [
+            "**",
+            "!**/node_modules",
+            "!**/dist",
+            "!**/.notato",
+            "!**/schema.json",
+            "!packages/server/src/web-assets.generated.ts",
+            "!sdks/swift",
+            "!sdks/android",
+            "!sdks/dotnet",
+            "!sdks/flutter",
+            "!.build",
+            "!**/.angular",
+            "!**/.expo",
+            "!**/package-lock.json"
+        ]
+    },
+    "formatter": {
+        "indentStyle": "space",
+        "indentWidth": 4,
+        "lineWidth": 100,
+        "lineEnding": "lf"
+    },
+    "linter": { "rules": { "preset": "recommended" } },
+    "javascript": {
+        "formatter": {
+            "quoteStyle": "double",
+            "semicolons": "always",
+            "trailingCommas": "es5"
+        }
+    },
+    "overrides": [
+        {
+            "includes": ["site/src/site.css"],
+            "linter": { "rules": { "style": { "noDescendingSpecificity": "off" } } }
+        }
+    ]
+}

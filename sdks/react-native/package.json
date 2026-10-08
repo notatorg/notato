@@ -1,0 +1,41 @@
+{
+    "name": "@notato/react-native",
+    "version": "0.2.0",
+    "description": "Notato for React Native: wrap your app in <Notato>, and people can pin notes to its views for your coding agent, with a screenshot and the component.",
+    "type": "module",
+    "sideEffects": false,
+    "exports": {
+        ".": "./src/index.ts",
+        "./expo": "./src/expo.ts"
+    },
+    "files": [
+        "src"
+    ],
+    "dependencies": {
+        "@notato/schema": "workspace:*",
+        "fflate": "^0.8.2"
+    },
+    "peerDependencies": {
+        "react": ">=18",
+        "react-native": ">=0.76",
+        "react-native-view-shot": ">=4",
+        "expo-file-system": ">=19",
+        "expo-sharing": ">=13"
+    },
+    "peerDependenciesMeta": {
+        "expo-file-system": {
+            "optional": true
+        },
+        "expo-sharing": {
+            "optional": true
+        }
+    },
+    "devDependencies": {
+        "@types/react": "~19.2.2",
+        "react": "19.2.3",
+        "react-native": "0.86.3",
+        "react-native-view-shot": "5.1.0",
+        "expo-file-system": "~57.0.7",
+        "expo-sharing": "~57.0.22"
+    }
+}

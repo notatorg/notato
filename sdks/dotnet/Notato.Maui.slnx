@@ -1,0 +1,11 @@
+<Solution>
+  <Folder Name="/samples/">
+    <Project Path="samples/Notato.Maui.Sample/Notato.Maui.Sample.csproj" />
+  </Folder>
+  <Folder Name="/src/">
+    <Project Path="src/Notato.Maui/Notato.Maui.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Notato.Maui.Tests/Notato.Maui.Tests.csproj" />
+  </Folder>
+</Solution>

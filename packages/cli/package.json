@@ -1,0 +1,17 @@
+{
+    "name": "@notato/cli",
+    "version": "0.2.0",
+    "private": true,
+    "type": "module",
+    "bin": {
+        "notato": "./src/main.ts"
+    },
+    "dependencies": {
+        "@notato/core": "workspace:*",
+        "@notato/schema": "workspace:*",
+        "@notato/server": "workspace:*"
+    },
+    "devDependencies": {
+        "@modelcontextprotocol/sdk": "^1.32.0"
+    }
+}

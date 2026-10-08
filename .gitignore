@@ -1,0 +1,13 @@
+node_modules
+dist
+.notato
+*.tsbuildinfo
+packages/board/dist
+
+# Swift: the package manifest is at the root (Package.swift), so SwiftPM builds here
+.build/
+.swiftpm/
+.DS_Store
+
+# Angular CLI caches
+.angular/

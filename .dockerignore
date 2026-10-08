@@ -1,0 +1,12 @@
+**/node_modules
+**/dist
+.git
+.notato
+.claude
+**/.notato
+*.tgz
+.build
+sdks/dotnet
+sdks/swift
+sdks/android
+site

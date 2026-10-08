@@ -1,0 +1,817 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Notato</title>
+<meta name="description" content="Figma-style comments for the app you're building. Pin a note on any element and your coding agent gets it with a screenshot, the component and the exact file and line.">
+<link rel="icon" href="notato.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wdth,wght@12..96,75..100,400..800&family=Caveat:wght@500..700&family=Figtree:ital,wght@0,400..700;1,400&family=JetBrains+Mono:wght@400;500;700&display=swap">
+<link rel="stylesheet" href="site.css">
+<script type="module" src="site.js"></script>
+</head>
+<body>
+<svg class="sprite" aria-hidden="true" focusable="false">
+  <symbol id="i-cross" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="12" cy="12" r="8"/><path d="M12 1.5V6M12 18v4.5M1.5 12H6M18 12h4.5"/></g></symbol>
+  <symbol id="i-inbox" viewBox="0 0 24 24"><path d="M22 12h-6l-2 3h-4l-2-3H2M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11Z" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="i-pulse" viewBox="0 0 24 24"><path d="M22 12h-4l-3 9L9 3l-3 9H2" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="i-stats" viewBox="0 0 24 24"><path d="M18 20V10M12 20V4M6 20v-6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></symbol>
+  <symbol id="i-grip" viewBox="0 0 24 24"><g fill="currentColor"><circle cx="9" cy="6" r="1.6"/><circle cx="15" cy="6" r="1.6"/><circle cx="9" cy="12" r="1.6"/><circle cx="15" cy="12" r="1.6"/><circle cx="9" cy="18" r="1.6"/><circle cx="15" cy="18" r="1.6"/></g></symbol>
+  <symbol id="i-bars" viewBox="0 0 24 24"><g fill="currentColor"><rect x="6" y="4.5" width="4" height="15" rx="1.2"/><rect x="14" y="4.5" width="4" height="15" rx="1.2"/></g></symbol>
+  <symbol id="i-cog" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/></g></symbol>
+  <symbol id="i-export" viewBox="0 0 24 24"><path d="M12 14V3M7.5 7.5 12 3l4.5 4.5M4 13v5a3 3 0 0 0 3 3h10a3 3 0 0 0 3-3v-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="i-eye" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></g></symbol>
+  <symbol id="i-copy" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><rect x="8" y="8" width="12" height="12" rx="2.5"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></g></symbol>
+  <symbol id="i-gear" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="3.2"/><path d="M12 2.8v2.6M12 18.6v2.6M2.8 12h2.6M18.6 12h2.6M5.5 5.5l1.9 1.9M16.6 16.6l1.9 1.9M5.5 18.5l1.9-1.9M16.6 7.4l1.9-1.9"/></g></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="i-chev" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="i-play" viewBox="0 0 24 24"><path d="M8 5.5v13l10.5-6.5z" fill="currentColor"/></symbol>
+  <symbol id="i-pause" viewBox="0 0 24 24"><path d="M7 5h3.6v14H7zM13.4 5H17v14h-3.6z" fill="currentColor"/></symbol>
+  <symbol id="i-cursor" viewBox="0 0 24 24"><path d="M4.5 2.8l14.6 8.1-6.3 1.6-3.1 6.9z" fill="#111" stroke="#fff" stroke-width="1.6" stroke-linejoin="round"/></symbol>
+  <symbol id="i-zip" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M6 2.8h8.5L19 7.3v13.9H6z"/><path d="M14.3 2.8v4.6H19"/><path d="M10.5 4v1.6M10.5 7.4V9M10.5 10.8v1.6"/><rect x="9.2" y="14" width="2.6" height="3.4" rx=".6"/></g></symbol>
+  <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M4 12h15M13 6l6 6-6 6" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+</svg>
+
+<a class="skip" href="#main">Skip to content</a>
+
+<header class="nav">
+  <div class="wrap nav-in">
+    <a class="brand" href="#top"><img src="notato.png" alt="" width="34" height="34"><span>Notato</span></a>
+    <nav class="nav-links" aria-label="Sections">
+      <a href="#loop">How it works</a>
+      <a href="#showcase">Showcase</a>
+      <a href="#apps">Mobile apps</a>
+      <a href="#agents">Agents</a>
+      <a href="docs/index.html">Docs</a>
+    </nav>
+    <a class="btn btn-sm btn-tab" href="#try">Try it here</a>
+  </div>
+</header>
+
+<main id="main">
+
+<!-- ============================== HERO ============================== -->
+<section class="hero" id="top">
+  <div class="wrap hero-grid">
+    <div class="hero-copy">
+      <p class="kicker"><span class="tag">For coding agents</span> Figma-style comments for the web and mobile apps you're building</p>
+      <h1 class="hero-title">Pin a note on your <span class="pinned">app.<span class="head-pin" aria-hidden="true">1</span></span><br><span class="fix"><span class="who-slot"><span class="who-word">Your agent</span></span> fixes it.<svg class="scribble" viewBox="0 0 300 24" preserveAspectRatio="none" aria-hidden="true"><path d="M3 15c40-8 86-10 136-6 34 3 63 6 92 2 23-3 44-7 66-6" pathLength="1"/></svg></span></h1>
+    </div>
+    <button class="potato" type="button" aria-label="Poke the potato"><img src="notato.png" alt="" width="240" height="240"></button>
+    <div class="hero-side">
+      <p class="lede">Click anything in your running app, in a browser or on a phone, and say what's wrong. Notato hands the note to your coding agent with a screenshot, the component, and the file and line it was written at. The agent makes the change, commits it, and the pin turns green. Or a developer picks it up from the board.</p>
+      <div class="hero-act">
+        <div class="cmd">
+          <code><span class="cmd-sigil" aria-hidden="true">$</span> npm i -D notato @notato/react</code>
+          <button class="copy" type="button" data-copy="npm i -D notato @notato/react" aria-label="Copy the install command"><svg aria-hidden="true"><use href="#i-copy"/></svg></button>
+        </div>
+        <div class="hero-ctas">
+          <a class="btn btn-tab" href="docs/index.html">Get started</a>
+          <a class="btn btn-ghost" href="#try">Try it on this page</a>
+        </div>
+        <p class="works-with"><span>Works with</span> <a href="#agents">Claude Code</a> <a href="#agents">Codex</a> <a href="#agents">Cursor</a> <a href="#agents">Gemini CLI</a> <a href="#agents">Copilot</a> <a href="#agents">any MCP client</a></p>
+        <p class="works-with"><span>Runs in</span> <a href="#everywhere">React</a> <a href="#everywhere">any web page</a> <a href="#apps">SwiftUI</a> <a href="#apps">Jetpack Compose</a> <a href="#apps">.NET MAUI</a></p>
+      </div>
+    </div>
+  </div>
+
+  <div class="wrap">
+    <p class="margin-note hero-note" aria-hidden="true">the whole loop, start to finish<svg aria-hidden="true" viewBox="0 0 60 40"><path d="M4 6c18 2 34 10 42 26m0 0l-9-4m9 4l1-10"/></svg></p>
+    <figure class="stage" id="stage">
+      <div class="stage-grid">
+        <div class="win browser" aria-hidden="true">
+          <div class="win-bar"><span class="dots"><i></i><i></i><i></i></span><span class="url">localhost:5173/checkout</span></div>
+          <div class="app" id="app">
+            <header class="app-head">
+              <span class="app-logo"><i></i>spudshop</span>
+              <span class="app-nav"><span>Shop</span><span>Recipes</span><b>Basket (3)</b></span>
+            </header>
+            <div class="app-body">
+              <section class="basket" data-demo="basket">
+                <h3 class="basket-title" data-demo="basket-title">Your basket</h3>
+                <ul class="basket-list">
+                  <li class="row" data-demo="row"><span class="spud s1"></span><span class="name">Maris Piper<small>2 kg · floury, for mash</small></span><span class="price">£2.60</span></li>
+                  <li class="row"><span class="spud s2"></span><span class="name">Sweet potatoes<small>1 kg · roasting</small></span><span class="price">£1.90</span></li>
+                  <li class="row"><span class="spud s3"></span><span class="name">Rooster reds<small>2.5 kg · all-rounder</small></span><span class="price">£3.10</span></li>
+                </ul>
+              </section>
+              <aside class="summary">
+                <div class="sum-row"><span>Subtotal</span><span>£7.60</span></div>
+                <div class="sum-row" data-demo="delivery"><span>Delivery</span><span>£4.80</span></div>
+                <div class="sum-row sum-total"><span>Total</span><span>£12.40</span></div>
+                <span class="pay" data-demo="pay">Pay £12.40</span>
+                <p class="fine">Arrives Thursday, 8–10am</p>
+              </aside>
+            </div>
+
+            <div class="nt-hover"><span class="nt-hover-label"></span></div>
+            <div class="nt-sel"></div>
+            <div class="nt-pins"></div>
+            <div class="nt-card" hidden></div>
+            <div class="nt-pop" hidden>
+              <p class="pop-target"></p>
+              <p class="pop-src"></p>
+              <div class="pop-intents">
+                <span data-intent="fix">Fix</span><span data-intent="change">Change</span><span data-intent="question">Question</span><span data-intent="approve">Approve</span><span data-intent="variants">Variants</span>
+              </div>
+              <div class="pop-text"><span class="pop-typed"></span><span class="caret"></span><span class="pop-ph">What should change?</span></div>
+              <div class="pop-foot"><span class="pop-sev">Minor</span><span class="pop-hint">⌘↵ save</span><span class="pop-send">Save</span></div>
+            </div>
+            <div class="nt-vpill" hidden>
+              <span class="vtag">Variants</span>
+              <span class="vtabs"><span data-v="original" class="on">Original</span><span data-v="cards">Cards</span><span data-v="compact">Compact</span></span>
+              <span class="vuse">Use this</span>
+              <span class="vstate" hidden></span>
+            </div>
+            <div class="nt-toolbar">
+              <span class="tb-dot"></span>
+              <span class="tb-grip"><svg aria-hidden="true"><use href="#i-grip"/></svg></span>
+              <span class="tb-btn tb-annotate"><svg aria-hidden="true"><use href="#i-cross"/></svg><span>Annotate</span><span class="tb-count">0</span></span>
+              <span class="tb-sep"></span>
+              <span class="tb-btn tb-pause"><svg aria-hidden="true"><use href="#i-bars"/></svg></span>
+              <span class="tb-btn"><svg aria-hidden="true"><use href="#i-cog"/></svg></span>
+              <span class="tb-btn"><svg aria-hidden="true"><use href="#i-export"/></svg></span>
+              <span class="tb-btn tb-pins"><svg aria-hidden="true"><use href="#i-eye"/></svg></span>
+              <span class="tb-btn tb-fold"><svg aria-hidden="true"><use href="#i-chev"/></svg></span>
+            </div>
+            <div class="nt-toast" hidden></div>
+            <svg aria-hidden="true" class="cursor"><use href="#i-cursor"/></svg>
+          </div>
+        </div>
+
+        <div class="win term" aria-hidden="true">
+          <div class="win-bar"><span class="dots"><i></i><i></i><i></i></span><span class="url term-url">claude · ~/code/spudshop</span></div>
+          <div class="term-body" id="term">
+            <div class="t-line t-banner">✻ Claude Code</div>
+            <div class="t-line t-prompt">watch Notato and fix what comes in</div>
+            <div class="t-line t-tool"><b>notato_watch</b>(project: "spudshop")</div>
+            <div class="t-line t-out t-wait">Waiting for notes…</div>
+          </div>
+        </div>
+      </div>
+      <figcaption class="stage-bar">
+        <span class="sr-only">An animation of the loop: a note is pinned to the checkout page, a coding agent (Claude Code, then Codex, then Gemini CLI) receives it, changes the code, commits, and the pin turns green.</span>
+        <div class="stories" role="tablist" aria-label="Demo stories">
+          <button type="button" role="tab" aria-selected="true" data-story="0"><span class="st-dot"></span>Change a button <small>Claude Code</small></button>
+          <button type="button" role="tab" aria-selected="false" data-story="1"><span class="st-dot"></span>Ask a question <small>Codex</small></button>
+          <button type="button" role="tab" aria-selected="false" data-story="2"><span class="st-dot"></span>Compare variants <small>Gemini CLI</small></button>
+        </div>
+        <button type="button" class="playpause" aria-label="Pause the demo" aria-pressed="false"><svg aria-hidden="true"><use href="#i-pause"/></svg></button>
+      </figcaption>
+    </figure>
+  </div>
+</section>
+
+<!-- ============================== LOOP ============================== -->
+<section class="section" id="loop">
+  <div class="wrap">
+    <header class="sec-head">
+      <p class="tag">section#loop</p>
+      <h2>From a click to a commit</h2>
+      <p class="sec-lede">Every note is an annotation: an element, what you said about it, and screenshots. Nothing is recorded between notes, so there's no analytics and no session replay to worry about.</p>
+    </header>
+    <ol class="steps">
+      <li class="step">
+        <div class="step-art art-click" aria-hidden="true"><span class="mini-btn">Add to basket</span><span class="mini-hover"></span><svg aria-hidden="true" class="mini-cursor"><use href="#i-cursor"/></svg></div>
+        <h3><span class="step-n">1</span>Click it</h3>
+        <p>Press <kbd data-key="alt">Alt</kbd> <kbd data-key="shift">Shift</kbd> <kbd>A</kbd> and click an element. You can also select text, drag over an area, or <span data-key-text="mod-click">Ctrl-click</span> several things at once.</p>
+      </li>
+      <li class="step">
+        <div class="step-art art-say" aria-hidden="true"><span class="mini-chips"><i>Fix</i><i class="on">Change</i><i>Question</i></span><span class="mini-text">Too cramped on a phone<b></b></span></div>
+        <h3><span class="step-n">2</span>Say it</h3>
+        <p>Write the note. Say if it's a fix, a change, a question, an approval or a request for variants, and how much it matters.</p>
+      </li>
+      <li class="step">
+        <div class="step-art art-get" aria-hidden="true"><span class="mini-term"><i>● notato_watch</i><i>⎿ 1 note from Dom</i><i>src/Basket.tsx:44:9</i></span><span class="mini-shot"></span></div>
+        <h3><span class="step-n">3</span>Your agent gets it</h3>
+        <p>The note reaches your coding agent over MCP with the screenshots, the component path, and the file, line and column.</p>
+      </li>
+      <li class="step">
+        <div class="step-art art-green" aria-hidden="true"><span class="cycle-pin">1</span><span class="mini-commit">3f9c2a1</span></div>
+        <h3><span class="step-n">4</span>It turns green</h3>
+        <p>The agent acknowledges it, makes the smallest change, commits it on its own and resolves it. One commit per note keeps every undo clean.</p>
+      </li>
+    </ol>
+
+    <div class="life">
+      <h3 class="life-title">What the pin colours mean</h3>
+      <ol class="life-track">
+        <li data-s="open"><span class="lpin">1</span><b>Open</b><span>Waiting for the agent</span></li>
+        <li data-s="acknowledged"><span class="lpin">1</span><b>Acknowledged</b><span>The agent has it</span></li>
+        <li data-s="resolved"><span class="lpin">1</span><b>Resolved</b><span>Changed and committed</span></li>
+        <li data-s="revert_requested"><span class="lpin">1</span><b>Revert requested</b><span>You changed your mind</span></li>
+        <li data-s="reverted"><span class="lpin">1</span><b>Reverted</b><span>The agent undid that commit</span></li>
+      </ol>
+      <p class="life-foot"><span class="lpin small" data-s="variant_chosen">3</span> Cyan means you picked a variant and the agent is tidying up. A struck-through pin was dismissed.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ============================== SHOWCASE ============================== -->
+<section class="section" id="showcase">
+  <div class="wrap">
+    <header class="sec-head">
+      <p class="tag">section#showcase</p>
+      <h2>Things it can do</h2>
+      <p class="sec-lede">Each of these is the real behaviour, acted out with the real markup and data shapes. Click around.</p>
+      <p class="margin-note sticky" aria-hidden="true">everything in here is clickable</p>
+    </header>
+
+    <div class="bento">
+
+      <article class="tile t-intents">
+        <h3>Say what you want</h3>
+        <p>Every note can carry an intent, and the agent acts on it. A question gets an answer and no edit.</p>
+        <fieldset class="chips">
+          <legend class="sr-only">Intent</legend>
+          <label><input type="radio" name="intent" value="fix" checked><span>Fix</span></label>
+          <label><input type="radio" name="intent" value="change"><span>Change</span></label>
+          <label><input type="radio" name="intent" value="question"><span>Question</span></label>
+          <label><input type="radio" name="intent" value="approve"><span>Approve</span></label>
+          <label><input type="radio" name="intent" value="variants"><span>Variants</span></label>
+        </fieldset>
+        <div class="convo" aria-live="polite">
+          <p class="bubble you"><span class="who">Dom</span><span class="intent-note">The total doesn't change when I remove an item</span></p>
+          <p class="bubble agent"><span class="who intent-who">Claude</span><span class="intent-reply">removeItem never recalculated the total. Fixed in Basket.tsx:44, committed 9e1c0d2 on its own, resolved.</span></p>
+        </div>
+      </article>
+
+      <article class="tile t-variants">
+        <h3>Flip between versions, live</h3>
+        <p>Ask for variants and the agent writes each one into your code. Switch between them in the running page, then keep one.</p>
+        <div class="vdemo">
+          <div class="promo" data-layout="original">
+            <span class="promo-img"><span class="spud s1"></span><span class="spud s3"></span></span>
+            <span class="promo-text"><b>New season Jersey Royals</b><small>Waxy, nutty, here until July</small></span>
+            <span class="promo-buy">£3.40/kg</span>
+          </div>
+          <div class="vpill">
+            <span class="vtag">promo</span>
+            <span class="vtabs" role="tablist" aria-label="Version">
+              <button type="button" role="tab" aria-selected="true" data-layout="original">Original</button>
+              <button type="button" role="tab" aria-selected="false" data-layout="stacked">Stacked</button>
+              <button type="button" role="tab" aria-selected="false" data-layout="compact">Compact</button>
+            </span>
+            <button type="button" class="vuse">Use this</button>
+          </div>
+          <p class="vresult" aria-live="polite"></p>
+        </div>
+      </article>
+
+      <article class="tile t-md">
+        <div class="tile-head">
+          <div>
+            <h3>What the agent reads</h3>
+            <p>Any note can be written out as Markdown at four levels, for an agent, an issue or a pull request. This is the real renderer's output for the note in the demo above.</p>
+          </div>
+        </div>
+        <div class="seg" role="tablist" aria-label="Detail level">
+          <button type="button" role="tab" aria-selected="false" data-detail="compact">compact</button>
+          <button type="button" role="tab" aria-selected="false" data-detail="standard">standard</button>
+          <button type="button" role="tab" aria-selected="true" data-detail="detailed">detailed</button>
+          <button type="button" role="tab" aria-selected="false" data-detail="forensic">forensic</button>
+        </div>
+        <div class="md-box">
+          <button type="button" class="copy md-copy" aria-label="Copy this Markdown"><svg aria-hidden="true"><use href="#i-copy"/></svg></button>
+          <pre class="md-out"><code></code></pre>
+        </div>
+        <p class="md-meta"><span class="md-lines"></span></p>
+      </article>
+
+      <article class="tile t-pause">
+        <h3>Catch a moving target</h3>
+        <p>Pause freezes CSS and Web Animations mid-flight, so you can annotate a frame that only exists for 200ms. The note records how far through each one was.</p>
+        <div class="pause-stage">
+          <div class="pause-track"><span class="roller"><span class="spud s2"></span></span></div>
+          <div class="pause-toast"><svg aria-hidden="true"><use href="#i-check"/></svg>Added to basket</div>
+        </div>
+        <div class="pause-row">
+          <button type="button" class="btn btn-sm btn-ink pause-btn" aria-pressed="false">Pause animations</button>
+          <span class="kbds"><kbd data-key="alt">Alt</kbd><kbd data-key="shift">Shift</kbd><kbd>P</kbd></span>
+        </div>
+        <pre class="pause-log" aria-live="polite"><code>Animations: running</code></pre>
+      </article>
+
+      <article class="tile t-revert">
+        <h3>Changed your mind?</h3>
+        <p>Ask the agent to undo a change. It knows which files and which commit, because it recorded them when it resolved the note.</p>
+        <div class="revert-stage">
+          <span class="rv-btn" data-state="go">Place order · £12.40</span>
+          <span class="rv-pin" data-status="resolved">1</span>
+          <div class="rv-card">
+            <p class="rv-meta"><span class="badge" data-v="resolved">Resolved</span> by Codex · 3f9c2a1</p>
+            <p class="rv-body">Made the pay button green and renamed it.</p>
+            <div class="rv-form" hidden>
+              <label class="sr-only" for="rv-reason">Why revert?</label>
+              <input id="rv-reason" class="rv-input" value="The blue matched the brand better">
+            </div>
+            <button type="button" class="btn btn-sm btn-revert rv-action">Revert this change…</button>
+          </div>
+        </div>
+      </article>
+
+      <article class="tile t-mention">
+        <h3>Talk to the agent, or around it</h3>
+        <p>Every reply reaches the agent, even on a note that's already done, with nothing to tag. Send a reply as an aside, or mark a whole note People only, and it stays between people.</p>
+        <div class="mention">
+          <div class="m-thread" aria-live="polite"></div>
+          <div class="m-compose">
+            <span class="m-input"><span class="m-typed"></span><span class="caret"></span></span>
+            <span class="m-aside" data-on="false" aria-hidden="true">Aside</span>
+          </div>
+          <button type="button" class="btn btn-sm btn-ink m-play"><svg aria-hidden="true"><use href="#i-play"/></svg>Play</button>
+        </div>
+      </article>
+
+      <article class="tile t-mask">
+        <h3>Private by default</h3>
+        <p>Passwords are always masked in screenshots. In test and agent mode every input is. Mark anything else private and its pixels and text stay out.</p>
+        <div class="mask-stage" data-masked="false">
+          <div class="mk-field"><span class="mk-label">Email</span><span class="mk-input">sam@example.com</span></div>
+          <div class="mk-field"><span class="mk-label">Password</span><span class="mk-input mk-pw">hunter2-mash</span></div>
+          <div class="mk-private"><span class="mk-label">Loyalty card</span><span class="mk-input">6411 2280 0193</span><code class="mk-attr">data-notato-mask</code></div>
+        </div>
+        <label class="switch"><input type="checkbox" class="mask-toggle"><span class="sw" aria-hidden="true"></span>Show what the screenshot sees</label>
+      </article>
+
+      <article class="tile t-critique">
+        <div class="crit-copy">
+          <h3>Let the agent review it first</h3>
+          <p>The <code>notato-critique</code> skill has the agent open your app in a browser it can drive, use it like a careful reviewer, and file the things that matter most as notes. Then it works through them.</p>
+          <button type="button" class="btn btn-sm btn-tab crit-run"><svg aria-hidden="true"><use href="#i-play"/></svg>Run /notato-critique</button>
+          <ol class="crit-list" aria-live="polite"></ol>
+        </div>
+        <div class="crit-page" aria-hidden="true">
+          <div class="cp-bar"><span></span><span></span><span></span></div>
+          <div class="cp-banner" data-c="0">Free delivery over £30!</div>
+          <div class="cp-grid">
+            <span class="cp-card"><i class="spud s1"></i><b></b></span>
+            <span class="cp-card"><i class="spud s2"></i><b></b></span>
+            <span class="cp-card"><i class="spud s3"></i><b></b></span>
+          </div>
+          <div class="cp-row"><span class="cp-step" data-c="1">− 2 +</span><span class="cp-coupon" data-c="2"></span><span class="cp-go" data-c="3">Go</span></div>
+          <div class="cp-foot" data-c="4">© spudshop</div>
+          <span class="cp-pins"></span>
+          <svg aria-hidden="true" class="cp-cursor"><use href="#i-cursor"/></svg>
+          <span class="cp-tagline">Gemini</span>
+        </div>
+      </article>
+
+      <article class="tile t-frames">
+        <h3>Reaches inside things</h3>
+        <p>Same-origin iframes, open shadow roots and portals all work. The note says how to get there.</p>
+        <div class="nest" aria-hidden="true">
+          <span class="n1">iframe#preview<span class="n2">my-widget #shadow-root<span class="n3">button.pay</span></span></span>
+        </div>
+        <code class="nest-sel">iframe#preview &gt;&gt;&gt; my-widget &gt;&gt;&gt; button.pay</code>
+      </article>
+
+    </div>
+  </div>
+</section>
+
+<!-- ============================== APPS ============================== -->
+<section class="section" id="apps">
+  <div class="wrap">
+    <header class="sec-head">
+      <p class="tag">section#apps</p>
+      <h2>Your phone apps, too</h2>
+      <p class="sec-lede">Native SDKs for SwiftUI, Jetpack Compose and Views, and .NET MAUI put the same toolbar in your iOS and Android apps. Tap an element, write a note, and your agent gets the screenshot and the file and line it was written at, just as it does on the web. Same server, same board, same agent loop.</p>
+    </header>
+
+    <div class="apps">
+      <div class="app-tabs" role="tablist" aria-label="Native SDK">
+        <button type="button" role="tab" id="at-swift" aria-controls="ap-swift" aria-selected="true" data-app="swift">SwiftUI <small>iOS 17+</small></button>
+        <button type="button" role="tab" id="at-compose" aria-controls="ap-compose" aria-selected="false" tabindex="-1" data-app="compose">Jetpack Compose &amp; Views <small>Android 7+</small></button>
+        <button type="button" role="tab" id="at-maui" aria-controls="ap-maui" aria-selected="false" tabindex="-1" data-app="maui">.NET MAUI <small>iOS · Android · Mac</small></button>
+      </div>
+
+      <div class="phone-wrap" aria-hidden="true">
+        <div class="phone" data-os="ios">
+          <div class="ph-screen">
+            <div class="ph-status"><b>9:41</b><span class="ph-cam"></span><span class="ph-icons"><i></i><i></i><i></i></span></div>
+            <div class="ph-appbar"><span class="ph-back">‹</span><span class="ph-title">Shop</span><span class="ph-basket">Basket</span></div>
+            <div class="ph-search">Search potatoes</div>
+            <ul class="ph-list">
+              <li class="ph-row"><span class="spud s1"></span><span class="ph-name">Maris Piper<small>2 kg · floury</small></span><span class="ph-price">£2.60</span><span class="ph-add">Add</span></li>
+              <li class="ph-row"><span class="spud s2"></span><span class="ph-name">Sweet potatoes<small>1 kg · roasting</small></span><span class="ph-price">£1.90</span><span class="ph-add" data-ph="add">Add</span></li>
+              <li class="ph-row"><span class="spud s3"></span><span class="ph-name">Rooster reds<small>2.5 kg · all-rounder</small></span><span class="ph-price">£3.10</span><span class="ph-add">Add</span></li>
+              <li class="ph-row"><span class="spud s1"></span><span class="ph-name">Jersey Royals<small>750 g · new season</small></span><span class="ph-price">£3.40</span><span class="ph-add">Add</span></li>
+            </ul>
+            <div class="ph-tabbar"><i class="on"></i><i></i><i></i><i></i></div>
+
+            <span class="ph-sel"></span>
+            <span class="ph-src"></span>
+            <span class="ph-pin" hidden>1</span>
+            <div class="ph-bar">
+              <span class="pb-grip"><i></i><i></i><i></i><i></i><i></i><i></i></span>
+              <span class="pb-annotate"><svg aria-hidden="true"><use href="#i-cross"/></svg>Annotate<b class="pb-count">0</b></span>
+              <span class="pb-more">⋯</span>
+              <span class="pb-fold">›</span>
+            </div>
+            <div class="ph-sheet">
+              <div class="ps-head"><span class="ps-titles"><b class="ps-title"></b><small class="ps-sub"></small></span><span class="ps-parent">↑ Parent</span><span class="ps-close">×</span></div>
+              <div class="ps-field"><span class="ps-typed"></span><span class="caret"></span><span class="ps-ph">What should change?</span></div>
+              <div class="ps-chips"><i>Fix</i><i data-chip="change">Change</i><i>Question</i><i>Approve</i></div>
+              <div class="ps-chips"><i>Blocker</i><i>Major</i><i data-chip="minor">Minor</i><i>Nit</i></div>
+              <div class="ps-foot"><small>Tap another element to change what this note is about.</small><span class="ps-send">Send</span></div>
+            </div>
+            <span class="ph-toast">Sent</span>
+            <span class="ph-finger"></span>
+          </div>
+        </div>
+      </div>
+
+      <div class="app-side">
+        <div class="app-panel" role="tabpanel" id="ap-swift" aria-labelledby="at-swift">
+          <h3>SwiftUI and UIKit</h3>
+          <ul class="ticks">
+            <li><code>.notato("ProductRow")</code> marks where a view is written. The compiler fills in the file and line, so there is nothing to keep in step</li>
+            <li>Each note says what VoiceOver would call the element, and brings the app's recent log</li>
+            <li>A Swift package with no dependencies. Leave <code>Notato.start</code> out of a build and it ships nothing</li>
+          </ul>
+          <a class="guide-link" href="docs/swiftui.html">SwiftUI setup guide</a>
+          <pre class="code"><code data-lang="swift">import Notato
+
+@main
+struct ShopApp: App {
+    init() {
+        #if DEBUG
+        Notato.start(NotatoConfiguration(project: "spudshop-ios"))
+        #endif
+    }
+    var body: some Scene { WindowGroup { RootView() } }
+}</code></pre>
+        </div>
+        <div class="app-panel" role="tabpanel" id="ap-compose" aria-labelledby="at-compose" hidden>
+          <h3>Jetpack Compose and Views</h3>
+          <ul class="ticks">
+            <li>Compose: the file and line of the call that made the element, and the composables around it, found the way Layout Inspector finds them. Nothing to mark</li>
+            <li>Views: the resource id, the layout file it was inflated from, and its Fragment and Activity</li>
+            <li>Says what TalkBack would call the element, and brings the app's warnings from logcat</li>
+          </ul>
+          <a class="guide-link" href="docs/android.html">Android setup guide</a>
+          <pre class="code"><code data-lang="kotlin">dependencies {
+    debugImplementation("dev.notato:notato-compose:0.1.0")
+}
+
+class ShopApp : Application() {
+    override fun onCreate() {
+        super.onCreate()
+        Notato.start(this, NotatoConfig(project = "spudshop-android"))
+    }
+}</code></pre>
+        </div>
+        <div class="app-panel" role="tabpanel" id="ap-maui" aria-labelledby="at-maui" hidden>
+          <h3>.NET MAUI</h3>
+          <ul class="ticks">
+            <li>The XAML file and line an element was written at, its page and its view model</li>
+            <li>iOS, Android and Mac Catalyst on .NET 10 and later, set up the MauiProgram way: in code or from <code>appsettings.json</code></li>
+            <li>Debug builds pick up the dev tunnel by themselves, so a phone on any network just works</li>
+          </ul>
+          <a class="guide-link" href="docs/maui.html">.NET MAUI setup guide</a>
+          <pre class="code"><code data-lang="csharp">using Notato.Maui;
+
+var builder = MauiApp.CreateBuilder();
+builder.UseMauiApp&lt;App&gt;();
+#if DEBUG
+builder.UseNotato(options =&gt; options.Project = "spudshop-app");
+#endif</code></pre>
+        </div>
+        <div class="app-gets">
+          <p class="app-gets-title"><span class="ag-dot"></span>What your agent gets</p>
+          <div class="ag-log"></div>
+        </div>
+      </div>
+    </div>
+
+    <ul class="app-feats">
+      <li><h3>Phones on any network</h3><p><code>npx notato --tunnel</code> puts the server on your machine behind a dev tunnel that only answers with the device's token. The simulator and emulator use localhost.</p></li>
+      <li><h3>Notes outlast a bad signal</h3><p>A note made while the server can't be reached is kept on the device and sent as soon as it can be.</p></li>
+      <li><h3>The app's own log</h3><p>Recent <code>Logger</code> and <code>os_log</code> messages, logcat warnings, or the MAUI app's log come with every note.</p></li>
+      <li><h3>Private by default</h3><p>Password fields are always covered. <code>.notatoMask()</code>, <code>Modifier.notatoMask()</code> and <code>Feedback.Mask</code> hide anything else, pixels and text.</p></li>
+      <li><h3>Testers on real devices</h3><p>In test mode notes stay on the phone, then go out as a zip through the share sheet, ready for your agent to import.</p></li>
+      <li><h3>Out of the way</h3><p>Drag the bar anywhere, fold it into the potato, or shake the phone to hide it. Turn Notato on and off from your own settings screen.</p></li>
+      <li><h3>Sheets, dialogs and lists</h3><p>Pick things inside modal pages, sheets, full-screen dialogs and lazy lists. The note says which screen it was on.</p></li>
+      <li><h3>Nothing in release</h3><p><code>#if DEBUG</code>, a <code>debugImplementation</code> dependency, or a Debug-only package: release builds ship none of it.</p></li>
+    </ul>
+  </div>
+</section>
+
+<!-- ============================== PLATFORMS ============================== -->
+<section class="section" id="everywhere">
+  <div class="wrap">
+    <header class="sec-head">
+      <p class="tag">section#everywhere</p>
+      <h2>Any web app, and pages you didn't build</h2>
+      <p class="sec-lede">React apps get the SDK. Anything else on the web gets a bookmark or the Chrome extension, with nothing to install in the page. The same server and MCP tools are behind all of them, and behind the phone apps above.</p>
+    </header>
+    <div class="plat">
+      <div class="plat-tabs" role="tablist" aria-label="Platform">
+        <button type="button" role="tab" id="pt-react" aria-controls="pp-react" aria-selected="true">React</button>
+        <button type="button" role="tab" id="pt-page" aria-controls="pp-page" aria-selected="false" tabindex="-1">Any page</button>
+        <button type="button" role="tab" id="pt-ext" aria-controls="pp-ext" aria-selected="false" tabindex="-1">Chrome extension</button>
+      </div>
+
+      <div class="plat-panel" role="tabpanel" id="pp-react" aria-labelledby="pt-react" data-device="browser" data-src="src/checkout/PayButton.tsx:18:7">
+        <div class="plat-copy">
+          <h3>React 18 and later</h3>
+          <ul class="ticks">
+            <li><code>init</code> edits Vite and Next.js apps for you, in your project's own code style</li>
+            <li>The Vite plugin gives the exact file, line and column, even in a built app</li>
+            <li>Finds the host app in a Module Federation repo, and every module inherits the toolbar</li>
+          </ul>
+          <a class="guide-link" href="docs/react.html">React setup guide</a>
+          <pre class="code"><code data-lang="tsx">import { Notato } from "@notato/react"
+
+{import.meta.env.DEV &amp;&amp; (
+  &lt;Notato mode="dev" project="spudshop" server="http://localhost:4747" /&gt;
+)}</code></pre>
+        </div>
+      </div>
+      <div class="plat-panel" role="tabpanel" id="pp-page" aria-labelledby="pt-page" data-device="bookmark" data-src="button.pay · project localhost-5173" hidden>
+        <div class="plat-copy">
+          <h3>Any page, nothing to install</h3>
+          <ul class="ticks">
+            <li>Drag a bookmark to your bar and click it on the page you want to annotate</li>
+            <li>Same code as the SDK, with any framework or none</li>
+            <li>Notes file under a project named after the page's host and port</li>
+          </ul>
+          <a class="guide-link" href="docs/any-page.html#any-page-with-nothing-to-install">Bookmark and script tag guide</a>
+          <pre class="code"><code data-lang="bash">npx notato
+npx notato inject   # prints the bookmark page, a console line and a script tag</code></pre>
+        </div>
+      </div>
+      <div class="plat-panel" role="tabpanel" id="pp-ext" aria-labelledby="pt-ext" data-device="extension" data-src="Turned on for app.example.com" hidden>
+        <div class="plat-copy">
+          <h3>Chrome extension</h3>
+          <ul class="ticks">
+            <li>Turn it on per site from the toolbar icon. It does nothing anywhere else</li>
+            <li>Works on pages whose security policy refuses outside scripts</li>
+            <li>Only talks to the server you set for that site, and only to Notato's API</li>
+          </ul>
+          <a class="guide-link" href="docs/any-page.html#browser-extension">Extension setup guide</a>
+          <pre class="code"><code data-lang="bash">bun run build:extension
+# chrome://extensions › Developer mode › Load unpacked › packages/extension/dist</code></pre>
+        </div>
+      </div>
+
+      <div class="device" data-kind="browser" aria-hidden="true">
+        <div class="dv-frame">
+          <div class="dv-bar"><span class="dots"><i></i><i></i><i></i></span><span class="dv-url">localhost:5173</span><span class="dv-bookmark">Notato</span></div>
+          <div class="dv-screen">
+            <div class="dv-head"><span>spudshop</span><i></i></div>
+            <div class="dv-item"><span class="spud s1"></span><b>Maris Piper</b><em>£2.60</em></div>
+            <div class="dv-item dv-target"><span class="spud s2"></span><b>Sweet potatoes</b><em>£1.90</em></div>
+            <div class="dv-item"><span class="spud s3"></span><b>Rooster reds</b><em>£3.10</em></div>
+            <span class="dv-btn">Checkout</span>
+            <span class="dv-pin">1</span>
+            <span class="dv-src"></span>
+            <span class="dv-toolbar"><svg aria-hidden="true"><use href="#i-cross"/></svg><i>1</i><b></b></span>
+            <div class="dv-popup"><b>Notato on this site</b><span class="dv-switch"></span><small>Server http://localhost:4747</small><small>Project app-example-com</small></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================== MODES ============================== -->
+<section class="section" id="modes">
+  <div class="wrap">
+    <header class="sec-head">
+      <p class="tag">section#modes</p>
+      <h2>You, your testers, or an agent</h2>
+      <p class="sec-lede">The same toolbar runs in three modes. What changes is who is annotating and where the notes go.</p>
+    </header>
+    <div class="modes">
+      <article class="mode">
+        <div class="mode-art art-dev" aria-hidden="true">
+          <span class="node">app</span><span class="wire"><i></i></span><span class="node">:4747</span><span class="wire"><i></i></span><span class="node node-agent">agent</span>
+        </div>
+        <h3><code>dev</code> You, while you build</h3>
+        <p>Notes go live to a local server on your machine. Your agent reads them over MCP and works through them as they come in.</p>
+        <pre class="code"><code data-lang="tsx">&lt;Notato mode="dev" project="spudshop" /&gt;</code></pre>
+      </article>
+      <article class="mode">
+        <div class="mode-art art-test" aria-hidden="true">
+          <span class="zip"><svg aria-hidden="true"><use href="#i-zip"/></svg></span>
+          <span class="zip-files"><i>feedback.md</i><i>annotations.json</i><i>shots/</i></span>
+        </div>
+        <h3><code>test</code> Testers, anywhere</h3>
+        <p>Testers annotate, then choose Download zip in the toolbar's Export menu. They get a zip with every note in order and its screenshots. Hand it to your agent, or post it to a shared server.</p>
+        <pre class="code"><code data-lang="tsx">&lt;Notato mode="test" project="spudshop" /&gt;</code></pre>
+      </article>
+      <article class="mode">
+        <div class="mode-art art-agent" aria-hidden="true">
+          <span class="agent-steps"><i>click #basket</i><i>type #coupon "SPUD10"</i><i>click #pay</i><i class="hit">annotate #pay</i></span>
+        </div>
+        <h3><code>agent</code> An AI driving the browser</h3>
+        <p>Playwright, Chrome DevTools or an agent's own browser call the page API. The agent's notes go through the same pipeline as yours, with the steps it took.</p>
+        <pre class="code"><code data-lang="js">await window.__notato.annotate({ target: "#pay", comment: "No loading state" })</code></pre>
+      </article>
+    </div>
+  </div>
+</section>
+
+<!-- ============================== BOARD ============================== -->
+<section class="section" id="board">
+  <div class="wrap">
+    <header class="sec-head">
+      <p class="tag">section#board</p>
+      <h2>Every project on one board</h2>
+      <p class="sec-lede">The server has its own board, for the developers. One server holds many projects: an inbox for each, a timeline of what was said, and an overview of what's left. Agents and people work the same notes, and it updates as things happen.</p>
+    </header>
+    <div class="board" aria-hidden="true">
+      <aside class="b-side">
+        <span class="b-brand"><img src="notato.png" alt="" width="26" height="26"><b>notato</b><i class="b-live"></i></span>
+        <span class="b-label">spudshop</span>
+        <span class="b-nav on"><svg aria-hidden="true"><use href="#i-inbox"/></svg>Inbox<em class="b-badge" data-count="spudshop">3</em></span>
+        <span class="b-nav"><svg aria-hidden="true"><use href="#i-pulse"/></svg>Activity</span>
+        <span class="b-nav"><svg aria-hidden="true"><use href="#i-stats"/></svg>Overview</span>
+        <span class="b-label b-sec">Projects<u>See all</u></span>
+        <span class="b-proj on"><i class="b-tile">S</i>spudshop<em class="b-count" data-count="spudshop">3</em></span>
+        <span class="b-proj"><i class="b-tile">S</i>spudshop-ios<i class="b-new"></i><em class="b-count" data-count="ios">1</em></span>
+        <span class="b-proj"><i class="b-tile">S</i>spudshop-android<em class="b-count" data-count="android">2</em></span>
+        <span class="b-proj"><i class="b-tile">C</i>checkout-web<em class="b-count"></em></span>
+        <span class="b-me"><i>D</i><span><b>Dom</b><u>Change name</u></span></span>
+      </aside>
+      <div class="b-main">
+        <div class="b-listcard">
+          <div class="b-top"><b>spudshop</b><span class="b-sub">Notes waiting on you</span></div>
+          <span class="b-search">Search notes, pages, components</span>
+          <div class="b-filters"><i>To do</i><i>Done</i><i>Dismissed</i><i class="on">All</i></div>
+          <ul class="b-list"></ul>
+        </div>
+        <div class="b-detail">
+          <div class="b-d-head"><span class="badge" data-v="open">Open</span><span class="b-d-num"></span></div>
+          <p class="b-d-title"></p>
+          <div class="b-shot"><span class="b-shot-sel"></span></div>
+          <p class="b-d-src"></p>
+          <div class="b-thread"></div>
+          <div class="b-actions"><i>Dismiss</i><i class="tonal">Acknowledge</i><i class="primary">Resolve</i></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="hooks">
+      <div class="hooks-copy">
+        <h3>And tell the rest of the team</h3>
+        <p>Webhooks send each change to Slack, Discord, a Teams workflow, or your own service as signed JSON. Set them up and test them from the board, with a preview of exactly what will be sent.</p>
+      </div>
+      <div class="hooks-flow" aria-hidden="true">
+        <span class="h-src"><img src="notato.png" alt="" width="26" height="26"><code class="h-event">annotation.created</code></span>
+        <div class="h-dests">
+          <div class="h-dest" data-d="slack"><b>Slack</b><span class="h-msg"></span></div>
+          <div class="h-dest" data-d="discord"><b>Discord</b><span class="h-msg"></span></div>
+          <div class="h-dest" data-d="teams"><b>Teams</b><span class="h-msg h-card"></span></div>
+          <div class="h-dest" data-d="json"><b>JSON</b><code class="h-msg"></code></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================== AGENTS ============================== -->
+<section class="section" id="agents">
+  <div class="wrap">
+    <header class="sec-head">
+      <p class="tag">section#agents</p>
+      <h2>Bring your own agent</h2>
+      <p class="sec-lede">Notato is an MCP server and two Agent Skills, so it works with any coding agent that speaks MCP. <code>npx notato init</code> finds the ones you use and sets up each one. Notato never edits your code: the agent does the work.</p>
+    </header>
+    <ul class="agents">
+      <li class="agent-card" data-agent="Claude" style="--ac: #d97757">
+        <h3><span class="agent-mark" aria-hidden="true">✻</span>Claude Code</h3>
+        <dl><dt>MCP</dt><dd><code>claude mcp add notato -- npx notato dev</code></dd><dt>Skills</dt><dd><code>.claude/skills/</code></dd></dl>
+      </li>
+      <li class="agent-card" data-agent="Codex" style="--ac: #10a37f">
+        <h3><span class="agent-mark" aria-hidden="true">&gt;_</span>Codex</h3>
+        <dl><dt>MCP</dt><dd><code>codex mcp add notato -- npx notato dev</code></dd><dt>Skills</dt><dd><code>.agents/skills/</code></dd></dl>
+      </li>
+      <li class="agent-card" data-agent="Cursor" style="--ac: #8b7cf6">
+        <h3><span class="agent-mark" aria-hidden="true">⬡</span>Cursor</h3>
+        <dl><dt>MCP</dt><dd><code>.cursor/mcp.json</code></dd><dt>Skills</dt><dd><code>.agents/skills/</code></dd></dl>
+      </li>
+      <li class="agent-card" data-agent="Gemini" style="--ac: #4f8df7">
+        <h3><span class="agent-mark" aria-hidden="true">✦</span>Gemini CLI</h3>
+        <dl><dt>MCP</dt><dd><code>.gemini/settings.json</code></dd><dt>Skills</dt><dd><code>.agents/skills/</code></dd></dl>
+      </li>
+      <li class="agent-card" data-agent="Copilot" style="--ac: #6e7bf2">
+        <h3><span class="agent-mark" aria-hidden="true">◎</span>GitHub Copilot</h3>
+        <dl><dt>MCP</dt><dd><code>.vscode/mcp.json</code></dd><dt>Skills</dt><dd><code>.github/skills/</code></dd></dl>
+      </li>
+      <li class="agent-card any" style="--ac: var(--potato)">
+        <h3><span class="agent-mark" aria-hidden="true">+</span>Anything else</h3>
+        <dl><dt>MCP</dt><dd>Run <code>npx notato dev</code> as a stdio server</dd><dt>Skills</dt><dd>Copy <code>.agents/skills/notato</code></dd></dl>
+      </li>
+    </ul>
+    <p class="agents-foot">Pick them yourself with <code>npx notato init --agent codex,cursor</code>, or <code>--agent all</code>. Replies are signed with the agent's own name, and the toolbar says who it is asking: <em>Ask Codex to revert</em>. No agent at all? Notes still land on the board, and webhooks tell your team.</p>
+    <a class="guide-link" href="docs/agents.html">Set up your agent</a>
+
+    <div class="agents-grid">
+      <div>
+        <h3 class="sub-title">Two skills that teach the loop</h3>
+        <div class="skills">
+          <div class="skill"><code>notato</code><p>The loop: make the smallest change, commit each fix on its own with only its own files, resolve with the files and the commit, answer questions without editing, and undo a change when asked.</p></div>
+          <div class="skill"><code>notato-critique</code><p>The agent reviews the running app itself, files the five to eight things that matter most, then works through them.</p></div>
+        </div>
+        <p class="small-print">Call them by name (<code>/notato</code> in Claude Code, <code>$notato</code> in Codex) or just ask: <em>"watch Notato and fix what comes in"</em>. A second agent session attaches to the first one's server, and takes over if it goes away.</p>
+      </div>
+      <section class="tools win" aria-label="MCP tools">
+        <div class="win-bar"><span class="dots"><i></i><i></i><i></i></span><span class="url">MCP · notato</span></div>
+        <dl class="tool-list">
+          <div><dt>notato_watch</dt><dd>Waits for new notes, replies and revert requests, then returns them with screenshots</dd></div>
+          <div><dt>notato_list_open</dt><dd>Open notes, filtered by project, page, severity or intent</dd></div>
+          <div><dt>notato_get</dt><dd>One note at the detail level asked for, screenshots as images</dd></div>
+          <div><dt>notato_acknowledge</dt><dd>Turns the pin amber: the agent has it</dd></div>
+          <div><dt>notato_reply</dt><dd>Writes in the note's thread</dd></div>
+          <div><dt>notato_resolve</dt><dd>Done, with the files and the commit, so it can be undone later</dd></div>
+          <div><dt>notato_dismiss</dt><dd>Closes a note without a change</dd></div>
+          <div><dt>notato_variants_ready</dt><dd>Offers the versions in the code for you to compare</dd></div>
+          <div><dt>notato_reverted</dt><dd>Reports that a change you asked to undo is undone</dd></div>
+          <div><dt>notato_import_bundle</dt><dd>Loads a tester's zip</dd></div>
+          <div><dt>notato_annotate</dt><dd>Asks an open agent-mode page to annotate an element</dd></div>
+        </dl>
+      </section>
+    </div>
+  </div>
+</section>
+
+<!-- ============================== START ============================== -->
+<section class="section" id="start">
+  <div class="wrap">
+    <header class="sec-head">
+      <p class="tag">section#start</p>
+      <h2>Four commands to your first green pin</h2>
+    </header>
+    <ol class="quick">
+      <li><span class="q-n">1</span><div class="cmd"><code>npm i -D notato @notato/react</code><button class="copy" type="button" data-copy="npm i -D notato @notato/react" aria-label="Copy step 1"><svg aria-hidden="true"><use href="#i-copy"/></svg></button></div><p>Install the CLI and the React SDK.</p></li>
+      <li><span class="q-n">2</span><div class="cmd"><code>npx notato init</code><button class="copy" type="button" data-copy="npx notato init" aria-label="Copy step 2"><svg aria-hidden="true"><use href="#i-copy"/></svg></button></div><p>Adds <code>&lt;Notato /&gt;</code> behind a dev-only guard, then sets up your agents: the MCP server and the skills, for Claude Code, Codex, Cursor, Gemini CLI or Copilot. <code>--revert</code> takes it all back out.</p></li>
+      <li><span class="q-n">3</span><div class="cmd"><code>npm run dev</code><button class="copy" type="button" data-copy="npm run dev" aria-label="Copy step 3"><svg aria-hidden="true"><use href="#i-copy"/></svg></button></div><p>Start your app as usual.</p></li>
+      <li><span class="q-n">4</span><div class="cmd"><code>npx notato doctor</code><button class="copy" type="button" data-copy="npx notato doctor" aria-label="Copy step 4"><svg aria-hidden="true"><use href="#i-copy"/></svg></button></div><p>Checks the whole loop, including that a page is connected.</p></li>
+    </ol>
+    <p class="quick-apps">Building a phone app? Run <code>npx notato</code>, then add the <a href="docs/swiftui.html">SwiftUI</a>, <a href="docs/android.html">Android</a> or <a href="docs/maui.html">.NET MAUI</a> SDK with one line at start-up.</p>
+    <div class="guides">
+      <p class="guides-title">Setup guides</p>
+      <div class="guide-cards">
+        <a class="guide-card" href="docs/react.html"><b>React apps</b><span>Vite and Next.js</span></a>
+        <a class="guide-card" href="docs/any-page.html"><b>Any page</b><span>A bookmark, or the Chrome extension</span></a>
+        <a class="guide-card" href="docs/swiftui.html"><b>SwiftUI</b><span>iOS 17 and later</span></a>
+        <a class="guide-card" href="docs/android.html"><b>Android</b><span>Compose and Views</span></a>
+        <a class="guide-card" href="docs/maui.html"><b>.NET MAUI</b><span>iOS, Android, Mac</span></a>
+        <a class="guide-card" href="docs/agents.html"><b>Your agent</b><span>Claude Code, Codex, Cursor and more</span></a>
+        <a class="guide-card" href="docs/teams.html"><b>Testers and servers</b><span>Zips, shared servers, webhooks</span></a>
+        <a class="guide-card" href="docs/index.html"><b>All docs</b><span>Everything Notato does</span></a>
+      </div>
+    </div>
+    <div class="then">
+      <span class="then-label">Then, ask your agent</span>
+      <p class="then-say">“watch Notato and fix what comes in”</p>
+      <button class="copy copy-text" type="button" data-copy="watch Notato and fix what comes in">Copy</button>
+    </div>
+  </div>
+</section>
+
+<!-- ============================== TRY ============================== -->
+<section class="section" id="try">
+  <div class="wrap">
+    <div class="try">
+      <div class="try-copy">
+        <p class="tag">section#try</p>
+        <h2>Try it on this page</h2>
+        <p class="try-lede">This button loads the real Notato toolbar onto this page. It runs in test mode with no server, so your notes stay in this browser. Open Export and choose Download zip for the zip a tester would send.</p>
+        <div class="try-act">
+          <button type="button" class="btn btn-tab btn-lg try-btn">Put Notato on this page</button>
+          <p class="try-status" aria-live="polite"></p>
+        </div>
+        <ol class="try-steps">
+          <li>Press <kbd data-key="alt">Alt</kbd> <kbd data-key="shift">Shift</kbd> <kbd>A</kbd>, or Annotate in the toolbar at the bottom right</li>
+          <li>Click anything on this page. A headline, a tile, this list</li>
+          <li>Write a note and press <kbd data-key="mod">Ctrl</kbd> <kbd>Enter</kbd>. A numbered pin appears</li>
+        </ol>
+        <p class="small-print">Agents, replies, variants and reverts need a server on the other end. On your own machine that's <code>npx notato</code>.</p>
+      </div>
+      <div class="try-art" aria-hidden="true">
+        <img src="notato.png" alt="" width="260" height="260">
+        <span class="try-pin p1">1</span><span class="try-pin p2">2</span><span class="try-pin p3">3</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+</main>
+
+<footer class="foot">
+  <div class="wrap foot-in">
+    <span class="brand"><img src="notato.png" alt="" width="28" height="28"><span>Notato</span></span>
+    <p>Figma-style comments for your running app, for coding agents and the people who build with them. MIT licence.</p>
+    <p class="foot-links"><a href="docs/index.html">Docs</a><a href="https://github.com/notatorg/notato">Source on GitHub</a><a href="#top">Back to top</a></p>
+  </div>
+</footer>
+
+<script type="application/json" id="md-samples">{}</script>
+</body>
+</html>

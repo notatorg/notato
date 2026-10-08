@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!--
+      Debug builds only: SampleApp starts Notato, and it is in src/debug with Notato itself. A release build uses the
+      plain Application and has no Notato. Notato could also start with no code at all, from meta-data here:
+      <meta-data android:name="notato.project" android:value="android-sample" />
+    -->
+    <application android:name=".SampleApp" />
+</manifest>

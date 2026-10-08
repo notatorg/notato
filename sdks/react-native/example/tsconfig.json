@@ -1,0 +1,12 @@
+{
+    "extends": "expo/tsconfig.base",
+    "compilerOptions": {
+        "strict": true,
+        "allowImportingTsExtensions": true,
+        "paths": {
+            "@notato/react-native": ["../src/index.ts"],
+            "@notato/react-native/expo": ["../src/expo.ts"],
+            "@notato/schema": ["../../../packages/schema/src/index.ts"]
+        }
+    }
+}

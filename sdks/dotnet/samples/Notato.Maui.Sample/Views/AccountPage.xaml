@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             x:Class="Notato.Maui.Sample.Views.AccountPage"
+             Title="Account">
+    <ScrollView>
+        <VerticalStackLayout Padding="24,16" Spacing="12">
+            <Image x:Name="Logo" Source="dotnet_bot.png" HeightRequest="110" Aspect="AspectFit" SemanticProperties.Description="Shop logo" />
+            <Label Text="Sign in" FontSize="28" FontAttributes="Bold" SemanticProperties.HeadingLevel="Level1" />
+            <Label Text="Email" FontSize="13" />
+            <Entry x:Name="Email" AutomationId="Email" Placeholder="you@example.com" Keyboard="Email" />
+            <Label Text="Password" FontSize="13" />
+            <Entry x:Name="Password" AutomationId="Password" IsPassword="True" Placeholder="At least 8 characters" />
+            <HorizontalStackLayout Spacing="8">
+                <Switch x:Name="Remember" />
+                <Label Text="Keep me signed in" VerticalOptions="Center" />
+            </HorizontalStackLayout>
+            <Button x:Name="SignInButton" AutomationId="SignInButton" Text="Sign in" Margin="0,8,0,0" Clicked="OnSignIn" />
+            <Label x:Name="Forgot" Text="Forgot your password?" TextColor="#2563eb" HorizontalOptions="Center" FontSize="12" />
+        </VerticalStackLayout>
+    </ScrollView>
+</ContentPage>

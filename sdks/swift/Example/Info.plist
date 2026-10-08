@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- Notato.start() reads this. NOTATO_* environment variables override it (NOTATO_SERVER=…). -->
+	<key>Notato</key>
+	<dict>
+		<key>Project</key>
+		<string>swift-sample</string>
+		<key>Mode</key>
+		<string>dev</string>
+		<key>Server</key>
+		<string>http://localhost:4747</string>
+	</dict>
+	<!-- `notato dev` is plain http on this machine. -->
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsLocalNetworking</key>
+		<true/>
+	</dict>
+</dict>
+</plist>

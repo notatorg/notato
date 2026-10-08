@@ -1,0 +1,33 @@
+name: Swift SDK
+
+on:
+    push:
+        branches: [main]
+        paths: ["Package.swift", "sdks/swift/**", "packages/schema/**", ".github/workflows/sdk-swift.yml"]
+    pull_request:
+        paths: ["Package.swift", "sdks/swift/**", "packages/schema/**", ".github/workflows/sdk-swift.yml"]
+
+permissions:
+    contents: read
+
+concurrency:
+    group: swift-${{ github.ref }}
+    cancel-in-progress: true
+
+jobs:
+    test:
+        name: Tests and sample build
+        runs-on: macos-15
+        steps:
+            - uses: actions/checkout@v4
+            # The contract tests run the server's Zod schema over the package's JSON.
+            - uses: oven-sh/setup-bun@v2
+            - run: bun install --frozen-lockfile
+            # The manifest is Package.swift at the repository root, where SwiftPM looks for it.
+            - name: swift test
+              run: swift test
+            - name: Build the package and the sample for the simulator
+              working-directory: sdks/swift/Example
+              run: |
+                  xcodebuild build -project ShopSample.xcodeproj -scheme ShopSample \
+                    -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO

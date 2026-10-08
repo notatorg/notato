@@ -1,0 +1,23 @@
+{
+    "name": "@notato/react",
+    "version": "0.2.0",
+    "description": "Notato for React: render <Notato /> once and people can pin notes to your running app for your coding agent.",
+    "type": "module",
+    "sideEffects": false,
+    "exports": {
+        ".": "./src/index.ts"
+    },
+    "files": [
+        "src"
+    ],
+    "dependencies": {
+        "@notato/browser": "workspace:*"
+    },
+    "peerDependencies": {
+        "react": ">=18"
+    },
+    "devDependencies": {
+        "@types/react": "^19.0.0",
+        "react": "^19.3.0"
+    }
+}

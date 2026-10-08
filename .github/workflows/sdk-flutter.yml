@@ -1,0 +1,43 @@
+name: Flutter SDK
+
+on:
+    push:
+        branches: [main]
+        paths: ["sdks/flutter/**", "packages/schema/**", ".github/workflows/sdk-flutter.yml"]
+    pull_request:
+        paths: ["sdks/flutter/**", "packages/schema/**", ".github/workflows/sdk-flutter.yml"]
+
+permissions:
+    contents: read
+
+concurrency:
+    group: flutter-${{ github.ref }}
+    cancel-in-progress: true
+
+jobs:
+    test:
+        name: Analyze, tests and the example
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@v4
+            - uses: subosito/flutter-action@v2
+              with:
+                  channel: stable
+            # The contract tests run the server's Zod schema over the package's JSON.
+            - uses: oven-sh/setup-bun@v2
+            - run: bun install --frozen-lockfile
+            - name: Analyze
+              working-directory: sdks/flutter
+              run: |
+                  flutter pub get
+                  flutter analyze
+                  dart format --output=none --set-exit-if-changed lib test example/lib
+            - name: Tests
+              working-directory: sdks/flutter
+              run: flutter test
+            - name: The example builds
+              working-directory: sdks/flutter/example
+              run: flutter build web --debug
+            - name: The package is ready for pub.dev
+              working-directory: sdks/flutter
+              run: dart pub publish --dry-run

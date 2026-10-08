@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Notato Sample</string>
+    <string name="account">Account</string>
+    <string name="account_title">Your account</string>
+    <string name="account_subtitle">Signed in since March 2024</string>
+    <string name="full_name">Full name</string>
+    <string name="email">Email</string>
+    <string name="password">Password</string>
+    <string name="marketing">Send me offers and new kit</string>
+    <string name="save">Save changes</string>
+    <string name="sign_out">Sign out</string>
+    <string name="saved">Saved</string>
+</resources>

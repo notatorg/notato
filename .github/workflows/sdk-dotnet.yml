@@ -1,0 +1,53 @@
+name: .NET MAUI SDK
+
+on:
+    push:
+        branches: [main]
+        paths: ["sdks/dotnet/**", "packages/schema/schema.json", ".github/workflows/sdk-dotnet.yml"]
+    pull_request:
+        paths: ["sdks/dotnet/**", "packages/schema/schema.json", ".github/workflows/sdk-dotnet.yml"]
+
+permissions:
+    contents: read
+
+concurrency:
+    group: dotnet-${{ github.ref }}
+    cancel-in-progress: true
+
+jobs:
+    # The schema contract and everything that is not drawing: fast, on Linux.
+    tests:
+        name: Tests (net10.0)
+        runs-on: ubuntu-latest
+        defaults:
+            run:
+                working-directory: sdks/dotnet
+        steps:
+            - uses: actions/checkout@v4
+            - uses: actions/setup-dotnet@v4
+              with:
+                  global-json-file: sdks/dotnet/global.json
+            - run: dotnet workload install maui-android
+            - run: dotnet test tests/Notato.Maui.Tests
+
+    # Every platform the SDK targets, and the sample app, compile.
+    build:
+        name: Build (iOS, Mac Catalyst, Android)
+        runs-on: macos-15
+        defaults:
+            run:
+                working-directory: sdks/dotnet
+        steps:
+            - uses: actions/checkout@v4
+            - uses: actions/setup-dotnet@v4
+              with:
+                  global-json-file: sdks/dotnet/global.json
+            - run: dotnet workload install maui
+            - run: dotnet build src/Notato.Maui -c Release
+            - run: dotnet build samples/Notato.Maui.Sample -f net10.0-android
+            - run: dotnet build samples/Notato.Maui.Sample -f net10.0-ios -p:RuntimeIdentifier=iossimulator-arm64
+            - run: dotnet pack src/Notato.Maui -c Release -o artifacts
+            - uses: actions/upload-artifact@v4
+              with:
+                  name: Notato.Maui-nupkg
+                  path: sdks/dotnet/artifacts/*.nupkg

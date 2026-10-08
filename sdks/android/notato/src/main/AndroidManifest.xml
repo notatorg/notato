@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- Talks to the notato server. -->
+    <uses-permission android:name="android.permission.INTERNET" />
+
+    <application>
+        <!-- Starts Notato from <meta-data android:name="notato.project"> before Application.onCreate. -->
+        <provider
+            android:name="dev.notato.android.NotatoInitProvider"
+            android:authorities="${applicationId}.notato.init"
+            android:exported="false"
+            android:initOrder="50" />
+
+        <!-- Hands packaged notes (test mode) to the share sheet. -->
+        <provider
+            android:name="dev.notato.android.NotatoFileProvider"
+            android:authorities="${applicationId}.notato.files"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/notato_file_paths" />
+        </provider>
+    </application>
+</manifest>

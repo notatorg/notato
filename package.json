@@ -1,0 +1,38 @@
+{
+    "name": "notato-monorepo",
+    "version": "0.2.0",
+    "private": true,
+    "type": "module",
+    "workspaces": [
+        "packages/*",
+        "sdks/*",
+        "sdks/react/example",
+        "sdks/angular/example"
+    ],
+    "scripts": {
+        "build:schema": "bun run --filter @notato/schema build",
+        "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p sdks/react-native/tsconfig.json",
+        "lint": "biome check .",
+        "format": "biome check --write .",
+        "test": "bun run test:node && bun run test:bun",
+        "test:node": "vitest run",
+        "test:bun": "bun test packages/server packages/cli packages/board packages/extension scripts",
+        "build:board": "bun run --filter @notato/board build",
+        "build:extension": "bun run --filter @notato/extension build",
+        "build:site": "bun site/build.ts",
+        "site": "bun site/build.ts --serve",
+        "release:build": "bun run scripts/build-release.ts",
+        "version": "bun scripts/version.ts"
+    },
+    "devDependencies": {
+        "@biomejs/biome": "^2.5.15",
+        "@modelcontextprotocol/sdk": "^1.32.0",
+        "@notato/schema": "workspace:*",
+        "@types/bun": "latest",
+        "ajv": "^8.17.1",
+        "typescript": "^7.0.2",
+        "vite": "^8.3.2",
+        "vite7": "npm:vite@^7.3.1",
+        "vitest": "^5.0.3"
+    }
+}

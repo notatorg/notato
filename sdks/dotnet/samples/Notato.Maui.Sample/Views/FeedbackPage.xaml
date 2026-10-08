@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             xmlns:notato="clr-namespace:Notato.Maui;assembly=Notato.Maui"
+             x:Class="Notato.Maui.Sample.Views.FeedbackPage"
+             Title="Feedback">
+    <ScrollView>
+        <VerticalStackLayout Padding="20,16" Spacing="14">
+            <Label Text="Notato at runtime" FontSize="26" FontAttributes="Bold" SemanticProperties.HeadingLevel="Level1" />
+            <Label Text="Everything here goes through INotato, which any page or view model can take from DI." FontSize="14" TextColor="#9ca3af" />
+
+            <Border Padding="16,12" StrokeShape="RoundRectangle 14">
+                <VerticalStackLayout Spacing="10">
+                    <Grid ColumnDefinitions="*,Auto">
+                        <VerticalStackLayout>
+                            <Label Text="Notato" FontSize="16" FontAttributes="Bold" />
+                            <Label Text="On or off for this device; remembered" FontSize="12" TextColor="#9ca3af" />
+                        </VerticalStackLayout>
+                        <Switch Grid.Column="1" x:Name="EnabledSwitch" AutomationId="NotatoEnabled" Toggled="OnEnabledToggled" />
+                    </Grid>
+                    <Grid ColumnDefinitions="*,Auto">
+                        <VerticalStackLayout>
+                            <Label Text="Toolbar" FontSize="16" FontAttributes="Bold" />
+                            <Label Text="Shake the device to toggle it too" FontSize="12" TextColor="#9ca3af" />
+                        </VerticalStackLayout>
+                        <Switch Grid.Column="1" x:Name="ToolbarSwitch" AutomationId="NotatoToolbar" Toggled="OnToolbarToggled" />
+                    </Grid>
+                    <Label x:Name="Status" AutomationId="NotatoStatus" FontSize="13" />
+                </VerticalStackLayout>
+            </Border>
+
+            <Button Text="Start annotating" AutomationId="StartAnnotating" Clicked="OnStartAnnotating" />
+            <Button Text="Select the banner below" AutomationId="SelectBanner" Clicked="OnSelectBanner" />
+            <Button Text="Annotate the banner from code" AutomationId="AnnotateFromCode" Clicked="OnAnnotateFromCode" />
+
+            <Border x:Name="Banner" AutomationId="DemoBanner" Padding="16" StrokeShape="RoundRectangle 12" StrokeThickness="0" BackgroundColor="#4f46e5">
+                <Label Text="A banner with a typo: recieve 10% off" TextColor="White" FontSize="15" />
+            </Border>
+
+            <Border Padding="14" StrokeShape="RoundRectangle 12" BackgroundColor="{AppThemeBinding Light=#f9fafb, Dark=#111827}" notato:Feedback.Mask="True">
+                <Label Text="Masked in screenshots: notato:Feedback.Mask" FontSize="13" />
+            </Border>
+
+            <Button Text="Reset runtime choices" BackgroundColor="Transparent" TextColor="#2563eb" Clicked="OnReset" />
+        </VerticalStackLayout>
+    </ScrollView>
+</ContentPage>

@@ -1,0 +1,26 @@
+<Project>
+  <PropertyGroup>
+    <!-- What the sample and tests run on. -->
+    <MauiVersion>10.0.60</MauiVersion>
+    <!-- What the package asks for: the first MAUI 10, so it never forces an app to upgrade (a new app on the 10.0.400 SDK is on 10.0.20). -->
+    <MauiMinimumVersion>10.0.0</MauiMinimumVersion>
+    <MicrosoftExtensionsVersion>10.0.0</MicrosoftExtensionsVersion>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+    <!-- Every Notato package carries the same version; `bun scripts/version.ts` at the repository root stamps it. -->
+    <Version>0.2.0</Version>
+    <Authors>Notato contributors</Authors>
+    <Copyright>Copyright (c) Notato contributors</Copyright>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageProjectUrl>https://github.com/notatorg/notato</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/notatorg/notato</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PublishRepositoryUrl>true</PublishRepositoryUrl>
+    <!-- Symbols go to NuGet beside the package; a build in CI is deterministic, so they match the published source. -->
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+    <ContinuousIntegrationBuild Condition="'$(GITHUB_ACTIONS)' == 'true'">true</ContinuousIntegrationBuild>
+  </PropertyGroup>
+</Project>

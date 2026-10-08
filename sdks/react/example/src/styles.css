@@ -1,0 +1,128 @@
+:root {
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+    color: #1f2937;
+    background: #f9fafb;
+}
+body {
+    margin: 0;
+}
+.header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 24px;
+    background: #fff;
+    border-bottom: 1px solid #e5e7eb;
+    position: sticky;
+    top: 0;
+}
+.header nav a {
+    margin-left: 16px;
+    color: #374151;
+    text-decoration: none;
+    padding: 4px 2px;
+}
+.header nav a.active {
+    color: #2563eb;
+    border-bottom: 2px solid #2563eb;
+}
+.page {
+    max-width: 720px;
+    margin: 0 auto;
+    padding: 24px;
+}
+h1 {
+    margin: 0 0 16px;
+}
+h2 {
+    font-size: 18px;
+    margin: 24px 0 8px;
+}
+.products {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+}
+.product {
+    display: grid;
+    grid-template-columns: 1fr auto auto 40px;
+    gap: 12px;
+    align-items: center;
+    padding: 10px 12px;
+    background: #fff;
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+    margin-bottom: 8px;
+}
+.price {
+    color: #6b7280;
+}
+.payment form {
+    display: grid;
+    gap: 12px;
+    background: #fff;
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+    padding: 16px;
+}
+label {
+    display: grid;
+    gap: 4px;
+    font-size: 14px;
+}
+input,
+textarea {
+    padding: 8px 10px;
+    border: 1px solid #d1d5db;
+    border-radius: 6px;
+    font: inherit;
+}
+button {
+    font: inherit;
+    border-radius: 6px;
+    padding: 8px 14px;
+    cursor: pointer;
+    border: 1px solid #d1d5db;
+    background: #fff;
+}
+button.primary {
+    background: #2563eb;
+    border-color: #2563eb;
+    color: #fff;
+    font-weight: 600;
+}
+.success {
+    color: #166534;
+    background: #dcfce7;
+    padding: 8px 12px;
+    border-radius: 6px;
+}
+.tall {
+    height: 900px;
+    background: repeating-linear-gradient(#f3f4f6 0 40px, #f9fafb 40px 80px);
+    border-radius: 8px;
+    margin-top: 24px;
+}
+.footer {
+    padding: 24px 0;
+    text-align: center;
+}
+.cookie {
+    position: fixed;
+    left: 16px;
+    bottom: 16px;
+    max-width: 320px;
+    padding: 12px 14px;
+    background: #111827;
+    color: #f9fafb;
+    border-radius: 10px;
+    font-size: 14px;
+    display: flex;
+    gap: 12px;
+    align-items: center;
+}
+.cookie button {
+    background: #374151;
+    color: #fff;
+    border-color: #4b5563;
+}

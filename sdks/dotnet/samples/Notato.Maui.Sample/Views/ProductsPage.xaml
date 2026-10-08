@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             xmlns:views="clr-namespace:Notato.Maui.Sample.Views"
+             xmlns:models="clr-namespace:Notato.Maui.Sample.Models"
+             xmlns:vm="clr-namespace:Notato.Maui.Sample.ViewModels"
+             x:Class="Notato.Maui.Sample.Views.ProductsPage"
+             x:DataType="vm:ProductsViewModel"
+             Title="Shop">
+    <Grid RowDefinitions="Auto,*" Padding="16,8,16,0" RowSpacing="12">
+        <VerticalStackLayout Spacing="4">
+            <Label x:Name="Headline" Text="Kit for the hills" FontSize="28" FontAttributes="Bold" SemanticProperties.HeadingLevel="Level1" />
+            <Label Text="{Binding Summary}" FontSize="14" TextColor="#9ca3af" />
+            <Border AutomationId="PromoBanner" Padding="12,10" StrokeShape="RoundRectangle 10" StrokeThickness="0" BackgroundColor="#fef3c7" Margin="0,6,0,0">
+                <Label Text="Autumn sale: 20% off jackets this week" TextColor="#fde68a" FontSize="13" />
+            </Border>
+        </VerticalStackLayout>
+        <CollectionView Grid.Row="1" x:Name="ProductList" AutomationId="ProductList" ItemsSource="{Binding Products}" SelectionMode="Single" SelectionChanged="OnSelected">
+            <CollectionView.ItemsLayout>
+                <LinearItemsLayout Orientation="Vertical" ItemSpacing="10" />
+            </CollectionView.ItemsLayout>
+            <CollectionView.ItemTemplate>
+                <DataTemplate x:DataType="models:Product">
+                    <views:ProductCard />
+                </DataTemplate>
+            </CollectionView.ItemTemplate>
+        </CollectionView>
+    </Grid>
+</ContentPage>

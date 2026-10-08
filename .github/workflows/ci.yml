@@ -1,0 +1,130 @@
+name: CI
+
+on:
+    push:
+        branches: [main]
+    pull_request:
+
+permissions:
+    contents: read
+
+concurrency:
+    group: ci-${{ github.ref }}
+    cancel-in-progress: true
+
+jobs:
+    checks:
+        name: Lint, types, tests
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@v4
+            - uses: oven-sh/setup-bun@v2
+              with:
+                  bun-version: latest
+            - uses: actions/setup-node@v4
+              with:
+                  node-version: 24
+            - run: bun install --frozen-lockfile
+            - name: Every package is at the same version
+              run: bun scripts/version.ts
+            - run: bun run lint
+            - run: bun run typecheck
+            - name: schema.json is up to date
+              run: |
+                  bun run build:schema
+                  git diff --exit-code packages/schema/schema.json
+            - run: bun run test
+
+    # Each platform builds its own binary and runs the smoke test against it: the real artefact, on the real OS.
+    binaries:
+        name: Binary (${{ matrix.target }})
+        needs: checks
+        strategy:
+            fail-fast: false
+            matrix:
+                include:
+                    - { os: ubuntu-latest, target: bun-linux-x64, exe: notato }
+                    - { os: ubuntu-24.04-arm, target: bun-linux-arm64, exe: notato }
+                    - { os: macos-14, target: bun-darwin-arm64, exe: notato }
+                    - { os: macos-13, target: bun-darwin-x64, exe: notato }
+                    - { os: windows-latest, target: bun-windows-x64, exe: notato.exe }
+        runs-on: ${{ matrix.os }}
+        steps:
+            - uses: actions/checkout@v4
+            - uses: oven-sh/setup-bun@v2
+              with:
+                  bun-version: latest
+            - run: bun install --frozen-lockfile
+            - run: bun run scripts/build-release.ts --targets ${{ matrix.target }} --skip-libs --no-pack
+            - name: Smoke test the binary
+              shell: bash
+              run: bun run scripts/smoke-binary.ts dist/release/bin/${{ matrix.target }}/${{ matrix.exe }}
+
+    # Each web SDK's example builds with its framework's own tools, against the SDKs' sources.
+    examples:
+        name: Example apps
+        needs: checks
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@v4
+            - uses: oven-sh/setup-bun@v2
+              with:
+                  bun-version: latest
+            - uses: actions/setup-node@v4
+              with:
+                  node-version: 24
+            - run: bun install --frozen-lockfile
+            - name: React (Vite)
+              run: bunx vite build
+              working-directory: sdks/react/example
+            - name: Angular (Angular CLI)
+              run: npx ng build
+              working-directory: sdks/angular/example
+            # An Expo app outside the workspace, with its own lockfile; the export bundles it as a release would.
+            - name: React Native (Expo)
+              run: |
+                  npm ci
+                  npx expo export --platform android --platform ios --output-dir "$RUNNER_TEMP/rn-export"
+              working-directory: sdks/react-native/example
+
+    # A fresh Vite app installs the packed packages and runs `init`, `build` and the type check: what a user does.
+    fresh-app:
+        name: Fresh Vite app
+        needs: checks
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@v4
+            - uses: oven-sh/setup-bun@v2
+              with:
+                  bun-version: latest
+            - uses: actions/setup-node@v4
+              with:
+                  node-version: 24
+            - run: bun install --frozen-lockfile
+            - run: bun run scripts/build-release.ts --targets bun-linux-x64
+            - name: Install into a new app and set it up
+              run: |
+                  cd "$RUNNER_TEMP"
+                  npm create vite@latest shop -- --template react-ts --no-interactive
+                  cd shop
+                  npm install
+                  T="$GITHUB_WORKSPACE/dist/release/tarballs"
+                  npm i -D "$T"/notato-0.*.tgz "$T"/notato-cli-linux-x64-*.tgz "$T"/notato-react-*.tgz "$T"/notato-browser-*.tgz "$T"/notato-core-*.tgz "$T"/notato-schema-*.tgz
+                  npx notato init --no-mcp
+                  npm run build
+                  if grep -rl "notato" dist; then echo "Notato code shipped in the production build"; exit 1; fi
+
+    docker:
+        name: Docker image builds and answers
+        needs: checks
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@v4
+            - run: docker build -t notato:ci .
+            - name: Run it and call it
+              run: |
+                  docker run -d --name notato -p 4747:4747 -e NOTATO_ADMIN_PASSWORD=ci-password notato:ci
+                  for i in $(seq 1 30); do curl -fs http://127.0.0.1:4747/health && break || sleep 1; done
+                  curl -fs http://127.0.0.1:4747/ | grep -q 'id="root"'
+                  test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:4747/annotations)" = 401
+                  docker exec notato notato healthcheck

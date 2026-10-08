@@ -1,0 +1,23 @@
+{
+    "name": "@notato/browser",
+    "version": "0.2.0",
+    "description": "Notato for any web page: the toolbar, element capture and screenshots, with no framework. @notato/react and the script tag are built on it.",
+    "type": "module",
+    "sideEffects": false,
+    "exports": {
+        ".": "./src/index.ts"
+    },
+    "files": [
+        "src"
+    ],
+    "dependencies": {
+        "@notato/core": "workspace:*",
+        "@notato/schema": "workspace:*",
+        "fflate": "^0.8.2",
+        "modern-screenshot": "^4.7.0"
+    },
+    "devDependencies": {
+        "fake-indexeddb": "^6.0.0",
+        "happy-dom": "^20.0.0"
+    }
+}

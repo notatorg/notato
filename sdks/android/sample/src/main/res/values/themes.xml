@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Compose screens draw their own colours; this only sets the window. -->
+    <style name="Theme.Sample" parent="android:Theme.Material.Light.NoActionBar" />
+
+    <!-- The View-based account screen uses Material Components. -->
+    <style name="Theme.Sample.Views" parent="Theme.Material3.DayNight">
+        <item name="colorPrimary">#2563EB</item>
+        <item name="android:windowLightStatusBar">?attr/isLightTheme</item>
+    </style>
+</resources>

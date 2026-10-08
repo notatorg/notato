@@ -1,0 +1,289 @@
+name: Release
+
+# Push a tag like v0.3.0, made from a commit where `bun scripts/version.ts 0.3.0` set every package's version. Every
+# tag builds and checks everything; a registry is published to only when its switch is on: a repository variable set
+# to "true" (Settings › Secrets and variables › Actions › Variables). Until then a tag is a full dry run.
+#
+#   PUBLISH_NPM     npm: notato, @notato/cli-*, and every public package      secret NPM_TOKEN
+#   PUBLISH_DOCKER  ghcr.io/notatorg/notato                                    (the workflow's own token)
+#   PUBLISH_MAVEN   Maven Central: dev.notato:notato-android, notato-compose   secrets MAVEN_CENTRAL_USERNAME,
+#                                                                              MAVEN_CENTRAL_PASSWORD (a Central Portal
+#                                                                              user token), SIGNING_KEY (ASCII-armoured
+#                                                                              private key), SIGNING_KEY_PASSWORD
+#   PUBLISH_NUGET   nuget.org: Notato.Maui                                     secret NUGET_API_KEY
+#   PUBLISH_PUB     pub.dev: notato (Flutter)                                  none: pub.dev trusts this repository's tags
+#                                                                              (its admin page, "Automated publishing")
+#   PUBLISH_SITE    the website and docs on GitHub Pages                       (Pages set to "GitHub Actions")
+#   PUBLISH_GITHUB  a GitHub release with the binaries and the extension zip
+#
+# SwiftPM needs nothing: it reads Package.swift at the tag, so the tag is the Swift release. RELEASING.md has the rest.
+
+on:
+    push:
+        tags: ["v*.*.*"]
+
+permissions:
+    contents: read
+
+jobs:
+    version:
+        name: The tag is every package's version
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@v4
+            - uses: oven-sh/setup-bun@v2
+            - run: bun scripts/version.ts --tag "$GITHUB_REF_NAME"
+
+    binaries:
+        name: Binary (${{ matrix.target }})
+        needs: version
+        strategy:
+            fail-fast: true
+            matrix:
+                include:
+                    - { os: ubuntu-latest, target: bun-linux-x64, exe: notato }
+                    - { os: ubuntu-24.04-arm, target: bun-linux-arm64, exe: notato }
+                    - { os: macos-14, target: bun-darwin-arm64, exe: notato }
+                    - { os: macos-13, target: bun-darwin-x64, exe: notato }
+                    - { os: windows-latest, target: bun-windows-x64, exe: notato.exe }
+        runs-on: ${{ matrix.os }}
+        steps:
+            - uses: actions/checkout@v4
+            - uses: oven-sh/setup-bun@v2
+              with:
+                  bun-version: latest
+            - run: bun install --frozen-lockfile
+            - name: Build
+              shell: bash
+              run: bun run scripts/build-release.ts --targets ${{ matrix.target }} --skip-libs --skip-extension --no-pack
+            - name: Smoke test the binary
+              shell: bash
+              run: bun run scripts/smoke-binary.ts dist/release/bin/${{ matrix.target }}/${{ matrix.exe }} --version "${GITHUB_REF_NAME#v}"
+            - uses: actions/upload-artifact@v4
+              with:
+                  name: bin-${{ matrix.target }}
+                  path: dist/release/bin/${{ matrix.target }}
+                  if-no-files-found: error
+
+    npm:
+        name: npm${{ vars.PUBLISH_NPM != 'true' && ' (dry run)' || '' }}
+        needs: binaries
+        runs-on: ubuntu-latest
+        permissions:
+            contents: read
+            id-token: write # npm provenance
+        steps:
+            - uses: actions/checkout@v4
+            - uses: oven-sh/setup-bun@v2
+              with:
+                  bun-version: latest
+            - uses: actions/setup-node@v4
+              with:
+                  node-version: 24
+                  registry-url: https://registry.npmjs.org
+            - run: bun install --frozen-lockfile
+            - uses: actions/download-artifact@v4
+              with:
+                  pattern: bin-*
+                  path: dist/release/bin
+            - name: Assemble the packages from the tested binaries
+              run: bun run scripts/build-release.ts --skip-compile --skip-web --no-pack
+            - uses: actions/upload-artifact@v4
+              with:
+                  name: extension
+                  path: dist/release/notato-extension-*.zip
+            # Libraries and platform packages first, the launcher last, so it never points at a version not there yet.
+            - name: Publish${{ vars.PUBLISH_NPM != 'true' && ' --dry-run' || '' }}
+              env:
+                  NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+                  DRY_RUN: ${{ vars.PUBLISH_NPM != 'true' && '--dry-run' || '' }}
+              run: |
+                  # A pre-release (v0.3.0-rc.1) goes out under `next`, so `npm i notato` stays on the last release.
+                  case "$GITHUB_REF_NAME" in *-*) DIST_TAG="--tag next" ;; *) DIST_TAG="" ;; esac
+                  cd dist/release/packages
+                  for dir in */; do
+                    [ "$dir" = "notato/" ] || npm publish "./$dir" --access public $DIST_TAG $DRY_RUN
+                  done
+                  npm publish ./notato --access public $DIST_TAG $DRY_RUN
+
+    docker:
+        name: Docker image${{ vars.PUBLISH_DOCKER != 'true' && ' (build only)' || '' }}
+        needs: version
+        runs-on: ubuntu-latest
+        permissions:
+            contents: read
+            packages: write
+        steps:
+            - uses: actions/checkout@v4
+            - uses: docker/setup-qemu-action@v3
+            - uses: docker/setup-buildx-action@v3
+            - uses: docker/login-action@v3
+              if: vars.PUBLISH_DOCKER == 'true'
+              with:
+                  registry: ghcr.io
+                  username: ${{ github.actor }}
+                  password: ${{ secrets.GITHUB_TOKEN }}
+            - id: meta
+              uses: docker/metadata-action@v5
+              with:
+                  images: ghcr.io/${{ github.repository }}
+                  tags: |
+                      type=semver,pattern={{version}}
+                      type=semver,pattern={{major}}.{{minor}}
+                      type=raw,value=latest,enable=${{ !contains(github.ref_name, '-') }}
+            - uses: docker/build-push-action@v6
+              with:
+                  context: .
+                  platforms: linux/amd64,linux/arm64
+                  push: ${{ vars.PUBLISH_DOCKER == 'true' }}
+                  tags: ${{ steps.meta.outputs.tags }}
+                  build-args: VERSION=${{ steps.meta.outputs.version }}
+
+    maven:
+        name: Maven Central${{ vars.PUBLISH_MAVEN != 'true' && ' (bundle only)' || '' }}
+        needs: version
+        runs-on: ubuntu-latest
+        defaults:
+            run:
+                working-directory: sdks/android
+        steps:
+            - uses: actions/checkout@v4
+            - uses: actions/setup-java@v4
+              with:
+                  distribution: temurin
+                  java-version: 21
+            - uses: gradle/actions/setup-gradle@v4
+            - name: Central only takes signed artifacts
+              if: vars.PUBLISH_MAVEN == 'true'
+              env:
+                  SIGNING_KEY: ${{ secrets.SIGNING_KEY }}
+              run: |
+                  if [ -z "$SIGNING_KEY" ]; then
+                    echo "PUBLISH_MAVEN is on but the SIGNING_KEY secret is not set" >&2
+                    exit 1
+                  fi
+            - name: Build, sign and stage both libraries
+              env:
+                  ORG_GRADLE_PROJECT_signingInMemoryKey: ${{ secrets.SIGNING_KEY }}
+                  ORG_GRADLE_PROJECT_signingInMemoryKeyPassword: ${{ secrets.SIGNING_KEY_PASSWORD }}
+              run: ./gradlew :notato:publishAllPublicationsToStagingRepository :notato-compose:publishAllPublicationsToStagingRepository --console=plain
+            # The Central Portal takes one zip of the repository layout; it makes its own maven-metadata.xml.
+            - name: Bundle
+              run: cd build/staging-deploy && zip -qr ../central-bundle.zip . -x '*maven-metadata*'
+            - uses: actions/upload-artifact@v4
+              with:
+                  name: maven-central-bundle
+                  path: sdks/android/build/central-bundle.zip
+            - name: Upload to the Central Portal
+              if: vars.PUBLISH_MAVEN == 'true'
+              env:
+                  USERNAME: ${{ secrets.MAVEN_CENTRAL_USERNAME }}
+                  PASSWORD: ${{ secrets.MAVEN_CENTRAL_PASSWORD }}
+              run: |
+                  curl --fail-with-body -X POST \
+                    "https://central.sonatype.com/api/v1/publisher/upload?name=notato-${GITHUB_REF_NAME#v}&publishingType=AUTOMATIC" \
+                    -H "Authorization: Bearer $(printf '%s:%s' "$USERNAME" "$PASSWORD" | base64 -w0)" \
+                    -F "bundle=@build/central-bundle.zip"
+
+    nuget:
+        name: NuGet${{ vars.PUBLISH_NUGET != 'true' && ' (pack only)' || '' }}
+        needs: version
+        # iOS and Mac Catalyst targets build only on macOS.
+        runs-on: macos-15
+        defaults:
+            run:
+                working-directory: sdks/dotnet
+        steps:
+            - uses: actions/checkout@v4
+            - uses: actions/setup-dotnet@v4
+              with:
+                  global-json-file: sdks/dotnet/global.json
+            - run: dotnet workload install maui
+            - run: dotnet pack src/Notato.Maui -c Release -o artifacts
+            - uses: actions/upload-artifact@v4
+              with:
+                  name: nuget
+                  path: sdks/dotnet/artifacts/*
+            - name: Push to nuget.org
+              if: vars.PUBLISH_NUGET == 'true'
+              env:
+                  NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
+              # The .snupkg beside each package goes up with it.
+              run: dotnet nuget push "artifacts/*.nupkg" --api-key "$NUGET_API_KEY" --source https://api.nuget.org/v3/index.json --skip-duplicate
+
+    pub:
+        name: pub.dev${{ vars.PUBLISH_PUB != 'true' && ' (dry run)' || '' }}
+        needs: version
+        runs-on: ubuntu-latest
+        permissions:
+            contents: read
+            id-token: write # pub.dev takes the workflow's own identity, no token
+        defaults:
+            run:
+                working-directory: sdks/flutter
+        steps:
+            - uses: actions/checkout@v4
+            # Sets up pub.dev's credentials from the workflow's identity, then Flutter does the publishing.
+            - uses: dart-lang/setup-dart@v1
+            - uses: subosito/flutter-action@v2
+              with:
+                  channel: stable
+            - run: flutter pub get
+            - run: flutter pub publish --dry-run
+            - name: Publish
+              if: vars.PUBLISH_PUB == 'true'
+              run: flutter pub publish --force
+
+    site:
+        name: Website
+        needs: version
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@v4
+            - uses: oven-sh/setup-bun@v2
+            - run: bun install --frozen-lockfile
+            # From the tag, so the docs describe what this release installs, not what main has since.
+            - run: bun run build:site
+            - uses: actions/upload-pages-artifact@v3
+              with:
+                  path: site/dist
+
+    site-deploy:
+        name: Website on GitHub Pages
+        if: vars.PUBLISH_SITE == 'true'
+        needs: site
+        runs-on: ubuntu-latest
+        permissions:
+            pages: write
+            id-token: write
+        environment:
+            name: github-pages
+            url: ${{ steps.deploy.outputs.page_url }}
+        steps:
+            - id: deploy
+              uses: actions/deploy-pages@v4
+
+    github-release:
+        name: GitHub release
+        if: vars.PUBLISH_GITHUB == 'true'
+        needs: [binaries, npm]
+        runs-on: ubuntu-latest
+        permissions:
+            contents: write
+        steps:
+            - uses: actions/download-artifact@v4
+              with:
+                  path: artifacts
+            - name: Name each binary after its platform
+              run: |
+                  mkdir upload
+                  for dir in artifacts/bin-*; do
+                    target="${dir#artifacts/bin-bun-}"
+                    for file in "$dir"/*; do
+                      case "$file" in *.exe) cp "$file" "upload/notato-$target.exe" ;; *) cp "$file" "upload/notato-$target" ;; esac
+                    done
+                  done
+                  cp artifacts/extension/*.zip upload/
+            - env:
+                  GH_TOKEN: ${{ github.token }}
+              run: gh release create "$GITHUB_REF_NAME" upload/* --repo "$GITHUB_REPOSITORY" --title "$GITHUB_REF_NAME" --generate-notes

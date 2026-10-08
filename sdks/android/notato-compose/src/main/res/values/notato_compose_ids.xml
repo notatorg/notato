@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- A ComposeView's source index, reused for half a second (NotatoCompose.SourceIndex). -->
+    <item name="notato_source_index" type="id" />
+</resources>

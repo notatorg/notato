@@ -1,0 +1,21 @@
+{
+    "name": "@notato/schema",
+    "version": "0.2.0",
+    "description": "The wire format every Notato SDK and server share: Zod schemas for annotations and bundles, and schema.json made from them.",
+    "type": "module",
+    "sideEffects": false,
+    "exports": {
+        ".": "./src/index.ts",
+        "./schema.json": "./schema.json"
+    },
+    "files": [
+        "src",
+        "schema.json"
+    ],
+    "scripts": {
+        "build": "bun run scripts/generate.ts"
+    },
+    "dependencies": {
+        "zod": "^4.3.0"
+    }
+}
