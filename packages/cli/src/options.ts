@@ -3,10 +3,10 @@ import { CONFIG_FILE, DEFAULT_PORT } from "@notato/server";
 
 // Options that several commands take, read the same way everywhere.
 
-type Env = Record<string, string | undefined>;
-
 /** A project id as the server accepts it: letters, digits and `_ . @ -`, but never only dots. */
-export const PROJECT_ID = /^(?!\.+$)[\w.@-]{1,128}$/;
+export { PROJECT_ID } from "@notato/server";
+
+type Env = Record<string, string | undefined>;
 
 /** `--port`, as a number; undefined when it is not given, so the server's own default applies. */
 export function parsePort(value: string | undefined): number | undefined {

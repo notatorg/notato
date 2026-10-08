@@ -89,7 +89,7 @@ const commonFields = (version: string, dir?: string) => ({
 async function compileBinaries(targets: Target[], version: string, skipWeb: boolean) {
     if (!skipWeb) {
         log("building the board UI");
-        await run(["bun", "run", "build:board"]);
+        await run(["bun", "packages/board/scripts/build.ts", "--embed"]);
     }
     for (const target of targets) {
         log(`compiling ${target.bun}`);

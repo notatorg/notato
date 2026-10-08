@@ -28,7 +28,7 @@ RUN bun install --frozen-lockfile
 COPY . .
 ARG TARGETARCH
 ARG VERSION=0.0.0-docker
-RUN bun run build:board \
+RUN bun packages/board/scripts/build.ts --embed \
  && case "$TARGETARCH" in arm64) TARGET=bun-linux-arm64 ;; *) TARGET=bun-linux-x64 ;; esac \
  && bun build --compile --minify --target="$TARGET" \
       --define="process.env.NOTATO_VERSION=\"$VERSION\"" \
