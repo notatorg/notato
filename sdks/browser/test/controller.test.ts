@@ -2,7 +2,8 @@
 import { type Annotation, sampleAnnotation } from "@notato/schema";
 import { IDBFactory } from "fake-indexeddb";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { createController, hoverLabel, type NotatoController } from "../src/controller.ts";
+import { createController, type NotatoController } from "../src/controller.ts";
+import { hoverLabel } from "../src/labels.ts";
 import type { EventStream } from "../src/net.ts";
 import type { NotatoProps } from "../src/types.ts";
 

@@ -1,17 +1,18 @@
 // @vitest-environment happy-dom
 import type { CapturePlugin, DraftAnnotation } from "@notato/core";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { MASK_ATTR } from "../src/attributes.ts";
 import { consolePlugin } from "../src/plugins/console.ts";
-import { networkPlugin, safeUrl } from "../src/plugins/network.ts";
+import { networkPlugin } from "../src/plugins/network.ts";
 import { routePlugin, routeString } from "../src/plugins/route.ts";
 import {
     cropBox,
-    MASK_ATTR,
     maskClone,
     planCapture,
     shiftFixed,
     shouldMask,
 } from "../src/plugins/screenshot.ts";
+import { safeUrl } from "../src/url.ts";
 
 const draft = {} as DraftAnnotation;
 const teardowns: Array<() => void> = [];

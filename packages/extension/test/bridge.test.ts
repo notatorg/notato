@@ -77,6 +77,9 @@ function portPair(): { relaySide: RelayPort; workerSide: WorkerPort } {
 }
 
 /** A page, a relay and a worker wired together in memory, for a site with these settings. */
+/** How long a stream waits before opening again, here: short, so a test of it need not wait a second. */
+const RETRY_MS = 50;
+
 function connect(
     origin: string,
     site: SiteConfig | null,
@@ -115,7 +118,7 @@ function connect(
         },
         loadConfig: async () => site,
     });
-    return { bus, transport: createPageTransport(bus), worker };
+    return { bus, transport: createPageTransport(bus, { retryMs: RETRY_MS }), worker };
 }
 
 const ORIGIN = "https://app.example.com";
@@ -428,11 +431,11 @@ describe("live updates over the extension", () => {
             errors += 1;
         };
         await until(() => errors >= 1);
-        await until(() => opened >= 2, 4000); // after the first wait, as an EventSource would
+        await until(() => opened >= 2); // after the first wait, as an EventSource would
         expect(stream.readyState).not.toBe(2);
         stream.close();
         const after = opened;
-        await new Promise((r) => setTimeout(r, 1300));
+        await new Promise((r) => setTimeout(r, RETRY_MS * 8)); // past any wait it could have had left
         expect(opened).toBe(after); // closed means closed: no more attempts
     });
 

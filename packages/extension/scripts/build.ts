@@ -39,9 +39,9 @@ cpSync(join(root, "src/popup.html"), join(dist, "popup.html"));
 for (const size of [16, 48, 128])
     cpSync(join(root, `icons/icon-${size}.png`), join(dist, `icon-${size}.png`));
 
-// The version is the repository's, so a build always says which release it is from.
+// The version is the repository's (every package.json carries it), so a build always says which release it is from.
 const version = (
-    JSON.parse(readFileSync(join(root, "../cli/package.json"), "utf8")) as { version: string }
+    JSON.parse(readFileSync(join(root, "package.json"), "utf8")) as { version: string }
 ).version;
 const manifest = JSON.parse(readFileSync(join(root, "manifest.json"), "utf8")) as Record<
     string,

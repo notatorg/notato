@@ -49,11 +49,17 @@ export function requestConfig(bus: PageBus, timeoutMs = 3000): Promise<PageConfi
     });
 }
 
-const RECONNECT_FIRST_MS = 1000;
 const RECONNECT_MAX_MS = 10_000;
 
 /** The SDK's requests, carried by the extension. */
-export function createPageTransport(bus: PageBus): Transport {
+export function createPageTransport(
+    bus: PageBus,
+    options: {
+        /** First wait before opening a stream again after it ended; doubles up to ten seconds. */
+        retryMs?: number;
+    } = {}
+): Transport {
+    const firstRetry = options.retryMs ?? 1000;
     let next = 0;
     const waiting = new Map<
         number,
@@ -111,7 +117,7 @@ export function createPageTransport(bus: PageBus): Transport {
             let readyState = 0;
             let id = 0;
             let timer: ReturnType<typeof setTimeout> | undefined;
-            let delay = RECONNECT_FIRST_MS;
+            let delay = firstRetry;
             const stream: EventStream = {
                 onerror: null,
                 get readyState() {
@@ -138,7 +144,7 @@ export function createPageTransport(bus: PageBus): Transport {
                     if (message.kind === "events-state") {
                         if (message.state === "open") {
                             readyState = 1;
-                            delay = RECONNECT_FIRST_MS;
+                            delay = firstRetry;
                             return;
                         }
                         // The connection ended: say so, then try again, as an EventSource does.

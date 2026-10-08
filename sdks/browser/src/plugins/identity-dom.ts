@@ -1,4 +1,5 @@
 import type { IdentityPlugin } from "@notato/core";
+import { EDITABLE, MASK_ATTR } from "../attributes.ts";
 import { isDocument, isShadowRoot } from "../ui/dom.ts";
 
 export const DEFAULT_TEST_ID_ATTRIBUTES = ["data-testid", "data-qa", "data-cy", "data-test"];
@@ -262,7 +263,6 @@ const NAME_FROM_CONTENT = new Set([
     "cell",
 ]);
 
-const MASK_ATTR = "data-notato-mask";
 /** Subtrees whose text is user data (field contents) or explicitly marked private. */
 const OMITTED_TAGS = new Set([
     "script",
@@ -277,12 +277,6 @@ const OMITTED_TAGS = new Set([
 
 /** `data-notato-mask` marks private; `data-notato-mask="false"` only opts a field out of screenshot masking. */
 const PRIVATE = `[${MASK_ATTR}]:not([${MASK_ATTR}="false"])`;
-/**
- * Regions people type into that are not form fields: rich-text editors, chat boxes. What is in them is the person's
- * own writing, as a textarea's value is, and is left out the same way.
- */
-export const EDITABLE =
-    '[contenteditable]:not([contenteditable="false"]), [role="textbox"], [role="searchbox"]';
 const isOmitted = (el: Element) =>
     OMITTED_TAGS.has(el.tagName.toLowerCase()) || el.matches(PRIVATE) || el.matches(EDITABLE);
 

@@ -1,4 +1,5 @@
 import type { Annotation } from "@notato/schema";
+import { clip, messageOf } from "../text.ts";
 import { h } from "./dom.ts";
 import { viewportRect } from "./frames.ts";
 import { addSheet, type Sheet } from "./sheet.ts";
@@ -270,7 +271,7 @@ export function createVariants(options: VariantsOptions): Variants {
             try {
                 await options.onChoose(annotation.id, name);
             } catch (error) {
-                sw.error = error instanceof Error ? error.message : String(error);
+                sw.error = messageOf(error);
                 if (sw.errorTimer) clearTimeout(sw.errorTimer);
                 sw.errorTimer = setTimeout(() => {
                     sw.error = undefined;
@@ -304,7 +305,7 @@ export function createVariants(options: VariantsOptions): Variants {
             return tab;
         });
 
-        const useLabel = `Use “${info.active.length > 18 ? `${info.active.slice(0, 17)}…` : info.active}”`;
+        const useLabel = `Use “${clip(info.active, 18)}”`;
         sw.el.replaceChildren(
             h("span", { class: "vtag" }, "Variants"),
             h("div", { class: "vtabs", role: "tablist", "aria-label": "Versions" }, ...tabs),

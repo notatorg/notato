@@ -138,15 +138,20 @@ describe("asking for a resolved change to be reverted", () => {
         );
     });
 
-    it("does not rebuild the card when focus or hover moves, so a click on it is never lost", async () => {
-        const { card } = open("resolved", { onRequestRevert: async () => {} });
-        const before = button(card(), "Revert this change");
-        const pin = layer.querySelector(".pin") as HTMLElement;
-        pin.dispatchEvent(new Event("blur")); // clicking a card button takes focus off the pin
-        pin.dispatchEvent(new Event("mouseleave"));
-        card().dispatchEvent(new Event("mouseenter"));
-        await new Promise((resolve) => setTimeout(resolve, 250)); // past the hide delay
-        expect(button(card(), "Revert this change")).toBe(before);
+    it("does not rebuild the card when focus or hover moves, so a click on it is never lost", () => {
+        vi.useFakeTimers();
+        try {
+            const { card } = open("resolved", { onRequestRevert: async () => {} });
+            const before = button(card(), "Revert this change");
+            const pin = layer.querySelector(".pin") as HTMLElement;
+            pin.dispatchEvent(new Event("blur")); // clicking a card button takes focus off the pin
+            pin.dispatchEvent(new Event("mouseleave"));
+            card().dispatchEvent(new Event("mouseenter"));
+            vi.advanceTimersByTime(250); // past the hide delay
+            expect(button(card(), "Revert this change")).toBe(before);
+        } finally {
+            vi.useRealTimers();
+        }
     });
 
     it("does not rebuild an open form for an update that changes nothing it shows", () => {

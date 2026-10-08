@@ -3,7 +3,7 @@ import { useEffect, useRef } from "react";
 
 /**
  * Bundlers replace `process.env.NODE_ENV` at build time. Without a bundler `process` does not exist in
- * the browser, so the lookup throws and we treat the page as development.
+ * the browser, so the lookup throws and the page counts as development.
  */
 function isProduction(): boolean {
     try {
@@ -14,47 +14,17 @@ function isProduction(): boolean {
 }
 
 /**
- * What the toolbar is started with that, changed, starts it again: everything plain. An array is compared by what is
- * in it, so one written inline does not restart the toolbar on every render. `plugins` and `transport` are read as it
- * starts: change them by remounting (a `key`).
+ * What the toolbar is started with that, changed, starts it again: every prop but `plugins` and `transport`, which are
+ * read as it starts (change them by remounting, with a `key`), and `enabled`. Props are compared by value and in any
+ * order, so an array written inline does not restart the toolbar on every render.
  */
 export function startKey(props: NotatoProps): string {
-    const {
-        mode,
-        server,
-        project,
-        appName,
-        appVersion,
-        hashRoutes,
-        position,
-        shortcut,
-        token,
-        author,
-        persist,
-        maskInputs,
-        screenshots,
-        styles,
-        testIdAttributes,
-        nonce,
-    } = props;
-    return JSON.stringify([
-        mode,
-        server,
-        project,
-        appName,
-        appVersion,
-        hashRoutes,
-        position,
-        shortcut,
-        token,
-        author,
-        persist,
-        maskInputs,
-        screenshots,
-        styles,
-        testIdAttributes,
-        nonce,
-    ]);
+    const { plugins: _plugins, transport: _transport, enabled: _enabled, ...plain } = props;
+    return JSON.stringify(
+        Object.entries(plain)
+            .filter(([, value]) => value !== undefined)
+            .sort(([a], [b]) => (a < b ? -1 : 1))
+    );
 }
 
 type Load = () => Promise<{ createController(props: NotatoProps): NotatoController }>;
@@ -89,7 +59,7 @@ export function Notato(props: NotatoProps): null {
 
     // biome-ignore lint/correctness/useExhaustiveDependencies: `key` stands for the props that restart the toolbar; the rest are read from `latest` as it starts.
     useEffect(() => {
-        if (!enabled || typeof window === "undefined") return;
+        if (!enabled) return;
         return startToolbar(
             () => import("@notato/browser"),
             () => latest.current

@@ -46,8 +46,6 @@ export const ICONS = {
     gear: '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/></svg>',
     // A tray with an arrow out of it: the export menu (Markdown, or a zip).
     export: '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 14V3M7.5 7.5 12 3l4.5 4.5M4 13v5a3 3 0 0 0 3 3h10a3 3 0 0 0 3-3v-5"/></svg>',
-    clipboard:
-        '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 012 2v14a2 2 0 01-2 2H6a2 2 0 01-2-2V6a2 2 0 012-2h2"/></svg>',
     // A note with a folded corner: what the folded toolbar shows when the page will not show the potato.
     note: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 21H5a2 2 0 01-2-2V5a2 2 0 012-2h14a2 2 0 012 2v10z"/><path d="M15 21v-4a2 2 0 012-2h4"/><path d="M7.5 8h9M7.5 12h5"/></svg>',
     chevronLeft:
@@ -56,57 +54,6 @@ export const ICONS = {
         '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>',
     close: '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>',
 } as const;
-
-/** `Alt+Shift+KeyA` style combos, matched on `event.code` so Option-key layouts on macOS work. */
-export function parseShortcut(combo: string) {
-    const parts = combo.split("+").map((p) => p.trim());
-    const code = parts.pop() ?? "";
-    const mods = new Set(parts.map((p) => p.toLowerCase()));
-    return {
-        code,
-        alt: mods.has("alt"),
-        shift: mods.has("shift"),
-        ctrl: mods.has("ctrl"),
-        meta: mods.has("meta") || mods.has("cmd"),
-    };
-}
-
-/** Whether this is a Mac (or an iPad with a keyboard), where Alt is the Option key. */
-export const isMac = (nav: { platform: string; userAgent: string } = navigator): boolean =>
-    /Mac|iPhone|iPad|iPod/.test(nav.platform || nav.userAgent);
-
-const MAC_KEYS: Record<string, string> = { alt: "⌥", shift: "⇧", ctrl: "⌃", meta: "⌘", cmd: "⌘" };
-const ARROWS: Record<string, string> = {
-    ArrowLeft: "←",
-    ArrowRight: "→",
-    ArrowUp: "↑",
-    ArrowDown: "↓",
-};
-
-/**
- * A shortcut as people read it on their keyboard: `⌥⇧A` on a Mac, where Alt is the Option key, and
- * `Alt + Shift + A` everywhere else.
- */
-export function shortcutLabel(combo: string, mac = isMac()): string {
-    const parts = combo.split("+").map((p) => p.trim());
-    const key = (parts.pop() ?? "").replace(/^Key([A-Z])$/, "$1").replace(/^Digit(\d)$/, "$1");
-    const shown = ARROWS[key] ?? key;
-    if (mac) return `${parts.map((p) => MAC_KEYS[p.toLowerCase()] ?? p).join("")}${shown}`;
-    return [...parts, shown].join(" + ");
-}
-
-export function matchesShortcut(
-    ev: KeyboardEvent,
-    combo: ReturnType<typeof parseShortcut>
-): boolean {
-    return (
-        ev.code === combo.code &&
-        ev.altKey === combo.alt &&
-        ev.shiftKey === combo.shift &&
-        ev.ctrlKey === combo.ctrl &&
-        ev.metaKey === combo.meta
-    );
-}
 
 /** Events from our UI that must not reach the page: what is typed, clicked, touched or focused in it is not the page's. */
 const KEY_EVENTS = ["keydown", "keyup", "keypress"];
@@ -147,6 +94,35 @@ export function isolateFromPage(host: HTMLElement): () => void {
     for (const type of RELEASES) host.addEventListener(type, onRelease);
     return () => {
         for (const type of PRESSES) window.removeEventListener(type, onPress, true);
+    };
+}
+
+/**
+ * Closes a menu or panel on Escape, which the page then does not hear, or on a mouse press anywhere outside it. A press
+ * on `owner` (the button that opens and closes it) is left to that button's click: closing here would let the click
+ * open it again at once. Presses count only once the click that opened it is over. Returns how to stop listening.
+ */
+export function dismissOnOutside(
+    el: Element,
+    close: () => void,
+    owner?: Element | null
+): () => void {
+    const onKey = (ev: KeyboardEvent) => {
+        if (ev.key !== "Escape") return;
+        ev.stopPropagation();
+        close();
+    };
+    const onDown = (ev: Event) => {
+        const path = ev.composedPath();
+        if (path.includes(el) || (owner && path.includes(owner))) return;
+        close();
+    };
+    window.addEventListener("keydown", onKey, true);
+    const arm = setTimeout(() => window.addEventListener("mousedown", onDown, true), 0);
+    return () => {
+        clearTimeout(arm);
+        window.removeEventListener("keydown", onKey, true);
+        window.removeEventListener("mousedown", onDown, true);
     };
 }
 

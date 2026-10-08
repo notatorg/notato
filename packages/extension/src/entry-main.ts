@@ -25,7 +25,6 @@ if (!window.__notatoExtension) {
             // No token: it stays in the extension, and the background worker adds it to each request (`asSite`).
             author: config.author || undefined,
             appName: window.location.host,
-            enabled: true, // asked for by turning the extension on for this site
             persist: false,
             transport: createPageTransport(bus),
         });

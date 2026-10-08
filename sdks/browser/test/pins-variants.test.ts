@@ -532,7 +532,7 @@ describe("a pin whose element is hidden", () => {
         ]);
         anchor.mockReturnValue({ left: 150, top: 250 });
         pins.schedule();
-        await new Promise((resolve) => setTimeout(resolve, 50));
+        await new Promise<void>((resolve) => requestAnimationFrame(() => resolve())); // after the pins' own
         expect(placed(pin())).toEqual(["block", "150px", "250px"]);
     });
 });

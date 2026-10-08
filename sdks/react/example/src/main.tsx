@@ -4,7 +4,7 @@ import { createRoot } from "react-dom/client";
 import { App } from "./App.tsx";
 import "./styles.css";
 
-// The demo picks its mode from the URL so each milestone's check can be run without editing code:
+// The demo takes its mode and server from the URL, so each can be tried without editing code:
 //   /                         dev mode, annotations go to the local server
 //   /?mode=test               testers: annotations stay in the page until packaged into a zip
 //   /?mode=test&server=URL    ...and the zip is also uploaded to a shared server

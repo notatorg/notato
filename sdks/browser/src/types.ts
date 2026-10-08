@@ -15,12 +15,17 @@ export interface NotatoProps {
      * back live. Omit it in test mode to export zips only.
      */
     server?: string;
+    /** The project the notes go to, as the server knows it (`checkout-web`). */
     project: string;
+    /** Recorded on every note, with `appVersion`. */
     appName?: string;
     appVersion?: string;
     /** Extra plugins. One with the same `id` as a built-in replaces it. Memoise this array. */
     plugins?: NotatoPlugin[];
-    /** Defaults to off in production builds. Set it explicitly to run in production. */
+    /**
+     * Whether `<Notato />` (`@notato/react`) and `provideNotato` (`@notato/angular`) start the toolbar. They leave it off
+     * in production builds unless this is set. `createController` always starts it: guard the call instead.
+     */
     enabled?: boolean;
     /** Include `location.hash` in routes, for hash-routed apps. */
     hashRoutes?: boolean;

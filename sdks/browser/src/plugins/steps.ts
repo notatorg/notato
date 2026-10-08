@@ -1,9 +1,9 @@
 import type { CapturePlugin } from "@notato/core";
 import type { AgentStep } from "@notato/schema";
+import { ROOT_ATTR } from "../attributes.ts";
 import { onHistoryChange } from "../history.ts";
 import { redactUrl } from "../url.ts";
 import { DEFAULT_TEST_ID_ATTRIBUTES, uniqueSelector } from "./identity-dom.ts";
-import { ROOT_ATTR } from "./screenshot.ts";
 
 export interface StepsOptions {
     /** Steps kept between annotations. */

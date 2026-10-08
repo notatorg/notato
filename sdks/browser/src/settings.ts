@@ -14,7 +14,7 @@ export const MARKER_COLORS = [
     { id: "green", name: "Green", hex: "#6a9a1f" },
 ] as const;
 
-/** Colours from before the palette changed, mapped to the nearest one now, so nobody's pick is lost. */
+/** Colour ids of an earlier palette, read as the nearest colour in this one, so a stored pick is never lost. */
 const OLD_COLORS: Record<string, MarkerColorId> = {
     indigo: "violet",
     sky: "blue",
@@ -31,7 +31,7 @@ export interface Settings {
     name: string;
     /** The level the toolbar's copy button writes Markdown at. */
     copyDetail: Detail;
-    /** Record the React components around an element. */
+    /** Record the components around an element (React or Angular, in a development build). */
     components: boolean;
     /** Record an element's computed styles. */
     styles: boolean;
@@ -61,7 +61,7 @@ export interface SettingsStore {
 }
 
 const KEY = "notato:settings";
-// These two were kept on their own before there was a panel, so what people already have is still read.
+// The name and the copy level have keys of their own, beside the rest in KEY.
 const NAME_KEY = "notato:author";
 const DETAIL_KEY = "notato:copy-detail";
 

@@ -87,7 +87,7 @@ async function main() {
     });
 
     /** Applies what is in the form to this site, and to the page if it is open. */
-    async function apply(enabled: boolean) {
+    const apply = async (enabled: boolean) => {
         const next = { ...current(), enabled };
         const serverBase = serverOrigin(next.server);
         if (!serverBase) return say("That is not a server address.", false);
@@ -102,19 +102,19 @@ async function main() {
                     false
                 );
         }
-        await saveSite(origin as string, next);
+        await saveSite(origin, next);
         if (enabled) {
-            await registerSite(origin as string);
+            await registerSite(origin);
             await removeNow(tabId).catch(() => {});
             await injectNow(tabId);
             say("Notato is on for this site. Use the toolbar on the page.");
         } else {
-            await unregisterSite(origin as string);
+            await unregisterSite(origin);
             await removeNow(tabId).catch(() => {});
             say("Notato is off for this site.");
         }
         sw.setAttribute("aria-checked", String(enabled));
-    }
+    };
 
     sw.addEventListener("click", () => void apply(sw.getAttribute("aria-checked") !== "true"));
 

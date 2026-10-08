@@ -2,7 +2,8 @@
 import type { CapturePlugin, DraftAnnotation } from "@notato/core";
 import type { AgentStep } from "@notato/schema";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { blobFromBase64, ROOT_ATTR } from "../src/plugins/screenshot.ts";
+import { ROOT_ATTR } from "../src/attributes.ts";
+import { blobFromBase64 } from "../src/plugins/screenshot.ts";
 import { stepsPlugin } from "../src/plugins/steps.ts";
 
 const draft = (over: Partial<DraftAnnotation> = {}) => ({ ...over }) as DraftAnnotation;

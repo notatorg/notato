@@ -24,7 +24,7 @@ export const appConfig: ApplicationConfig = {
 
 Press **Alt+Shift+A** (or the toolbar's Annotate button), click an element, write what should change, and save. Then ask your agent to watch Notato and fix what comes in.
 
-`provideNotato` takes the same options as the other web SDKs (`server`, `token`, `mode`, `appName`, `plugins` and the rest: see [SDK props](../../README.md#sdk-props)). Plugins come from `@notato/browser`:
+`provideNotato` takes the same options as the other web SDKs (`server`, `token`, `mode`, `appName`, `plugins` and the rest: see [SDK props](https://github.com/notatorg/notato#sdk-props)). Plugins come from `@notato/browser`:
 
 ```ts
 import { consolePlugin, networkPlugin } from "@notato/browser"
@@ -45,7 +45,7 @@ The element's selector, test id, role and text, its computed styles, and its com
 ## Known limits
 
 - Component names need a development build. A component class that two files both name `ProductCard` is reported under that name, without saying which.
-- Everything else is the browser SDK's: see [Known limits](../../README.md#known-limits).
+- Everything else is the browser SDK's: see [Known limits](https://github.com/notatorg/notato#known-limits).
 
 ## Development
 

@@ -39,15 +39,8 @@ interface PickerOptions {
 
 const DRAG_THRESHOLD = 8;
 const SELECT_THRESHOLD = 3;
-const SWALLOWED = [
-    "pointerdown",
-    "pointerup",
-    "mousedown",
-    "mouseup",
-    "click",
-    "dblclick",
-    "auxclick",
-] as const;
+/** Kept from the page while picking. Mouse down and up are handled (and kept from it) by listeners of their own. */
+const SWALLOWED = ["pointerdown", "pointerup", "click", "dblclick", "auxclick"] as const;
 
 export const toPageRect = (r: {
     left: number;
@@ -60,6 +53,16 @@ export const toPageRect = (r: {
     w: r.width,
     h: r.height,
 });
+
+/** The page rectangle around all of `elements`: a selection of several. */
+export function unionPageRect(elements: Element[]): Rect {
+    const rects = elements.map((e) => toPageRect(viewportRect(e)));
+    const x = Math.min(...rects.map((r) => r.x));
+    const y = Math.min(...rects.map((r) => r.y));
+    const right = Math.max(...rects.map((r) => r.x + r.w));
+    const bottom = Math.max(...rects.map((r) => r.y + r.h));
+    return { x, y, w: right - x, h: bottom - y };
+}
 
 /** True when the point sits over rendered text, so a drag from there means "select this text". */
 export function pointIsOnText(x: number, y: number, doc: Document = document): boolean {
@@ -85,6 +88,8 @@ export function pointIsOnText(x: number, y: number, doc: Document = document): b
 const windowOf = (ev: Event): Window => ((ev as UIEvent).view as Window | null) ?? window;
 
 const CURSOR_CSS = "html, html * { cursor: crosshair !important; }";
+/** On each iframe from another origin while annotating: it is picked as one element (see `CLICK_THROUGH_CSS`). */
+const FOREIGN = "data-notato-foreign";
 /**
  * Kept apart from the cursor, because a hit test that has to see these turns this sheet off for a moment, and turning
  * off a rule for every element (the cursor's) makes the browser restyle the whole page.
@@ -94,10 +99,10 @@ const CLICK_THROUGH_CSS = [
     // reach us at all: while annotating they are click-through, and `elementAt` finds the one really under the pointer.
     ":disabled { pointer-events: none !important; }",
     // A frame from another origin cannot be entered, so it is picked as the one element it is, and does not take the click.
-    "iframe[data-notato-foreign] { pointer-events: none !important; }",
+    `iframe[${FOREIGN}] { pointer-events: none !important; }`,
 ].join(" ");
 /** What the click-through rules make the browser look past. */
-const CLICK_THROUGH = ":disabled, iframe[data-notato-foreign]";
+const CLICK_THROUGH = `:disabled, iframe[${FOREIGN}]`;
 const PICKING_MARKER = "data-notato-picking";
 
 export function createPicker(options: PickerOptions): Picker {
@@ -447,10 +452,7 @@ export function createPicker(options: PickerOptions): Picker {
     /** Listeners for one window: the page's, or an iframe's. Events there are not ours until we ask. */
     const attach = (win: Window): (() => void) => {
         if (active) addStyles(win);
-        for (const type of SWALLOWED) {
-            if (type !== "mousedown" && type !== "mouseup")
-                win.addEventListener(type, swallow, true);
-        }
+        for (const type of SWALLOWED) win.addEventListener(type, swallow, true);
         win.addEventListener("keydown", onShiftKey, true);
         win.addEventListener("keyup", onShiftKey, true);
         win.addEventListener("blur", onWindowBlur);
@@ -460,10 +462,7 @@ export function createPicker(options: PickerOptions): Picker {
         win.addEventListener("scroll", repaint, true);
         win.addEventListener("resize", repaint);
         return () => {
-            for (const type of SWALLOWED) {
-                if (type !== "mousedown" && type !== "mouseup")
-                    win.removeEventListener(type, swallow, true);
-            }
+            for (const type of SWALLOWED) win.removeEventListener(type, swallow, true);
             win.removeEventListener("keydown", onShiftKey, true);
             win.removeEventListener("keyup", onShiftKey, true);
             win.removeEventListener("blur", onWindowBlur);
@@ -477,7 +476,7 @@ export function createPicker(options: PickerOptions): Picker {
     };
 
     const frames = watchFrames(window, attach, (frame) => {
-        if (active) frame.setAttribute("data-notato-foreign", "");
+        if (active) frame.setAttribute(FOREIGN, "");
     });
 
     const setActive = (next: boolean) => {
@@ -492,13 +491,9 @@ export function createPicker(options: PickerOptions): Picker {
             dragging = false;
             hover.style.display = "none";
             drag.style.display = "none";
-            for (const win of frames.windows()) {
-                win.document.documentElement.style.removeProperty("cursor");
-                for (const f of Array.from(
-                    win.document.querySelectorAll("iframe[data-notato-foreign]")
-                ))
-                    f.removeAttribute("data-notato-foreign");
-            }
+            for (const win of frames.windows())
+                for (const f of Array.from(win.document.querySelectorAll(`iframe[${FOREIGN}]`)))
+                    f.removeAttribute(FOREIGN);
             for (const win of [...styles.keys()]) removeStyles(win);
         } else {
             for (const win of frames.windows()) addStyles(win);

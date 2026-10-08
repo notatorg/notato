@@ -1,4 +1,5 @@
 import type { IdentityPlugin } from "@notato/core";
+import { clip } from "../text.ts";
 
 /** What the value is when nothing was set, so it is not worth saying. Colours are checked after `toHex`. */
 const QUIET: Record<string, string[]> = {
@@ -16,6 +17,9 @@ const QUIET: Record<string, string[]> = {
     margin: ["0px"],
     padding: ["0px"],
     "border-radius": ["0px"],
+    "flex-direction": ["row"],
+    "justify-content": ["normal"],
+    "align-items": ["normal"],
 };
 
 /** Computed colours come back as `rgb(…)`; hex is what people write and read. */
@@ -71,6 +75,9 @@ const SINGLE = [
     "overflow",
 ] as const;
 
+/** How a flex or grid container lays out its children: only worth saying for one. */
+const LAYOUT = ["flex-direction", "justify-content", "align-items"] as const;
+
 /**
  * A curated set of computed styles for an element: the colours, type, size, spacing and layout it actually has,
  * which is what a comment like "too cramped" or "wrong blue" is about. Defaults are left out, and the set is
@@ -86,14 +93,7 @@ export function computedStylesOf(el: Element): Record<string, string> | undefine
     };
     for (const prop of SINGLE) {
         const raw = style.getPropertyValue(prop).trim();
-        put(
-            prop,
-            prop === "color" || prop === "background-color"
-                ? toHex(raw)
-                : raw.length > 120
-                  ? `${raw.slice(0, 119)}…`
-                  : raw
-        );
+        put(prop, prop === "color" || prop === "background-color" ? toHex(raw) : clip(raw, 120));
     }
     const edge = (prefix: "margin" | "padding") =>
         sides(
@@ -105,19 +105,9 @@ export function computedStylesOf(el: Element): Record<string, string> | undefine
     put("padding", edge("padding"));
     const b = border(style);
     if (b) out.border = b;
-    const flex = style.getPropertyValue("display");
-    if (flex.includes("flex") || flex.includes("grid")) {
-        put(
-            "flex-direction",
-            style.getPropertyValue("flex-direction").trim() === "row"
-                ? ""
-                : style.getPropertyValue("flex-direction").trim()
-        );
-        const j = style.getPropertyValue("justify-content").trim();
-        const a = style.getPropertyValue("align-items").trim();
-        put("justify-content", j === "normal" ? "" : j);
-        put("align-items", a === "normal" ? "" : a);
-    }
+    const display = style.getPropertyValue("display");
+    if (display.includes("flex") || display.includes("grid"))
+        for (const prop of LAYOUT) put(prop, style.getPropertyValue(prop).trim());
     return Object.keys(out).length ? out : undefined;
 }
 

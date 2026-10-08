@@ -1,6 +1,7 @@
 import { DETAILS, type Detail } from "@notato/core";
 import { MARKER_COLORS, type SettingsStore } from "../settings.ts";
-import { h } from "./dom.ts";
+import { plural } from "../text.ts";
+import { dismissOnOutside, h } from "./dom.ts";
 import type { ConnectionState } from "./toolbar.ts";
 
 export interface ServerInfo {
@@ -231,7 +232,7 @@ export function createSettingsPanel(options: SettingsPanelOptions): SettingsPane
                 { class: "stoggles" },
                 toggle(
                     "Component names",
-                    "Record the React components around an element.",
+                    "Record the React or Angular components around an element.",
                     "components"
                 ).row,
                 toggle(
@@ -288,9 +289,7 @@ export function createSettingsPanel(options: SettingsPanelOptions): SettingsPane
                 ? [
                       info.version ? `Notato ${info.version}` : "",
                       info.mode ? `${info.mode} mode` : "",
-                      info.pages !== undefined
-                          ? `${info.pages} page${info.pages === 1 ? "" : "s"} connected`
-                          : "",
+                      info.pages !== undefined ? `${plural(info.pages, "page")} connected` : "",
                       info.screenshots ? `screenshots ${info.screenshots}` : "",
                   ]
                       .filter(Boolean)
@@ -421,28 +420,7 @@ export function createSettingsPanel(options: SettingsPanelOptions): SettingsPane
             layer.append(el);
             render();
             options.onToggle?.(true);
-            const onKey = (ev: KeyboardEvent) => {
-                if (ev.key === "Escape") {
-                    ev.stopPropagation();
-                    close();
-                }
-            };
-            const onDown = (ev: Event) => {
-                const path = ev.composedPath();
-                if (!el || path.includes(el)) return;
-                // Closing here would let the owner's click open it again at once: the button could never close it.
-                const owner = options.owner?.();
-                if (owner && path.includes(owner)) return;
-                close();
-            };
-            window.addEventListener("keydown", onKey, true);
-            // After the click that opened it finishes, so that click does not close it at once.
-            const arm = setTimeout(() => window.addEventListener("mousedown", onDown, true), 0);
-            off = () => {
-                clearTimeout(arm);
-                window.removeEventListener("keydown", onKey, true);
-                window.removeEventListener("mousedown", onDown, true);
-            };
+            off = dismissOnOutside(el, close, options.owner?.());
         },
         close,
         toggle() {

@@ -7,7 +7,7 @@ export type ConnectionState = "connected" | "connecting" | "offline";
 /**
  * Where the toolbar was dragged to, as fractions of the room it can move in: `{ x: 0, y: 0 }` is the top left corner,
  * `{ x: 1, y: 1 }` the bottom right. Fractions rather than pixels, so it stays in the same place relative to the edges
- * when the window is resized. The MAUI, iOS and Android SDKs keep the toolbar's place the same way.
+ * when the window is resized. The native SDKs keep the toolbar's place the same way.
  */
 export interface ToolbarFraction {
     x: number;
@@ -21,7 +21,7 @@ interface Size {
 
 /** The gap kept between the toolbar and the window's edges, as the corner classes have it. */
 export const TOOLBAR_MARGIN = 16;
-const STORAGE_KEY = "notato:toolbar-position";
+const POSITION_KEY = "notato:toolbar-position";
 /** How far a press must move before it is a drag rather than a click. */
 const DRAG_THRESHOLD = 5;
 
@@ -59,7 +59,7 @@ export function fractionAt(
 /** Where the toolbar was last dragged to in this browser (for this site), or null. */
 export function loadToolbarFraction(): ToolbarFraction | null {
     try {
-        const parsed: unknown = JSON.parse(window.localStorage.getItem(STORAGE_KEY) ?? "null");
+        const parsed: unknown = JSON.parse(window.localStorage.getItem(POSITION_KEY) ?? "null");
         if (!parsed || typeof parsed !== "object") return null;
         const { x, y } = parsed as Record<string, unknown>;
         if (
@@ -77,8 +77,8 @@ export function loadToolbarFraction(): ToolbarFraction | null {
 
 function saveToolbarFraction(fraction: ToolbarFraction | null) {
     try {
-        if (fraction) window.localStorage.setItem(STORAGE_KEY, JSON.stringify(fraction));
-        else window.localStorage.removeItem(STORAGE_KEY);
+        if (fraction) window.localStorage.setItem(POSITION_KEY, JSON.stringify(fraction));
+        else window.localStorage.removeItem(POSITION_KEY);
     } catch {
         // private mode or blocked storage: the toolbar stays where it is for this visit only
     }
@@ -133,8 +133,6 @@ function springEasing(): string {
 
 export interface ToolbarButton {
     el: HTMLButtonElement;
-    setLabel(label: string): void;
-    setDisabled(disabled: boolean): void;
     setPressed(pressed: boolean): void;
     setIcon(svg: string): void;
     setTitle(title: string): void;
@@ -148,16 +146,14 @@ export interface Toolbar {
     setCount(count: number): void;
     /** `null` hides the dot (no server configured). */
     setConnection(state: ConnectionState | null, title?: string): void;
+    /** An icon button, before the pins toggle. Its title is its accessible name. */
     addButton(options: {
-        label: string;
         title: string;
         icon: string;
         onClick(): void;
         /** Extra classes for the styles, such as `tb-pause`. */
         className?: string;
     }): ToolbarButton;
-    /** Puts the toolbar back in its configured corner and forgets where it was dragged to. */
-    resetPosition(): void;
     /** Folds the bar into one round button, or opens it again (animated). Remembered in this browser. */
     setCollapsed(collapsed: boolean): void;
     readonly collapsed: boolean;
@@ -613,7 +609,7 @@ export function createToolbar(options: ToolbarOptions): Toolbar {
             setCollapsed(loadToolbarCollapsed());
             return;
         }
-        if (ev.key !== STORAGE_KEY) return;
+        if (ev.key !== POSITION_KEY) return;
         fraction = loadToolbarFraction();
         forgetFold();
         place();
@@ -624,7 +620,7 @@ export function createToolbar(options: ToolbarOptions): Toolbar {
         typeof ResizeObserver === "undefined" ? null : new ResizeObserver(() => place());
     resizes?.observe(el);
     // The first placement needs the bar's size, which it has once it is in the page.
-    requestAnimationFrame(place);
+    const firstPlace = requestAnimationFrame(place);
 
     return {
         el,
@@ -653,8 +649,7 @@ export function createToolbar(options: ToolbarOptions): Toolbar {
             fabDot.hidden = !state || state === "connected";
             if (state) fabDot.dataset.state = state;
         },
-        addButton({ label, title, icon: svg, onClick, className }) {
-            const labelEl = label ? h("span", {}, label) : null;
+        addButton({ title, icon: svg, onClick, className }) {
             const btn = h(
                 "button",
                 {
@@ -664,23 +659,16 @@ export function createToolbar(options: ToolbarOptions): Toolbar {
                     "aria-label": title,
                     onclick: onClick,
                 },
-                icon(svg),
-                labelEl
+                icon(svg)
             );
             el.insertBefore(btn, eye);
             return {
                 el: btn,
-                setLabel: (next) => {
-                    if (labelEl) labelEl.textContent = next;
-                },
-                setDisabled: (disabled) => {
-                    btn.disabled = disabled;
-                },
                 setPressed: (pressed) => {
                     btn.setAttribute("aria-pressed", String(pressed));
                 },
                 setIcon: (next) => {
-                    btn.replaceChildren(icon(next), ...(labelEl ? [labelEl] : []));
+                    btn.replaceChildren(icon(next));
                 },
                 setTitle: (next) => {
                     btn.title = next;
@@ -691,7 +679,6 @@ export function createToolbar(options: ToolbarOptions): Toolbar {
                 },
             };
         },
-        resetPosition,
         setCollapsed(next) {
             openedForAnnotate = false;
             setCollapsed(next);
@@ -700,6 +687,7 @@ export function createToolbar(options: ToolbarOptions): Toolbar {
             return collapsed;
         },
         destroy() {
+            cancelAnimationFrame(firstPlace);
             for (const a of morph) a.cancel();
             morph = [];
             stopFollowing();

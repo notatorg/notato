@@ -1,5 +1,7 @@
 import type { Intent, Severity } from "@notato/schema";
-import { h, isMac } from "./dom.ts";
+import { capitalize } from "../text.ts";
+import { h } from "./dom.ts";
+import { isMac } from "./keys.ts";
 
 export interface PopoverInit {
     /** "1 element", "Text selection", "Area" ... */
@@ -175,7 +177,7 @@ export function createPopover(layer: HTMLElement): Popover {
                             ev.stopPropagation();
                         },
                     },
-                    i[0]?.toUpperCase() + i.slice(1)
+                    capitalize(i)
                 )
             );
             const chips = SEVERITIES.map((s) =>
@@ -197,7 +199,7 @@ export function createPopover(layer: HTMLElement): Popover {
                         },
                     },
                     h("span", { class: "dot", "aria-hidden": "true" }),
-                    s[0]?.toUpperCase() + s.slice(1)
+                    capitalize(s)
                 )
             );
             const peopleChip = h(

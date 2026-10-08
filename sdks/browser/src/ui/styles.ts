@@ -7,7 +7,7 @@ export const STYLES = /* css */ `
   /* popovers and cards: follow the system */
   --p-bg: #ffffff; --p-text: #1d1f22; --p-mute: #686c72; --p-line: #e4e4df; --p-soft: #f2f2ef; --p-field: #fbfbfa;
   --acc: #1f8a78; --acc-hover: #187465; --sel: #e5484d; --bad: #d6453d;
-  --st-open: var(--pf-accent, #1f8a78); --st-ack: #d99a1e; --st-res: #2e9a5b; --st-rev: #8b5cf6; --st-var: #0891b2;
+  --st-open: var(--notato-accent, #1f8a78); --st-ack: #d99a1e; --st-res: #2e9a5b; --st-rev: #8b5cf6; --st-var: #0891b2;
   --st-revd: #64748b; --st-dis: #9a9a9a;
   --f: "Figtree Variable", "Figtree", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   --fd: "Bricolage Grotesque Variable", "Bricolage Grotesque", var(--f);

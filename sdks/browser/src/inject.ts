@@ -66,7 +66,6 @@ function start() {
         author: pick("author"),
         token: pick("token"),
         hashRoutes: pick("hash") === "1",
-        enabled: true, // asked for by loading this: the production guard is for the SDK in an app's own build
         persist: false,
         nonce: script?.nonce || undefined,
     };

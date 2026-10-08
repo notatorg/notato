@@ -2,8 +2,6 @@ import type { CapturePlugin } from "@notato/core";
 import { isServerUrl } from "../net.ts";
 import { safeUrl } from "../url.ts";
 
-export { safeUrl };
-
 export interface NetworkEntry {
     method: string;
     /** Origin and path only: query strings routinely carry tokens. */

@@ -1,3 +1,4 @@
+import { plural } from "../text.ts";
 import { h } from "./dom.ts";
 import { LOGO } from "./logo.ts";
 
@@ -43,7 +44,6 @@ export function createPackageDialog(layer: HTMLElement): PackageDialog {
         close,
         open(init) {
             close();
-            const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
             const name = h("input", {
                 type: "text",
                 value: init.name,
@@ -109,11 +109,8 @@ export function createPackageDialog(layer: HTMLElement): PackageDialog {
                 h("div", { class: "actions" }, status, cancel, submit)
             );
             el.addEventListener("keydown", (ev) => {
-                if ((ev as KeyboardEvent).key === "Escape") init.onCancel();
-                else if (
-                    (ev as KeyboardEvent).key === "Enter" &&
-                    (ev.target as HTMLElement).tagName === "INPUT"
-                )
+                if (ev.key === "Escape") init.onCancel();
+                else if (ev.key === "Enter" && (ev.target as HTMLElement).tagName === "INPUT")
                     void run();
             });
             layer.append(shade, el);

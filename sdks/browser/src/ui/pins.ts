@@ -1,13 +1,18 @@
-import { type AnnotationRecord, agentLogoSvg, knownAgent } from "@notato/core";
-import type { Annotation, Author } from "@notato/schema";
+import type { AnnotationRecord } from "@notato/core";
+import type { Annotation } from "@notato/schema";
 import { resolveIdentity } from "../resolve.ts";
 import { colorForName, initialsOf } from "../settings.ts";
-import { h, ICONS, icon } from "./dom.ts";
+import {
+    type CardActions,
+    type CardState,
+    cardSignature,
+    closeForms,
+    drawCard,
+    hasWorkInProgress,
+    pruneForms,
+} from "./card.ts";
+import { h } from "./dom.ts";
 import { viewportRect } from "./frames.ts";
-import { PEOPLE_ONLY_HINT } from "./popover.ts";
-
-/** Said wherever a reply can be sent as an aside, in every SDK. */
-export const ASIDE_HINT = "Just for people: the agent won't see this reply.";
 
 export interface Pins {
     /** Re-sync pins with the records (added, removed, status changed). */
@@ -32,74 +37,21 @@ export interface Pins {
  */
 export const MAX_PINS = 150;
 
-interface PinsOptions {
+interface PinsOptions extends CardActions {
     layer: HTMLElement;
     records(): AnnotationRecord[];
     currentRoute(): string;
-    /** Called when the person confirms deleting an annotation from its card. */
-    onDelete?(id: string): void;
-    /**
-     * Asks the agent to undo the change it made for a resolved annotation. Only passed when there is a server
-     * for the request to reach; without it a card offers no Revert. Rejects with a message to show.
-     */
-    onRequestRevert?(id: string, note: string): Promise<void>;
-    /** Takes a revert request back before the agent has acted on it. */
-    onCancelRevert?(id: string): Promise<void>;
     /**
      * Where to put the pin when the element it points at is not on screen. A request for variants points at one version,
      * and while another is shown that element is hidden; the pin then goes where the shown version is.
      */
     fallbackAnchor?(annotation: Annotation): { left: number; top: number } | null;
-    /** Takes back the version the person picked, before the agent has acted on it. Only passed with a server. */
-    onTakeBackVariant?(id: string): Promise<void>;
-    /**
-     * Writes in the annotation's thread as the person, for example to ask for different versions; an aside is for the
-     * people on the thread, kept from the agent. Only passed with a server.
-     */
-    onReply?(id: string, note: string, aside?: boolean): Promise<void>;
-    /** Turns People only on or off for an annotation. Left out where the change cannot be made now. */
-    onPeopleOnly?(id: string, on: boolean): Promise<void>;
-    /** The connected agent's name ("Codex") when there is exactly one, so the card can say who it is asking. */
-    agentName?(): string | undefined;
-    /** Why the server refused an annotation for good, when it did: said on its card and its pin. */
-    refusal?(id: string): string | undefined;
 }
 
 /** The number on the pin. The screenshot plugin stores it so pin and screenshot always agree. */
 export function pinNumber(annotation: Annotation, fallback: number): number {
     const shot = annotation.context.screenshot as { pin?: unknown } | undefined;
     return typeof shot?.pin === "number" ? shot.pin : fallback;
-}
-
-/**
- * The round badge by a reply: a person's initial in their colour, or an agent's own logo when Notato knows it
- * (Claude, Codex, Cursor…), else its initial in the accent colour.
- */
-function replyAvatar(author: Author, name: string): HTMLSpanElement {
-    const known = author.kind === "agent" ? knownAgent(author.name) : undefined;
-    if (known) {
-        const ink = known.background === "ink";
-        const av = h("span", {
-            class: ink ? "av brand ink" : "av brand",
-            style: ink ? {} : { background: known.background, color: known.color },
-            "aria-hidden": "true",
-        });
-        // Static markup from Notato's own list of logos: nothing in it comes from the note.
-        av.innerHTML = agentLogoSvg(known, 13);
-        return av;
-    }
-    return h(
-        "span",
-        {
-            class: author.kind === "agent" ? "av agent" : "av",
-            style:
-                author.kind === "human" && author.name
-                    ? { background: colorForName(author.name) }
-                    : {},
-            "aria-hidden": "true",
-        },
-        name.trim()[0]?.toUpperCase() ?? "?"
-    );
 }
 
 /** The next pin number for a new note: one past the highest so far. A loop: past ~65,000 notes a spread would throw. */
@@ -125,7 +77,7 @@ function stillMeans(el: Element, record: AnnotationRecord): boolean {
     }
 }
 
-interface PinView {
+interface PinView extends CardState {
     pin: HTMLButtonElement;
     /** Made the first time the card is opened: most pins are never opened. */
     card?: HTMLElement;
@@ -145,69 +97,20 @@ interface PinView {
     focused: boolean;
     /** The card is being redrawn: focus lost with the old contents is not focus leaving the card. */
     redrawing?: boolean;
-    /** Shown until clicked away: reachable with the keyboard and by touch. */
-    pinned: boolean;
     hideTimer?: ReturnType<typeof setTimeout>;
-    /** The Revert form is open on the card, with what has been typed in it so far. */
-    reverting?: { note: string; busy: boolean; error?: string };
-    /** The "ask for different versions" form, likewise. */
-    asking?: { note: string; busy: boolean; error?: string };
-    /** The reply line, with what has been typed in it so far, and whether it goes as an aside. */
-    replying?: { note: string; busy: boolean; error?: string; aside?: boolean };
-    /** People only is being changed, or could not be. */
-    sharing?: { busy: boolean; error?: string };
     /** What the card on screen was drawn from. A card is only redrawn when this changes, so a click is never lost to a redraw. */
     drawn?: string;
 }
 
-/** What a card shows of an annotation: when none of it changes there is nothing to redraw. */
-const signature = (a: Annotation, refused = "") =>
-    [
-        refused,
-        a.status,
-        a.comment,
-        a.severity ?? "",
-        a.variants?.offeredAt ?? "",
-        a.variants?.chosen ?? "",
-        a.peopleOnly ? "people" : "",
-        ...a.thread.map((r) => r.id),
-    ].join("\u0000");
-
 const CARD_WIDTH = 320;
 /** Past this many elements added or changed before the next placing, pins whose element was missing look everywhere. */
 const MAX_TOUCHED = 500;
-
-/** How a status reads on a card. */
-const STATUS_LABEL: Record<Annotation["status"], string> = {
-    open: "Open",
-    acknowledged: "Acknowledged",
-    variant_chosen: "Variant chosen",
-    resolved: "Resolved",
-    revert_requested: "Revert requested",
-    reverted: "Reverted",
-    dismissed: "Dismissed",
-};
-const cap = (s: string) => `${s[0]?.toUpperCase() ?? ""}${s.slice(1)}`;
+/** How long a card stays after the pointer leaves, so the pointer can travel from the pin onto it. */
 const HIDE_DELAY_MS = 160;
 
-export function createPins({
-    layer,
-    records,
-    currentRoute,
-    onDelete,
-    onRequestRevert,
-    onCancelRevert,
-    onTakeBackVariant,
-    onReply,
-    onPeopleOnly,
-    fallbackAnchor,
-    agentName,
-    refusal,
-}: PinsOptions): Pins {
+export function createPins(options: PinsOptions): Pins {
+    const { layer, records, currentRoute, fallbackAnchor, refusal } = options;
     const views = new Map<string, PinView>();
-    /** Who does the work: the agent by name when one is connected, otherwise "the agent". */
-    const who = () => agentName?.() ?? "the agent";
-    const Who = () => agentName?.() ?? "The agent";
     let visible = true;
     let frame = 0;
     /** What changed in the page since the pins were last placed (see `domChanged`); null for nothing. */
@@ -221,164 +124,35 @@ export function createPins({
     const isOpen = (view: PinView) =>
         view.hovered || view.pinned || (view.focused && focusWithin(view));
     const drawnFrom = (view: PinView) =>
-        signature(view.record.annotation, refusal?.(view.record.annotation.id));
-
-    /** A form left open for a state the annotation has moved on from would hide the reply line for nothing. */
-    const pruneForms = (view: PinView, a: Annotation) => {
-        if (view.reverting && !view.reverting.busy && !(a.status === "resolved" && onRequestRevert))
-            view.reverting = undefined;
-        const versions =
-            a.variants && (a.status === "acknowledged" || a.status === "variant_chosen");
-        if (view.asking && !view.asking.busy && !(versions && onReply)) view.asking = undefined;
-    };
-
-    /** The card's fields, by what they are for: what is typed in them, and which has focus, outlive a redraw. */
-    const FIELD_STATE = {
-        reply: (view: PinView) => view.replying,
-        revert: (view: PinView) => view.reverting,
-        ask: (view: PinView) => view.asking,
-    } as const;
+        cardSignature(view.record.annotation, refusal?.(view.record.annotation.id));
 
     const renderCard = (view: PinView) => {
-        const a = view.record.annotation;
         const card = cardOf(view);
-        pruneForms(view, a);
-        // A server update can redraw the card while someone types in it: keep their text, their caret and their focus.
-        const fields = [
-            ...card.querySelectorAll<HTMLInputElement | HTMLTextAreaElement>("[data-field]"),
-        ];
-        for (const field of fields) {
-            const state = FIELD_STATE[field.dataset.field as keyof typeof FIELD_STATE]?.(view);
-            if (state && !state.busy) state.note = field.value;
-        }
-        const root = card.getRootNode() as Document | ShadowRoot;
-        const focused = fields.find((f) => f === root.activeElement);
-        const hadFocus = root.activeElement !== null && card.contains(root.activeElement);
-        const caret = focused
-            ? {
-                  field: focused.dataset.field,
-                  start: focused.selectionStart,
-                  end: focused.selectionEnd,
-                  direction: focused.selectionDirection ?? undefined,
-              }
-            : undefined;
+        const annotation = view.record.annotation;
+        pruneForms(view, annotation, options);
         view.drawn = drawnFrom(view);
-        const refused = refusal?.(a.id);
-        const author = a.author.name ?? (a.author.kind === "agent" ? "Agent" : "Someone");
-        let armed = false;
-        const del = h("button", { class: "link delete", type: "button" }, "Delete");
-        del.addEventListener("click", () => {
-            if (!armed) {
-                armed = true;
-                del.textContent = "Click again to delete";
-                del.classList.add("armed");
-                setTimeout(() => {
-                    armed = false;
-                    del.textContent = "Delete";
-                    del.classList.remove("armed");
-                }, 3000);
-                return;
-            }
-            onDelete?.(a.id);
-        });
-        const close = h(
-            "button",
-            { class: "card-x", type: "button", "aria-label": "Close", title: "Close" },
-            icon(ICONS.close)
-        );
-        close.addEventListener("click", () => {
-            view.pinned = false;
-            view.hovered = false;
-            view.focused = false;
-            close.blur();
-            syncCard(view);
-        });
-        const revert = revertControls(view, a);
-        const lead = revert.lead;
         view.redrawing = true;
-        card.replaceChildren(
-            h(
-                "div",
-                { class: "card-head" },
-                h("span", { class: "badge status", "data-v": a.status }, STATUS_LABEL[a.status]),
-                a.intent
-                    ? h("span", { class: "badge", "data-v": `intent-${a.intent}` }, cap(a.intent))
-                    : null,
-                a.severity
-                    ? h("span", { class: "badge sev", "data-v": a.severity }, cap(a.severity))
-                    : null,
-                a.peopleOnly
-                    ? h("span", { class: "badge people", title: PEOPLE_ONLY_HINT }, "People only")
-                    : null,
-                close
-            ),
-            h(
-                "div",
-                { class: "meta" },
-                a.author.kind === "human" && a.author.name
-                    ? h("span", {
-                          class: "who",
-                          style: { background: colorForName(a.author.name) },
-                      })
-                    : null,
-                h("b", {}, author),
-                ` · ${a.route} · #${view.pin.textContent}`
-            ),
-            h("div", { class: "body" }, a.comment),
-            ...(refused ? [h("div", { class: "err refused" }, `Not sent: ${refused}`)] : []),
-            ...a.thread.map((r) => {
-                const name = r.author.name ?? (r.author.kind === "agent" ? "Agent" : "Someone");
-                return h(
-                    "div",
-                    { class: "reply" },
-                    replyAvatar(r.author, name),
-                    h(
-                        "div",
-                        { class: r.aside ? "bubble aside" : "bubble" },
-                        h(
-                            "b",
-                            {},
-                            name,
-                            r.aside
-                                ? h("span", { class: "aside-tag", title: ASIDE_HINT }, "Aside")
-                                : null
-                        ),
-                        r.body
-                    )
-                );
-            }),
-            ...replyControls(view, a),
-            ...variantControls(view, a),
-            ...(revert.box ? [revert.box] : []),
-            ...(view.sharing?.error ? [h("div", { class: "say-err" }, view.sharing.error)] : []),
-            ...(lead.length || onDelete || onPeopleOnly
-                ? [
-                      h(
-                          "div",
-                          { class: "card-foot" },
-                          ...lead,
-                          peopleOnlyControl(view, a),
-                          onDelete ? del : null
-                      ),
-                  ]
-                : [])
-        );
-        view.redrawing = false;
-        const again =
-            caret &&
-            card.querySelector<HTMLInputElement | HTMLTextAreaElement>(
-                `[data-field="${caret.field}"]`
+        try {
+            drawCard(
+                {
+                    card,
+                    state: view,
+                    annotation,
+                    current: () => view.record.annotation,
+                    number: view.pin.textContent ?? "",
+                    draw: () => renderCard(view),
+                    redraw: () => redraw(view),
+                    close: () => {
+                        view.pinned = false;
+                        view.hovered = false;
+                        view.focused = false;
+                        syncCard(view);
+                    },
+                },
+                options
             );
-        if (again && !again.disabled) {
-            again.focus({ preventScroll: true });
-            try {
-                again.setSelectionRange(caret.start, caret.end, caret.direction);
-            } catch {
-                // a field that has no caret to put back
-            }
-        } else if (hadFocus) {
-            // What had focus is gone with the old contents: the card keeps it, so the keyboard is not sent to the page.
-            card.focus({ preventScroll: true });
+        } finally {
+            view.redrawing = false;
         }
     };
 
@@ -387,316 +161,6 @@ export function createPins({
         if (!views.has(view.record.annotation.id)) return;
         if (isOpen(view)) renderCard(view);
         else view.drawn = undefined;
-    };
-
-    /** People only, on or off, for a note already made: anyone on the thread can change it, and it is recorded there. */
-    const peopleOnlyControl = (view: PinView, a: Annotation): HTMLElement | null => {
-        if (!onPeopleOnly) return null;
-        const on = Boolean(a.peopleOnly);
-        const busy = Boolean(view.sharing?.busy);
-        const toggle = h(
-            "button",
-            {
-                class: "chip people",
-                type: "button",
-                "aria-pressed": String(on),
-                title: on ? "Share this with the agent again" : PEOPLE_ONLY_HINT,
-            },
-            "People only"
-        ) as HTMLButtonElement;
-        toggle.disabled = busy;
-        toggle.addEventListener("click", () => {
-            view.sharing = { busy: true };
-            redraw(view);
-            onPeopleOnly(a.id, !on).then(
-                () => {
-                    view.sharing = undefined;
-                    redraw(view);
-                },
-                (error: unknown) => {
-                    view.sharing = {
-                        busy: false,
-                        error: error instanceof Error ? error.message : String(error),
-                    };
-                    redraw(view);
-                }
-            );
-        });
-        return toggle;
-    };
-
-    /** A line to write in the thread, where there is a server for it to go to. */
-    const replyControls = (view: PinView, a: Annotation): HTMLElement[] => {
-        // While a form of its own is open, the card asks one thing at a time.
-        if (!onReply || view.asking || view.reverting) return [];
-        if (!view.replying) view.replying = { note: "", busy: false };
-        const state = view.replying;
-        const say = h("input", {
-            class: "say",
-            type: "text",
-            placeholder: "Reply…  Enter to send",
-            "aria-label": "Reply",
-            "data-field": "reply",
-        }) as HTMLInputElement;
-        say.value = state.note;
-        say.disabled = state.busy;
-        say.addEventListener("input", () => {
-            state.note = say.value;
-        });
-        say.addEventListener("focus", () => {
-            view.pinned = true; // keep the card up while someone types in it
-        });
-        say.addEventListener("keydown", (ev) => {
-            if (ev.key !== "Enter" || ev.isComposing || !state.note.trim() || state.busy) return;
-            ev.preventDefault();
-            state.busy = true;
-            state.error = undefined;
-            say.disabled = true;
-            onReply(a.id, state.note.trim(), Boolean(state.aside)).then(
-                () => {
-                    // The next reply is for the agent again unless they say otherwise.
-                    view.replying = undefined;
-                    redraw(view);
-                },
-                (error: unknown) => {
-                    state.busy = false;
-                    state.error = error instanceof Error ? error.message : String(error);
-                    redraw(view);
-                }
-            );
-        });
-        // On a People only note too: an aside stays from the agent even if the note is later shared with it.
-        const aside = h(
-            "button",
-            {
-                class: "chip aside",
-                type: "button",
-                "aria-pressed": String(Boolean(state.aside)),
-                title: ASIDE_HINT,
-            },
-            "Aside"
-        ) as HTMLButtonElement;
-        aside.addEventListener("click", () => {
-            state.aside = !state.aside;
-            aside.setAttribute("aria-pressed", String(state.aside));
-            view.pinned = true;
-        });
-        return [
-            h("div", { class: "say-row" }, say, aside),
-            ...(state.error ? [h("div", { class: "say-err" }, state.error)] : []),
-        ];
-    };
-
-    /** What a card says and offers about versions to choose between. */
-    const variantControls = (view: PinView, a: Annotation): HTMLElement[] => {
-        const v = a.variants;
-        if (!v || (a.status !== "acknowledged" && a.status !== "variant_chosen")) return [];
-        const picked = a.status === "variant_chosen" ? v.chosen : undefined;
-        const names = v.options.map((o) => o.name);
-        const say = h(
-            "div",
-            { class: "hint variants-hint" },
-            picked
-                ? `You picked “${picked}”. Waiting for ${who()} to apply it.`
-                : `Versions ready: ${names.join(", ")}. Switch between them in the page, then press “Use this”.`
-        );
-        const takeBack =
-            picked && onTakeBackVariant
-                ? h("button", { class: "link plain", type: "button" }, "Take back")
-                : null;
-        takeBack?.addEventListener("click", () => {
-            takeBack.setAttribute("disabled", "");
-            void onTakeBackVariant?.(a.id).catch(() => takeBack.removeAttribute("disabled"));
-        });
-        if (!onReply)
-            return [
-                h(
-                    "div",
-                    { class: "revert versions" },
-                    say,
-                    takeBack ? h("div", { class: "foot start" }, takeBack) : null
-                ),
-            ];
-
-        const state = view.asking;
-        if (!state) {
-            const open = h(
-                "button",
-                { class: "link plain", type: "button" },
-                "Ask for different versions…"
-            );
-            open.addEventListener("click", () => {
-                view.asking = { note: "", busy: false };
-                view.pinned = true;
-                renderCard(view);
-                view.card?.querySelector("textarea")?.focus();
-            });
-            return [
-                h(
-                    "div",
-                    { class: "revert versions" },
-                    say,
-                    h("div", { class: "foot start" }, open, takeBack)
-                ),
-            ];
-        }
-        const note = h("textarea", {
-            rows: "2",
-            placeholder:
-                "What should be different? e.g. bolder, or one more with the image on the right",
-            "aria-label": "What to change about the versions",
-            "data-field": "ask",
-        }) as HTMLTextAreaElement;
-        note.value = state.note;
-        note.disabled = state.busy;
-        note.addEventListener("input", () => {
-            state.note = note.value;
-        });
-        const send = h(
-            "button",
-            { class: "btn primary small", type: "button" },
-            `Send to ${who()}`
-        );
-        send.disabled = state.busy;
-        const cancel = h("button", { class: "btn small", type: "button" }, "Cancel");
-        cancel.disabled = state.busy;
-        cancel.addEventListener("click", () => {
-            view.asking = undefined;
-            renderCard(view);
-        });
-        send.addEventListener("click", () => {
-            if (!state.note.trim()) {
-                state.error = "Write what should be different first.";
-                renderCard(view);
-                return;
-            }
-            state.busy = true;
-            state.error = undefined;
-            renderCard(view);
-            onReply(a.id, state.note.trim()).then(
-                () => {
-                    view.asking = undefined;
-                    redraw(view);
-                },
-                (error: unknown) => {
-                    state.busy = false;
-                    state.error = error instanceof Error ? error.message : String(error);
-                    redraw(view);
-                }
-            );
-        });
-        return [
-            h(
-                "div",
-                { class: "revert versions" },
-                say,
-                note,
-                state.error ? h("div", { class: "err" }, state.error) : null,
-                h("div", { class: "foot" }, cancel, send)
-            ),
-        ];
-    };
-
-    /**
-     * What a card offers about undoing a change, by where the annotation is in its life: a form in a box of its own,
-     * and what goes at the start of the card's last line.
-     */
-    const revertControls = (
-        view: PinView,
-        a: Annotation
-    ): { box: HTMLElement | null; lead: HTMLElement[] } => {
-        if (a.status === "resolved" && onRequestRevert) {
-            const state = view.reverting;
-            if (!state) {
-                const open = h(
-                    "button",
-                    { class: "link violet", type: "button" },
-                    "Revert this change…"
-                );
-                open.addEventListener("click", () => {
-                    view.reverting = { note: "", busy: false };
-                    view.pinned = true; // keep the card up while someone types in it
-                    renderCard(view);
-                    view.card?.querySelector("textarea")?.focus();
-                });
-                return { box: null, lead: [open] };
-            }
-            const note = h("textarea", {
-                rows: "2",
-                placeholder: "What is wrong with it? (optional)",
-                "aria-label": "Why this change should be reverted",
-                "data-field": "revert",
-            }) as HTMLTextAreaElement;
-            note.value = state.note;
-            note.disabled = state.busy;
-            note.addEventListener("input", () => {
-                state.note = note.value;
-            });
-            const send = h(
-                "button",
-                { class: "btn primary small", type: "button" },
-                `Ask ${who()} to revert`
-            );
-            send.disabled = state.busy;
-            const cancel = h("button", { class: "btn small", type: "button" }, "Cancel");
-            cancel.disabled = state.busy;
-            cancel.addEventListener("click", () => {
-                view.reverting = undefined;
-                renderCard(view);
-            });
-            send.addEventListener("click", () => {
-                // Drawn for a resolved note; if it has moved on since, say what it is now instead of acting on that.
-                if (view.record.annotation.status !== "resolved") return renderCard(view);
-                state.busy = true;
-                state.error = undefined;
-                renderCard(view);
-                onRequestRevert(a.id, state.note.trim()).then(
-                    () => {
-                        view.reverting = undefined;
-                        redraw(view);
-                    },
-                    (error: unknown) => {
-                        state.busy = false;
-                        state.error = error instanceof Error ? error.message : String(error);
-                        redraw(view);
-                    }
-                );
-            });
-            return {
-                box: h(
-                    "div",
-                    { class: "revert" },
-                    h(
-                        "div",
-                        { class: "hint" },
-                        `${Who()} will be asked to undo what it changed for this.`
-                    ),
-                    note,
-                    state.error ? h("div", { class: "err" }, state.error) : null,
-                    h("div", { class: "foot" }, cancel, send)
-                ),
-                lead: [],
-            };
-        }
-        if (a.status === "revert_requested") {
-            const cancel = onCancelRevert
-                ? h("button", { class: "link", type: "button" }, "Cancel request")
-                : null;
-            cancel?.addEventListener("click", () => {
-                // Only a request still waiting can be taken back: once the agent has acted, this would undo its answer.
-                if (view.record.annotation.status !== "revert_requested") return renderCard(view);
-                cancel.setAttribute("disabled", "");
-                void onCancelRevert?.(a.id).catch(() => cancel.removeAttribute("disabled"));
-            });
-            return {
-                box: null,
-                lead: [
-                    h("span", { class: "hint" }, `Waiting for ${who()} to undo it.`),
-                    ...(cancel ? [cancel] : []),
-                ],
-            };
-        }
-        return { box: null, lead: [] };
     };
 
     /** Focus moving to somewhere that is not this pin or its card. */
@@ -753,9 +217,7 @@ export function createPins({
             if (view.card && view.card.style.display !== "none") view.card.style.display = "none";
             expanded(view, false);
             view.drawn = undefined;
-            if (!view.reverting?.busy) view.reverting = undefined; // a form nobody is looking at is not kept
-            if (!view.asking?.busy) view.asking = undefined;
-            if (!view.replying?.busy && !view.replying?.note) view.replying = undefined;
+            closeForms(view);
             return;
         }
         showCard(view);
@@ -940,12 +402,6 @@ export function createPins({
         views.delete(id);
     };
 
-    /** A pin taken off the page keeps its view only while there is something in it to lose: a pinned card, a reply typed. */
-    const worthKeeping = (view: PinView) =>
-        view.pinned ||
-        Boolean(view.replying?.busy || view.replying?.note) ||
-        Boolean(view.reverting?.busy || view.asking?.busy || view.sharing?.busy);
-
     const makeView = (record: AnnotationRecord): PinView => {
         const pin = h("button", {
             class: "pin",
@@ -1005,7 +461,8 @@ export function createPins({
                 if (drawn.has(id)) continue;
                 all ??= new Map(current.map((r) => [r.annotation.id, r]));
                 const record = all.get(id);
-                if (record && worthKeeping(view)) {
+                // Taken off the page, a pin keeps its view only while its card has something in it to lose.
+                if (record && hasWorkInProgress(view)) {
                     view.record = record;
                     view.here = false;
                 } else remove(id, view);

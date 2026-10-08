@@ -1,13 +1,9 @@
 import type { CapturePlugin, DraftAnnotation } from "@notato/core";
 import { domToCanvas } from "modern-screenshot";
+import { EDITABLE, MASK_ATTR, ROOT_ATTR } from "../attributes.ts";
+import { messageOf } from "../text.ts";
 import { isIframe } from "../ui/dom.ts";
 import { contentBox, framesIn, viewportRect } from "../ui/frames.ts";
-import { EDITABLE } from "./identity-dom.ts";
-
-/** The toolbar, pins and popover live under an element carrying this attribute and are never captured. */
-export const ROOT_ATTR = "data-notato-root";
-/** Elements marked with this are replaced by a solid block in every mode. */
-export const MASK_ATTR = "data-notato-mask";
 
 export interface ScreenshotOptions {
     /** Cap on the long edge of the full screenshot, in pixels. */
@@ -111,9 +107,11 @@ export function shiftFixed(cloned: Node, scrollX: number, scrollY: number): void
     style.transform = `translate(${scrollX}px, ${scrollY}px)${existing}`;
 }
 
-function pageBackground(): string {
-    for (const el of [document.body, document.documentElement]) {
-        const bg = getComputedStyle(el).backgroundColor;
+/** The colour a window's page is painted on: its body's, else its root's, else white. */
+function backgroundOf(win: Window): string {
+    for (const el of [win.document.body, win.document.documentElement]) {
+        if (!el) continue;
+        const bg = win.getComputedStyle(el).backgroundColor;
         if (bg && bg !== "transparent" && !/rgba\(\s*0,\s*0,\s*0,\s*0\s*\)/.test(bg)) return bg;
     }
     return "#ffffff";
@@ -227,7 +225,7 @@ export function screenshotPlugin(options: ScreenshotOptions = {}): CapturePlugin
                     shot = await fromSupplied(draft.screenshot, maxEdge, maskFields);
                     method = "supplied";
                 } catch (e) {
-                    suppliedError = e instanceof Error ? e.message : String(e);
+                    suppliedError = messageOf(e);
                 }
             }
             if (!shot) {
@@ -317,7 +315,7 @@ async function renderDom(maxEdge: number, maskFields: boolean): Promise<Rendered
             width: vw,
             height: vh,
             scale: plan.scale,
-            backgroundColor: pageBackground(),
+            backgroundColor: backgroundOf(window),
             style: { transform: `translate(${-sx}px, ${-sy}px)`, transformOrigin: "0 0" },
             timeout: 8000,
             filter: (node) => !(node.nodeType === 1 && (node as Element).hasAttribute(ROOT_ATTR)),
@@ -337,19 +335,10 @@ async function renderDom(maxEdge: number, maskFields: boolean): Promise<Rendered
             ...(frames.foreign ? { foreignFrames: frames.foreign } : {}),
         };
     } catch (e) {
-        const error = e instanceof Error ? e.message : String(e);
+        const error = messageOf(e);
         return { canvas: placeholder(plan.width, plan.height, error), vw, vh, error };
     }
 }
-
-const bodyBackground = (win: Window): string => {
-    for (const el of [win.document.body, win.document.documentElement]) {
-        if (!el) continue;
-        const bg = win.getComputedStyle(el).backgroundColor;
-        if (bg && bg !== "transparent" && !/rgba\(\s*0,\s*0,\s*0,\s*0\s*\)/.test(bg)) return bg;
-    }
-    return "#ffffff";
-};
 
 /**
  * Renders each same-origin iframe in view on its own and draws it where it sits, down through nested frames. A frame
@@ -415,7 +404,7 @@ async function compositeFrames(
                 width: box.width,
                 height: box.height,
                 scale,
-                backgroundColor: bodyBackground(inner),
+                backgroundColor: backgroundOf(inner),
                 style: { transform: `translate(${-sx}px, ${-sy}px)`, transformOrigin: "0 0" },
                 timeout: 5000,
                 onCloneEachNode: (cloned) => {

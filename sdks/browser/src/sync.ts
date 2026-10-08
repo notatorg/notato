@@ -1,7 +1,8 @@
 import type { MemoryStore } from "@notato/core";
-import { type AgentStep, Annotation, type Severity, Status } from "@notato/schema";
+import { Annotation, Status } from "@notato/schema";
 import { authHeaders } from "./auth.ts";
 import { type EventStream, net, STREAM_CLOSED } from "./net.ts";
+import type { AnnotateArgs } from "./types.ts";
 import type { ConnectionState } from "./ui/toolbar.ts";
 
 export interface ServerSyncOptions {
@@ -46,16 +47,11 @@ const agentInfo = (raw: unknown): AgentInfo | undefined => {
     };
 };
 
-/** An annotate request the server relays to this page on behalf of an agent. */
+/** An annotate request the server relays to this page on behalf of an agent (`notato_annotate`). */
 export interface AnnotateRequest {
     requestId: string;
-    args: {
-        target: string;
-        comment: string;
-        severity?: Severity;
-        steps?: AgentStep[];
-        author?: string;
-    };
+    /** What `window.__notato.annotate` takes, with the target as a selector and no screenshot. */
+    args: Omit<AnnotateArgs, "target" | "screenshot"> & { target: string };
 }
 
 export interface ServerSync {

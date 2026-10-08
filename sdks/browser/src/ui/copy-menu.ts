@@ -1,5 +1,6 @@
 import { DETAILS, type Detail } from "@notato/core";
-import { h, ICONS, icon } from "./dom.ts";
+import { capitalize, plural } from "../text.ts";
+import { dismissOnOutside, h, ICONS, icon } from "./dom.ts";
 
 const BLURB: Record<Detail, string> = {
     compact: "One line per note: what and where.",
@@ -73,7 +74,7 @@ export function createCopyMenu(layer: HTMLElement, remembered: () => Detail): Co
                         },
                     },
                     h("span", { class: "glyph", "aria-hidden": "true" }, "·".repeat(i + 1)),
-                    h("strong", {}, detail[0]?.toUpperCase() + detail.slice(1)),
+                    h("strong", {}, capitalize(detail)),
                     detail === last ? h("em", {}, "Last used") : h("em"),
                     h("span", { class: "desc" }, BLURB[detail])
                 )
@@ -106,11 +107,7 @@ export function createCopyMenu(layer: HTMLElement, remembered: () => Detail): Co
                     h("strong", {}, "Export"),
                     extras.count === undefined
                         ? null
-                        : h(
-                              "span",
-                              {},
-                              `${extras.count} ${extras.count === 1 ? "note" : "notes"} on this page`
-                          )
+                        : h("span", {}, `${plural(extras.count, "note")} on this page`)
                 ),
                 none
                     ? h(
@@ -130,53 +127,10 @@ export function createCopyMenu(layer: HTMLElement, remembered: () => Detail): Co
                 el.style.top = `${anchor.top + (anchor.height ?? 0) + 8}px`;
             else el.style.bottom = `${Math.max(8, window.innerHeight - anchor.top + 8)}px`;
             (el.querySelector(".menu-item:not(:disabled)") as HTMLElement | null)?.focus();
-
-            const onKey = (ev: KeyboardEvent) => {
-                if (ev.key === "Escape") {
-                    ev.stopPropagation();
-                    close();
-                }
-            };
-            const onDown = (ev: Event) => {
-                const path = ev.composedPath();
-                if (!el || path.includes(el)) return;
-                // Closing here would let the owner's click open it again at once: the button could never close it.
-                if (extras.owner && path.includes(extras.owner)) return;
-                close();
-            };
-            window.addEventListener("keydown", onKey, true);
-            // After this click finishes, so the click that opened the menu does not close it at once.
-            const arm = setTimeout(() => window.addEventListener("mousedown", onDown, true), 0);
-            off = () => {
-                clearTimeout(arm);
-                window.removeEventListener("keydown", onKey, true);
-                window.removeEventListener("mousedown", onDown, true);
-            };
+            off = dismissOnOutside(el, close, extras.owner);
         },
         close,
         destroy: close,
-    };
-}
-
-/** A short message that goes away on its own, for "Copied 3 annotations". */
-export function createToast(layer: HTMLElement) {
-    let el: HTMLElement | null = null;
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    return {
-        show(message: string, ms = 2600) {
-            el?.remove();
-            if (timer) clearTimeout(timer);
-            el = h("div", { class: "toast", role: "status" }, message);
-            layer.append(el);
-            timer = setTimeout(() => {
-                el?.remove();
-                el = null;
-            }, ms);
-        },
-        destroy() {
-            if (timer) clearTimeout(timer);
-            el?.remove();
-        },
     };
 }
 

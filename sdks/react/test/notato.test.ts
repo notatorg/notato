@@ -28,6 +28,20 @@ describe("what restarts the toolbar", () => {
         const b = startKey({ ...base, testIdAttributes: ["data-qa"], plugins: [] });
         expect(b).toBe(a);
     });
+
+    it("is not the same props written in another order, or one set to undefined rather than left out", () => {
+        const first = startKey({ project: "shop", server: "http://localhost:4799", token: "t" });
+        expect(startKey({ token: "t", server: "http://localhost:4799", project: "shop" })).toBe(
+            first
+        );
+        expect(startKey({ ...base, token: "t", author: undefined })).toBe(first);
+    });
+
+    it("is not a new transport, or turning it on and off, which the component handles itself", () => {
+        const first = startKey(base);
+        expect(startKey({ ...base, transport: { fetch: async () => new Response() } })).toBe(first);
+        expect(startKey({ ...base, enabled: true })).toBe(first);
+    });
 });
 
 describe("starting the toolbar", () => {

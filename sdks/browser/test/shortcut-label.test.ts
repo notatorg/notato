@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isMac, shortcutLabel } from "../src/ui/dom.ts";
+import { isMac, shortcutLabel } from "../src/ui/keys.ts";
 
 describe("shortcut labels", () => {
     it("are the Mac's own symbols on a Mac, where Alt is the Option key", () => {

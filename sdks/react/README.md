@@ -21,4 +21,4 @@ A changed prop restarts the toolbar with it: the token, the author, `persist` an
 
 ## Example
 
-[`example/`](example) is a small Vite app with the toolbar: `bun install` at the repository root, then `bun run dev` in `example/`.
+[`example/`](https://github.com/notatorg/notato/tree/main/sdks/react/example) is a small Vite app with the toolbar: `bun install` at the repository root, then `bun run dev` in `sdks/react/example`. Its notes go to `http://localhost:4747` unless the page's URL says otherwise (`?server=http://localhost:4799`), and `?mode=test` or `?mode=agent` switch the mode.

@@ -53,12 +53,6 @@ export function boxToTop(win: Window, box: Box): Box {
     return { left, top, width, height };
 }
 
-/** A point given in `win`'s viewport, in the top page's viewport. */
-export function pointToTop(win: Window, x: number, y: number): { x: number; y: number } {
-    const b = boxToTop(win, { left: x, top: y, width: 0, height: 0 });
-    return { x: b.left, y: b.top };
-}
-
 /** An element's rectangle in the top page's viewport, wherever it lives. */
 export function viewportRect(el: Element): Box {
     const r = el.getBoundingClientRect();

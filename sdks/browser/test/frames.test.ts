@@ -6,7 +6,6 @@ import {
     contentBox,
     type FrameWatcher,
     framesIn,
-    pointToTop,
     viewportRect,
     watchFrames,
 } from "../src/ui/frames.ts";
@@ -20,6 +19,11 @@ const addFrame = (into: ParentNode = document.body, doc: Document = document) =>
     return frame;
 };
 const windowOf = (frame: HTMLIFrameElement) => frame.contentWindow as Window;
+/** A point in `win`'s viewport, in the top page's: `boxToTop` for a box with no size. */
+const pointToTop = (win: Window, x: number, y: number) => {
+    const box = boxToTop(win, { left: x, top: y, width: 0, height: 0 });
+    return { x: box.left, y: box.top };
+};
 const docOf = (frame: HTMLIFrameElement) => frame.contentDocument as Document;
 
 /** What a browser does for a frame from another origin: its document cannot be read. */

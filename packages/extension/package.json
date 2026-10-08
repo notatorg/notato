@@ -2,6 +2,7 @@
     "name": "@notato/extension",
     "version": "0.2.0",
     "private": true,
+    "description": "Notato as a Chrome (Manifest V3) extension: the toolbar on any site you turn it on for, with nothing changed in the page.",
     "type": "module",
     "scripts": {
         "build": "bun run scripts/build.ts"
