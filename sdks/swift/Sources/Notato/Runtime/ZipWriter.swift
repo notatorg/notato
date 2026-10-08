@@ -38,6 +38,8 @@ struct ZipWriter {
 
     private static func le16(_ value: UInt16) -> Data { withUnsafeBytes(of: value.littleEndian) { Data($0) } }
     private static func le32(_ value: UInt32) -> Data { withUnsafeBytes(of: value.littleEndian) { Data($0) } }
+    /// The parts one after another. A function rather than a chain of `+`, which older type checkers take too long on.
+    private static func joined(_ parts: Data...) -> Data { parts.reduce(into: Data()) { $0.append($1) } }
 
     private var offset: UInt64 { written + UInt64(pending.count) }
 
@@ -67,15 +69,19 @@ struct ZipWriter {
         let size = UInt32(bytes.count)
         let start = UInt32(offset)
         // Local file header: version 2.0, UTF-8 names (bit 11), stored (method 0), no date.
-        var header = Self.le32(0x0403_4B50) + Self.le16(20) + Self.le16(0x0800) + Self.le16(0) + Self.le16(0) + Self.le16(0x21)
-        header += Self.le32(crc) + Self.le32(size) + Self.le32(size)
-        header += Self.le16(UInt16(nameBytes.count)) + Self.le16(0) + nameBytes
+        let header = Self.joined(
+            Self.le32(0x0403_4B50), Self.le16(20), Self.le16(0x0800), Self.le16(0), Self.le16(0), Self.le16(0x21),
+            Self.le32(crc), Self.le32(size), Self.le32(size),
+            Self.le16(UInt16(nameBytes.count)), Self.le16(0), nameBytes
+        )
         try write(header)
         try write(bytes)
-        central += Self.le32(0x0201_4B50) + Self.le16(20) + Self.le16(20) + Self.le16(0x0800) + Self.le16(0) + Self.le16(0) + Self.le16(0x21)
-        central += Self.le32(crc) + Self.le32(size) + Self.le32(size)
-        central += Self.le16(UInt16(nameBytes.count)) + Self.le16(0) + Self.le16(0) + Self.le16(0) + Self.le16(0) + Self.le32(0)
-        central += Self.le32(start) + nameBytes
+        central += Self.joined(
+            Self.le32(0x0201_4B50), Self.le16(20), Self.le16(20), Self.le16(0x0800), Self.le16(0), Self.le16(0), Self.le16(0x21),
+            Self.le32(crc), Self.le32(size), Self.le32(size),
+            Self.le16(UInt16(nameBytes.count)), Self.le16(0), Self.le16(0), Self.le16(0), Self.le16(0), Self.le32(0),
+            Self.le32(start), nameBytes
+        )
         count += 1
     }
 
@@ -84,8 +90,10 @@ struct ZipWriter {
         let start = UInt32(offset)
         let entries = UInt16(count)
         try write(central)
-        var end = Self.le32(0x0605_4B50) + Self.le16(0) + Self.le16(0) + Self.le16(entries) + Self.le16(entries)
-        end += Self.le32(UInt32(central.count)) + Self.le32(start) + Self.le16(0)
+        let end = Self.joined(
+            Self.le32(0x0605_4B50), Self.le16(0), Self.le16(0), Self.le16(entries), Self.le16(entries),
+            Self.le32(UInt32(central.count)), Self.le32(start), Self.le16(0)
+        )
         try write(end)
         try flush()
         try handle.close()

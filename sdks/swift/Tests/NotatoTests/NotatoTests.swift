@@ -66,7 +66,9 @@ struct NoteIndexTests {
         #expect(screen.count == 220)
         #expect(screen.all.map(\.id) == here.map(\.id), "oldest first, so each keeps its number")
         #expect(screen.pinned.count == PinLayout.maxPins)
-        #expect(screen.pinned.map(\.record.id) == here.filter { $0.platform == "ios" }.suffix(PinLayout.maxPins).map(\.id))
+        let pinnedIds: [String] = screen.pinned.map(\.record.id)
+        let newestOnIOS: [String] = here.filter { $0.platform == "ios" }.suffix(PinLayout.maxPins).map(\.id)
+        #expect(pinnedIds == newestOnIOS)
         #expect(screen.pinned.allSatisfy { screen.all[$0.number - 1] === $0.record }, "numbered as the Notes list numbers them")
         #expect(notato.notes(onRoute: "/Checkout").count == 5)
         #expect(screen.newest(50).map(\.number) == Array(171...220), "the Notes list: the newest 50, in pin order")
@@ -153,7 +155,8 @@ struct QueueTests {
         }
         #expect(stopped == nil)
         #expect(tried == queue.map(\.id))
-        #expect(queue.filter(\.pending).map(\.id) == [queue[1].id])
+        let stillPending: [String] = queue.filter(\.pending).map(\.id)
+        #expect(stillPending == [queue[1].id])
         // On the next try (or launch, `LocalStore.refuse`) it is not sent again.
         tried = []
         _ = await Notato.drain(queue) { tried.append($0.id); return .sent }
@@ -171,7 +174,8 @@ struct QueueTests {
             return .sent
         }
         #expect(stopped == unknown)
-        #expect(tried == [queue[0].id, queue[1].id])
+        let firstTwo: [String] = [queue[0].id, queue[1].id]
+        #expect(tried == firstTwo)
         #expect(queue.filter(\.pending).count == 3)
         #expect(SendOutcome.held(unknown).problem == "Saved on this device, not sent: \(unknown.message)", "the server's words are shown")
         #expect(SendOutcome.held(NotatoServerError(message: "offline", status: 0)).problem == "Saved. It's sent when the server can be reached.")
@@ -185,7 +189,8 @@ struct QueueTests {
             queue[2].deleted = true
             return .sent
         }
-        #expect(tried == [queue[0].id, queue[1].id])
+        let firstTwo: [String] = [queue[0].id, queue[1].id]
+        #expect(tried == firstTwo)
     }
 
     @Test func onlyNotesTheServerHadBeforeTheLoadAndNoLongerListsAreForgotten() {

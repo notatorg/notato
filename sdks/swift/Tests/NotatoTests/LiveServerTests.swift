@@ -46,7 +46,8 @@ struct LiveServerTests {
         _ = try await client.post(elsewhere, assets: [:])
         await notato.handle(ServerSentEvent(event: "hello", data: "{}"), client: client)
         #expect(!waiting.pending)
-        #expect(Set(notato.records.map(\.id)) == [waiting.id, elsewhere.id])
+        let ids: Set<String> = Set(notato.records.map(\.id))
+        #expect(ids == Set([waiting.id, elsewhere.id]))
         #expect(waiting.annotation.context.isEmpty == false, "the list's summary did not take the context away")
     }
 

@@ -53,7 +53,9 @@ struct PinGridTests {
     private func reference(_ rects: [CGRect], width: CGFloat) -> [CGPoint] {
         var placed: [CGPoint] = []
         let maxX = max(PinLayout.margin, width - 26)
-        let offsets: [CGFloat] = [0] + (1...PinLayout.sideways).map { -CGFloat($0) * PinLayout.step } + (1...PinLayout.sideways).map { CGFloat($0) * PinLayout.step }
+        let left: [CGFloat] = (1...PinLayout.sideways).map { (n: Int) -> CGFloat in -CGFloat(n) * PinLayout.step }
+        let right: [CGFloat] = (1...PinLayout.sideways).map { (n: Int) -> CGFloat in CGFloat(n) * PinLayout.step }
+        let offsets: [CGFloat] = [0] + left + right
         for rect in rects {
             let first = CGPoint(x: min(max(PinLayout.margin, rect.maxX - 12), maxX), y: max(PinLayout.top, rect.minY - 12))
             var found: CGPoint?
