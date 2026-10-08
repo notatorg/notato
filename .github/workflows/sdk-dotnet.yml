@@ -43,9 +43,11 @@ jobs:
               with:
                   global-json-file: sdks/dotnet/global.json
             - run: dotnet workload install maui
-            - run: dotnet build src/Notato.Maui -c Release
+            # The house style (sdks/dotnet/.editorconfig) as build errors, on every target.
+            - run: dotnet build src/Notato.Maui -c Release -p:EnforceCodeStyleInBuild=true -p:TreatWarningsAsErrors=true
             - run: dotnet build samples/Notato.Maui.Sample -f net10.0-android
             - run: dotnet build samples/Notato.Maui.Sample -f net10.0-ios -p:RuntimeIdentifier=iossimulator-arm64
+            - run: dotnet build samples/Notato.Maui.Sample -f net10.0-maccatalyst
             - run: dotnet pack src/Notato.Maui -c Release -o artifacts
             - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
               with:

@@ -145,7 +145,7 @@ export function connectGuides(t: ConnectTarget): Guide[] {
                       "Development builds only: in a release build it renders your app and nothing else.",
                       `The iOS simulator reaches this server as it is; \`${adbReverse}\` makes it localhost on the Android emulator or a USB phone.`,
                   ]),
-            "A bare app without Expo modules: `npm i -D @notato/react-native react-native-view-shot`, then `pod install` in `ios/`, and leave `storage` out (notes are then kept until the app restarts).",
+            "A bare app without Expo modules: `npm i @notato/react-native react-native-view-shot`, then `pod install` in `ios/`, and leave `storage` out (notes are then kept until the app restarts).",
         ],
     };
 

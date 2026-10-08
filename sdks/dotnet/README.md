@@ -1,6 +1,6 @@
 # Notato for .NET MAUI
 
-Figma-style comments for a running .NET MAUI app. Tap an element, write a note, and it reaches your coding agent (Claude Code, Codex, Cursor, Gemini CLI, Copilot and others) over MCP with a screenshot, the XAML file and line the element was written at, its page, its view model, and the app's recent log. It is the MAUI client of the same Notato server the web SDK uses: the notes, the board, the MCP tools and the status loop (open, acknowledged, resolved, revert) are the same.
+Figma-style comments for a running .NET MAUI app. Tap an element, write a note, and it reaches your coding agent (Claude Code, Codex, Cursor, Gemini CLI, Copilot and others) over MCP with a screenshot, the XAML file and line the element was written at, its page, its view model, and the app's recent log. It is the MAUI client of the same Notato server every other Notato SDK uses: the notes, the board, the MCP tools and the status loop (open, acknowledged, resolved, revert) are the same.
 
 Works on iOS, Android and Mac Catalyst with .NET 10 and later. Windows builds, but has no overlay yet.
 
@@ -174,7 +174,7 @@ The picker hit-tests the visual tree with the native views' real positions (scro
 
 ## Physical devices and shared servers
 
-`notato dev` listens on loopback only. A USB-connected Android phone reaches it with `adb reverse`. For an iPhone, or testers elsewhere, run a shared server (`notato serve`, see the main README) and give the app its address and a project token in configuration. The token only ever goes to that server (its scheme, host and port): a server typed into the toolbar's settings gets no token, so a note sent there goes without one.
+`notato dev` listens on loopback only. Your own phones reach it through a dev tunnel ([On a phone](#on-a-phone)), and a USB-connected Android phone also with `adb reverse`. For testers elsewhere, run a shared server (`notato serve`, see the main README) and give the app its address and a project token in configuration. The token only ever goes to that server (its scheme, host and port): a server typed into the toolbar's settings gets no token, so a note sent there goes without one.
 
 ## Known limits
 
