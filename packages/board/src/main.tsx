@@ -2,31 +2,29 @@ import type { Status } from "@notato/schema";
 import { StrictMode, useCallback, useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import {
-    byActivity,
     type CreatedProject,
     getMe,
-    keepFreshToken,
+    isAdmin,
     listProjects,
     logout,
     type Me,
     type ProjectSummary,
-    projectName,
-    remember,
-    remembered,
     setUnauthorizedHandler,
 } from "./api.ts";
 import { Home } from "./Home.tsx";
 import { Login } from "./Login.tsx";
 import { markSeen, onLive } from "./live.ts";
-import { countsMayChange, lastActivity, withActivity } from "./model.ts";
+import { byActivity, countsMayChange, lastActivity, projectName, withActivity } from "./model.ts";
 import { NewProject } from "./NewProject.tsx";
 import { Project } from "./Project.tsx";
-import { go, projectHref, useRoute } from "./route.ts";
+import { go, projectHref, type Route, useRoute } from "./route.ts";
 import { Settings } from "./Settings.tsx";
 import { Sidebar } from "./Sidebar.tsx";
+import { KEYS, keepFreshToken, remember, remembered } from "./storage.ts";
 import { Tokens } from "./Tokens.tsx";
 import { Icon, Logo } from "./ui.tsx";
 
+/** Signs in first when the server asks for it, then shows the board. */
 function App() {
     const [me, setMe] = useState<Me | null>(null);
     const [error, setError] = useState<string | null>(null);
@@ -52,15 +50,11 @@ function App() {
 const SETTLE_MS = 400;
 const MAX_WAIT_MS = 2000;
 
-function Shell({
-    me,
-    route,
-    onSignedOut,
-}: {
-    me: Me;
-    route: ReturnType<typeof useRoute>;
-    onSignedOut(): void;
-}) {
+/**
+ * The board around whichever page is open: the project list, loaded here and kept up to date from the live stream,
+ * the sidebar, and the new-project dialog.
+ */
+function Shell({ me, route, onSignedOut }: { me: Me; route: Route; onSignedOut(): void }) {
     const [projects, setProjects] = useState<ProjectSummary[] | null>(null);
     const listed = useRef(projects);
     listed.current = projects;
@@ -74,7 +68,7 @@ function Shell({
     /** Each note's status as of the last change heard, so a change can tell whether it moved one. */
     const statuses = useRef(new Map<string, Status>());
     const [lastProject, setLastProject] = useState(() =>
-        remembered<string>("notato.project", null, "")
+        remembered<string>(KEYS.project, null, "")
     );
 
     const loadProjects = useCallback(() => {
@@ -133,7 +127,7 @@ function Shell({
         document.title = openName ? `${openName} · Notato` : "Notato";
         if (open) {
             setLastProject(open);
-            remember("notato.project", open);
+            remember(KEYS.project, open);
         }
     }, [open, openName]);
     // Looking at a project is seeing what the server says happened in it last.
@@ -148,7 +142,7 @@ function Shell({
             ? lastProject || null
             : ([...projects].sort(byActivity)[0]?.id ?? null));
 
-    const admin = me.mode === "dev" || Boolean(me.username);
+    const admin = isAdmin(me);
     const newProject = admin ? (id?: string) => setCreating({ id }) : undefined;
 
     const created = (made: CreatedProject) => {

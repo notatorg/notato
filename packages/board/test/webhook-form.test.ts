@@ -1,6 +1,5 @@
 import { describe, expect, it } from "bun:test";
 import type { WebhookView } from "../src/api.ts";
-import { href, parseRoute } from "../src/route.ts";
 import { draftOf, eventsSummary, formFor, formProblem, orderEvents } from "../src/webhook-form.ts";
 
 const saved = (over: Partial<WebhookView> = {}): WebhookView => ({
@@ -117,11 +116,5 @@ describe("describing events", () => {
         expect(
             orderEvents(["annotation.deleted", "annotation.created", "annotation.future"])
         ).toEqual(["annotation.created", "annotation.deleted", "annotation.future"]);
-    });
-});
-
-describe("the settings route", () => {
-    it("round-trips", () => {
-        expect(parseRoute(href({ page: "settings" }))).toEqual({ page: "settings" });
     });
 });

@@ -4,13 +4,16 @@ import {
     ago,
     duration,
     type Filters,
-    lastActivity,
     NO_NAME,
+    newestActivity,
     projectStats,
     SEVERITIES,
     TODO,
 } from "./model.ts";
 import { Avatar, Empty } from "./ui.tsx";
+
+/** How many pages and people each ranking lists before it says how many more there are. */
+const RANKED = 12;
 
 const fmt = (n: number) => n.toLocaleString();
 const shortDay = (iso: string) =>
@@ -30,14 +33,7 @@ export function Overview({
     menu: ReactNode;
 }) {
     const stats = useMemo(() => projectStats(all), [all]);
-    const latest = useMemo(
-        () =>
-            all.reduce<string | null>((m, a) => {
-                const at = lastActivity(a);
-                return !m || Date.parse(at) > Date.parse(m) ? at : m;
-            }, null),
-        [all]
-    );
+    const latest = useMemo(() => newestActivity(all), [all]);
 
     const head = (
         <header className="sheet-head">
@@ -184,7 +180,7 @@ export function Overview({
                     <section className="block">
                         <h2>Pages with the most to do</h2>
                         <ul className="rank">
-                            {stats.routes.slice(0, 12).map((r) => (
+                            {stats.routes.slice(0, RANKED).map((r) => (
                                 <li key={r.key}>
                                     <button
                                         type="button"
@@ -208,15 +204,17 @@ export function Overview({
                                 </li>
                             ))}
                         </ul>
-                        {stats.routes.length > 12 ? (
-                            <p className="muted small">and {stats.routes.length - 12} more pages</p>
+                        {stats.routes.length > RANKED ? (
+                            <p className="muted small">
+                                and {stats.routes.length - RANKED} more pages
+                            </p>
                         ) : null}
                     </section>
 
                     <section className="block">
                         <h2>Who's giving feedback</h2>
                         <ul className="rank">
-                            {stats.people.slice(0, 12).map((p) => {
+                            {stats.people.slice(0, RANKED).map((p) => {
                                 const kind = p.agent ? "agent" : "human";
                                 return (
                                     <li key={p.key}>

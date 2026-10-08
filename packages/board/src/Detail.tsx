@@ -1,21 +1,22 @@
-import { pinNumber, renderAnnotation } from "@notato/core";
+import { type Detail as DetailLevel, pinNumber, renderAnnotation } from "@notato/core";
 import type { Annotation, Severity, Status } from "@notato/schema";
-import { type KeyboardEvent, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { type KeyboardEvent, useLayoutEffect, useRef, useState } from "react";
+import { chooseVariant, remove, reply, setPeopleOnly, setSeverity, setStatus } from "./api.ts";
 import {
-    assetHref,
-    chooseVariant,
-    copyText,
-    remove,
-    reply,
-    setPeopleOnly,
-    setSeverity,
-    setStatus,
-    useBoardName,
-} from "./api.ts";
-import { ago, authorName, dayLabel, restoreDraft, SEVERITIES, serial } from "./model.ts";
-import type { Detail as DetailLevel } from "./Project.tsx";
+    authorName,
+    capitalise,
+    clock,
+    dayLabel,
+    restoreDraft,
+    SEVERITIES,
+    serial,
+} from "./model.ts";
+import { MoreFacts, TargetFacts } from "./NoteFacts.tsx";
 import { go, projectHref } from "./route.ts";
-import { Avatar, Icon, Logo, StatusPill, When } from "./ui.tsx";
+import { Screenshots } from "./Screenshots.tsx";
+import { useBoardName } from "./storage.ts";
+import { ASIDE_HINT, Thread } from "./Thread.tsx";
+import { copyText, FLASH_MS, Icon, StatusPill, When } from "./ui.tsx";
 
 interface Props {
     annotation: Annotation;
@@ -46,8 +47,6 @@ const PLATFORM: Record<string, string> = {
     "react-native": "React Native",
 };
 
-const clock = (iso: string) =>
-    new Date(iso).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
 /** "Today, 15:23", "Yesterday, 09:10", "3 Oct 2026, 11:02". */
 const when = (iso: string) => {
     const day = dayLabel(iso);
@@ -55,11 +54,19 @@ const when = (iso: string) => {
         ? `${day}, ${clock(iso)}`
         : new Date(iso).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
 };
-/** Said wherever People only or an aside can be chosen, in the board, the toolbar and the mobile SDKs. */
-const PEOPLE_ONLY_HINT = "Keep this between people: the agent won't see it.";
-const ASIDE_HINT = "Just for people: the agent won't see this reply.";
-const cap = (s: string) => `${s[0]?.toUpperCase() ?? ""}${s.slice(1)}`;
 
+/** Said wherever People only can be chosen, in the board, the toolbar and the mobile SDKs. */
+const PEOPLE_ONLY_HINT = "Keep this between people: the agent won't see it.";
+
+/** A comment longer than this, or on more than one line, is set as text rather than as a headline. */
+const LONG_COMMENT = 160;
+/** The reply box grows with what is written up to this height (px), then scrolls. */
+const REPLY_MAX_HEIGHT = 160;
+
+/** A status button's look: the main way on, a quieter one, or the one to reach for least. */
+type Look = "primary" | "tonal" | "ghost";
+
+/** One note, open beside the inbox: everything it recorded, its thread, and the reply box and status buttons. */
 export function Detail({ annotation: a, project, detail, hidden, onChange, onDeleted }: Props) {
     const [text, setText] = useState("");
     /** The next reply goes as an aside: for the people on the thread, not the agent. */
@@ -70,15 +77,11 @@ export function Detail({ annotation: a, project, detail, hidden, onChange, onDel
     /** One request at a time, in the order they were made: a reply sent before a resolve lands before it. */
     const [queue] = useState(serial);
     const [error, setError] = useState<string | null>(null);
-    const [zoom, setZoom] = useState(false);
-    const [more, setMore] = useState(false);
     const [flash, setFlash] = useState<string | null>(null);
     const body = useRef<HTMLDivElement>(null);
     const field = useRef<HTMLTextAreaElement>(null);
     const name = useBoardName();
-    const shots = a.screenshots;
     const pin = pinNumber(a);
-    const target = a.target.identity[0];
     const note = text.trim();
 
     // The reply field grows with what is written, up to a point, then scrolls.
@@ -89,21 +92,9 @@ export function Detail({ annotation: a, project, detail, hidden, onChange, onDel
         el.style.height = "auto";
         // scrollHeight leaves out the border, which the height (border-box) includes.
         const full = el.scrollHeight + el.offsetHeight - el.clientHeight;
-        el.style.height = `${Math.min(full, 160)}px`;
-        el.style.overflowY = full > 160 ? "auto" : "hidden";
+        el.style.height = `${Math.min(full, REPLY_MAX_HEIGHT)}px`;
+        el.style.overflowY = full > REPLY_MAX_HEIGHT ? "auto" : "hidden";
     }, [text]);
-
-    useEffect(() => {
-        if (!zoom) return;
-        const onKey = (e: globalThis.KeyboardEvent) => {
-            if (e.key === "Escape") {
-                e.stopPropagation();
-                setZoom(false);
-            }
-        };
-        window.addEventListener("keydown", onKey, true);
-        return () => window.removeEventListener("keydown", onKey, true);
-    }, [zoom]);
 
     /**
      * Sends a request. With `sent`, it takes what is in the reply box with it: the box empties at once, so what is typed
@@ -140,34 +131,38 @@ export function Detail({ annotation: a, project, detail, hidden, onChange, onDel
     /** The reply box's text goes with this request, when there is any. */
     const taking = note ? text : undefined;
 
-    const say = (message: string) => {
-        setFlash(message);
-        setTimeout(() => setFlash(null), 1600);
-    };
-    const copyMarkdown = async () => {
+    const copy = async (what: string, done: string) => {
         try {
-            await copyText(renderAnnotation(a, { detail }));
-            say(`Copied as Markdown (${detail})`);
+            await copyText(what);
+            setFlash(done);
+            setTimeout(() => setFlash(null), FLASH_MS);
         } catch (e) {
             setError(e instanceof Error ? e.message : "Could not copy.");
         }
     };
-    const copyLink = async () => {
-        try {
-            await copyText(
-                `${window.location.origin}${window.location.pathname}${projectHref(project, "inbox", a.id)}`
-            );
-            say("Link copied");
-        } catch (e) {
-            setError(e instanceof Error ? e.message : "Could not copy.");
-        }
+    const copyLink = () =>
+        copy(
+            `${window.location.origin}${window.location.pathname}${projectHref(project, "inbox", a.id)}`,
+            "Link copied"
+        );
+    const copyMarkdown = () =>
+        copy(renderAnnotation(a, { detail }), `Copied as Markdown (${detail})`);
+
+    const deleteNote = () => {
+        if (!window.confirm("Delete this note and its screenshots for everyone?")) return;
+        run(() =>
+            remove(a.id).then(() => {
+                onDeleted(a.id);
+                return undefined;
+            })
+        );
     };
 
     /** A status button. `fallback` is what the thread records when the box is empty. */
     const to = (
         status: Status,
         label: string,
-        options: { fallback?: string; look?: "primary" | "tonal" | "ghost" } = {}
+        options: { fallback?: string; look?: Look } = {}
     ) => (
         <button
             type="button"
@@ -196,6 +191,7 @@ export function Detail({ annotation: a, project, detail, hidden, onChange, onDel
         if (e.key === "Escape") e.currentTarget.blur();
     };
 
+    /** What can happen next from where the note is now. */
     const actions = (() => {
         switch (a.status) {
             case "open":
@@ -239,7 +235,7 @@ export function Detail({ annotation: a, project, detail, hidden, onChange, onDel
         }
     })();
 
-    const long = a.comment.length > 160 || a.comment.includes("\n");
+    const long = a.comment.length > LONG_COMMENT || a.comment.includes("\n");
 
     return (
         <article className="detail">
@@ -260,7 +256,7 @@ export function Detail({ annotation: a, project, detail, hidden, onChange, onDel
                 ) : null}
                 {a.intent ? (
                     <span className="tag" title={INTENT_MEANING[a.intent]}>
-                        {cap(a.intent)}
+                        {capitalise(a.intent)}
                     </span>
                 ) : null}
                 <button
@@ -295,7 +291,7 @@ export function Detail({ annotation: a, project, detail, hidden, onChange, onDel
                     <option value="">No severity</option>
                     {SEVERITIES.map((s) => (
                         <option key={s} value={s}>
-                            {cap(s)}
+                            {capitalise(s)}
                         </option>
                     ))}
                 </select>
@@ -327,17 +323,7 @@ export function Detail({ annotation: a, project, detail, hidden, onChange, onDel
                         className="icon-button danger"
                         disabled={busy}
                         title="Delete"
-                        onClick={() => {
-                            if (
-                                window.confirm("Delete this note and its screenshots for everyone?")
-                            )
-                                run(() =>
-                                    remove(a.id).then(() => {
-                                        onDeleted(a.id);
-                                        return undefined;
-                                    })
-                                );
-                        }}
+                        onClick={deleteNote}
                     >
                         <Icon name="trash" size={15} />
                     </button>
@@ -358,297 +344,17 @@ export function Detail({ annotation: a, project, detail, hidden, onChange, onDel
                     </p>
                 </div>
                 {a.target.selectedText ? <blockquote>“{a.target.selectedText}”</blockquote> : null}
-
-                {shots ? (
-                    <div className={shots.crop ? "shots two" : "shots"}>
-                        <button
-                            type="button"
-                            className="shot"
-                            onClick={() => setZoom(true)}
-                            aria-label="Enlarge the screenshot"
-                        >
-                            <img
-                                src={assetHref(shots.full.id)}
-                                alt="The page, with the target outlined"
-                                loading="lazy"
-                            />
-                            {pin ? (
-                                <span className="paper-tag" aria-hidden="true">
-                                    #{pin}
-                                </span>
-                            ) : null}
-                            <span className="shot-route">{a.route}</span>
-                        </button>
-                        {shots.crop ? (
-                            <button
-                                type="button"
-                                className="shot crop"
-                                onClick={() => setZoom(true)}
-                                aria-label="Enlarge"
-                            >
-                                <img
-                                    src={assetHref(shots.crop.id)}
-                                    alt="Close-up of the target"
-                                    loading="lazy"
-                                />
-                            </button>
-                        ) : null}
-                    </div>
-                ) : null}
-
-                <dl className="target">
-                    <dt>Page</dt>
-                    <dd>
-                        <a href={a.url} target="_blank" rel="noreferrer noopener" title={a.url}>
-                            {a.route}
-                            <Icon name="external" size={11} />
-                        </a>
-                    </dd>
-                    {target?.component ? (
-                        <>
-                            <dt>Component</dt>
-                            <dd>
-                                {target.component.path?.join(" › ") ?? target.component.name}
-                                {target.component.source ? (
-                                    <span className="muted"> · {target.component.source}</span>
-                                ) : null}
-                            </dd>
-                        </>
-                    ) : null}
-                    {target ? (
-                        <>
-                            <dt>{a.target.kind === "multi" ? "Elements" : "Element"}</dt>
-                            <dd>
-                                {target.selector}
-                                {a.target.identity.length > 1 ? (
-                                    <span className="muted">
-                                        {" "}
-                                        and {a.target.identity.length - 1} more
-                                    </span>
-                                ) : null}
-                            </dd>
-                        </>
-                    ) : null}
-                    {target?.source ? (
-                        <>
-                            <dt>{target.source.nearest ? "Inside" : "Source"}</dt>
-                            <dd className="source">
-                                {target.source.file}:{target.source.line}:{target.source.col}
-                            </dd>
-                        </>
-                    ) : null}
-                </dl>
-
+                <Screenshots annotation={a} />
+                <TargetFacts annotation={a} />
                 {a.variants ? (
-                    <section className="variants">
-                        <h3>Versions</h3>
-                        <p className="muted small">
-                            {a.status === "variant_chosen"
-                                ? `Picked “${a.variants.chosen}”. Waiting for the agent to apply it.`
-                                : a.status === "acknowledged"
-                                  ? "The versions are in the page: switch between them there, or pick one here."
-                                  : `Offered in group ${a.variants.group}.`}
-                        </p>
-                        <ul>
-                            {a.variants.options.map((o) => {
-                                const picked = o.name === a.variants?.chosen;
-                                const pickable =
-                                    (a.status === "acknowledged" ||
-                                        a.status === "variant_chosen") &&
-                                    !picked;
-                                return (
-                                    <li key={o.name} className={picked ? "picked" : ""}>
-                                        <div>
-                                            <strong>{o.name}</strong>
-                                            {o.summary ? (
-                                                <span className="muted"> · {o.summary}</span>
-                                            ) : null}
-                                        </div>
-                                        {picked ? <span className="tag">picked</span> : null}
-                                        {pickable ? (
-                                            <button
-                                                type="button"
-                                                className="small"
-                                                disabled={busy}
-                                                onClick={() =>
-                                                    run(
-                                                        () => chooseVariant(a.id, o.name, note),
-                                                        taking
-                                                    )
-                                                }
-                                            >
-                                                Pick
-                                            </button>
-                                        ) : null}
-                                    </li>
-                                );
-                            })}
-                        </ul>
-                        {a.status === "variant_chosen" ? (
-                            <button
-                                type="button"
-                                className="link"
-                                disabled={busy}
-                                onClick={() => run(() => chooseVariant(a.id, null, note), taking)}
-                            >
-                                Take back the pick
-                            </button>
-                        ) : null}
-                    </section>
+                    <Variants
+                        annotation={a}
+                        busy={busy}
+                        onPick={(name) => run(() => chooseVariant(a.id, name, note), taking)}
+                    />
                 ) : null}
-
-                <section className="conversation" aria-label="Conversation">
-                    {a.thread.length === 0 ? (
-                        <div className="no-replies">
-                            <Logo size={34} tilt={-10} />
-                            {a.peopleOnly
-                                ? "No replies yet. This note is between people: the agent doesn't see it."
-                                : "No replies yet. The agent answers here when it picks the note up."}
-                        </div>
-                    ) : (
-                        <ol className="thread">
-                            {a.thread.map((r) =>
-                                r.automatic ? (
-                                    <li key={r.id} className="event">
-                                        <span>
-                                            {/* Who turned People only on or off: anyone on the thread can. */}
-                                            {r.peopleOnly !== undefined ? (
-                                                <strong>{authorName(r.author)} </strong>
-                                            ) : null}
-                                            {r.peopleOnly === undefined
-                                                ? r.body
-                                                : r.body[0]?.toLowerCase() + r.body.slice(1)}
-                                        </span>
-                                        <When iso={r.createdAt}>{ago(r.createdAt)}</When>
-                                    </li>
-                                ) : (
-                                    <li
-                                        key={r.id}
-                                        className={`message${r.author.kind === "agent" ? " agent" : ""}${r.aside ? " aside" : ""}`}
-                                    >
-                                        <Avatar author={r.author} size={30} />
-                                        <div className="bubble">
-                                            <div className="bubble-head">
-                                                <strong>{authorName(r.author)}</strong>{" "}
-                                                {r.aside ? (
-                                                    <span className="aside-tag" title={ASIDE_HINT}>
-                                                        Aside
-                                                    </span>
-                                                ) : null}{" "}
-                                                <When iso={r.createdAt}>{ago(r.createdAt)}</When>
-                                            </div>
-                                            <div className="bubble-body">{r.body}</div>
-                                        </div>
-                                    </li>
-                                )
-                            )}
-                        </ol>
-                    )}
-                </section>
-
-                <section className="facts">
-                    <button
-                        type="button"
-                        className="link"
-                        onClick={() => setMore(!more)}
-                        aria-expanded={more}
-                    >
-                        {more ? "Hide details" : "Show details"}
-                    </button>
-                    {more ? (
-                        <dl>
-                            <dt>Page</dt>
-                            <dd>
-                                <a href={a.url} target="_blank" rel="noreferrer noopener">
-                                    {a.url}
-                                </a>
-                            </dd>
-                            <dt>Screen</dt>
-                            <dd>
-                                {a.environment.viewport.w}×{a.environment.viewport.h} @
-                                {a.environment.dpr}x
-                            </dd>
-                            <dt>Browser</dt>
-                            <dd>{a.environment.userAgent}</dd>
-                            {a.appName ? (
-                                <>
-                                    <dt>App</dt>
-                                    <dd>
-                                        {a.appName} {a.appVersion}
-                                    </dd>
-                                </>
-                            ) : null}
-                            <dt>Mode</dt>
-                            <dd>{a.mode}</dd>
-                            {a.bundleId ? (
-                                <>
-                                    <dt>Bundle</dt>
-                                    <dd>
-                                        <code>{a.bundleId}</code>
-                                    </dd>
-                                </>
-                            ) : null}
-                            {target?.testId ? (
-                                <>
-                                    <dt>Test id</dt>
-                                    <dd>
-                                        <code>{target.testId}</code>
-                                    </dd>
-                                </>
-                            ) : null}
-                            {target?.role || target?.name ? (
-                                <>
-                                    <dt>Accessible</dt>
-                                    <dd>
-                                        {target.role} {target.name ? `“${target.name}”` : ""}
-                                    </dd>
-                                </>
-                            ) : null}
-                            {target?.ancestors?.length ? (
-                                <>
-                                    <dt>Inside</dt>
-                                    <dd>
-                                        <code>{target.ancestors.join(" › ")}</code>
-                                    </dd>
-                                </>
-                            ) : null}
-                            {target?.styles && Object.keys(target.styles).length ? (
-                                <>
-                                    <dt>Styles</dt>
-                                    <dd className="styles">
-                                        {Object.entries(target.styles).map(([k, v]) => (
-                                            <code key={k}>
-                                                {k}: {v}
-                                            </code>
-                                        ))}
-                                    </dd>
-                                </>
-                            ) : null}
-                            {a.steps?.length ? (
-                                <>
-                                    <dt>Steps</dt>
-                                    <dd>
-                                        <ol>
-                                            {a.steps.map((s) => (
-                                                <li
-                                                    key={`${s.at}-${s.action}-${s.target ?? s.value ?? ""}`}
-                                                >
-                                                    {s.action}{" "}
-                                                    {s.target ? <code>{s.target}</code> : null}{" "}
-                                                    {s.value ?? ""}
-                                                </li>
-                                            ))}
-                                        </ol>
-                                    </dd>
-                                </>
-                            ) : null}
-                            <dt>Id</dt>
-                            <dd>
-                                <code>{a.id}</code>
-                            </dd>
-                        </dl>
-                    ) : null}
-                </section>
+                <Thread annotation={a} />
+                <MoreFacts annotation={a} />
             </div>
 
             <footer className="composer">
@@ -694,30 +400,66 @@ export function Detail({ annotation: a, project, detail, hidden, onChange, onDel
                 </div>
                 <div className="status-actions">{actions}</div>
             </footer>
-
-            {zoom && shots ? (
-                <dialog className="lightbox" open aria-label="Screenshot">
-                    <button
-                        type="button"
-                        className="shade"
-                        aria-label="Close"
-                        onClick={() => setZoom(false)}
-                    />
-                    <img
-                        className="lightbox-img"
-                        src={assetHref(shots.full.id)}
-                        alt="The page, with the target outlined"
-                    />
-                    <button
-                        type="button"
-                        className="icon-button lightbox-close"
-                        aria-label="Close"
-                        onClick={() => setZoom(false)}
-                    >
-                        <Icon name="close" />
-                    </button>
-                </dialog>
-            ) : null}
         </article>
+    );
+}
+
+/**
+ * The versions an agent offered. While the agent waits for a pick (or before it applies one), any of them can be
+ * picked here, which sends what is in the reply box with it; a pick can be taken back until the agent applies it.
+ */
+function Variants({
+    annotation: a,
+    busy,
+    onPick,
+}: {
+    annotation: Annotation;
+    busy: boolean;
+    /** Picks a version by name, or (with null) takes the pick back. */
+    onPick(name: string | null): void;
+}) {
+    if (!a.variants) return null;
+    const { chosen, group, options } = a.variants;
+    const open = a.status === "acknowledged" || a.status === "variant_chosen";
+    return (
+        <section className="variants">
+            <h3>Versions</h3>
+            <p className="muted small">
+                {a.status === "variant_chosen"
+                    ? `Picked “${chosen}”. Waiting for the agent to apply it.`
+                    : a.status === "acknowledged"
+                      ? "The versions are in the page: switch between them there, or pick one here."
+                      : `Offered in group ${group}.`}
+            </p>
+            <ul>
+                {options.map((o) => {
+                    const picked = o.name === chosen;
+                    return (
+                        <li key={o.name} className={picked ? "picked" : ""}>
+                            <div>
+                                <strong>{o.name}</strong>
+                                {o.summary ? <span className="muted"> · {o.summary}</span> : null}
+                            </div>
+                            {picked ? <span className="tag">picked</span> : null}
+                            {open && !picked ? (
+                                <button
+                                    type="button"
+                                    className="small"
+                                    disabled={busy}
+                                    onClick={() => onPick(o.name)}
+                                >
+                                    Pick
+                                </button>
+                            ) : null}
+                        </li>
+                    );
+                })}
+            </ul>
+            {a.status === "variant_chosen" ? (
+                <button type="button" className="link" disabled={busy} onClick={() => onPick(null)}>
+                    Take back the pick
+                </button>
+            ) : null}
+        </section>
     );
 }

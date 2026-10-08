@@ -1,10 +1,11 @@
 import { afterEach, describe, expect, it } from "bun:test";
 import { type Annotation, sampleAnnotation } from "@notato/schema";
-import { filterQuery, todoOf } from "../src/api.ts";
+import { filterQuery } from "../src/api.ts";
 import {
     activityOf,
     ago,
     applyChange,
+    capitalise,
     countsMayChange,
     dayLabel,
     duration,
@@ -12,12 +13,14 @@ import {
     groupAnnotations,
     initial,
     lastActivity,
+    lastSegment,
     later,
     matches,
     matchesSearch,
     mergeSnapshot,
     NO_NAME,
     newestActivity,
+    plural,
     projectIdProblem,
     projectStats,
     relativeTime,
@@ -26,6 +29,7 @@ import {
     sortAnnotations,
     suggestProjectId,
     TODO,
+    todoOf,
     viewOf,
     withActivity,
 } from "../src/model.ts";
@@ -186,6 +190,27 @@ describe("ordering and grouping", () => {
         );
         expect(groups.map((g) => g.label)).toEqual(["Open", "Resolved", "Dismissed"]);
     });
+
+    it("puts severities from the worst, with the notes that have none last", () => {
+        const groups = groupAnnotations(
+            [
+                annotation({ severity: "nit" }),
+                annotation({ severity: undefined }),
+                annotation({ severity: "blocker" }),
+            ],
+            "severity"
+        );
+        expect(groups.map((g) => g.label)).toEqual(["blocker", "nit", "No severity"]);
+    });
+
+    it("groups a long list in one pass, keeping every note in order", () => {
+        const many = Array.from({ length: 20_000 }, (_, i) =>
+            annotation({ route: i % 2 ? "/odd" : "/even" })
+        );
+        const groups = groupAnnotations(many, "route");
+        expect(groups.map((g) => g.items.length)).toEqual([10_000, 10_000]);
+        expect(groups[0]?.items[1]).toBe(many[2] as Annotation);
+    });
 });
 
 describe("activity", () => {
@@ -284,6 +309,7 @@ describe("routes", () => {
         const routes = [
             { page: "home" },
             { page: "tokens" },
+            { page: "settings" },
             { page: "project", project: "checkout web", tab: "inbox" },
             { page: "project", project: "a/b", tab: "inbox", selected: "01ABC" },
             { page: "project", project: "x", tab: "activity" },
@@ -347,6 +373,20 @@ describe("small things", () => {
         expect(initial("  émile")).toBe("É");
         expect(initial("  ")).toBe("?");
         expect(initial(undefined)).toBe("?");
+    });
+
+    it("counts things in words, and makes labels of the wire format's words", () => {
+        expect(plural(1, "note")).toBe("1 note");
+        expect(plural(3, "note")).toBe("3 notes");
+        expect(plural(0, "reply", "replies")).toBe("0 replies");
+        expect(capitalise("fix")).toBe("Fix");
+        expect(capitalise("")).toBe("");
+    });
+
+    it("tells pages apart by the end of their route", () => {
+        expect(lastSegment("/InitPage/HomePage")).toBe("HomePage");
+        expect(lastSegment("/settings/")).toBe("settings");
+        expect(lastSegment("/")).toBe("/");
     });
 
     it("says how long something took in the unit a person would use", () => {

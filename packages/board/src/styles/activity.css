@@ -1,0 +1,105 @@
+/* A project's activity: what happened, a day at a time. */
+
+.day {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+.day-head {
+    padding: 0 12px 8px;
+    font-family: var(--font);
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0;
+    color: var(--muted);
+}
+.feed {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+.feed-link {
+    display: grid;
+    grid-template-columns: 30px minmax(0, 1fr) auto;
+    gap: 12px;
+    padding: 12px;
+    border-radius: 12px;
+    color: var(--text);
+}
+.feed-link:hover {
+    background: var(--hover);
+    color: var(--text);
+    text-decoration: none;
+}
+.feed-main {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    min-width: 0;
+}
+.feed-line {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0 4px;
+    font-size: 13.5px;
+    line-height: 1.4;
+}
+.feed-target {
+    min-width: 0;
+    font-weight: 600;
+    overflow-wrap: anywhere;
+}
+.feed-line .unseen {
+    margin-left: 4px;
+}
+.feed-text {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    align-self: flex-start;
+    max-width: 100%;
+    padding: 9px 12px;
+    border-radius: 4px 14px 14px 14px;
+    background: var(--hover);
+    font-size: 13.5px;
+    line-height: 1.5;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    text-wrap: pretty;
+}
+.feed-link:hover .feed-text {
+    background: var(--panel);
+}
+.feed-text .status-dot {
+    margin-top: 6px;
+}
+/* A long note or reply is cut to a few lines here; the inbox has all of it. */
+.feed-body {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 8;
+    line-clamp: 8;
+    overflow: hidden;
+}
+.feed-link > time {
+    padding-top: 3px;
+    font-family: var(--mono);
+    font-size: 11.5px;
+    color: var(--muted);
+}
+.quiet {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 16px;
+    border: 1px dashed var(--line-2);
+    border-radius: 14px;
+    color: var(--muted);
+}
+button.more {
+    align-self: center;
+}

@@ -1,12 +1,11 @@
 import { type KnownAgent, knownAgent } from "@notato/core";
 import type { Status } from "@notato/schema";
-import { type ReactNode, useState } from "react";
-import { copyText } from "./api.ts";
+import { type FormEvent, type ReactNode, useEffect, useId, useRef, useState } from "react";
 import { authorName, initial, statusLabel } from "./model.ts";
 import logo from "./notato.png";
 import { setTheme, useTheme } from "./theme.ts";
 
-// Small shared pieces: icons, avatars, status marks. Icons are inline SVG in `currentColor`.
+// Small shared pieces: icons, avatars, status marks, switches, dialogs. Icons are inline SVG in `currentColor`.
 
 const paths = {
     search: "M18 11a7 7 0 1 1-14 0 7 7 0 0 1 14 0Zm3 10-4.35-4.35",
@@ -130,7 +129,7 @@ export function Avatar({
 }
 
 /** A known agent's logo, in `currentColor`. */
-export function AgentLogo({ agent, size }: { agent: KnownAgent; size: number }) {
+function AgentLogo({ agent, size }: { agent: KnownAgent; size: number }) {
     return (
         <svg
             width={size}
@@ -210,7 +209,7 @@ export function Empty({
     );
 }
 
-/** A two-way switch in a pill, the one used for views, filters and the theme. */
+/** A few options in a pill, one of them on: the inbox's views, the platforms, the theme. */
 export function Segmented<T extends string>({
     options,
     value,
@@ -291,6 +290,28 @@ export function Inline({ text }: { text: string }) {
     );
 }
 
+/** How long "Copied" and the like stay before the control reads as it did. */
+export const FLASH_MS = 1600;
+
+/** Puts text on the clipboard, with the old way as a fallback where the page may not use the new one. */
+export async function copyText(text: string): Promise<void> {
+    try {
+        await navigator.clipboard.writeText(text);
+        return;
+    } catch {
+        // not allowed here (an http page that is not localhost, say)
+    }
+    const area = document.createElement("textarea");
+    area.value = text;
+    area.style.position = "fixed";
+    area.style.opacity = "0";
+    document.body.append(area);
+    area.select();
+    const ok = document.execCommand("copy");
+    area.remove();
+    if (!ok) throw new Error("The browser would not let this page use the clipboard.");
+}
+
 /** A block of code to copy: a snippet, a token. */
 export function CodeBlock({
     code,
@@ -309,7 +330,7 @@ export function CodeBlock({
         } catch {
             setCopied("no");
         }
-        setTimeout(() => setCopied(null), 1600);
+        setTimeout(() => setCopied(null), FLASH_MS);
     };
     return (
         <div className={className ? `code-block ${className}` : "code-block"}>
@@ -348,5 +369,77 @@ export function Toggle({
         >
             <span className="knob" />
         </button>
+    );
+}
+
+/**
+ * Runs `onEscape` when Escape is pressed while `active`, before anything else on the page hears the key: a dialog or
+ * the lightbox closes, and the inbox behind it does not also go back to its list.
+ */
+export function useEscape(onEscape: () => void, active = true) {
+    const latest = useRef(onEscape);
+    latest.current = onEscape;
+    useEffect(() => {
+        if (!active) return;
+        const onKey = (e: KeyboardEvent) => {
+            if (e.key !== "Escape") return;
+            e.stopPropagation();
+            latest.current();
+        };
+        window.addEventListener("keydown", onKey, true);
+        return () => window.removeEventListener("keydown", onKey, true);
+    }, [active]);
+}
+
+/**
+ * A dialog over the page, with its title and a close button at the top. Escape, the shade and that button all close
+ * it. With `onSubmit` it is a form, so Enter in a field submits it.
+ */
+export function Modal({
+    title,
+    size,
+    onClose,
+    onSubmit,
+    noValidate,
+    children,
+}: {
+    title: ReactNode;
+    size?: "narrow" | "wide";
+    onClose(): void;
+    onSubmit?: (e: FormEvent<HTMLFormElement>) => void;
+    /** Leave checking the fields to the form, which says what is wrong in its own words. */
+    noValidate?: boolean;
+    children: ReactNode;
+}) {
+    const id = useId();
+    useEscape(onClose);
+    const dialog = {
+        className: size ? `modal ${size}` : "modal",
+        role: "dialog",
+        "aria-modal": true,
+        "aria-labelledby": `${id}-title`,
+    } as const;
+    const content = (
+        <>
+            <header className="modal-head">
+                <h2 id={`${id}-title`}>{title}</h2>
+                <button type="button" className="icon-button" aria-label="Close" onClick={onClose}>
+                    <Icon name="close" />
+                </button>
+            </header>
+            {children}
+        </>
+    );
+    return (
+        <div className="modal-layer">
+            <button type="button" className="modal-shade" aria-label="Close" onClick={onClose} />
+            {onSubmit ? (
+                <form {...dialog} onSubmit={onSubmit} noValidate={noValidate}>
+                    {content}
+                </form>
+            ) : (
+                <div {...dialog}>{content}</div>
+            )}
+        </div>
     );
 }

@@ -1,17 +1,15 @@
 import { type ReactNode, useEffect, useState } from "react";
+import { createToken, getStatus, type Me } from "./api.ts";
+import { connectGuides, type Guide, type Platform } from "./connect.ts";
+import { projectHref } from "./route.ts";
 import {
-    createToken,
     forgetFreshToken,
     forgetMadeHere,
     freshToken,
-    getStatus,
-    type Me,
-    remember,
-    remembered,
+    KEYS,
+    useRemembered,
     wasMadeHere,
-} from "./api.ts";
-import { connectGuides, type Guide, type Platform } from "./connect.ts";
-import { projectHref } from "./route.ts";
+} from "./storage.ts";
 import { TokenReveal } from "./Tokens.tsx";
 import { CodeBlock, Icon, Inline, Segmented } from "./ui.tsx";
 
@@ -30,11 +28,9 @@ const PLATFORMS: Platform[] = [
  * How to send this project notes from an app: its token where the server needs one (the one just made, shown once,
  * or a button to make one), then each SDK's few lines with this server, project and token filled in.
  */
-export function ConnectApp({ me, project, name }: { me: Me; project: string; name: string }) {
+function ConnectApp({ me, project, name }: { me: Me; project: string; name: string }) {
     const [token, setToken] = useState(() => freshToken(project));
-    const [platform, setPlatform] = useState<Platform>(() =>
-        remembered("notato.connect", PLATFORMS, "react")
-    );
+    const [platform, setPlatform] = useRemembered(KEYS.connect, PLATFORMS, "react");
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState<string | null>(null);
     // Shown once: leaving the page lets it go.
@@ -115,10 +111,7 @@ export function ConnectApp({ me, project, name }: { me: Me; project: string; nam
                 label="Platform"
                 className="platforms"
                 value={platform}
-                onChange={(next) => {
-                    setPlatform(next);
-                    remember("notato.connect", next);
-                }}
+                onChange={setPlatform}
                 options={guides.map((g) => ({ id: g.id, label: g.label }))}
             />
             {guide ? <GuideView guide={guide} /> : null}

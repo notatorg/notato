@@ -1,0 +1,281 @@
+/* Settings and Project settings: sections of rows, switches, the webhook list, and deleting a project. */
+
+.settings {
+    gap: 0;
+}
+.settings > .sheet-head {
+    padding-bottom: 22px;
+}
+.settings code {
+    color: var(--text);
+}
+.set-section {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 12px 32px;
+    padding: 22px 0;
+    border-top: 1px solid var(--line);
+}
+.set-label {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+.set-label h2 {
+    font-size: 17px;
+}
+.set-label p {
+    font-size: 13px;
+    line-height: 1.5;
+    color: var(--muted);
+}
+.set-body {
+    grid-column: span 2;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+    min-width: 0;
+}
+
+.setting-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 12px 20px;
+}
+.setting-text {
+    flex: 1 1 220px;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    min-width: 0;
+    max-width: 440px;
+    color: var(--text);
+    font-size: 14px;
+}
+.setting-text strong {
+    font-weight: 600;
+}
+.setting-text p,
+.setting-text > span {
+    font-size: 13px;
+    line-height: 1.5;
+    text-wrap: pretty;
+}
+.setting-text .link {
+    align-self: flex-start;
+    margin-top: 4px;
+}
+.setting-text .note {
+    margin-top: 4px;
+    color: var(--warn);
+}
+.warn-text {
+    margin: 6px 0 0;
+    color: var(--warn);
+}
+.inline-field {
+    display: flex;
+    gap: 6px;
+}
+.inline-field input {
+    width: 180px;
+    height: 36px;
+}
+.inline-field button {
+    height: 36px;
+}
+button.switch {
+    flex: none;
+    justify-content: flex-start;
+    width: 44px;
+    height: 26px;
+    padding: 3px;
+    border-radius: 999px;
+    background: var(--line-2);
+    transition: background 0.15s;
+}
+button.switch:hover:not(:disabled) {
+    background: var(--line-2);
+    filter: brightness(1.04);
+}
+button.switch.on,
+button.switch.on:hover:not(:disabled) {
+    background: var(--accent);
+}
+.switch .knob {
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: #fff;
+    box-shadow: 0 1px 2px rgb(0 0 0 / 0.25);
+    transition: transform 0.15s;
+}
+.switch.on .knob {
+    transform: translateX(18px);
+}
+.hooks {
+    list-style: none;
+    margin: 0 0 -10px;
+    padding: 0;
+    display: grid;
+    gap: 10px;
+}
+.hook {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    gap: 14px;
+    align-items: center;
+    padding: 12px 14px;
+    border-radius: 12px;
+    background: var(--hover);
+}
+.hook-kind {
+    padding: 3px 9px;
+    border-radius: 999px;
+    background: var(--panel);
+    box-shadow: inset 0 0 0 1px var(--line);
+    font-size: 12px;
+    font-weight: 600;
+}
+.hook-main {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+}
+.hook-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-weight: 600;
+}
+.hook-url {
+    max-width: 100%;
+    overflow: hidden;
+    padding: 0;
+    background: none;
+    color: var(--muted);
+    font-size: 11px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    word-break: normal;
+}
+.hook-meta {
+    display: flex;
+    flex-wrap: wrap;
+    font-size: 12px;
+    color: var(--muted);
+}
+.hook-meta span:first-letter {
+    text-transform: uppercase;
+}
+.hook-meta span + span::before {
+    content: "·";
+    margin: 0 5px;
+}
+.hook-actions {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+.hook-actions button.small {
+    background: var(--panel);
+}
+.hook-actions button.small:hover:not(:disabled) {
+    background: var(--line);
+}
+.hooks-empty {
+    padding: 18px;
+    border-radius: 12px;
+    background: var(--hover);
+    text-align: center;
+}
+.hooks-empty p + p {
+    margin-top: 4px;
+}
+button.add-button {
+    align-self: flex-start;
+    gap: 6px;
+    padding: 8px 14px;
+    border: 1px dashed var(--line-2);
+    background: transparent;
+    color: var(--accent-text);
+}
+button.add-button:hover:not(:disabled) {
+    background: var(--hover);
+}
+.test-line {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    margin: 6px 0 0;
+    padding: 8px 12px;
+    border-radius: 10px;
+    font-size: 12.5px;
+}
+.test-line.ok {
+    background: var(--ok-bg);
+    color: var(--ok);
+}
+.test-line.bad {
+    background: var(--bad-bg);
+    color: var(--bad);
+}
+.test-mark {
+    font-weight: 700;
+}
+.test-response {
+    display: block;
+    margin-top: 4px;
+    padding: 0;
+    background: transparent;
+    color: inherit;
+    opacity: 0.85;
+    word-break: break-word;
+}
+.facts-list {
+    display: grid;
+    grid-template-columns: 110px minmax(0, 1fr);
+    gap: 8px;
+    margin: 0;
+    font-size: 13.5px;
+}
+.facts-list dt {
+    color: var(--muted);
+}
+.facts-list dd {
+    margin: 0;
+}
+.facts-list code {
+    padding: 0;
+    background: none;
+    font-size: 12.5px;
+}
+
+/* Project settings: what deleting a project removes, and typing its id to confirm */
+.danger-zone .set-label h2 {
+    color: var(--bad);
+}
+.delete-what {
+    display: grid;
+    gap: 8px;
+    padding: 14px 16px;
+    border-radius: 12px;
+    background: var(--bad-bg);
+    font-size: 13px;
+    line-height: 1.5;
+}
+.delete-what ul {
+    display: grid;
+    gap: 3px;
+    margin: 0;
+    padding-left: 18px;
+}
+.delete-what code {
+    background: var(--panel);
+}
+.field > label.confirm-label {
+    display: block;
+}

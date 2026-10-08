@@ -4,11 +4,11 @@ import {
     type CreatedProject,
     createProject,
     type Me,
-    markMadeHere,
     type ProjectSummary,
 } from "./api.ts";
 import { projectIdProblem, suggestProjectId } from "./model.ts";
-import { Icon } from "./ui.tsx";
+import { markMadeHere } from "./storage.ts";
+import { Modal } from "./ui.tsx";
 
 interface Props {
     me: Me;
@@ -34,20 +34,7 @@ export function NewProject({ me, projects, initialId, onClose, onCreated, onTake
     const [taken, setTaken] = useState<string | null>(null);
     const [error, setError] = useState<string | null>(null);
     const first = useRef<HTMLInputElement>(null);
-
-    const close = useRef(onClose);
-    close.current = onClose;
-    useEffect(() => {
-        first.current?.focus();
-        const onKey = (e: KeyboardEvent) => {
-            if (e.key === "Escape") {
-                e.stopPropagation();
-                close.current();
-            }
-        };
-        window.addEventListener("keydown", onKey, true);
-        return () => window.removeEventListener("keydown", onKey, true);
-    }, []);
+    useEffect(() => first.current?.focus(), []);
 
     const exists = projects.some((p) => p.id === projectId);
     const problem =
@@ -76,95 +63,74 @@ export function NewProject({ me, projects, initialId, onClose, onCreated, onTake
     };
 
     return (
-        <div className="modal-layer">
-            <button type="button" className="modal-shade" aria-label="Close" onClick={onClose} />
-            <form
-                className="modal narrow"
-                role="dialog"
-                aria-modal="true"
-                aria-labelledby={`${id}-title`}
-                onSubmit={submit}
-                noValidate
-            >
-                <header className="modal-head">
-                    <h2 id={`${id}-title`}>New project</h2>
-                    <button
-                        type="button"
-                        className="icon-button"
-                        aria-label="Close"
-                        onClick={onClose}
-                    >
-                        <Icon name="close" />
-                    </button>
-                </header>
-                <div className="modal-body">
-                    <p className="muted small">
-                        {me.mode === "serve"
-                            ? "Apps can only send notes to a project that exists here. It comes with a token for its first app, shown once."
-                            : "On this computer a project is also made by the first note sent to it. Making it here lets you name it and see how to connect an app."}
-                    </p>
-                    <div className="field">
-                        <label htmlFor={`${id}-name`}>Name</label>
-                        <input
-                            ref={first}
-                            id={`${id}-name`}
-                            value={name}
-                            onChange={(e) => {
-                                setName(e.target.value);
-                                if (!ownId) setProjectId(suggestProjectId(e.target.value));
-                            }}
-                            placeholder="Checkout web"
-                            maxLength={200}
-                            autoComplete="off"
-                        />
-                        <span className="field-hint">What people call it on this board.</span>
-                    </div>
-                    <div className="field">
-                        <label htmlFor={`${id}-id`}>Id</label>
-                        <input
-                            id={`${id}-id`}
-                            value={projectId}
-                            onChange={(e) => {
-                                setProjectId(e.target.value);
-                                // Emptied, it follows the name again from the next change to that.
-                                setOwnId(e.target.value !== "");
-                            }}
-                            placeholder="checkout-web"
-                            maxLength={128}
-                            autoComplete="off"
-                            autoCapitalize="off"
-                            spellCheck={false}
-                            className="mono"
-                            aria-invalid={shownProblem ? true : undefined}
-                            aria-describedby={`${id}-id-hint`}
-                        />
-                        <span
-                            id={`${id}-id-hint`}
-                            className={shownProblem ? "field-hint bad" : "field-hint"}
-                            role={shownProblem ? "alert" : undefined}
-                        >
-                            {shownProblem ??
-                                "What apps send to, as their project setting. Letters, digits and _ . @ -. It cannot be changed later."}
-                        </span>
-                    </div>
+        <Modal title="New project" size="narrow" onClose={onClose} onSubmit={submit} noValidate>
+            <div className="modal-body">
+                <p className="muted small">
+                    {me.mode === "serve"
+                        ? "Apps can only send notes to a project that exists here. It comes with a token for its first app, shown once."
+                        : "On this computer a project is also made by the first note sent to it. Making it here lets you name it and see how to connect an app."}
+                </p>
+                <div className="field">
+                    <label htmlFor={`${id}-name`}>Name</label>
+                    <input
+                        ref={first}
+                        id={`${id}-name`}
+                        value={name}
+                        onChange={(e) => {
+                            setName(e.target.value);
+                            if (!ownId) setProjectId(suggestProjectId(e.target.value));
+                        }}
+                        placeholder="Checkout web"
+                        maxLength={200}
+                        autoComplete="off"
+                    />
+                    <span className="field-hint">What people call it on this board.</span>
                 </div>
-                {error ? (
-                    <div className="modal-status">
-                        <p className="error small" role="alert">
-                            {error}
-                        </p>
-                    </div>
-                ) : null}
-                <footer className="modal-foot">
-                    <span className="grow" />
-                    <button type="button" onClick={onClose}>
-                        Cancel
-                    </button>
-                    <button type="submit" className="primary" disabled={busy}>
-                        Create project
-                    </button>
-                </footer>
-            </form>
-        </div>
+                <div className="field">
+                    <label htmlFor={`${id}-id`}>Id</label>
+                    <input
+                        id={`${id}-id`}
+                        value={projectId}
+                        onChange={(e) => {
+                            setProjectId(e.target.value);
+                            // Emptied, it follows the name again from the next change to that.
+                            setOwnId(e.target.value !== "");
+                        }}
+                        placeholder="checkout-web"
+                        maxLength={128}
+                        autoComplete="off"
+                        autoCapitalize="off"
+                        spellCheck={false}
+                        className="mono"
+                        aria-invalid={shownProblem ? true : undefined}
+                        aria-describedby={`${id}-id-hint`}
+                    />
+                    <span
+                        id={`${id}-id-hint`}
+                        className={shownProblem ? "field-hint bad" : "field-hint"}
+                        role={shownProblem ? "alert" : undefined}
+                    >
+                        {shownProblem ??
+                            "What apps send to, as their project setting. Letters, digits and _ . @ -. It cannot be changed later."}
+                    </span>
+                </div>
+            </div>
+            {error ? (
+                <div className="modal-status">
+                    <p className="error small" role="alert">
+                        {error}
+                    </p>
+                </div>
+            ) : null}
+            <footer className="modal-foot">
+                <span className="grow" />
+                <button type="button" onClick={onClose}>
+                    Cancel
+                </button>
+                <button type="submit" className="primary" disabled={busy}>
+                    Create project
+                </button>
+            </footer>
+        </Modal>
     );
 }

@@ -1,8 +1,8 @@
-import { useState } from "react";
-import { type OnOff, remember, remembered, type ServerStatus, type SettingsView } from "./api.ts";
+import type { OnOff, ServerStatus, SettingView } from "./api.ts";
 import { GuideView } from "./Connect.tsx";
 import { type AgentClient, agentGuides } from "./connect.ts";
 import { href } from "./route.ts";
+import { KEYS, useRemembered } from "./storage.ts";
 import { Segmented, Toggle } from "./ui.tsx";
 
 const CLIENTS: AgentClient[] = ["claude", "codex", "cursor", "gemini", "vscode", "other"];
@@ -27,16 +27,14 @@ export function AgentsSection({
     busy,
     onChange,
 }: {
-    setting: SettingsView["settings"][number] | undefined;
+    setting: SettingView | undefined;
     status: ServerStatus | null;
     /** The settings file cannot be written (none, or broken). */
     locked: boolean;
     busy: boolean;
     onChange(value: OnOff | null): void;
 }) {
-    const [client, setClient] = useState<AgentClient>(() =>
-        remembered("notato.agent", CLIENTS, "claude")
-    );
+    const [client, setClient] = useRemembered(KEYS.agent, CLIENTS, "claude");
     if (!setting) return null;
     const on = setting.value === "on";
     const serve = status?.mode === "serve";
@@ -114,10 +112,7 @@ export function AgentsSection({
                             label="Agent"
                             className="platforms"
                             value={client}
-                            onChange={(next) => {
-                                setClient(next);
-                                remember("notato.agent", next);
-                            }}
+                            onChange={setClient}
                             options={guides.map((g) => ({ id: g.id, label: g.label }))}
                         />
                         {guide ? <GuideView guide={guide} /> : null}

@@ -1,0 +1,80 @@
+/* Colours, type and sizes, in light and dark, and the colour of each status. */
+
+/* Each colour is light-dark(): the system picks, unless the board's theme switch has set data-theme. */
+:root {
+    color-scheme: light dark;
+
+    --bg: light-dark(#f1f1ee, #141517);
+    --panel: light-dark(#ffffff, #1d1e21);
+    --line: light-dark(#e4e4df, #2c2e32);
+    --line-2: light-dark(#d3d3cd, #3b3d42);
+    --text: light-dark(#1d1f22, #e6e7ea);
+    --text-2: light-dark(#3b3e43, #c3c5cb);
+    --muted: light-dark(#686c72, #8f939b);
+    --hover: light-dark(#f2f2ef, #25262a);
+    --selected: light-dark(#e6f3f0, #1b302c);
+    --code: light-dark(#f2f2ef, #25262a);
+    --accent: light-dark(#1f8a78, #45bfa8);
+    --accent-hover: light-dark(#187465, #5fcfb9);
+    --accent-text: light-dark(#16705f, #5fcfb9);
+    --accent-ink: light-dark(#ffffff, #0b1f1b);
+    --tape: light-dark(#2a8f7d, #3aa892);
+    --paper: light-dark(#fbf5e6, #efe6cf);
+    --shot: light-dark(#ebebe7, #26272b);
+    --card-shadow: 0 1px 3px light-dark(rgb(20 24 32 / 0.07), rgb(0 0 0 / 0.35));
+    --seg-shadow: 0 1px 2px light-dark(rgb(20 24 32 / 0.12), rgb(0 0 0 / 0.45));
+    --shadow:
+        0 1px 3px light-dark(rgb(20 24 32 / 0.08), rgb(0 0 0 / 0.4)),
+        0 12px 32px light-dark(rgb(20 24 32 / 0.14), rgb(0 0 0 / 0.5));
+
+    /* statuses: open is a ring, the rest are filled */
+    --s-open: light-dark(#2f6fde, #6ea2ff);
+    --s-ack: light-dark(#c98a12, #e9b44c);
+    --s-var: light-dark(#7c5cd6, #a993ff);
+    --s-rev: light-dark(#d1495b, #f2848f);
+    --s-done: light-dark(#2e9a5b, #55c487);
+    --s-dis: light-dark(#9a9a9a, #7c7c80);
+
+    --bad: light-dark(#b42318, #ff8a80);
+    --bad-bg: light-dark(#fdecea, #3a1f1d);
+    --warn: light-dark(#9a6700, #e9b44c);
+    --warn-bg: light-dark(#fbf1dc, #3a2f17);
+    --ok: var(--s-done);
+    --ok-bg: light-dark(#e3f4ea, #17301f);
+
+    --font: "Figtree Variable", system-ui, -apple-system, "Segoe UI", sans-serif;
+    --display: "Bricolage Grotesque Variable", "Figtree Variable", system-ui, sans-serif;
+    --mono: "JetBrains Mono Variable", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+
+    --side-w: 232px;
+    --radius: 11px;
+
+    font: 14px / 1.45 var(--font);
+    -webkit-font-smoothing: antialiased;
+}
+:root[data-theme="light"] {
+    color-scheme: light;
+}
+:root[data-theme="dark"] {
+    color-scheme: dark;
+}
+
+.s-open {
+    --c: var(--s-open);
+}
+.s-acknowledged {
+    --c: var(--s-ack);
+}
+.s-variant_chosen {
+    --c: var(--s-var);
+}
+.s-revert_requested {
+    --c: var(--s-rev);
+}
+.s-resolved,
+.s-reverted {
+    --c: var(--s-done);
+}
+.s-dismissed {
+    --c: var(--s-dis);
+}

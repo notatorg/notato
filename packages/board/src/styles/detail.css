@@ -1,0 +1,475 @@
+/* One note: its screenshots, where it points, its versions, the conversation, and the reply box. */
+
+.detail {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+}
+.detail-head {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px 10px;
+    padding: 14px 18px 0 26px;
+}
+.detail-head .back {
+    display: none;
+}
+.note-num {
+    font-size: 13px;
+    color: var(--muted);
+}
+.sev-select {
+    height: 26px;
+    padding: 0 6px 0 10px;
+    border-radius: 999px;
+    background: transparent;
+    box-shadow: inset 0 0 0 1px var(--line);
+    color: var(--muted);
+    font-size: 12px;
+}
+.sev-select:hover:not(:disabled) {
+    background: var(--hover);
+}
+.sev-select.set {
+    color: var(--text);
+}
+.sev-select.sev-blocker {
+    box-shadow: none;
+    background: var(--bad-bg);
+    color: var(--bad);
+}
+.sev-select.sev-major {
+    box-shadow: none;
+    background: var(--warn-bg);
+    color: var(--warn);
+}
+.flash {
+    font-size: 12.5px;
+    font-weight: 600;
+    color: var(--ok);
+}
+.head-actions {
+    display: flex;
+    gap: 2px;
+}
+.detail-body {
+    flex: 1;
+    min-height: 0;
+    overflow: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+    padding: 12px 26px 22px;
+}
+.hidden-note {
+    align-self: flex-start;
+    padding: 6px 12px;
+    border-radius: 9px;
+    background: var(--hover);
+    color: var(--muted);
+    font-size: 12.5px;
+}
+.detail-title {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+.comment {
+    max-width: 680px;
+    font-size: 28px;
+    line-height: 1.15;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    text-wrap: pretty;
+}
+.comment.long {
+    font-family: var(--font);
+    font-size: 18px;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    line-height: 1.45;
+}
+.byline {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0 4px;
+    font-size: 13px;
+    color: var(--muted);
+}
+.byline .tag {
+    padding: 0 7px;
+    font-size: 11px;
+}
+blockquote {
+    margin: 0;
+    padding: 2px 0 2px 12px;
+    border-left: 3px solid var(--line-2);
+    color: var(--muted);
+}
+.shots {
+    display: grid;
+    gap: 10px;
+}
+.shots.two {
+    grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+}
+button.shot {
+    position: relative;
+    display: block;
+    height: 232px;
+    padding: 0;
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    background: var(--shot);
+    cursor: zoom-in;
+}
+button.shot:hover:not(:disabled) {
+    background: var(--shot);
+    border-color: var(--line-2);
+}
+.shot img {
+    display: block;
+    width: 100%;
+    height: 100%;
+    border-radius: 13px;
+    object-fit: contain;
+}
+.paper-tag {
+    position: absolute;
+    left: 12px;
+    top: 14px;
+    padding: 7px 10px 6px;
+    border-radius: 3px;
+    background: var(--paper);
+    color: #3a3226;
+    font-size: 11.5px;
+    font-weight: 700;
+    box-shadow: 0 2px 6px rgb(20 24 32 / 0.15);
+    transform: rotate(-3deg);
+}
+.paper-tag::before {
+    content: "";
+    position: absolute;
+    left: 50%;
+    top: -6px;
+    width: 26px;
+    height: 11px;
+    margin-left: -13px;
+    border-radius: 2px;
+    background: var(--tape);
+    transform: rotate(-5deg);
+}
+.shot-route {
+    position: absolute;
+    right: 10px;
+    bottom: 8px;
+    max-width: calc(100% - 20px);
+    overflow: hidden;
+    padding: 2px 8px;
+    border-radius: 6px;
+    background: var(--panel);
+    color: var(--muted);
+    font-family: var(--mono);
+    font-size: 10.5px;
+    font-weight: 400;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.target {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: 7px 16px;
+    margin: 0;
+    padding: 12px 14px;
+    border-radius: 12px;
+    background: var(--hover);
+    font-size: 12.5px;
+}
+.target dt {
+    color: var(--muted);
+}
+.target dd {
+    margin: 0;
+    font-family: var(--mono);
+    font-size: 11.5px;
+    line-height: 1.6;
+    overflow-wrap: anywhere;
+}
+.target .muted {
+    font-family: var(--font);
+}
+.target dd a {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+}
+.target .source {
+    color: var(--accent-text);
+}
+.variants {
+    padding: 14px 16px;
+    border: 1px solid var(--line);
+    border-radius: 14px;
+}
+.variants ul {
+    list-style: none;
+    margin: 10px 0 8px;
+    padding: 0;
+    display: grid;
+    gap: 4px;
+}
+.variants li {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 10px;
+    border-radius: 10px;
+    background: var(--hover);
+}
+.variants li > div {
+    flex: 1;
+}
+.variants li.picked {
+    background: color-mix(in oklab, var(--s-var) 16%, transparent);
+}
+.variants button.small {
+    background: var(--panel);
+}
+.conversation {
+    display: flex;
+    flex-direction: column;
+}
+.no-replies {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 14px;
+    border: 1px dashed var(--line-2);
+    border-radius: 14px;
+    color: var(--muted);
+    font-size: 13.5px;
+}
+.thread {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+.message {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    max-width: 680px;
+}
+.bubble {
+    min-width: 0;
+    padding: 9px 14px 10px;
+    border-radius: 4px 16px 16px 16px;
+    background: var(--hover);
+    line-height: 1.5;
+}
+.bubble-head {
+    margin-bottom: 2px;
+    font-size: 12.5px;
+}
+.bubble-head strong {
+    font-weight: 700;
+}
+.bubble-head time {
+    color: var(--muted);
+}
+/* An aside is for the people on the thread: drawn apart, so nobody takes it for something the agent was told. */
+.message.aside .bubble {
+    background: transparent;
+    box-shadow: inset 0 0 0 1px var(--line);
+    color: var(--muted);
+}
+.aside-tag {
+    font-size: 10.5px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--muted);
+}
+button.tag.people {
+    background: transparent;
+    cursor: pointer;
+}
+button.tag.people:hover:not(:disabled) {
+    color: var(--text);
+}
+button.tag.people.on {
+    background: var(--text);
+    box-shadow: inset 0 0 0 1px var(--text);
+    color: var(--panel);
+}
+.sev.people {
+    text-transform: none;
+}
+button.aside-toggle {
+    position: absolute;
+    right: 42px;
+    bottom: 9px;
+    height: 24px;
+    padding: 0 9px;
+    border-radius: 999px;
+    background: transparent;
+    box-shadow: inset 0 0 0 1px var(--line);
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--muted);
+}
+button.aside-toggle.on {
+    background: var(--text);
+    box-shadow: inset 0 0 0 1px var(--text);
+    color: var(--panel);
+}
+.bubble-body {
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    text-wrap: pretty;
+}
+.event {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    padding-left: 40px;
+    font-size: 12.5px;
+    color: var(--muted);
+}
+.event time {
+    flex: none;
+    font-size: 11.5px;
+}
+.facts .link {
+    font-size: 12.5px;
+}
+.facts dl {
+    display: grid;
+    grid-template-columns: max-content minmax(0, 1fr);
+    gap: 6px 16px;
+    margin: 10px 0 0;
+    font-size: 12.5px;
+}
+.facts dt {
+    color: var(--muted);
+}
+.facts dd {
+    margin: 0;
+    overflow-wrap: anywhere;
+}
+.facts .styles {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+}
+.facts ol {
+    margin: 0;
+    padding-left: 18px;
+}
+.composer {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    gap: 6px;
+    padding: 12px 14px 14px 18px;
+    border-top: 1px solid var(--line);
+}
+.composer .error {
+    flex-basis: 100%;
+}
+.reply-field {
+    position: relative;
+    flex: 1 1 240px;
+    min-width: 0;
+}
+.reply-field textarea {
+    display: block;
+    min-height: 42px;
+    padding: 10px 100px 10px 14px;
+    border-radius: 12px;
+    resize: none;
+    font-size: 14px;
+    line-height: 1.45;
+}
+button.send {
+    position: absolute;
+    right: 6px;
+    bottom: 6px;
+    width: 30px;
+    height: 30px;
+    padding: 0;
+    border-radius: 9px;
+    background: var(--accent);
+    color: var(--accent-ink);
+}
+button.send:hover:not(:disabled) {
+    background: var(--accent-hover);
+}
+button.send:disabled {
+    background: var(--line);
+    color: var(--muted);
+    opacity: 1;
+}
+.status-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+.status-actions button {
+    height: 42px;
+    padding: 0 14px;
+}
+.status-actions button.primary {
+    padding: 0 16px;
+}
+dialog.lightbox {
+    position: fixed;
+    inset: 0;
+    z-index: 70;
+    width: 100vw;
+    height: 100vh;
+    max-width: none;
+    max-height: none;
+    margin: 0;
+    padding: 32px;
+    border: 0;
+    display: grid;
+    place-items: center;
+    background: transparent;
+}
+.lightbox .shade {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    border-radius: 0;
+    background: rgb(10 12 14 / 0.84);
+    cursor: zoom-out;
+}
+.lightbox .shade:hover:not(:disabled) {
+    background: rgb(10 12 14 / 0.84);
+}
+.lightbox-img {
+    position: relative;
+    max-width: 100%;
+    max-height: 100%;
+    border-radius: 10px;
+    background: #fff;
+    pointer-events: none;
+}
+.icon-button.lightbox-close {
+    position: absolute;
+    top: 14px;
+    right: 14px;
+    color: #fff;
+}
+.icon-button.lightbox-close:hover:not(:disabled) {
+    background: rgb(255 255 255 / 0.14);
+    color: #fff;
+}

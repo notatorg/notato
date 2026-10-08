@@ -1,9 +1,10 @@
-import { byActivity, type Me, type ProjectSummary, projectName, todoOf } from "./api.ts";
+import type { Me, ProjectSummary } from "./api.ts";
 import { hasUnseen, useSeenVersion } from "./live.ts";
-import { ago, DONE } from "./model.ts";
+import { ago, byActivity, DONE, plural, projectName, todoOf } from "./model.ts";
 import { projectHref } from "./route.ts";
 import { Empty, Icon, ProjectMark, When } from "./ui.tsx";
 
+/** Every project on the server, the ones with the most to do first. */
 export function Home({
     projects,
     error,
@@ -26,8 +27,8 @@ export function Home({
                         <h1>All projects</h1>
                         {projects?.length ? (
                             <p>
-                                {todo} {todo === 1 ? "note" : "notes"} waiting across{" "}
-                                {projects.length} {projects.length === 1 ? "project" : "projects"}
+                                {plural(todo, "note")} waiting across{" "}
+                                {plural(projects.length, "project")}
                             </p>
                         ) : null}
                     </div>
@@ -82,6 +83,7 @@ export function Home({
     );
 }
 
+/** A project's card: its name, what is to do, a bar of where its notes stand, and when it was last active. */
 function ProjectCard({ project: p }: { project: ProjectSummary }) {
     const todo = todoOf(p);
     const st = p.statuses;
@@ -139,7 +141,7 @@ function ProjectCard({ project: p }: { project: ProjectSummary }) {
                 ) : null}
                 <span className="pc-meta">
                     <span>
-                        {p.annotations} {p.annotations === 1 ? "note" : "notes"}
+                        {plural(p.annotations, "note")}
                         {done !== null ? ` · ${done} done` : ""}
                     </span>
                     {p.lastActivityAt ? (

@@ -1,14 +1,14 @@
 import { type FormEvent, useCallback, useEffect, useId, useState } from "react";
 import {
     createToken,
-    keepFreshToken,
     listTokens,
     type ProjectSummary,
-    projectName,
     revokeToken,
     type TokenInfo,
 } from "./api.ts";
+import { projectName } from "./model.ts";
 import { go, projectHref } from "./route.ts";
+import { keepFreshToken } from "./storage.ts";
 import { CodeBlock, Icon } from "./ui.tsx";
 
 /** The Tokens page: every token on the server, and making one for a project or for an agent. */
@@ -84,6 +84,7 @@ export function TokenManager({
     const choices = [...(projects ?? [])].sort((x, y) =>
         projectName(x, x.id).localeCompare(projectName(y, y.id))
     );
+    /** A token's project as the table shows it: its name, or "All projects" for an agent token. */
     const label = (pid: string) =>
         pid === "*"
             ? "All projects"
@@ -115,13 +116,14 @@ export function TokenManager({
                             <option value="" disabled>
                                 {projects === null ? "Loading…" : "Choose a project"}
                             </option>
-                            {choices.map((p) => (
-                                <option key={p.id} value={p.id}>
-                                    {projectName(p, p.id) === p.id
-                                        ? p.id
-                                        : `${projectName(p, p.id)} (${p.id})`}
-                                </option>
-                            ))}
+                            {choices.map((p) => {
+                                const name = projectName(p, p.id);
+                                return (
+                                    <option key={p.id} value={p.id}>
+                                        {name === p.id ? p.id : `${name} (${p.id})`}
+                                    </option>
+                                );
+                            })}
                             <option value="*">* All projects, for a coding agent</option>
                         </select>
                     </label>

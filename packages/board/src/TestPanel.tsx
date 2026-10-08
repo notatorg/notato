@@ -1,6 +1,6 @@
 import { clip, pinNumber } from "@notato/core";
 import type { Annotation } from "@notato/schema";
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useId, useState } from "react";
 import {
     isStale,
     listAnnotations,
@@ -12,7 +12,8 @@ import {
     type WebhookDraft,
     type WebhookView,
 } from "./api.ts";
-import { Icon } from "./ui.tsx";
+import { byActivity } from "./model.ts";
+import { Modal } from "./ui.tsx";
 import { eventLabel, orderEvents } from "./webhook-form.ts";
 
 interface Props {
@@ -27,7 +28,6 @@ interface Props {
     onClose(): void;
     /** The webhook changed elsewhere since this was opened. */
     onStale(message: string): void;
-    isStale(e: unknown): boolean;
 }
 
 /**
@@ -42,17 +42,12 @@ export function TestPanel({
     closeLabel,
     onClose,
     onStale,
-    isStale,
 }: Props) {
     const id = useId();
     const [event, setEvent] = useState(() => hook.events?.[0] ?? "annotation.created");
+    /** The webhook's own project, or else the one with the newest activity. */
     const [project, setProject] = useState(
-        () =>
-            hook.project ||
-            [...projects].sort((x, y) =>
-                (y.lastActivityAt ?? "").localeCompare(x.lastActivityAt ?? "")
-            )[0]?.id ||
-            ""
+        () => hook.project || [...projects].sort(byActivity)[0]?.id || ""
     );
     const [notes, setNotes] = useState<Annotation[] | null>(null);
     /** "" is the made-up note. */
@@ -236,7 +231,7 @@ function MessagePreview({ preview }: { preview: Preview }) {
         return (
             <div className="chat-preview">
                 <span className="chat-avatar" aria-hidden="true">
-                    P
+                    N
                 </span>
                 <div>
                     <strong>Notato</strong>
@@ -274,19 +269,6 @@ export function TestDialog({
     onClose(): void;
     onStale(message: string): void;
 }) {
-    const id = useId();
-    const close = useRef(onClose);
-    close.current = onClose;
-    useEffect(() => {
-        const onKey = (e: KeyboardEvent) => {
-            if (e.key === "Escape") {
-                e.stopPropagation();
-                close.current();
-            }
-        };
-        window.addEventListener("keydown", onKey, true);
-        return () => window.removeEventListener("keydown", onKey, true);
-    }, []);
     // What the saved webhook is; the URL and any secret stay on the server and are filled in there.
     const hook: WebhookDraft = {
         format: webhook.format,
@@ -296,37 +278,17 @@ export function TestDialog({
         screenshots: webhook.screenshots,
     };
     return (
-        <div className="modal-layer">
-            <button type="button" className="modal-shade" aria-label="Close" onClick={onClose} />
-            <div
-                className="modal wide"
-                role="dialog"
-                aria-modal="true"
-                aria-labelledby={`${id}-title`}
-            >
-                <header className="modal-head">
-                    <h2 id={`${id}-title`}>Test {webhook.name ?? webhook.host}</h2>
-                    <button
-                        type="button"
-                        className="icon-button"
-                        aria-label="Close"
-                        onClick={onClose}
-                    >
-                        <Icon name="close" />
-                    </button>
-                </header>
-                <TestPanel
-                    hook={hook}
-                    existing={webhook}
-                    projects={projects}
-                    events={events}
-                    closeLabel="Close"
-                    onClose={onClose}
-                    onStale={onStale}
-                    isStale={isStale}
-                />
-            </div>
-        </div>
+        <Modal title={`Test ${webhook.name ?? webhook.host}`} size="wide" onClose={onClose}>
+            <TestPanel
+                hook={hook}
+                existing={webhook}
+                projects={projects}
+                events={events}
+                closeLabel="Close"
+                onClose={onClose}
+                onStale={onStale}
+            />
+        </Modal>
     );
 }
 
@@ -428,7 +390,7 @@ function CardElement({ el, images }: { el: Element; images: Record<string, strin
     }
 }
 
-export function TestLine({ result }: { result: TestResult | "sending" }) {
+function TestLine({ result }: { result: TestResult | "sending" }) {
     if (result === "sending") return <p className="test-line muted small">Sending…</p>;
     return (
         <div className={result.ok ? "test-line ok" : "test-line bad"} role="status">

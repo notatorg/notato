@@ -1,15 +1,14 @@
 import { clip } from "@notato/core";
 import type { Annotation } from "@notato/schema";
 import { type ReactNode, useMemo, useState } from "react";
-import { activityOf, authorName, dayLabel } from "./model.ts";
+import { activityOf, authorName, clock, dayLabel, lastSegment } from "./model.ts";
 import { projectHref } from "./route.ts";
 import { Avatar, Empty, Logo, Segmented, StatusDot, When } from "./ui.tsx";
 
+/** How many entries the feed shows at first, and adds each time older ones are asked for. */
 const PAGE = 100;
 
-const clock = (iso: string) =>
-    new Date(iso).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
-const lastSegment = (route: string) => route.split("/").filter(Boolean).at(-1) ?? route;
+type Who = "" | "human" | "agent";
 
 /** Everything said in the project, newest first, a day at a time. */
 export function Activity({
@@ -27,7 +26,7 @@ export function Activity({
     menu: ReactNode;
 }) {
     const [limit, setLimit] = useState(PAGE);
-    const [who, setWho] = useState<"" | "human" | "agent">("");
+    const [who, setWho] = useState<Who>("");
     const items = useMemo(
         () =>
             activityOf(all).filter(
@@ -55,7 +54,7 @@ export function Activity({
                         <p>Everything that happened in {name}</p>
                     </div>
                     <div className="sheet-tools">
-                        <Segmented<"" | "human" | "agent">
+                        <Segmented<Who>
                             label="Whose activity"
                             value={who}
                             onChange={setWho}

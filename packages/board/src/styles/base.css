@@ -1,0 +1,100 @@
+/* The page itself and plain elements: links, code, headings, and a few helpers. */
+
+* {
+    box-sizing: border-box;
+}
+html,
+body {
+    margin: 0;
+    height: 100%;
+    background: var(--bg);
+    color: var(--text);
+}
+#root {
+    height: 100%;
+}
+a {
+    color: var(--accent-text);
+    text-decoration: none;
+}
+a:hover {
+    color: var(--accent-hover);
+    text-decoration: underline;
+}
+code,
+kbd,
+pre {
+    font-family: var(--mono);
+}
+code {
+    padding: 1px 6px;
+    border-radius: 5px;
+    background: var(--code);
+    font-size: 12px;
+    word-break: break-all;
+}
+kbd {
+    display: inline-block;
+    min-width: 18px;
+    padding: 0 5px;
+    border-radius: 5px;
+    background: var(--hover);
+    color: var(--text);
+    font-size: 11px;
+    line-height: 18px;
+    text-align: center;
+}
+pre {
+    background: var(--code);
+    padding: 10px 12px;
+    border-radius: 10px;
+    overflow-x: auto;
+    font-size: 12px;
+}
+h1,
+h2 {
+    margin: 0;
+    font-family: var(--display);
+    font-weight: 700;
+    letter-spacing: -0.025em;
+    line-height: 1.15;
+}
+h1 {
+    font-size: 28px;
+}
+h2 {
+    font-size: 18px;
+    letter-spacing: -0.02em;
+}
+h3 {
+    margin: 0 0 8px;
+    font-size: 13px;
+    font-weight: 700;
+}
+p {
+    margin: 0;
+}
+.grow {
+    flex: 1;
+}
+.muted {
+    color: var(--muted);
+}
+.small {
+    font-size: 12px;
+}
+.error {
+    color: var(--bad);
+}
+.center {
+    text-align: center;
+    margin-top: 20vh;
+}
+.sr {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+}

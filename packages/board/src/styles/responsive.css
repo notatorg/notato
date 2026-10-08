@@ -1,0 +1,158 @@
+/* Narrow screens, and less motion for anyone who asks for it. Last, so it outranks what it changes. */
+
+@media (max-width: 1180px) {
+    :root {
+        --side-w: 212px;
+    }
+    .detail-head {
+        padding-left: 22px;
+    }
+    .detail-body {
+        padding: 12px 22px 22px;
+    }
+}
+@media (max-width: 980px) and (min-width: 821px) {
+    .row-thumb {
+        display: none;
+    }
+}
+@media (max-width: 820px) {
+    .app {
+        grid-template-columns: minmax(0, 1fr);
+        grid-template-rows: auto minmax(0, 1fr);
+        gap: 6px;
+        padding: 0 8px 8px;
+    }
+    .mobile-bar {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        padding: 6px 0 2px;
+    }
+    .mobile-bar .wordmark {
+        font-size: 19px;
+    }
+    .sidebar {
+        position: fixed;
+        inset: 0 auto 0 0;
+        z-index: 40;
+        width: min(290px, 86vw);
+        padding: 12px 8px;
+        background: var(--bg);
+        box-shadow: var(--shadow);
+        transform: translateX(-105%);
+        transition: transform 0.2s ease;
+    }
+    .drawer-open .sidebar {
+        transform: none;
+    }
+    .drawer-open .drawer-shade {
+        display: block;
+        position: fixed;
+        inset: 0;
+        z-index: 39;
+        width: auto;
+        height: auto;
+        border-radius: 0;
+        background: rgb(10 12 14 / 0.4);
+        cursor: default;
+    }
+    .drawer-open .drawer-shade:hover:not(:disabled) {
+        background: rgb(10 12 14 / 0.4);
+    }
+    .sheet-inner {
+        padding: 20px 16px 32px;
+    }
+    .inbox {
+        grid-template-columns: minmax(0, 1fr);
+    }
+    .inbox .detail-col,
+    .inbox.has-detail .list-col {
+        display: none;
+    }
+    .inbox.has-detail .detail-col {
+        display: flex;
+    }
+    .list-top {
+        padding: 16px 12px 8px;
+    }
+    .list {
+        padding: 2px 4px 6px;
+    }
+    .list-foot {
+        display: none;
+    }
+    .detail-head {
+        padding: 10px 12px 0;
+    }
+    .detail-head .back {
+        display: inline-flex;
+        margin-left: -4px;
+    }
+    .detail-body {
+        padding: 12px 16px 20px;
+    }
+    .comment {
+        font-size: 23px;
+    }
+    .comment.long {
+        font-size: 17px;
+    }
+    .shots.two {
+        grid-template-columns: minmax(0, 1fr);
+    }
+    button.shot {
+        height: 200px;
+    }
+    .composer {
+        padding: 10px 12px 12px;
+    }
+    .status-actions {
+        width: 100%;
+    }
+    .status-actions button {
+        flex: 1;
+    }
+    .feed-link {
+        grid-template-columns: 30px minmax(0, 1fr);
+    }
+    .feed-link > time {
+        display: none;
+    }
+    .set-body {
+        grid-column: auto;
+    }
+    .hook {
+        grid-template-columns: minmax(0, 1fr);
+        gap: 8px;
+    }
+    .hook-kind {
+        justify-self: start;
+    }
+    .token-form,
+    .token-form.one,
+    .kinds,
+    .test-pick {
+        grid-template-columns: minmax(0, 1fr);
+    }
+    .inline-field {
+        width: 100%;
+    }
+    .inline-field input {
+        flex: 1;
+        width: auto;
+        min-width: 0;
+    }
+    .two-col {
+        grid-template-columns: minmax(0, 1fr);
+    }
+}
+@media (prefers-reduced-motion: reduce) {
+    .sidebar,
+    .project-card,
+    .switch,
+    .switch .knob,
+    .tape {
+        transition: none;
+    }
+}

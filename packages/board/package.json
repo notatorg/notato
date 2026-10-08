@@ -1,6 +1,7 @@
 {
     "name": "@notato/board",
     "version": "0.2.0",
+    "description": "The Notato board: the web UI the server serves, with each project's inbox of notes and their threads, activity, numbers, settings and connect guides.",
     "private": true,
     "type": "module",
     "scripts": {

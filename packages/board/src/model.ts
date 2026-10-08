@@ -1,8 +1,9 @@
 import type { Annotation, Intent, Reply, Severity, Status } from "@notato/schema";
+import type { ProjectSummary } from "./api.ts";
 
 // Everything here is plain data in, plain data out, so the board's behaviour can be tested without a browser.
 
-export const STATUSES: Status[] = [
+const STATUSES: Status[] = [
     "open",
     "acknowledged",
     "variant_chosen",
@@ -48,8 +49,8 @@ export interface Filters {
  */
 export const NO_NAME = "\u0000no-name";
 
-export const NO_FILTERS: Filters = {
-    status: TODO,
+/** The filters beyond status, all cleared. */
+export const NO_EXTRA_FILTERS: Omit<Filters, "status"> = {
     route: "",
     severity: "",
     intent: "",
@@ -57,6 +58,9 @@ export const NO_FILTERS: Filters = {
     author: "",
     bundle: "",
 };
+
+/** What the inbox shows when a project opens: what is still to do. */
+export const NO_FILTERS: Filters = { status: TODO, ...NO_EXTRA_FILTERS };
 
 /** Which view a status list is, or null when it is some other mix. */
 export function viewOf(statuses: Status[]): View | null {
@@ -170,6 +174,14 @@ export const GROUPS: Array<{ id: Group; label: string }> = [
     { id: "severity", label: "By severity" },
 ];
 
+/** How the inbox is cut: kept per project for as long as the project is open, so moving between tabs keeps it. */
+export interface InboxState {
+    filters: Filters;
+    search: string;
+    sort: Sort;
+    group: Group;
+}
+
 export interface AnnotationGroup {
     key: string;
     label: string;
@@ -194,28 +206,25 @@ export function groupAnnotations(list: Annotation[], group: Group): AnnotationGr
     const groups = new Map<string, Annotation[]>();
     for (const a of list) {
         const key = keyOf(a);
-        groups.set(key, [...(groups.get(key) ?? []), a]);
+        const items = groups.get(key);
+        if (items) items.push(a);
+        else groups.set(key, [a]);
     }
-    const order = (key: string) =>
-        group === "status"
-            ? STATUSES.indexOf(key as Status)
-            : group === "severity"
-              ? key
-                  ? SEVERITIES.indexOf(key as Severity)
-                  : SEVERITIES.length
-              : 0;
+    // Statuses in the order work moves and severities from the worst; anything else by name.
+    const rank = (key: string) => {
+        if (group === "status") return STATUSES.indexOf(key as Status);
+        if (group === "severity")
+            return key ? SEVERITIES.indexOf(key as Severity) : SEVERITIES.length;
+        return 0;
+    };
+    const label = (key: string) => {
+        if (group === "status") return statusLabel(key as Status);
+        if (group === "severity" && !key) return "No severity";
+        return key;
+    };
     return [...groups.entries()]
-        .sort(([x], [y]) => order(x) - order(y) || x.localeCompare(y))
-        .map(([key, items]) => ({
-            key,
-            label:
-                group === "status"
-                    ? statusLabel(key as Status)
-                    : group === "severity" && !key
-                      ? "No severity"
-                      : key,
-            items,
-        }));
+        .sort(([x], [y]) => rank(x) - rank(y) || x.localeCompare(y))
+        .map(([key, items]) => ({ key, label: label(key), items }));
 }
 
 /** How a status reads on screen. */
@@ -267,7 +276,7 @@ const DAY = 86_400_000;
  * Local midnight `back` days before the day of `now`. By the calendar, not by 24-hour steps: a day that changes the
  * clocks is 23 or 25 hours long.
  */
-export function startOfDay(now: number, back = 0): number {
+function startOfDay(now: number, back = 0): number {
     const d = new Date(now);
     d.setHours(0, 0, 0, 0);
     d.setDate(d.getDate() - back);
@@ -309,6 +318,10 @@ export function dayLabel(iso: string, now = Date.now()): string {
         ...(new Date(t).getFullYear() === new Date(now).getFullYear() ? {} : { year: "numeric" }),
     });
 }
+
+/** A time of day, the way this browser writes one: "15:23", or "03:23 PM". */
+export const clock = (iso: string) =>
+    new Date(iso).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
 
 /** A duration as a person would say it: "4 min", "3 h", "2 days". */
 export function duration(ms: number): string {
@@ -365,13 +378,11 @@ export function projectStats(list: Annotation[], now = Date.now(), days = 30): P
     const firstReplies: number[] = [];
     let replies = 0;
 
-    const midnight = new Date(now).setHours(0, 0, 0, 0);
     const perDay = Array.from({ length: days }, (_, i) => {
-        const d = new Date(midnight);
-        d.setDate(d.getDate() - (days - 1 - i));
-        return { day: d.toISOString(), start: d.getTime(), count: 0 };
+        const start = startOfDay(now, days - 1 - i);
+        return { day: new Date(start).toISOString(), start, count: 0 };
     });
-    const tomorrow = new Date(midnight).setDate(new Date(midnight).getDate() + 1);
+    const tomorrow = startOfDay(now, -1);
 
     for (const a of list) {
         statuses[a.status] += 1;
@@ -433,6 +444,15 @@ export function projectStats(list: Annotation[], now = Date.now(), days = 30): P
         replies,
     };
 }
+
+/** "1 note", "3 notes", "2 replies". */
+export const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
+
+/** "fix" is "Fix": a word from the wire format as a label. */
+export const capitalise = (s: string) => `${s[0]?.toUpperCase() ?? ""}${s.slice(1)}`;
+
+/** The end of a route, which is what tells pages apart in a list: "/InitPage/HomePage" is "HomePage". */
+export const lastSegment = (route: string) => route.split("/").filter(Boolean).at(-1) ?? route;
 
 /** The letter on an avatar or a name card: the first of the name, so "ada" and "Ada Lovelace" are both A. */
 export function initial(name: string | undefined): string {
@@ -544,8 +564,20 @@ export function serial(): <T>(task: () => Promise<T>) => Promise<T> {
 
 // ---- projects ------------------------------------------------------------------------------------------------
 
+/** What a project is called on screen: its name, or its id until it has one. */
+export const projectName = (p: ProjectSummary | undefined, id: string) => p?.name?.trim() || id;
+
+/** What is not finished yet, the same set as the inbox's "To do"; older servers only report `open`. */
+export const todoOf = (p: ProjectSummary) =>
+    p.statuses ? TODO.reduce((n, s) => n + (p.statuses?.[s] ?? 0), 0) : p.open;
+
+/** Newest activity first; projects from a server that does not report it go by id after those that do. */
+export const byActivity = (x: ProjectSummary, y: ProjectSummary) =>
+    (y.lastActivityAt ? Date.parse(y.lastActivityAt) : 0) -
+        (x.lastActivityAt ? Date.parse(x.lastActivityAt) : 0) || x.id.localeCompare(y.id);
+
 /** What the server takes as a project id: letters, digits and `_ . @ -`, at most 128, and never only dots. */
-export const PROJECT_ID = /^(?!\.+$)[\w.@-]{1,128}$/;
+const PROJECT_ID = /^(?!\.+$)[\w.@-]{1,128}$/;
 
 /** Why `id` cannot be a project id, said to the person typing it, or null when it can be one. */
 export function projectIdProblem(id: string): string | null {

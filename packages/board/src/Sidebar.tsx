@@ -1,15 +1,9 @@
 import { useState } from "react";
-import {
-    type Me,
-    type ProjectSummary,
-    projectName,
-    setBoardName,
-    todoOf,
-    useBoardName,
-} from "./api.ts";
-import { hasUnseen, useLiveState, useSeenVersion } from "./live.ts";
-import { initial } from "./model.ts";
+import { isAdmin, type Me, type ProjectSummary } from "./api.ts";
+import { hasUnseen, type LiveState, useLiveState, useSeenVersion } from "./live.ts";
+import { initial, projectName, todoOf } from "./model.ts";
 import { href, projectHref, type Route, type Tab } from "./route.ts";
+import { setBoardName, useBoardName } from "./storage.ts";
 import { Icon, type IconName, Logo, ProjectMark, ThemeSwitch } from "./ui.tsx";
 
 interface Props {
@@ -23,6 +17,7 @@ interface Props {
     onSignOut(): void;
 }
 
+/** A project's pages, under its name at the top of the sidebar. */
 const VIEWS: Array<{ tab: Tab; label: string; icon: IconName; admin?: boolean }> = [
     { tab: "inbox", label: "Inbox", icon: "inbox" },
     { tab: "activity", label: "Activity", icon: "activity" },
@@ -30,13 +25,27 @@ const VIEWS: Array<{ tab: Tab; label: string; icon: IconName; admin?: boolean }>
     { tab: "settings", label: "Project settings", icon: "sliders", admin: true },
 ];
 
+/** Past this many projects, the sidebar offers a box to find one. */
+const FIND_FROM = 8;
+
+/** The dot by the logo, as it reads to a screen reader and on hover. */
+const LIVE_TEXT: Record<LiveState, { label: string; title: string }> = {
+    live: { label: "Live", title: "Connected: changes appear as they happen" },
+    offline: { label: "Offline", title: "Lost the connection to the server; retrying" },
+    connecting: { label: "Connecting", title: "Connecting…" },
+};
+
+/**
+ * The sidebar (a drawer on a phone): the open project's pages, every project with what it has to do, and at the
+ * bottom the server's pages, the name on replies and the theme.
+ */
 export function Sidebar({ me, route, current, projects, onNewProject, onSignOut }: Props) {
     const live = useLiveState();
     useSeenVersion();
     const name = useBoardName();
     const [query, setQuery] = useState("");
     const [draft, setDraft] = useState<string | null>(null);
-    const admin = me.mode === "dev" || Boolean(me.username);
+    const admin = isAdmin(me);
     const open = route.page === "project" ? route.project : null;
     const summary = projects?.find((p) => p.id === current);
 
@@ -55,16 +64,8 @@ export function Sidebar({ me, route, current, projects, onNewProject, onSignOut 
                 <span
                     className={`live ${live}`}
                     role="img"
-                    aria-label={
-                        live === "live" ? "Live" : live === "offline" ? "Offline" : "Connecting"
-                    }
-                    title={
-                        live === "live"
-                            ? "Connected: changes appear as they happen"
-                            : live === "offline"
-                              ? "Lost the connection to the server; retrying"
-                              : "Connecting…"
-                    }
+                    aria-label={LIVE_TEXT[live].label}
+                    title={LIVE_TEXT[live].title}
                 />
             </div>
 
@@ -114,7 +115,7 @@ export function Sidebar({ me, route, current, projects, onNewProject, onSignOut 
                     </button>
                 ) : null}
             </div>
-            {projects && projects.length > 7 ? (
+            {projects && projects.length >= FIND_FROM ? (
                 <input
                     className="side-search"
                     type="search"

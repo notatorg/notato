@@ -1,40 +1,44 @@
-import { useCallback, useEffect, useState } from "react";
+import { DETAILS } from "@notato/core";
+import { useEffect, useState } from "react";
 import { AgentsSection, agentsText } from "./Agents.tsx";
 import {
     deleteWebhook,
     getSettings,
     getStatus,
+    type OnOff,
     type ProjectSummary,
-    remember,
-    remembered,
     type ServerStatus,
     type SettingsView,
-    setBoardName,
+    type SettingView,
     setSetting,
-    useBoardName,
     type WebhookView,
 } from "./api.ts";
-import { duration } from "./model.ts";
-import { DETAILS, type Detail } from "./Project.tsx";
+import { capitalise, duration, plural } from "./model.ts";
+import { KEYS, setBoardName, useBoardName, useRemembered } from "./storage.ts";
 import { TestDialog } from "./TestPanel.tsx";
-import { Icon, Segmented, ThemeSwitch, Toggle } from "./ui.tsx";
+import { FLASH_MS, Icon, Segmented, ThemeSwitch, Toggle } from "./ui.tsx";
 import { WebhookEditor } from "./WebhookEditor.tsx";
 import { eventsSummary, formatLabel } from "./webhook-form.ts";
 
 const SETTING_LABELS: Record<string, string> = { screenshots: "Screenshots" };
+const settingLabel = (name: string) => SETTING_LABELS[name] ?? name;
+
+/** Agents come and go, and the file can change underneath (`notato config`, a restart): the page looks again this often. */
+const POLL_MS = 5000;
 
 /** The server's settings (the same file `notato config` edits), its webhooks, and this browser's own preferences. */
 export function Settings({ projects }: { projects: ProjectSummary[] | null }) {
     const [view, setView] = useState<SettingsView | null>(null);
     const [status, setStatus] = useState<ServerStatus | null>(null);
     const [error, setError] = useState<string | null>(null);
+    /** The change on its way, by what it changes; the controls wait for it. */
     const [busy, setBusy] = useState<string | null>(null);
     /** The webhook being edited, `"new"` for one being added, or null when the form is closed. */
     const [editing, setEditing] = useState<WebhookView | "new" | null>(null);
     /** The saved webhook whose test panel is open. */
     const [testing, setTesting] = useState<WebhookView | null>(null);
 
-    const load = useCallback(() => {
+    useEffect(() => {
         getSettings().then(
             (v) => {
                 setView(v);
@@ -43,14 +47,11 @@ export function Settings({ projects }: { projects: ProjectSummary[] | null }) {
             (e: Error) => setError(e.message)
         );
         getStatus().then(setStatus, () => {});
-    }, []);
-    useEffect(() => load(), [load]);
-    // Agents come and go, and the file can change underneath (`notato config`, a restart): look again every few seconds.
-    useEffect(() => {
+        // Later looks are quiet: what is on screen stays if the server cannot be reached.
         const timer = setInterval(() => {
             getStatus().then(setStatus, () => {});
             getSettings().then(setView, () => {});
-        }, 5000);
+        }, POLL_MS);
         return () => clearInterval(timer);
     }, []);
 
@@ -73,7 +74,7 @@ export function Settings({ projects }: { projects: ProjectSummary[] | null }) {
     const stale = (message: string) => {
         setEditing(null);
         setTesting(null);
-        setError(`${message[0]?.toUpperCase()}${message.slice(1)}. This is the list as it is now.`);
+        setError(`${capitalise(message)}. This is the list as it is now.`);
         getSettings().then(setView, () => {});
     };
 
@@ -153,211 +154,26 @@ export function Settings({ projects }: { projects: ProjectSummary[] | null }) {
                     }
                 />
 
-                <section className="set-section">
-                    <div className="set-label">
-                        <h2>Capture</h2>
-                    </div>
-                    <div className="set-body">
-                        {view.settings
-                            .filter((s) => s.name !== "mcp")
-                            .map((s) => {
-                                const on = s.value === "on";
-                                const fromEnv = s.source === "env";
-                                return (
-                                    <div key={s.name} className="setting-row">
-                                        <div className="setting-text">
-                                            <strong>{SETTING_LABELS[s.name] ?? s.name}</strong>
-                                            <p className="muted small">{s.about}</p>
-                                            {fromEnv ? (
-                                                <p className="small note">
-                                                    Set to {s.value} by <code>${s.env}</code> where
-                                                    the server runs, which wins over this file.
-                                                </p>
-                                            ) : s.source === "file" && s.value !== s.default ? (
-                                                <button
-                                                    type="button"
-                                                    className="link small"
-                                                    disabled={locked || busy !== null}
-                                                    onClick={() =>
-                                                        change(s.name, () =>
-                                                            setSetting(s.name, null)
-                                                        )
-                                                    }
-                                                >
-                                                    Back to the default ({s.default})
-                                                </button>
-                                            ) : null}
-                                        </div>
-                                        <Toggle
-                                            label={SETTING_LABELS[s.name] ?? s.name}
-                                            on={on}
-                                            disabled={locked || fromEnv || busy !== null}
-                                            onChange={(next) =>
-                                                change(s.name, () =>
-                                                    setSetting(s.name, next ? "on" : "off")
-                                                )
-                                            }
-                                        />
-                                    </div>
-                                );
-                            })}
-                    </div>
-                </section>
+                <CaptureSection
+                    settings={view.settings.filter((s) => s.name !== "mcp")}
+                    locked={locked}
+                    busy={busy !== null}
+                    onChange={(name, value) => change(name, () => setSetting(name, value))}
+                />
 
-                <section className="set-section">
-                    <div className="set-label">
-                        <h2>Webhooks</h2>
-                        <p>
-                            Ping Slack, Discord, Teams or your own service when notes arrive or
-                            change.
-                        </p>
-                    </div>
-                    <div className="set-body">
-                        {view.webhooks.length === 0 ? (
-                            <div className="hooks-empty">
-                                <p>No webhooks yet.</p>
-                                <p className="muted small">
-                                    Add one to post new notes to a channel, or to start a flow when
-                                    an agent resolves something.
-                                </p>
-                            </div>
-                        ) : (
-                            <ul className="hooks">
-                                {view.webhooks.map((w) => (
-                                    <li key={`${w.index}:${w.fingerprint}`} className="hook">
-                                        <span className={`hook-kind k-${w.format}`}>
-                                            {formatLabel(w.format)}
-                                        </span>
-                                        <div className="hook-main">
-                                            <strong className="hook-name">
-                                                {w.name ?? w.host}
-                                            </strong>
-                                            <code
-                                                className="hook-url"
-                                                title="The full URL stays on the server"
-                                            >
-                                                {w.url}
-                                            </code>
-                                            <div className="hook-meta">
-                                                <span>{eventsSummary(w.events)}</span>
-                                                <span>
-                                                    {w.project
-                                                        ? `only ${w.project}`
-                                                        : "all projects"}
-                                                </span>
-                                                {w.format === "json" ? (
-                                                    <span>
-                                                        {w.secret.kind === "none"
-                                                            ? "unsigned"
-                                                            : w.secret.kind === "env"
-                                                              ? `signed with $${w.secret.name}`
-                                                              : "signed"}
-                                                    </span>
-                                                ) : null}
-                                            </div>
-                                            {w.secret.kind === "env" && !w.secret.set ? (
-                                                <p className="small warn-text">
-                                                    <code>${w.secret.name}</code> is not set where
-                                                    the server runs, so nothing is sent to this
-                                                    webhook.
-                                                </p>
-                                            ) : null}
-                                        </div>
-                                        <div className="hook-actions">
-                                            <button
-                                                type="button"
-                                                className="small"
-                                                onClick={() => setTesting(w)}
-                                            >
-                                                Test
-                                            </button>
-                                            <button
-                                                type="button"
-                                                className="small"
-                                                disabled={locked}
-                                                onClick={() => setEditing(w)}
-                                            >
-                                                Edit
-                                            </button>
-                                            <button
-                                                type="button"
-                                                className="icon-button danger"
-                                                aria-label={`Delete ${w.name ?? w.host}`}
-                                                title="Delete"
-                                                disabled={locked || busy !== null}
-                                                onClick={() => {
-                                                    if (
-                                                        window.confirm(
-                                                            `Stop sending to ${w.name ?? w.host}? This removes it from the file.`
-                                                        )
-                                                    )
-                                                        change(`delete-${w.index}`, () =>
-                                                            deleteWebhook(w)
-                                                        );
-                                                }}
-                                            >
-                                                <Icon name="trash" size={15} />
-                                            </button>
-                                        </div>
-                                    </li>
-                                ))}
-                            </ul>
-                        )}
-                        <button
-                            type="button"
-                            className="add-button"
-                            disabled={locked}
-                            onClick={() => setEditing("new")}
-                        >
-                            <Icon name="plus" size={14} />
-                            Add webhook
-                        </button>
-                    </div>
-                </section>
+                <WebhooksSection
+                    webhooks={view.webhooks}
+                    locked={locked}
+                    busy={busy !== null}
+                    onAdd={() => setEditing("new")}
+                    onEdit={setEditing}
+                    onTest={setTesting}
+                    onDelete={(w) => change(`delete-${w.index}`, () => deleteWebhook(w))}
+                />
 
                 <BrowserPreferences />
 
-                {status ? (
-                    <section className="set-section">
-                        <div className="set-label">
-                            <h2>Server</h2>
-                        </div>
-                        <dl className="set-body facts-list">
-                            <dt>Mode</dt>
-                            <dd>
-                                {status.mode === "dev"
-                                    ? "Development, this machine only"
-                                    : "Shared server"}
-                            </dd>
-                            <dt>Version</dt>
-                            <dd>
-                                <code>{status.version}</code>
-                            </dd>
-                            {status.uptimeSec !== undefined ? (
-                                <>
-                                    <dt>Running for</dt>
-                                    <dd>{duration(status.uptimeSec * 1000)}</dd>
-                                </>
-                            ) : null}
-                            {status.agents ? (
-                                <>
-                                    <dt>Agents</dt>
-                                    <dd>{agentsText(status.agents)}</dd>
-                                </>
-                            ) : null}
-                            {status.pages !== undefined ? (
-                                <>
-                                    <dt>Listening</dt>
-                                    <dd>
-                                        {status.pages} page{status.pages === 1 ? "" : "s"} and board
-                                        tab
-                                        {status.pages === 1 ? "" : "s"}
-                                    </dd>
-                                </>
-                            ) : null}
-                        </dl>
-                    </section>
-                ) : null}
+                {status ? <ServerSection status={status} /> : null}
             </div>
 
             {testing ? (
@@ -387,14 +203,186 @@ export function Settings({ projects }: { projects: ProjectSummary[] | null }) {
     );
 }
 
+/** The on/off settings for what a note captures (screenshots), each with where its value comes from. */
+function CaptureSection({
+    settings,
+    locked,
+    busy,
+    onChange,
+}: {
+    settings: SettingView[];
+    locked: boolean;
+    busy: boolean;
+    /** Sets a setting in the file, or (with null) takes it out so the default applies. */
+    onChange(name: string, value: OnOff | null): void;
+}) {
+    return (
+        <section className="set-section">
+            <div className="set-label">
+                <h2>Capture</h2>
+            </div>
+            <div className="set-body">
+                {settings.map((s) => {
+                    const fromEnv = s.source === "env";
+                    return (
+                        <div key={s.name} className="setting-row">
+                            <div className="setting-text">
+                                <strong>{settingLabel(s.name)}</strong>
+                                <p className="muted small">{s.about}</p>
+                                {fromEnv ? (
+                                    <p className="small note">
+                                        Set to {s.value} by <code>${s.env}</code> where the server
+                                        runs, which wins over this file.
+                                    </p>
+                                ) : s.source === "file" && s.value !== s.default ? (
+                                    <button
+                                        type="button"
+                                        className="link small"
+                                        disabled={locked || busy}
+                                        onClick={() => onChange(s.name, null)}
+                                    >
+                                        Back to the default ({s.default})
+                                    </button>
+                                ) : null}
+                            </div>
+                            <Toggle
+                                label={settingLabel(s.name)}
+                                on={s.value === "on"}
+                                disabled={locked || fromEnv || busy}
+                                onChange={(next) => onChange(s.name, next ? "on" : "off")}
+                            />
+                        </div>
+                    );
+                })}
+            </div>
+        </section>
+    );
+}
+
+/** The webhooks in the settings file, each with its Test, Edit and Delete, and a way to add one. */
+function WebhooksSection({
+    webhooks,
+    locked,
+    busy,
+    onAdd,
+    onEdit,
+    onTest,
+    onDelete,
+}: {
+    webhooks: WebhookView[];
+    locked: boolean;
+    busy: boolean;
+    onAdd(): void;
+    onEdit(w: WebhookView): void;
+    onTest(w: WebhookView): void;
+    onDelete(w: WebhookView): void;
+}) {
+    return (
+        <section className="set-section">
+            <div className="set-label">
+                <h2>Webhooks</h2>
+                <p>Ping Slack, Discord, Teams or your own service when notes arrive or change.</p>
+            </div>
+            <div className="set-body">
+                {webhooks.length === 0 ? (
+                    <div className="hooks-empty">
+                        <p>No webhooks yet.</p>
+                        <p className="muted small">
+                            Add one to post new notes to a channel, or to start a flow when an agent
+                            resolves something.
+                        </p>
+                    </div>
+                ) : (
+                    <ul className="hooks">
+                        {webhooks.map((w) => {
+                            const title = w.name ?? w.host;
+                            return (
+                                <li key={`${w.index}:${w.fingerprint}`} className="hook">
+                                    <span className="hook-kind">{formatLabel(w.format)}</span>
+                                    <div className="hook-main">
+                                        <strong className="hook-name">{title}</strong>
+                                        <code
+                                            className="hook-url"
+                                            title="The full URL stays on the server"
+                                        >
+                                            {w.url}
+                                        </code>
+                                        <div className="hook-meta">
+                                            <span>{eventsSummary(w.events)}</span>
+                                            <span>
+                                                {w.project ? `only ${w.project}` : "all projects"}
+                                            </span>
+                                            {w.format === "json" ? (
+                                                <span>
+                                                    {w.secret.kind === "none"
+                                                        ? "unsigned"
+                                                        : w.secret.kind === "env"
+                                                          ? `signed with $${w.secret.name}`
+                                                          : "signed"}
+                                                </span>
+                                            ) : null}
+                                        </div>
+                                        {w.secret.kind === "env" && !w.secret.set ? (
+                                            <p className="small warn-text">
+                                                <code>${w.secret.name}</code> is not set where the
+                                                server runs, so nothing is sent to this webhook.
+                                            </p>
+                                        ) : null}
+                                    </div>
+                                    <div className="hook-actions">
+                                        <button
+                                            type="button"
+                                            className="small"
+                                            onClick={() => onTest(w)}
+                                        >
+                                            Test
+                                        </button>
+                                        <button
+                                            type="button"
+                                            className="small"
+                                            disabled={locked}
+                                            onClick={() => onEdit(w)}
+                                        >
+                                            Edit
+                                        </button>
+                                        <button
+                                            type="button"
+                                            className="icon-button danger"
+                                            aria-label={`Delete ${title}`}
+                                            title="Delete"
+                                            disabled={locked || busy}
+                                            onClick={() => {
+                                                if (
+                                                    window.confirm(
+                                                        `Stop sending to ${title}? This removes it from the file.`
+                                                    )
+                                                )
+                                                    onDelete(w);
+                                            }}
+                                        >
+                                            <Icon name="trash" size={15} />
+                                        </button>
+                                    </div>
+                                </li>
+                            );
+                        })}
+                    </ul>
+                )}
+                <button type="button" className="add-button" disabled={locked} onClick={onAdd}>
+                    <Icon name="plus" size={14} />
+                    Add webhook
+                </button>
+            </div>
+        </section>
+    );
+}
+
 /** Kept in this browser only: the name on replies, how much a Markdown copy says, and the theme. */
 function BrowserPreferences() {
     const saved = useBoardName();
     const [name, setName] = useState(saved);
     const [flash, setFlash] = useState(false);
-    const [detail, setDetail] = useState<Detail>(() =>
-        remembered("notato.detail", DETAILS, "standard")
-    );
+    const [detail, setDetail] = useRemembered(KEYS.detail, DETAILS, "standard");
     // A change made in the sidebar shows here too.
     useEffect(() => setName(saved), [saved]);
     return (
@@ -410,7 +398,7 @@ function BrowserPreferences() {
                         e.preventDefault();
                         setBoardName(name);
                         setFlash(true);
-                        setTimeout(() => setFlash(false), 1500);
+                        setTimeout(() => setFlash(false), FLASH_MS);
                     }}
                 >
                     <label className="setting-text" htmlFor="pref-name">
@@ -440,14 +428,8 @@ function BrowserPreferences() {
                     <Segmented
                         label="Markdown detail"
                         value={detail}
-                        onChange={(next) => {
-                            setDetail(next);
-                            remember("notato.detail", next);
-                        }}
-                        options={DETAILS.map((d) => ({
-                            id: d,
-                            label: `${d[0]?.toUpperCase()}${d.slice(1)}`,
-                        }))}
+                        onChange={setDetail}
+                        options={DETAILS.map((d) => ({ id: d, label: capitalise(d) }))}
                     />
                 </div>
                 <div className="setting-row">
@@ -458,6 +440,48 @@ function BrowserPreferences() {
                     <ThemeSwitch />
                 </div>
             </div>
+        </section>
+    );
+}
+
+/** What the server says about itself: its mode, version, uptime, and who is connected. */
+function ServerSection({ status }: { status: ServerStatus }) {
+    return (
+        <section className="set-section">
+            <div className="set-label">
+                <h2>Server</h2>
+            </div>
+            <dl className="set-body facts-list">
+                <dt>Mode</dt>
+                <dd>
+                    {status.mode === "dev" ? "Development, this machine only" : "Shared server"}
+                </dd>
+                <dt>Version</dt>
+                <dd>
+                    <code>{status.version}</code>
+                </dd>
+                {status.uptimeSec !== undefined ? (
+                    <>
+                        <dt>Running for</dt>
+                        <dd>{duration(status.uptimeSec * 1000)}</dd>
+                    </>
+                ) : null}
+                {status.agents ? (
+                    <>
+                        <dt>Agents</dt>
+                        <dd>{agentsText(status.agents)}</dd>
+                    </>
+                ) : null}
+                {status.pages !== undefined ? (
+                    <>
+                        <dt>Listening</dt>
+                        <dd>
+                            {plural(status.pages, "page")} and board tab
+                            {status.pages === 1 ? "" : "s"}
+                        </dd>
+                    </>
+                ) : null}
+            </dl>
         </section>
     );
 }

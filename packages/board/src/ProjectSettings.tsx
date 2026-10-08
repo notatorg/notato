@@ -5,12 +5,12 @@ import {
     listTokens,
     type Me,
     type ProjectSummary,
-    projectName,
     renameProject,
 } from "./api.ts";
+import { plural, projectName } from "./model.ts";
 import { projectHref } from "./route.ts";
 import { TokenManager } from "./Tokens.tsx";
-import { Icon } from "./ui.tsx";
+import { FLASH_MS, Icon } from "./ui.tsx";
 
 interface Props {
     me: Me;
@@ -21,8 +21,6 @@ interface Props {
     onRenamed(): void;
     onDeleted(): void;
 }
-
-const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 
 /** A project's name, its tokens, and deleting it. Admins only. */
 export function ProjectSettings({
@@ -62,7 +60,10 @@ export function ProjectSettings({
                 <section className="set-section">
                     <div className="set-label">
                         <h2>Connect an app</h2>
-                        <p>The React, .NET MAUI, SwiftUI and Android SDKs, or any page.</p>
+                        <p>
+                            The React, Angular, React Native, Flutter, .NET MAUI, SwiftUI and
+                            Android SDKs, or any page.
+                        </p>
                     </div>
                     <div className="set-body">
                         <div className="setting-row">
@@ -130,7 +131,7 @@ function Rename({
         try {
             await renameProject(project, draft.trim());
             setSaved(true);
-            setTimeout(() => setSaved(false), 1500);
+            setTimeout(() => setSaved(false), FLASH_MS);
             onRenamed();
         } catch (e) {
             setError(e instanceof Error ? e.message : "Could not rename it.");

@@ -1,32 +1,32 @@
-import type { Annotation, Intent, Severity } from "@notato/schema";
+import type { Detail as DetailLevel } from "@notato/core";
+import type { Annotation } from "@notato/schema";
 import { memo, type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { assetHref, type BundleRecord, setStatus } from "./api.ts";
 import { Detail } from "./Detail.tsx";
+import { FilterBar } from "./FilterBar.tsx";
 import {
     authorName,
     extraFilterCount,
-    type Filters,
-    GROUPS,
-    type Group,
     groupAnnotations,
-    INTENTS,
+    type InboxState,
     lastActivity,
+    lastSegment,
     matches,
     matchesSearch,
-    NO_NAME,
+    plural,
     relativeTime,
     replyCount,
-    SEVERITIES,
-    SORTS,
-    type Sort,
     statusLabel,
     TODO,
     VIEWS,
+    type View,
     viewOf,
 } from "./model.ts";
-import type { Detail as DetailLevel, InboxState } from "./Project.tsx";
 import { go, projectHref } from "./route.ts";
 import { Empty, Icon, Segmented, StatusDot, When } from "./ui.tsx";
+
+/** How many rows the list draws at first, and adds each time more are asked for. */
+const ROWS_PAGE = 200;
 
 interface Props {
     project: string;
@@ -54,6 +54,10 @@ const typing = (target: EventTarget | null) =>
     target instanceof HTMLElement &&
     (target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName));
 
+/**
+ * A project's inbox: its notes, searched, filtered, sorted and grouped, beside the one that is open. J and K move
+ * through the list, R replies, E resolves, / searches.
+ */
 export function Inbox(props: Props) {
     const { project, all, shown, bundles, state, onState, selected, since, read, onRead } = props;
     const { filters } = state;
@@ -72,24 +76,20 @@ export function Inbox(props: Props) {
     useEffect(() => setLimit(ROWS_PAGE), [project, filters, state.search, state.group]);
     const selectedAt = selected ? ordered.findIndex((a) => a.id === selected) : -1;
     const drawn = Math.max(limit, selectedAt + 1);
+    /** The groups as far as the rows drawn reach, each with how many it has in all. */
     const visibleGroups = useMemo(() => {
         let left = drawn;
-        const out: typeof groups = [];
+        const out: Array<(typeof groups)[number] & { total: number }> = [];
         for (const g of groups) {
             if (left <= 0) break;
-            out.push(g.items.length <= left ? g : { ...g, items: g.items.slice(0, left) });
+            const items = g.items.length <= left ? g.items : g.items.slice(0, left);
+            out.push({ ...g, items, total: g.items.length });
             left -= g.items.length;
         }
         return out;
     }, [groups, drawn]);
     const hiddenCount = Math.max(0, ordered.length - drawn);
 
-    const people = useMemo(
-        () => [...new Set(all.flatMap((a) => (a.author.name ? [a.author.name] : [])))].sort(),
-        [all]
-    );
-    const unnamed = useMemo(() => all.some((a) => !a.author.name), [all]);
-    const routes = useMemo(() => [...new Set(all.map((a) => a.route))].sort(), [all]);
     const view = viewOf(filters.status);
     /** How many each view would show with the other filters and the search as they are. */
     const viewCounts = useMemo(() => {
@@ -104,7 +104,6 @@ export function Inbox(props: Props) {
         return out;
     }, [all, filters, state.search]);
 
-    const setFilters = (next: Partial<Filters>) => onState({ filters: { ...filters, ...next } });
     const open = (id: string, replace = false) => go(projectHref(project, "inbox", id), replace);
 
     // Seeing an annotation clears its "new" mark.
@@ -120,6 +119,7 @@ export function Inbox(props: Props) {
             ?.scrollIntoView({ block: "nearest" });
     }, [selected]);
 
+    // The inbox's keys. Attached again on every render, so they always act on the list and the note on screen.
     useEffect(() => {
         const onKey = (e: KeyboardEvent) => {
             if (e.metaKey || e.ctrlKey || e.altKey) return;
@@ -161,32 +161,6 @@ export function Inbox(props: Props) {
         window.addEventListener("keydown", onKey);
         return () => window.removeEventListener("keydown", onKey);
     });
-
-    const [showFilters, setShowFilters] = useState(false);
-    /** The filters that are set, as chips that take one off when pressed. */
-    const chips: Array<{ key: string; label: string; clear: Partial<Filters> }> = [];
-    if (filters.route) chips.push({ key: "route", label: filters.route, clear: { route: "" } });
-    if (filters.by)
-        chips.push({
-            key: "by",
-            label: filters.by === NO_NAME ? "No name" : filters.by,
-            clear: { by: "" },
-        });
-    if (filters.severity)
-        chips.push({ key: "severity", label: filters.severity, clear: { severity: "" } });
-    if (filters.intent) chips.push({ key: "intent", label: filters.intent, clear: { intent: "" } });
-    if (filters.author)
-        chips.push({
-            key: "author",
-            label: filters.author === "human" ? "People" : "Agents",
-            clear: { author: "" },
-        });
-    if (filters.bundle)
-        chips.push({
-            key: "bundle",
-            label: filters.bundle === "none" ? "Live only" : "From a bundle",
-            clear: { bundle: "" },
-        });
 
     const isNew = (a: Annotation) =>
         since !== null && !read.has(a.id) && Date.parse(lastActivity(a)) > Date.parse(since);
@@ -230,7 +204,12 @@ export function Inbox(props: Props) {
                         className="views"
                         value={view}
                         onChange={(id) =>
-                            setFilters({ status: VIEWS.find((v) => v.id === id)?.statuses ?? [] })
+                            onState({
+                                filters: {
+                                    ...filters,
+                                    status: VIEWS.find((v) => v.id === id)?.statuses ?? [],
+                                },
+                            })
                         }
                         options={VIEWS.map((v) => ({
                             id: v.id,
@@ -238,185 +217,12 @@ export function Inbox(props: Props) {
                             count: viewCounts.get(v.id) ?? 0,
                         }))}
                     />
-                    <div className="arrange">
-                        <button
-                            type="button"
-                            className={showFilters || extra ? "ghost-button on" : "ghost-button"}
-                            aria-expanded={showFilters}
-                            onClick={() => setShowFilters(!showFilters)}
-                        >
-                            <Icon name="filter" size={13} />
-                            Filter
-                            {extra ? <span className="n">{extra}</span> : null}
-                        </button>
-                        {!showFilters
-                            ? chips.map((c) => (
-                                  <button
-                                      key={c.key}
-                                      type="button"
-                                      className="chip"
-                                      onClick={() => setFilters(c.clear)}
-                                      title="Remove this filter"
-                                  >
-                                      {c.label}
-                                      <Icon name="close" size={11} />
-                                  </button>
-                              ))
-                            : null}
-                        <span className="grow" />
-                        <select
-                            className="quiet-select"
-                            aria-label="Sort"
-                            title="Sort"
-                            value={state.sort}
-                            onChange={(e) => onState({ sort: e.target.value as Sort })}
-                        >
-                            {SORTS.map((s) => (
-                                <option key={s.id} value={s.id}>
-                                    {s.label}
-                                </option>
-                            ))}
-                        </select>
-                        <select
-                            className="quiet-select"
-                            aria-label="Group"
-                            title="Group"
-                            value={state.group}
-                            onChange={(e) => onState({ group: e.target.value as Group })}
-                        >
-                            {GROUPS.map((g) => (
-                                <option key={g.id} value={g.id}>
-                                    {g.label}
-                                </option>
-                            ))}
-                        </select>
-                    </div>
-                    {showFilters ? (
-                        <div className="filters">
-                            <select
-                                aria-label="Page"
-                                className={filters.route ? "set" : ""}
-                                value={filters.route}
-                                onChange={(e) => setFilters({ route: e.target.value })}
-                            >
-                                <option value="">All pages</option>
-                                {routes.map((r) => (
-                                    <option key={r}>{r}</option>
-                                ))}
-                            </select>
-                            {people.length + (unnamed ? 1 : 0) > 1 || filters.by ? (
-                                <select
-                                    aria-label="Person"
-                                    className={filters.by ? "set" : ""}
-                                    value={filters.by}
-                                    onChange={(e) => setFilters({ by: e.target.value })}
-                                >
-                                    <option value="">Everyone</option>
-                                    {people.map((p) => (
-                                        <option key={p}>{p}</option>
-                                    ))}
-                                    {unnamed ? (
-                                        <option value={NO_NAME}>No name given</option>
-                                    ) : null}
-                                </select>
-                            ) : null}
-                            <select
-                                aria-label="Severity"
-                                className={filters.severity ? "set" : ""}
-                                value={filters.severity}
-                                onChange={(e) =>
-                                    setFilters({ severity: e.target.value as Severity | "" })
-                                }
-                            >
-                                <option value="">Any severity</option>
-                                {SEVERITIES.map((s) => (
-                                    <option key={s}>{s}</option>
-                                ))}
-                            </select>
-                            <select
-                                aria-label="Intent"
-                                className={filters.intent ? "set" : ""}
-                                value={filters.intent}
-                                onChange={(e) =>
-                                    setFilters({ intent: e.target.value as Intent | "" })
-                                }
-                            >
-                                <option value="">Any intent</option>
-                                {INTENTS.map((i) => (
-                                    <option key={i}>{i}</option>
-                                ))}
-                            </select>
-                            <select
-                                aria-label="Author"
-                                className={filters.author ? "set" : ""}
-                                value={filters.author}
-                                onChange={(e) =>
-                                    setFilters({ author: e.target.value as Filters["author"] })
-                                }
-                            >
-                                <option value="">People and agents</option>
-                                <option value="human">People</option>
-                                <option value="agent">Agents</option>
-                            </select>
-                            {bundles.length ? (
-                                <select
-                                    aria-label="Source"
-                                    className={filters.bundle ? "set" : ""}
-                                    value={filters.bundle}
-                                    onChange={(e) => setFilters({ bundle: e.target.value })}
-                                >
-                                    <option value="">Any source</option>
-                                    <option value="none">Live (not from a bundle)</option>
-                                    {bundles.map((b) => (
-                                        <option key={b.id} value={b.id}>
-                                            Bundle: {b.author.name ?? "unnamed"} ·{" "}
-                                            {new Date(b.createdAt).toLocaleDateString()} (
-                                            {b.annotationCount})
-                                        </option>
-                                    ))}
-                                </select>
-                            ) : null}
-                            {extra ? (
-                                <button
-                                    type="button"
-                                    className="link"
-                                    onClick={() =>
-                                        setFilters({
-                                            route: "",
-                                            severity: "",
-                                            intent: "",
-                                            by: "",
-                                            author: "",
-                                            bundle: "",
-                                        })
-                                    }
-                                >
-                                    Clear {extra}
-                                </button>
-                            ) : null}
-                        </div>
-                    ) : null}
+                    <FilterBar all={all} bundles={bundles} state={state} onState={onState} />
                 </div>
 
                 <div className="list" ref={list}>
                     {shown.length === 0 ? (
-                        <Empty
-                            title={
-                                all.length === 0
-                                    ? "Nothing here yet"
-                                    : state.search
-                                      ? "No matches"
-                                      : extra
-                                        ? "Nothing matches these filters"
-                                        : view === "todo"
-                                          ? "All caught up"
-                                          : view === "done"
-                                            ? "Nothing done yet"
-                                            : view === "dismissed"
-                                              ? "Nothing dismissed"
-                                              : "Nothing here"
-                            }
-                        >
+                        <Empty title={emptyTitle(all.length, state.search, extra, view)}>
                             {all.length === 0 ? (
                                 <p>
                                     Notes land here the moment someone pins one in an app for this
@@ -434,10 +240,7 @@ export function Inbox(props: Props) {
                                 {g.label ? (
                                     <h2 className="group-head">
                                         <span>{g.label}</span>
-                                        <span className="muted">
-                                            {groups.find((all) => all.key === g.key)?.items
-                                                .length ?? g.items.length}
-                                        </span>
+                                        <span className="muted">{g.total}</span>
                                     </h2>
                                 ) : null}
                                 {g.items.map((a) => (
@@ -514,17 +317,28 @@ export function Inbox(props: Props) {
     );
 }
 
-/** The end of a route, which is what tells pages apart in a list: "/InitPage/HomePage" is "HomePage". */
-const lastSegment = (route: string) => route.split("/").filter(Boolean).at(-1) ?? route;
+/** What an empty list says: why it is empty, as far as can be told. */
+function emptyTitle(total: number, search: string, extraFilters: number, view: View | null) {
+    if (total === 0) return "Nothing here yet";
+    if (search) return "No matches";
+    if (extraFilters) return "Nothing matches these filters";
+    switch (view) {
+        case "todo":
+            return "All caught up";
+        case "done":
+            return "Nothing done yet";
+        case "dismissed":
+            return "Nothing dismissed";
+        default:
+            return "Nothing here";
+    }
+}
 
 /** "3h ago", "Yesterday", "Mon", "3 Oct". */
 const shortAgo = (iso: string) => {
     const r = relativeTime(iso);
     return /^\d+[mh]$/.test(r) ? `${r} ago` : r;
 };
-
-/** How many rows the list draws at first, and adds each time more are asked for. */
-const ROWS_PAGE = 200;
 
 /** One note in the list. Memoised: a live update to one note redraws its row, not the thousands beside it. */
 const Row = memo(function Row({
@@ -555,9 +369,7 @@ const Row = memo(function Row({
                     <When iso={at}>· {shortAgo(at)}</When>
                     {unread ? <span className="unseen" title="New since you last looked" /> : null}
                     {replies ? (
-                        <span className="row-replies">
-                            {replies} {replies === 1 ? "reply" : "replies"}
-                        </span>
+                        <span className="row-replies">{plural(replies, "reply", "replies")}</span>
                     ) : null}
                 </span>
                 <span className="row-comment">{a.comment}</span>

@@ -1,0 +1,340 @@
+/* Dialogs and their forms: a new project, a webhook, and a webhook's test with its message drawn. */
+
+/* a dialog: a shade over the page, and a card whose body scrolls between its header and footer */
+.modal-layer {
+    position: fixed;
+    inset: 0;
+    z-index: 50;
+    display: grid;
+    place-items: center;
+    padding: 24px 16px;
+}
+button.modal-shade,
+button.modal-shade:hover:not(:disabled) {
+    position: absolute;
+    inset: 0;
+    width: auto;
+    height: auto;
+    border-radius: 0;
+    background: rgb(10 12 14 / 0.45);
+    cursor: default;
+}
+.modal {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    width: min(560px, 100%);
+    /* Taller forms scroll inside, so the buttons always stay on screen. */
+    max-height: calc(100dvh - 48px);
+    border-radius: 18px;
+    background: var(--panel);
+    box-shadow: var(--shadow);
+}
+.modal-head,
+.modal-foot {
+    flex: none;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 16px 20px;
+}
+.modal-head {
+    justify-content: space-between;
+    border-bottom: 1px solid var(--line);
+}
+.modal-head h2 {
+    font-size: 19px;
+}
+.modal-foot {
+    border-top: 1px solid var(--line);
+}
+.modal-status {
+    flex: none;
+    display: grid;
+    gap: 6px;
+    padding: 10px 20px;
+    border-top: 1px solid var(--line);
+}
+.modal-status > * {
+    margin: 0;
+}
+.modal-body {
+    flex: 1;
+    min-height: 0;
+    overflow: auto;
+    display: grid;
+    /* Rows as tall as what is in them: the body scrolls rather than squeezing a row. */
+    grid-auto-rows: max-content;
+    gap: 16px;
+    padding: 18px 20px 20px;
+}
+.modal.narrow {
+    width: min(460px, 100%);
+}
+.modal.wide {
+    width: min(680px, 100%);
+}
+
+/* a field in a form: its label, the control, and a hint under it */
+.field {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 6px;
+    min-width: 0;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    font-size: 13px;
+    color: var(--text);
+}
+.field > span:first-child,
+.field > label,
+.field legend {
+    margin-bottom: 0;
+    padding: 0;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text);
+}
+.field legend {
+    margin-bottom: 6px;
+}
+.field select {
+    width: 100%;
+    font-weight: 500;
+}
+.field-hint {
+    font-size: 12px;
+    color: var(--muted);
+}
+.field-hint.bad {
+    color: var(--bad);
+}
+.kinds {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+}
+.kind {
+    display: grid;
+    align-content: start;
+    gap: 2px;
+    padding: 10px 12px;
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    color: var(--text);
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+}
+.kind span {
+    font-size: 12px;
+    font-weight: 400;
+    line-height: 1.35;
+    color: var(--muted);
+}
+.kind:hover {
+    background: var(--hover);
+}
+.kind.on {
+    border-color: var(--accent);
+    background: var(--selected);
+    box-shadow: inset 0 0 0 1px var(--accent);
+}
+.kind:focus-within {
+    outline: 2px solid var(--accent);
+    outline-offset: 1px;
+}
+.locked {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 38px;
+    padding: 4px 6px 4px 12px;
+    border-radius: var(--radius);
+    background: var(--hover);
+}
+.locked-value {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    padding: 0;
+    background: none;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    word-break: normal;
+}
+.locked button.small {
+    background: var(--panel);
+}
+.check {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    color: var(--text);
+    cursor: pointer;
+}
+.check input {
+    width: auto;
+    margin: 0;
+    accent-color: var(--accent);
+}
+.event-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    gap: 6px 12px;
+    margin: 4px 0 0 24px;
+}
+input[aria-invalid="true"] {
+    border-color: var(--bad);
+}
+
+/* the test panel: pick an event and a note, see the message, send it */
+.test-panel {
+    gap: 14px;
+}
+.test-pick {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 10px 12px;
+}
+.test-pick .note-pick {
+    grid-column: 1 / -1;
+}
+.test-pick select {
+    width: 100%;
+}
+.preview-frame {
+    min-height: 120px;
+    padding: 14px;
+    border-radius: 12px;
+    background: var(--hover);
+}
+.preview-to {
+    margin: 0 0 10px;
+}
+.preview-url {
+    word-break: break-all;
+}
+.preview-notes {
+    display: grid;
+    gap: 4px;
+    margin: 0;
+    padding-left: 18px;
+    font-size: 12px;
+    color: var(--warn);
+}
+
+/* an Adaptive Card, roughly as Teams draws one */
+.ac-card {
+    display: grid;
+    gap: 8px;
+    max-width: 520px;
+    padding: 14px 16px;
+    border: 1px solid var(--line-2);
+    border-radius: 8px;
+    background: var(--panel);
+    box-shadow: 0 1px 2px rgb(0 0 0 / 0.06);
+    font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+}
+.ac-text {
+    margin: 0;
+    font-size: 14px;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+.ac-small {
+    font-size: 12px;
+}
+.ac-medium {
+    font-size: 17px;
+}
+.ac-bold {
+    font-weight: 650;
+}
+.ac-subtle {
+    color: var(--muted);
+}
+.ac-container {
+    display: grid;
+    gap: 4px;
+}
+.ac-emphasis {
+    padding: 8px 10px;
+    border-radius: 4px;
+    background: var(--code);
+}
+.ac-image {
+    display: block;
+    width: 100%;
+    border: 1px solid var(--line);
+    border-radius: 4px;
+}
+.ac-facts {
+    display: grid;
+    gap: 2px;
+    margin: 0;
+    font-size: 13px;
+}
+.ac-fact {
+    display: grid;
+    grid-template-columns: 96px minmax(0, 1fr);
+    gap: 8px;
+}
+.ac-facts dt {
+    font-weight: 600;
+}
+.ac-facts dd {
+    margin: 0;
+    overflow-wrap: anywhere;
+}
+.ac-actions {
+    display: flex;
+    gap: 8px;
+    padding-top: 4px;
+}
+.ac-action {
+    flex: 1;
+    padding: 6px 10px;
+    border: 1px solid var(--line-2);
+    border-radius: 4px;
+    color: #5b5fc7;
+    font-size: 13px;
+    font-weight: 600;
+    text-align: center;
+}
+.chat-preview {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+}
+.chat-text {
+    margin: 2px 0 0;
+    overflow-wrap: anywhere;
+}
+.chat-avatar {
+    flex: none;
+    display: grid;
+    place-items: center;
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
+    background: var(--accent);
+    color: var(--accent-ink);
+    font-weight: 700;
+}
+.json-preview summary {
+    cursor: pointer;
+    font-size: 12px;
+    font-weight: 600;
+}
+.json-preview pre {
+    max-height: 280px;
+    margin: 8px 0 0;
+    overflow: auto;
+    background: var(--panel);
+}
+.json-preview .headers {
+    max-height: none;
+}

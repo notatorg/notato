@@ -1,18 +1,15 @@
-import { renderAnnotations } from "@notato/core";
+import { DETAILS, renderAnnotations } from "@notato/core";
 import type { Annotation } from "@notato/schema";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Activity } from "./Activity.tsx";
 import {
     type BundleRecord,
-    copyText,
     exportHref,
+    isAdmin,
     listAnnotations,
     listBundles,
     type Me,
     type ProjectSummary,
-    projectName,
-    remember,
-    remembered,
     uploadBundle,
 } from "./api.ts";
 import { ConnectPage } from "./Connect.tsx";
@@ -22,32 +19,24 @@ import {
     applyChange,
     type Filters,
     GROUPS,
-    type Group,
+    type InboxState,
     lastActivity,
     matches,
     matchesSearch,
     mergeSnapshot,
     NO_FILTERS,
     newestActivity,
+    plural,
+    projectName,
     SORTS,
-    type Sort,
     sortAnnotations,
 } from "./model.ts";
 import { Overview } from "./Overview.tsx";
+import { ProjectMenu } from "./ProjectMenu.tsx";
 import { ProjectSettings } from "./ProjectSettings.tsx";
 import { go, projectHref, type Tab } from "./route.ts";
-import { Empty, Icon } from "./ui.tsx";
-
-export const DETAILS = ["compact", "standard", "detailed", "forensic"] as const;
-export type Detail = (typeof DETAILS)[number];
-
-/** How the inbox is cut: kept per project for as long as the project is open, so tabs do not reset it. */
-export interface InboxState {
-    filters: Filters;
-    search: string;
-    sort: Sort;
-    group: Group;
-}
+import { KEYS, remember, remembered, useRemembered } from "./storage.ts";
+import { copyText, Empty, Icon } from "./ui.tsx";
 
 interface Props {
     me: Me;
@@ -68,36 +57,39 @@ interface Props {
     onDeleted(): void;
 }
 
+/** How long a notice stays before it goes on its own. */
+const NOTICE_MS = 6000;
+
+/**
+ * One project, on whichever tab is open. Its notes are loaded here, once, and kept up to date from the live stream,
+ * so the inbox, Activity and Overview all show the same list.
+ */
 export function Project(props: Props) {
     const { me, project, summary, tab, selected, onProjectsChanged } = props;
-    const admin = me.mode === "dev" || Boolean(me.username);
+    const admin = isAdmin(me);
     const name = projectName(summary, project);
     const [all, setAll] = useState<Annotation[] | null>(null);
     const [bundles, setBundles] = useState<BundleRecord[]>([]);
     const [error, setError] = useState<string | null>(null);
     const [notice, setNotice] = useState<string | null>(null);
-    const [menuOpen, setMenu] = useState(false);
     const [state, setState] = useState<InboxState>(() => ({
         filters: NO_FILTERS,
         search: "",
         sort: remembered(
-            "notato.sort",
+            KEYS.sort,
             SORTS.map((s) => s.id),
             "activity"
         ),
         group: remembered(
-            "notato.group",
+            KEYS.group,
             GROUPS.map((g) => g.id),
             "none"
         ),
     }));
-    const [detail, setDetail] = useState<Detail>(() =>
-        remembered("notato.detail", DETAILS, "standard")
-    );
+    const [detail, setDetail] = useRemembered(KEYS.detail, DETAILS, "standard");
     /** When this browser last looked, as of opening the project: anything newer is marked new. */
     const [since] = useState(() => lastSeen(project));
     const [read, setRead] = useState<Set<string>>(() => new Set());
-    const fileInput = useRef<HTMLInputElement>(null);
 
     /**
      * The last change heard for each note while a load is on its way (null when none is): the load may have been read
@@ -131,12 +123,13 @@ export function Project(props: Props) {
                 else setError(e.message);
             }
         );
+        // The bundles only fill the Source filter, which is left out while they cannot be had.
         listBundles(project).then(setBundles, () => {});
     }, [project]);
 
     useEffect(() => {
         load();
-        const off = onLive((e) => {
+        return onLive((e) => {
             if (e.projectId !== project) return;
             if (e.type === "deleted") heard.current?.set(e.id, null);
             else if (e.annotation) {
@@ -145,20 +138,19 @@ export function Project(props: Props) {
             }
             setAll((cur) => (cur ? applyChange(cur, e) : cur));
         }, load);
-        return off;
     }, [project, load]);
 
     // A notice is a toast: it goes on its own after a while.
     useEffect(() => {
         if (!notice) return;
-        const t = setTimeout(() => setNotice(null), 6000);
+        const t = setTimeout(() => setNotice(null), NOTICE_MS);
         return () => clearTimeout(t);
     }, [notice]);
 
     const patch = useCallback((next: Partial<InboxState>) => {
         setState((s) => ({ ...s, ...next }));
-        if (next.sort) remember("notato.sort", next.sort);
-        if (next.group) remember("notato.group", next.group);
+        if (next.sort) remember(KEYS.sort, next.sort);
+        if (next.group) remember(KEYS.group, next.group);
     }, []);
 
     const shown = useMemo(
@@ -194,38 +186,28 @@ export function Project(props: Props) {
         []
     );
 
-    const chooseDetail = (next: Detail) => {
-        setDetail(next);
-        remember("notato.detail", next);
-    };
-
     /** Exactly what the inbox shows, in its order, as the same Markdown `notato export` writes. */
     const copyShown = async () => {
-        setMenu(false);
         try {
             await copyText(renderAnnotations(shown, { detail, title: `Feedback for ${project}` }));
-            setNotice(
-                `Copied ${shown.length} annotation${shown.length === 1 ? "" : "s"} as Markdown (${detail}).`
-            );
+            setNotice(`Copied ${plural(shown.length, "annotation")} as Markdown (${detail}).`);
         } catch (e) {
             setNotice(e instanceof Error ? e.message : "Could not copy.");
         }
     };
 
-    const onFile = async (file: File | undefined) => {
-        if (!file) return;
+    const importBundle = async (file: File) => {
         setNotice(null);
         try {
             const result = await uploadBundle(project, file);
             setNotice(
-                `Imported ${result.imported} annotation${result.imported === 1 ? "" : "s"}${result.skipped ? `, ${result.skipped} already present` : ""}.`
+                `Imported ${plural(result.imported, "annotation")}${result.skipped ? `, ${result.skipped} already present` : ""}.`
             );
             load();
             onProjectsChanged();
         } catch (e) {
             setNotice(e instanceof Error ? e.message : "Could not import that file.");
         }
-        if (fileInput.current) fileInput.current.value = "";
     };
 
     /** Opening an annotation from Overview or Activity: show it in the inbox, whatever the inbox was showing. */
@@ -235,133 +217,49 @@ export function Project(props: Props) {
     };
 
     const menu = (
-        <div className="menu-wrap">
-            <button
-                type="button"
-                className="icon-button"
-                aria-label="Project actions"
-                title={admin ? "Copy, export, import, settings" : "Copy, export, import"}
-                aria-expanded={menuOpen}
-                onClick={() => setMenu(!menuOpen)}
-            >
-                <Icon name="more" />
-            </button>
-            {menuOpen ? (
-                <>
-                    <button
-                        type="button"
-                        className="menu-shade"
-                        aria-label="Close menu"
-                        onClick={() => setMenu(false)}
-                    />
-                    <div className="menu" role="menu">
-                        <button
-                            type="button"
-                            role="menuitem"
-                            onClick={copyShown}
-                            disabled={shown.length === 0}
-                        >
-                            <Icon name="copy" />
-                            Copy {shown.length} shown as Markdown
-                        </button>
-                        <label className="menu-row">
-                            Detail
-                            <select
-                                value={detail}
-                                onChange={(e) => chooseDetail(e.target.value as Detail)}
-                            >
-                                {DETAILS.map((d) => (
-                                    <option key={d}>{d}</option>
-                                ))}
-                            </select>
-                        </label>
-                        <hr />
-                        <a
-                            role="menuitem"
-                            href={exportHref(project, state.filters)}
-                            download
-                            onClick={() => setMenu(false)}
-                            title="A bundle of the annotations matching the filters (search is not applied)"
-                        >
-                            <Icon name="download" />
-                            Export zip
-                        </a>
-                        <button
-                            type="button"
-                            role="menuitem"
-                            onClick={() => {
-                                setMenu(false);
-                                fileInput.current?.click();
-                            }}
-                        >
-                            <Icon name="upload" />
-                            Import zip…
-                        </button>
-                        {admin ? (
-                            <>
-                                <hr />
-                                <a
-                                    role="menuitem"
-                                    href={projectHref(project, "connect")}
-                                    onClick={() => setMenu(false)}
-                                >
-                                    <Icon name="plug" />
-                                    Connect an app…
-                                </a>
-                                <a
-                                    role="menuitem"
-                                    href={projectHref(project, "settings")}
-                                    onClick={() => setMenu(false)}
-                                >
-                                    <Icon name="sliders" />
-                                    Project settings…
-                                </a>
-                            </>
-                        ) : null}
-                    </div>
-                </>
-            ) : null}
-            <input
-                ref={fileInput}
-                type="file"
-                accept=".zip,application/zip"
-                hidden
-                onChange={(e) => onFile(e.target.files?.[0])}
-            />
-        </div>
+        <ProjectMenu
+            project={project}
+            admin={admin}
+            shown={shown.length}
+            detail={detail}
+            onDetail={setDetail}
+            onCopy={copyShown}
+            exportHref={exportHref(project, state.filters)}
+            onImport={importBundle}
+        />
     );
 
-    /** On a shared server a project has to be made before anything can be sent to it. */
-    const missing = props.known === false && me.mode === "serve";
-
-    return (
-        <>
-            {missing ? (
-                <div className="sheet">
-                    <div className="sheet-inner">
-                        <Empty title={`There is no project “${project}” here`}>
-                            <p>Apps can only send notes to a project that exists on this server.</p>
-                            <div className="empty-actions">
-                                {props.onNewProject ? (
-                                    <button
-                                        type="button"
-                                        className="primary"
-                                        onClick={() => props.onNewProject?.(project)}
-                                    >
-                                        <Icon name="plus" size={14} />
-                                        Create it
-                                    </button>
-                                ) : null}
-                                <a className="button-link" href="#/">
-                                    All projects
-                                </a>
-                            </div>
-                        </Empty>
-                    </div>
-                </div>
-            ) : tab === "connect" && admin ? (
-                <ConnectPage me={me} project={project} name={name} menu={menu} />
-            ) : tab === "settings" && admin ? (
+    /** The page for the tab, or what stands in for it while the notes load or when they cannot. */
+    const page = (): ReactNode => {
+        // On a shared server a project has to be made before anything can be sent to it.
+        if (props.known === false && me.mode === "serve") {
+            return (
+                <Sheet>
+                    <Empty title={`There is no project “${project}” here`}>
+                        <p>Apps can only send notes to a project that exists on this server.</p>
+                        <div className="empty-actions">
+                            {props.onNewProject ? (
+                                <button
+                                    type="button"
+                                    className="primary"
+                                    onClick={() => props.onNewProject?.(project)}
+                                >
+                                    <Icon name="plus" size={14} />
+                                    Create it
+                                </button>
+                            ) : null}
+                            <a className="button-link" href="#/">
+                                All projects
+                            </a>
+                        </div>
+                    </Empty>
+                </Sheet>
+            );
+        }
+        if (tab === "connect" && admin)
+            return <ConnectPage me={me} project={project} name={name} menu={menu} />;
+        if (tab === "settings" && admin) {
+            return (
                 <ProjectSettings
                     me={me}
                     project={project}
@@ -371,44 +269,53 @@ export function Project(props: Props) {
                     onRenamed={props.onRenamed}
                     onDeleted={props.onDeleted}
                 />
-            ) : error ? (
-                <div className="sheet">
-                    <div className="sheet-inner">
-                        <p className="error">{error}</p>
-                    </div>
-                </div>
-            ) : !all ? (
-                <div className="sheet">
-                    <div className="sheet-inner">
-                        <p className="muted">Loading…</p>
-                    </div>
-                </div>
-            ) : tab !== "activity" && tab !== "overview" && all.length === 0 && admin ? (
-                // Nothing has arrived yet: what to do about that is the useful thing to show.
-                <ConnectPage me={me} project={project} name={name} menu={menu} empty />
-            ) : tab !== "activity" && tab !== "overview" ? (
-                <Inbox
-                    project={project}
-                    name={name}
-                    all={all}
-                    shown={shown}
-                    bundles={bundles}
-                    state={state}
-                    onState={patch}
-                    selected={selected}
-                    since={since}
-                    read={read}
-                    onRead={markRead}
-                    detail={detail}
-                    onChange={replace}
-                    onDeleted={removed}
-                    menu={menu}
-                />
-            ) : tab === "activity" ? (
-                <Activity project={project} name={name} all={all} since={since} menu={menu} />
-            ) : (
-                <Overview name={name} all={all} onShow={showInInbox} menu={menu} />
-            )}
+            );
+        }
+        if (error) {
+            return (
+                <Sheet>
+                    <p className="error">{error}</p>
+                </Sheet>
+            );
+        }
+        if (!all) {
+            return (
+                <Sheet>
+                    <p className="muted">Loading…</p>
+                </Sheet>
+            );
+        }
+        if (tab === "activity")
+            return <Activity project={project} name={name} all={all} since={since} menu={menu} />;
+        if (tab === "overview")
+            return <Overview name={name} all={all} onShow={showInInbox} menu={menu} />;
+        // Nothing has arrived yet: what to do about that is the useful thing to show.
+        if (all.length === 0 && admin)
+            return <ConnectPage me={me} project={project} name={name} menu={menu} empty />;
+        return (
+            <Inbox
+                project={project}
+                name={name}
+                all={all}
+                shown={shown}
+                bundles={bundles}
+                state={state}
+                onState={patch}
+                selected={selected}
+                since={since}
+                read={read}
+                onRead={markRead}
+                detail={detail}
+                onChange={replace}
+                onDeleted={removed}
+                menu={menu}
+            />
+        );
+    };
+
+    return (
+        <>
+            {page()}
             {notice ? (
                 <div className="toast" role="status">
                     <span>{notice}</span>
@@ -423,5 +330,14 @@ export function Project(props: Props) {
                 </div>
             ) : null}
         </>
+    );
+}
+
+/** A page of its own, for a short message. */
+function Sheet({ children }: { children: ReactNode }) {
+    return (
+        <div className="sheet">
+            <div className="sheet-inner">{children}</div>
+        </div>
     );
 }

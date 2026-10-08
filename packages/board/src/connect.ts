@@ -1,5 +1,5 @@
 // How to point each SDK at a project on this server: plain data, so what the board tells people can be tested. The
-// option names are the SDKs' own (README.md, dotnet/, swift/, android/).
+// option names are the SDKs' own, as their READMEs under sdks/ give them.
 
 export type Platform =
     | "react"
@@ -15,7 +15,6 @@ export interface Step {
     /** What to do. `code` in backticks is shown as code. */
     text: string;
     code?: string;
-    lang?: string;
     /** A page on this server to open. */
     link?: { href: string; label: string };
 }
@@ -44,7 +43,7 @@ export interface ConnectTarget {
 
 export const TOKEN_PLACEHOLDER = "pft_…";
 /** Where every SDK looks when it is given no server. */
-export const DEFAULT_SERVER = "http://localhost:4747";
+const DEFAULT_SERVER = "http://localhost:4747";
 
 const LOOPBACK = new Set(["localhost", "127.0.0.1", "[::1]"]);
 
@@ -59,13 +58,20 @@ function localPort(server: string): string | null {
     }
 }
 
+/** What anyone who can open a page can read, said wherever a web app is given a token. */
+const PUBLIC_TOKEN_NOTE =
+    "Anyone who can open the page can read the token: give each app its own, and revoke it when the testing is over.";
+
+/** How each SDK is told about a project on this server, with its token where one is needed. */
 export function connectGuides(t: ConnectTarget): Guide[] {
     const server = t.server.replace(/\/+$/, "");
     const token = t.needsToken ? (t.token ?? TOKEN_PLACEHOLDER) : null;
     const p = t.project;
     /** The SDKs default to `notato dev` on 4747; anything else has to be said. */
     const otherServer = server !== DEFAULT_SERVER || token !== null;
-    const port = localPort(server);
+    /** Makes this server localhost on the Android emulator or a USB phone. */
+    const port = localPort(server) ?? "4747";
+    const adbReverse = `adb reverse tcp:${port} tcp:${port}`;
     // Tokens are URL-safe as they are (base64url), and so are project ids.
     const bookmarkPage = `/bookmarklet?project=${p}${token && t.token ? `&token=${t.token}` : ""}`;
     const script = `${server}/inject.js?project=${p}${token ? `&token=${token}` : ""}`;
@@ -74,10 +80,9 @@ export function connectGuides(t: ConnectTarget): Guide[] {
         id: "react",
         label: "React",
         steps: [
-            { text: "Add the package to the app:", code: "npm i -D @notato/react", lang: "sh" },
+            { text: "Add the package to the app:", code: "npm i -D @notato/react" },
             {
                 text: "Render it once, near the root of the app:",
-                lang: "tsx",
                 code: token
                     ? `import { Notato } from "@notato/react";\n\n<Notato project="${p}" server="${server}" token="${token}" enabled />`
                     : `import { Notato } from "@notato/react";\n\n{import.meta.env.DEV && <Notato project="${p}" server="${server}" />}`,
@@ -86,7 +91,7 @@ export function connectGuides(t: ConnectTarget): Guide[] {
         notes: token
             ? [
                   "`enabled` keeps it on in a production build, such as a staging site; leave it out to have it in development builds only.",
-                  "Anyone who can open the page can read the token: give each app its own, and revoke it when the testing is over.",
+                  PUBLIC_TOKEN_NOTE,
               ]
             : [
                   `\`npx notato init\` adds this for you and sets up your coding agent too; check that its \`project\` is \`${p}\`.`,
@@ -102,17 +107,16 @@ export function connectGuides(t: ConnectTarget): Guide[] {
         id: "angular",
         label: "Angular",
         steps: [
-            { text: "Add the package to the app:", code: "npm i -D @notato/angular", lang: "sh" },
+            { text: "Add the package to the app:", code: "npm i -D @notato/angular" },
             {
                 text: "Add it to the app's providers, in `app.config.ts`:",
-                lang: "ts",
                 code: `import { provideNotato } from "@notato/angular";\n\nexport const appConfig: ApplicationConfig = {\n    providers: [provideNotato({ ${angularOptions.join(", ")} })],\n};`,
             },
         ],
         notes: token
             ? [
                   "`enabled: true` keeps it on in a production build, such as a staging site; leave it out to have it in development builds only.",
-                  "Anyone who can open the page can read the token: give each app its own, and revoke it when the testing is over.",
+                  PUBLIC_TOKEN_NOTE,
               ]
             : [
                   "It runs in development builds only (`isDevMode()`): the toolbar is a separate chunk that a production build never loads.",
@@ -126,11 +130,9 @@ export function connectGuides(t: ConnectTarget): Guide[] {
             {
                 text: "Add the package, the screenshot library it uses, and Expo's file and share modules, where notes wait to be sent:",
                 code: "npx expo install @notato/react-native react-native-view-shot expo-file-system expo-sharing",
-                lang: "sh",
             },
             {
                 text: "Wrap your app in it:",
-                lang: "tsx",
                 code: `import { Notato } from "@notato/react-native";\nimport { expoStorage } from "@notato/react-native/expo";\n\n<Notato project="${p}"${otherServer ? ` server="${server}"` : ""}${token ? ` token="${token}" enabled` : ""} storage={expoStorage}>\n    <App />\n</Notato>`,
             },
         ],
@@ -141,7 +143,7 @@ export function connectGuides(t: ConnectTarget): Guide[] {
                   ]
                 : [
                       "Development builds only: in a release build it renders your app and nothing else.",
-                      `The iOS simulator reaches this server as it is; \`adb reverse tcp:${port ?? "4747"} tcp:${port ?? "4747"}\` makes it localhost on the Android emulator or a USB phone.`,
+                      `The iOS simulator reaches this server as it is; \`${adbReverse}\` makes it localhost on the Android emulator or a USB phone.`,
                   ]),
             "A bare app without Expo modules: `npm i -D @notato/react-native react-native-view-shot`, then `pod install` in `ios/`, and leave `storage` out (notes are then kept until the app restarts).",
         ],
@@ -156,10 +158,9 @@ export function connectGuides(t: ConnectTarget): Guide[] {
         id: "flutter",
         label: "Flutter",
         steps: [
-            { text: "Add the package:", code: "flutter pub add notato", lang: "sh" },
+            { text: "Add the package:", code: "flutter pub add notato" },
             {
                 text: "Wrap your app in it, in `main.dart`:",
-                lang: "dart",
                 code: `import 'package:notato/notato.dart';\n\nrunApp(Notato(${flutterOptions.join(", ")}, child: const MyApp()));`,
             },
         ],
@@ -170,7 +171,7 @@ export function connectGuides(t: ConnectTarget): Guide[] {
                   ]
                 : [
                       "Debug builds only: in a release build it is your app and nothing else.",
-                      `The iOS simulator and desktop apps reach this server as it is; \`adb reverse tcp:${port ?? "4747"} tcp:${port ?? "4747"}\` makes it localhost on the Android emulator or a USB phone.`,
+                      `The iOS simulator and desktop apps reach this server as it is; \`${adbReverse}\` makes it localhost on the Android emulator or a USB phone.`,
                   ]),
             "Add `Notato.navigatorObserver` to your app's `navigatorObservers` for notes to know the screen they were made on.",
         ],
@@ -186,7 +187,6 @@ export function connectGuides(t: ConnectTarget): Guide[] {
             },
             {
                 text: "Or put this in the page's HTML while you work on it:",
-                lang: "html",
                 code: `<script src="${script}"></script>`,
             },
         ],
@@ -212,7 +212,6 @@ export function connectGuides(t: ConnectTarget): Guide[] {
         steps: [
             {
                 text: "Add the `Notato.Maui` package, then in `MauiProgram.cs`:",
-                lang: "csharp",
                 code: `using Notato.Maui;\n\n#if DEBUG\n${
                     mauiOptions.length === 1
                         ? `builder.UseNotato(options => options.Project = "${p}");`
@@ -225,7 +224,7 @@ export function connectGuides(t: ConnectTarget): Guide[] {
                   "Or put `Project`, `Server` and `Token` in the `Notato` section of the app's configuration.",
               ]
             : [
-                  `iOS and Mac Catalyst: allow \`NSAllowsLocalNetworking\` in Info.plist. Android: allow cleartext to localhost, then \`adb reverse tcp:${port ?? "4747"} tcp:${port ?? "4747"}\`.`,
+                  `iOS and Mac Catalyst: allow \`NSAllowsLocalNetworking\` in Info.plist. Android: allow cleartext to localhost, then \`${adbReverse}\`.`,
                   `On a phone, start the server with \`--tunnel\`${otherServer ? " and leave `Server` out" : ""}: debug builds then read its address and the device token from \`.notato/device.json\` by themselves.`,
               ],
     };
@@ -239,7 +238,6 @@ export function connectGuides(t: ConnectTarget): Guide[] {
         steps: [
             {
                 text: "Add the Swift package, then start it in your `App`'s `init()`:",
-                lang: "swift",
                 code: token
                     ? `import Notato\n\n#if DEBUG\nvar notato = ${swiftConfig}\nnotato.token = "${token}"\nNotato.start(notato)\n#endif`
                     : `import Notato\n\n#if DEBUG\nNotato.start(${swiftConfig})\n#endif`,
@@ -259,19 +257,17 @@ export function connectGuides(t: ConnectTarget): Guide[] {
         steps: [
             {
                 text: "Add it to debug builds, in `app/build.gradle.kts`:",
-                lang: "kotlin",
                 code: `dependencies {\n    debugImplementation("dev.notato:notato-compose:${t.version ?? "+"}") // notato-android for Views only\n}`,
             },
             {
                 text: "Start it in your `Application`'s `onCreate()`:",
-                lang: "kotlin",
                 code: `Notato.start(this, NotatoConfig(project = "${p}"${otherServer ? `, server = "${server}"` : ""}${token ? `, token = "${token}"` : ""}))`,
             },
         ],
         notes: token
             ? []
             : [
-                  `\`adb reverse tcp:${port ?? "4747"} tcp:${port ?? "4747"}\` makes this server localhost on the emulator or a USB phone. A debug network security config has to allow cleartext to localhost.`,
+                  `\`${adbReverse}\` makes this server localhost on the emulator or a USB phone. A debug network security config has to allow cleartext to localhost.`,
               ],
     };
 
@@ -308,7 +304,6 @@ export function agentGuides(t: AgentTarget): Guide<AgentClient>[] {
         steps: [
             {
                 text: "Add it once, for every project on this computer:",
-                lang: "sh",
                 code: `claude mcp add --transport http --scope user notato ${url}${t.needsToken ? ` --header "Authorization: ${bearer}"` : ""}`,
             },
         ],
@@ -324,7 +319,6 @@ export function agentGuides(t: AgentTarget): Guide<AgentClient>[] {
         steps: [
             {
                 text: "Add it to `~/.codex/config.toml`:",
-                lang: "toml",
                 code: `[mcp_servers.notato]\nurl = "${url}"${t.needsToken ? '\nbearer_token_env_var = "NOTATO_TOKEN"' : ""}`,
             },
         ],
@@ -342,7 +336,6 @@ export function agentGuides(t: AgentTarget): Guide<AgentClient>[] {
         steps: [
             {
                 text: "Add it to `~/.cursor/mcp.json` for every project, or `.cursor/mcp.json` for one:",
-                lang: "json",
                 code: jsonBlock({ mcpServers: { notato: { url, ...headers } } }),
             },
         ],
@@ -358,7 +351,6 @@ export function agentGuides(t: AgentTarget): Guide<AgentClient>[] {
         steps: [
             {
                 text: "Add it to `~/.gemini/settings.json` for every project, or `.gemini/settings.json` for one:",
-                lang: "json",
                 code: jsonBlock({ mcpServers: { notato: { httpUrl: url, ...headers } } }),
             },
         ],
@@ -374,7 +366,6 @@ export function agentGuides(t: AgentTarget): Guide<AgentClient>[] {
         steps: [
             {
                 text: "For GitHub Copilot, add it to `.vscode/mcp.json` in the project:",
-                lang: "json",
                 code: jsonBlock({ servers: { notato: { type: "http", url, ...headers } } }),
             },
         ],

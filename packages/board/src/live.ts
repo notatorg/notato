@@ -1,14 +1,11 @@
-import type { Annotation, Status } from "@notato/schema";
+import type { Status } from "@notato/schema";
 import { useEffect, useState } from "react";
 import { getMe, signedOut } from "./api.ts";
-import { later } from "./model.ts";
+import { later, type NoteChange } from "./model.ts";
 
 /** One change on the server, from the stream every project shares. */
-export interface LiveEvent {
-    type: "created" | "updated" | "replied" | "deleted";
+export interface LiveEvent extends NoteChange {
     projectId: string;
-    id: string;
-    annotation?: Annotation;
     /** What the note was before the change, from servers that say. */
     previous?: { status?: Status };
 }
@@ -229,7 +226,7 @@ export function markSeen(project: string, at: string | null | undefined) {
     try {
         localStorage.setItem(seenKey(project), next ?? at);
     } catch {
-        // marked for this visit only, which is all a broken storage allows
+        // Storage refused it: the dots stay as they were.
     }
     for (const fn of seenListeners) fn();
 }

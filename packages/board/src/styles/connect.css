@@ -1,0 +1,107 @@
+/* How to connect an app or an agent: the note about tokens, the platform picker, and each guide's steps. */
+
+.connect-page {
+    max-width: 820px;
+}
+.connect {
+    display: grid;
+    gap: 16px;
+    min-width: 0;
+}
+.connect-note {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 12px 14px;
+    border-radius: 12px;
+    background: var(--ok-bg);
+    font-size: 13px;
+    line-height: 1.55;
+}
+.connect-note > svg.note-icon {
+    flex: none;
+    margin-top: 3px;
+    color: var(--ok);
+}
+.connect-note.need {
+    background: var(--warn-bg);
+}
+.connect-note.need > svg.note-icon {
+    color: var(--warn);
+}
+.connect-note-body {
+    display: grid;
+    justify-items: start;
+    gap: 10px;
+}
+.connect-note code {
+    background: var(--panel);
+}
+.segmented.platforms {
+    align-self: start;
+    justify-self: start;
+    max-width: 100%;
+    overflow-x: auto;
+    scrollbar-width: none;
+}
+.segmented.platforms button {
+    flex: none;
+}
+.guide {
+    display: grid;
+    gap: 14px;
+    min-width: 0;
+}
+.steps {
+    display: grid;
+    gap: 16px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    counter-reset: step;
+}
+.steps > li {
+    display: grid;
+    gap: 8px;
+    min-width: 0;
+    padding-left: 34px;
+    position: relative;
+    counter-increment: step;
+}
+.steps > li::before {
+    content: counter(step);
+    position: absolute;
+    left: 0;
+    top: -1px;
+    display: grid;
+    place-items: center;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    background: var(--selected);
+    color: var(--accent-text);
+    font-size: 12px;
+    font-weight: 700;
+}
+.steps li > p {
+    font-size: 13.5px;
+    line-height: 1.5;
+}
+.guide-notes {
+    display: grid;
+    gap: 6px;
+    margin: 0;
+    padding: 12px 14px 12px 30px;
+    border-radius: 12px;
+    background: var(--hover);
+    font-size: 12.5px;
+    line-height: 1.5;
+    color: var(--text-2);
+}
+.guide-notes code {
+    background: var(--panel);
+}
+.connect-foot {
+    display: flex;
+    gap: 8px;
+}
