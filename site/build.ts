@@ -3,13 +3,14 @@ import { dirname, extname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { DETAILS, renderAnnotation } from "../packages/core/src/index.ts";
 import { Annotation, sampleAnnotation } from "../packages/schema/src/index.ts";
-import { buildDocs } from "./docs.ts";
+import { currentVersion } from "../scripts/version.ts";
+import { buildDocs, SOURCES } from "./docs.ts";
 
 // Builds the website into site/dist: the hand-written page from site/src, the real Notato toolbar bundled as
-// live.js (the "Try it here" button loads it), and the Markdown samples rendered by the real renderer.
+// live.js (the "Try it here" button loads it), the Markdown samples rendered by the real renderer, and the docs.
 //
 //   bun site/build.ts                    build once
-//   bun site/build.ts --serve [--port N] build, serve dist, and rebuild when site/src changes
+//   bun site/build.ts --serve [--port N] build, serve dist, and rebuild when site/src or a README changes
 //   bun site/build.ts --artifact         also write dist/artifact.html, the page without its document wrapper
 
 const root = dirname(fileURLToPath(import.meta.url));
@@ -29,6 +30,7 @@ function demoAnnotation(): Annotation {
         ...base,
         id: "01K6ZB4Q2W8SPUD0000000001",
         projectId: "spudshop",
+        author: { kind: "human", name: "Alex" },
         createdAt: "2026-10-06T09:41:07.000Z",
         url: "http://localhost:5173/checkout",
         route: "/checkout",
@@ -124,15 +126,14 @@ async function build() {
     cpSync(src, dist, { recursive: true, filter: (path) => !path.endsWith(".ts") });
 
     // The Markdown samples go into the page itself, so it needs no request to show them. A function replacement, so a
-    // `$` in a sample is not read as a pattern.
+    // `$` in a sample is not read as a pattern. `{{version}}` in the page (a dependency line) is the release's version.
     const samples = JSON.stringify(markdownSamples()).replaceAll("<", "\\u003c");
     const page = join(dist, "index.html");
     writeFileSync(
         page,
-        readFileSync(page, "utf8").replace(
-            'id="md-samples">{}<',
-            () => `id="md-samples">${samples}<`
-        )
+        readFileSync(page, "utf8")
+            .replace('id="md-samples">{}<', () => `id="md-samples">${samples}<`)
+            .replaceAll("{{version}}", currentVersion())
     );
 
     const live = await Bun.build({
@@ -153,7 +154,7 @@ async function build() {
     const docs = buildDocs(dist);
 
     if (flag("--artifact")) {
-        // A claude.ai artifact supplies its own doctype, html, head and body: keep only what goes inside them.
+        // For a host that wraps the page in a document of its own: keep only what goes inside head and body.
         const html = readFileSync(page, "utf8");
         const head = html.match(/<head>([\s\S]*?)<\/head>/)?.[1] ?? "";
         const body = html.match(/<body[^>]*>([\s\S]*?)<\/body>/)?.[1] ?? "";
@@ -203,11 +204,5 @@ if (flag("--serve")) {
     };
     watch(src, { recursive: true }, rebuild);
     // The docs are made from these, so a change to one rebuilds them too.
-    for (const readme of [
-        "README.md",
-        "sdks/swift/README.md",
-        "sdks/android/README.md",
-        "sdks/dotnet/README.md",
-    ])
-        watch(join(root, "..", readme), rebuild);
+    for (const readme of SOURCES) watch(join(root, "..", readme), rebuild);
 }

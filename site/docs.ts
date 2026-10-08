@@ -150,15 +150,19 @@ export const PAGES: Page[] = [
     },
 ];
 
-/** Each SDK's README is its own page, so a link to one goes there. */
-const README_PAGES: Record<string, string> = {
-    "sdks/swift/README.md": "swiftui",
-    "sdks/android/README.md": "android",
-    "sdks/dotnet/README.md": "maui",
-};
+/** Each SDK's README is a page of its own, so a link to one goes to that page. */
+const README_PAGES: Record<string, string> = Object.fromEntries(
+    PAGES.filter((p) => p.file !== "README.md" && !p.sections).map((p) => [p.file, p.slug])
+);
 
-/** Not docs for people using Notato: how to work on it. */
-const LEFT_OUT = ["Development"];
+/** Every README the docs are made from, for `bun run site` to watch. */
+export const SOURCES = [...new Set(PAGES.map((p) => p.file))];
+
+/**
+ * Sections of a README that are not docs for people using Notato: how to work on it, and what only the repository's
+ * front page needs (the docs home has a card for each SDK).
+ */
+const LEFT_OUT = ["Development", "Add it to your app", "Contributing", "Licence"];
 
 // ---- Markdown, by heading --------------------------------------------------------------------------------------
 
@@ -248,12 +252,15 @@ const decode = (html: string) =>
         .replace(/&#39;/g, "'")
         .replace(/&amp;/g, "&");
 
-/** An anchor the way GitHub makes one from a heading, so the READMEs' own links keep working. */
+/**
+ * An anchor the way GitHub makes one from a heading, so the READMEs' own links keep working. Punctuation goes but the
+ * space after it stays: "@ mentions: plugins" is `-mentions-plugins`.
+ */
 export function slugify(text: string): string {
     return decode(text)
+        .trim()
         .toLowerCase()
         .replace(/[^\p{L}\p{N}\s_-]/gu, "")
-        .trim()
         .replace(/\s/g, "-");
 }
 
@@ -293,23 +300,26 @@ function render(page: Page, markdown: string): Rendered {
     return { page, html, ids, toc };
 }
 
+/** Which docs page each heading of each README ended up on: file, then heading id, then the page's slug. */
+type Placement = Map<string, Map<string, string>>;
+
 /** Points a README's link at the docs page that now has it, or at the file in the repository. */
-function relink(href: string, from: Rendered, pageOfId: Map<string, string>): string {
+function relink(href: string, from: Rendered, placement: Placement): string {
     if (/^[a-z][a-z+.-]*:/i.test(href) || href.startsWith("//")) return href;
+    const pageOf = (file: string, id: string) => placement.get(file)?.get(id);
     if (href.startsWith("#")) {
         const id = href.slice(1);
         if (from.ids.has(id)) return href;
-        const other = pageOfId.get(id);
+        const other = pageOf(from.page.file, id);
         return other ? `${other}.html#${id}` : href;
     }
     const [path = "", anchor] = href.split("#");
     const target = normalize(join(dirname(from.page.file), path))
         .split("\\")
         .join("/");
-    if (target === "README.md") {
-        const other = anchor ? pageOfId.get(anchor) : undefined;
-        return other ? `${other}.html#${anchor}` : "index.html";
-    }
+    const other = anchor ? pageOf(target, anchor) : undefined;
+    if (other) return `${other}.html#${anchor}`;
+    if (target === "README.md") return "index.html";
     const readme = README_PAGES[target];
     if (readme) return `${readme}.html${anchor ? `#${anchor}` : ""}`;
     return `${REPO_URL}/blob/main/${target}${anchor ? `#${anchor}` : ""}`;
@@ -363,7 +373,7 @@ function layout(options: {
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wdth,wght@12..96,75..100,400..800&family=Figtree:ital,wght@0,400..700;1,400&family=JetBrains+Mono:wght@400;500;700&display=swap">
-<link rel="stylesheet" href="../site.css">
+<link rel="stylesheet" href="../base.css">
 <link rel="stylesheet" href="../docs.css">
 <script type="module" src="../docs.js"></script>
 </head>
@@ -431,15 +441,18 @@ export function buildDocs(dist: string) {
     for (const h of left)
         console.warn(`docs: README.md section "${h.text}" is on no docs page (see site/docs.ts)`);
 
-    const pageOfId = new Map<string, string>();
-    for (const r of rendered)
-        for (const id of r.ids) if (!pageOfId.has(id)) pageOfId.set(id, r.page.slug);
+    const placement: Placement = new Map();
+    for (const r of rendered) {
+        const ids = placement.get(r.page.file) ?? new Map<string, string>();
+        for (const id of r.ids) if (!ids.has(id)) ids.set(id, r.page.slug);
+        placement.set(r.page.file, ids);
+    }
 
     mkdirSync(join(dist, "docs"), { recursive: true });
     for (const r of rendered) {
         const body = r.html.replace(
             /href="([^"]*)"/g,
-            (_m, href: string) => `href="${relink(href, r, pageOfId)}"`
+            (_m, href: string) => `href="${relink(href, r, placement)}"`
         );
         writeFileSync(
             join(dist, "docs", `${r.page.slug}.html`),
@@ -454,7 +467,7 @@ export function buildDocs(dist: string) {
     );
     const introBody = intro.html.replace(
         /href="([^"]*)"/g,
-        (_m, href: string) => `href="${relink(href, intro, pageOfId)}"`
+        (_m, href: string) => `href="${relink(href, intro, placement)}"`
     );
     const cards = GROUPS.map(
         (group) =>

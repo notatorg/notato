@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+    - name: Report a security vulnerability
+      url: https://github.com/notatorg/notato/security/advisories/new
+      about: Please report it privately, not in a public issue. SECURITY.md says how.
+    - name: Read the docs
+      url: https://github.com/notatorg/notato#readme
+      about: Setting up each SDK and your coding agent, and the known limits.

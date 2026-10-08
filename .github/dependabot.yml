@@ -1,0 +1,27 @@
+# Version updates, once a month, one pull request per ecosystem. Security updates are separate: they are turned on
+# in the repository's settings (Code security) and arrive as soon as an advisory is published.
+#
+# The native SDKs (Gradle, NuGet, pub) are left out on purpose: their dependency ranges are the oldest version an app
+# may use, and raising them would make every app upgrade with us.
+version: 2
+updates:
+    - package-ecosystem: github-actions
+      directory: /
+      schedule:
+          interval: monthly
+      groups:
+          actions:
+              patterns: ["*"]
+
+    - package-ecosystem: bun
+      directory: /
+      schedule:
+          interval: monthly
+      groups:
+          bun:
+              patterns: ["*"]
+
+    - package-ecosystem: docker
+      directory: /
+      schedule:
+          interval: monthly

@@ -482,7 +482,7 @@ function initStage() {
                 n: 1,
             });
             await run.wait(500);
-            T.settle("1 note from Dom");
+            T.settle("1 note from Alex");
             T.mark("#1 [change, minor] /checkout");
             T.note("Make it green and say “Place order”");
             T.note("button “Pay £12.40” · <PayButton> · src/checkout/PayButton.tsx:18:7", "dim");
@@ -532,7 +532,7 @@ function initStage() {
                 n: 2,
             });
             await run.wait(500);
-            T.settle("1 note from Dom");
+            T.settle("1 note from Alex");
             T.mark("#2 [question] /checkout");
             T.note("Why is delivery £4.80 on a £7.60 basket?");
             T.note("div “Delivery £4.80” · <SummaryRow> · src/checkout/Summary.tsx:31:9", "dim");
@@ -548,7 +548,7 @@ function initStage() {
             T.tool("notato_reply", "#2");
             T.out(answer);
             openCard(pin, "question", [
-                { who: "Dom", text: "Why is delivery £4.80 on a £7.60 basket?" },
+                { who: "Alex", text: "Why is delivery £4.80 on a £7.60 basket?" },
                 { who: look.author, text: answer, agent: true },
             ]);
             await run.wait(2200);
@@ -580,7 +580,7 @@ function initStage() {
                 n: 3,
             });
             await run.wait(500);
-            T.settle("1 note from Dom");
+            T.settle("1 note from Alex");
             T.mark("#3 [variants] /checkout");
             T.note("Try a couple of other layouts for this");
             await run.wait(800);
@@ -618,7 +618,7 @@ function initStage() {
             el.vstate.textContent = "✓ Cards chosen";
             setPin(pin, "variant_chosen");
             await run.wait(800);
-            T.settle("⇄ VARIANT CHOSEN: “Cards” (Dom)").classList.add("t-mark");
+            T.settle("⇄ VARIANT CHOSEN: “Cards” (Alex)").classList.add("t-mark");
             await run.wait(700);
             T.tool(look.tools.edit, "src/checkout/Basket.tsx");
             T.out("Kept Cards. Removed Original, Compact and the markers.");
@@ -996,15 +996,15 @@ function initMention() {
     };
     const base = () => {
         thread.replaceChildren();
-        message("you", "Dom", "Make the pay button green");
+        message("you", "Alex", "Make the pay button green");
         message("agent", "Copilot", "Done in 3f9c2a1. Resolved.");
     };
     const finished = () => {
         base();
-        message("you", "Dom", esc(question));
+        message("you", "Alex", esc(question));
         flag("↩ FOLLOW-UP");
         message("agent", "Copilot", esc(answer));
-        message("you aside", "Dom", esc(aside), "Aside");
+        message("you aside", "Alex", esc(aside), "Aside");
         flag("kept from the agent", true);
     };
     finished();
@@ -1028,7 +1028,7 @@ function initMention() {
         const step = (ms) => sleep(reduceMotion.matches ? 0 : ms);
         await step(400);
         await typeOut(question, step);
-        message("you", "Dom", esc(question));
+        message("you", "Alex", esc(question));
         await step(600);
         flag("↩ FOLLOW-UP");
         await step(1200);
@@ -1038,7 +1038,7 @@ function initMention() {
         await step(500);
         await typeOut(aside, step);
         asideChip.dataset.on = "false";
-        message("you aside", "Dom", esc(aside), "Aside");
+        message("you aside", "Alex", esc(aside), "Aside");
         await step(500);
         flag("kept from the agent", true);
         running = false;
@@ -1151,11 +1151,11 @@ const BOARD_START = [
         n: 3,
         status: "resolved",
         text: "Try a couple of other layouts for the basket",
-        by: "Dom",
+        by: "Alex",
         page: "/checkout",
         src: "<Basket> · src/checkout/Basket.tsx:12",
         thread: [
-            ["Dom", "Try a couple of other layouts for the basket"],
+            ["Alex", "Try a couple of other layouts for the basket"],
             ["Gemini", "Kept Cards in 8d41e07."],
         ],
     },
@@ -1163,7 +1163,7 @@ const BOARD_START = [
         n: 2,
         status: "resolved",
         text: "Why is delivery £4.80 on a £7.60 basket?",
-        by: "Dom",
+        by: "Alex",
         page: "/checkout",
         src: "<SummaryRow> · src/checkout/Summary.tsx:31",
         thread: [],
@@ -1172,7 +1172,7 @@ const BOARD_START = [
         n: 1,
         status: "resolved",
         text: "Make it green and say “Place order”",
-        by: "Dom",
+        by: "Alex",
         page: "/checkout",
         src: "<PayButton> · src/checkout/PayButton.tsx:18",
         thread: [],
@@ -1362,7 +1362,6 @@ const APPS = {
         os: "ios",
         title: "Button “Add Sweet potatoes”",
         where: "ProductRow · ProductList.swift:52",
-        label: "ProductList.swift:52",
         receive: [
             ["mark", "#1 [change, minor] ProductList"],
             ["", "The Add button is too small to tap"],
@@ -1379,7 +1378,6 @@ const APPS = {
         os: "android",
         title: "Button “Add”",
         where: "ProductRow · ShopScreens.kt:95",
-        label: "ShopScreens.kt:95",
         receive: [
             ["mark", "#1 [change, minor] ShopScreen"],
             ["", "The Add button is too small to tap"],
@@ -1396,7 +1394,6 @@ const APPS = {
         os: "maui",
         title: "Button “Add”",
         where: "ProductsPage · Views/ProductsPage.xaml:42",
-        label: "Views/ProductsPage.xaml:42",
         receive: [
             ["mark", "#1 [change, minor] ProductsPage"],
             ["", "The Add button is too small to tap"],
@@ -1407,6 +1404,38 @@ const APPS = {
         ],
         file: "Shop/Views/ProductsPage.xaml",
         diff: ['HeightRequest="28"', 'MinimumHeightRequest="48"'],
+    },
+    rn: {
+        os: "ios",
+        title: "Text “Add”",
+        where: "ProductRow · src/shop/ProductRow.tsx:14",
+        receive: [
+            ["mark", "#1 [change, minor] Shop"],
+            ["", "The Add button is too small to tap"],
+            ["dim", "Text “Add” in App › Shop › ProductList › ProductRow"],
+            ["dim", "written at src/shop/ProductRow.tsx:14:1"],
+            ["dim", "label: “Add Sweet potatoes”, role: button"],
+            ["dim", "console.warn: price for sweet-1kg came from the cache"],
+            ["out", "+ 2 screenshots"],
+        ],
+        file: "src/shop/ProductRow.tsx",
+        diff: ["addButton: { height: 28 },", "addButton: { minHeight: 48 },"],
+    },
+    flutter: {
+        os: "android",
+        title: "Text “Add”",
+        where: "ProductRow · lib/shop/product_row.dart:42",
+        receive: [
+            ["mark", "#1 [change, minor] /shop"],
+            ["", "The Add button is too small to tap"],
+            ["dim", "Text('Add') in ShopApp › ShopScreen › ProductRow"],
+            ["dim", "written at lib/shop/product_row.dart:42:15"],
+            ["dim", "selector: ProductRow > FilledButton#add-sweet > Text"],
+            ["dim", "debugPrint: price for sweet-1kg came from the cache"],
+            ["out", "+ 2 screenshots"],
+        ],
+        file: "lib/shop/product_row.dart",
+        diff: ["SizedBox(height: 28,", "SizedBox(height: 48,"],
     },
 };
 
@@ -1563,7 +1592,7 @@ function initApps() {
                 restart(el.count, "bump");
                 el.toast.classList.add("on");
                 await wait(500);
-                waiting.textContent = "⎿ 1 note from Dom";
+                waiting.textContent = "⎿ 1 note from Alex";
                 for (const [cls, text] of app.receive) {
                     line(cls, esc(text));
                     await wait(110);

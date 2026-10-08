@@ -65,6 +65,16 @@ const LANGS = {
         ["k", /\b(?:class|override|fun|super|val|var|dependencies|import|true|false)\b/],
         ["t", /\b[A-Z]\w*/],
     ],
+    dart: [
+        ["c", /\/\/.*/],
+        ["s", /'[^'\n]*'|"[^"\n]*"/],
+        ["a", /@\w+/],
+        [
+            "k",
+            /\b(?:import|void|const|final|var|return|class|extends|async|await|true|false|null)\b/,
+        ],
+        ["t", /\b[A-Z]\w*/],
+    ],
 };
 
 /** Other names a fence or a page might give a language. */

@@ -19,9 +19,9 @@ jobs:
         name: Tests and sample build
         runs-on: macos-15
         steps:
-            - uses: actions/checkout@v4
+            - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
             # The contract tests run the server's Zod schema over the package's JSON.
-            - uses: oven-sh/setup-bun@v2
+            - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
             - run: bun install --frozen-lockfile
             # The manifest is Package.swift at the repository root, where SwiftPM looks for it.
             - name: swift test

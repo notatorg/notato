@@ -1,322 +1,7 @@
-/* Layout: a dotted design canvas. Sections sit on it like frames, labelled the way Notato's picker labels an
-   element, and notes are pinned to it. The hero is the one loud moment: the loop, acted out. */
-:root {
-    --bg: #f1f1ee;
-    --dot: #d9d9d3;
-    --ink: #1d1f22;
-    --ink-2: #3b3e43;
-    --ink-3: #686c72;
-    --surface: #ffffff;
-    --surface-2: #f2f2ef;
-    --line: #e4e4df;
-    --tab: #1f8a78;
-    --tab-hover: #187465;
-    --tab-ink: #ffffff;
-    --tab-soft: #e6f3f0;
-    --potato: #d8953f;
-    --potato-soft: #f6e3c4;
-    --pin: #1f8a78;
-    --pin-ink: #ffffff;
-    --pin-soft: rgba(31, 138, 120, 0.12);
-    --sel: #e5484d;
-    --nav-bg: rgba(241, 241, 238, 0.82);
-    --shadow: 0 1px 3px rgba(20, 24, 32, 0.07), 0 10px 30px rgba(20, 24, 32, 0.07);
-    --shadow-lg: 0 2px 4px rgba(20, 24, 32, 0.06), 0 24px 60px rgba(20, 24, 32, 0.14);
+/* The home page, on base.css: a dotted design canvas. Sections sit on it like frames, labelled the way Notato's
+   picker labels an element, and notes are pinned to it. The hero is the one loud moment: the loop, acted out. */
 
-    /* Fixed in both themes: the sticky note paper, the terminal, and the demo app (it is someone's app). */
-    --note: #fbf5e6;
-    --note-ink: #3a3226;
-    --term-bg: #17181b;
-    --term-bar: #1f2023;
-    --term-ink: #e6e7ea;
-    --term-dim: #8b8f97;
-    --term-green: #82d9ab;
-    --term-red: #f2a091;
-    --term-amber: #f4c56e;
-    --term-blue: #9dbcff;
-    --app-bg: #fffdf8;
-    --app-ink: #2b2118;
-    --app-dim: #8a7d6c;
-    --app-line: #eee7da;
-    --app-card: #ffffff;
-    --app-blue: #2563eb;
-    --app-green: #1f9d55;
-    /* Notato's own UI, the same colours the toolbar uses: a dark bar, light popovers, teal pins. */
-    --ui-dark: #17181b;
-    --ui-dark-2: #2a2c31;
-    --ui-line: #33353a;
-    --ui-dim: #8b8f97;
-    --ui-light: #eceded;
-    --ui-acc: #45bfa8;
-    --ui-acc-ink: #0b1f1b;
-    --pop-bg: #ffffff;
-    --pop-ink: #1d1f22;
-    --pop-dim: #686c72;
-    --pop-line: #e4e4df;
-    --pop-soft: #f2f2ef;
-    --pop-field: #fbfbfa;
-    --st-open: #1f8a78;
-    --st-ack: #d99a1e;
-    --st-done: #2e9a5b;
-    --st-revert: #8b5cf6;
-    --st-variant: #0891b2;
-    --st-gone: #64748b;
-
-    --f-display: "Bricolage Grotesque", ui-rounded, "Arial Rounded MT Bold", system-ui, sans-serif;
-    --f-body: "Figtree", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-    --f-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-    --f-hand: "Caveat", "Bradley Hand", "Segoe Print", "Comic Sans MS", cursive;
-    --f-app: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-
-    --spring: linear(
-        0,
-        0.009,
-        0.035 2.1%,
-        0.141,
-        0.281 6.7%,
-        0.723 12.9%,
-        0.938 16.7%,
-        1.017,
-        1.077,
-        1.121,
-        1.149 24.3%,
-        1.159,
-        1.163,
-        1.161,
-        1.154 29.9%,
-        1.129 32.8%,
-        1.051 39.6%,
-        1.017 43.1%,
-        0.991,
-        0.977 51%,
-        0.974 53.8%,
-        0.975 57.1%,
-        0.997 69.8%,
-        1.003 76.9%,
-        1
-    );
-    color-scheme: light;
-}
-
-@media (prefers-color-scheme: dark) {
-    :root:not([data-theme="light"]) {
-        --bg: #141517;
-        --dot: #26272b;
-        --ink: #e6e7ea;
-        --ink-2: #c3c5cb;
-        --ink-3: #8f939b;
-        --surface: #1d1e21;
-        --surface-2: #25262a;
-        --line: #2c2e32;
-        --tab: #45bfa8;
-        --tab-hover: #5fcfb9;
-        --tab-ink: #0b1f1b;
-        --tab-soft: #1b302c;
-        --potato: #eba955;
-        --potato-soft: #3d2d17;
-        --pin: #45bfa8;
-        --pin-ink: #0b1f1b;
-        --pin-soft: rgba(69, 191, 168, 0.16);
-        --nav-bg: rgba(20, 21, 23, 0.8);
-        --shadow: 0 1px 3px rgba(0, 0, 0, 0.35), 0 10px 30px rgba(0, 0, 0, 0.35);
-        --shadow-lg: 0 2px 4px rgba(0, 0, 0, 0.3), 0 24px 60px rgba(0, 0, 0, 0.5);
-        color-scheme: dark;
-    }
-}
-:root[data-theme="dark"] {
-    --bg: #141517;
-    --dot: #26272b;
-    --ink: #e6e7ea;
-    --ink-2: #c3c5cb;
-    --ink-3: #8f939b;
-    --surface: #1d1e21;
-    --surface-2: #25262a;
-    --line: #2c2e32;
-    --tab: #45bfa8;
-    --tab-hover: #5fcfb9;
-    --tab-ink: #0b1f1b;
-    --tab-soft: #1b302c;
-    --potato: #eba955;
-    --potato-soft: #3d2d17;
-    --pin: #45bfa8;
-    --pin-ink: #0b1f1b;
-    --pin-soft: rgba(69, 191, 168, 0.16);
-    --nav-bg: rgba(20, 21, 23, 0.8);
-    --shadow: 0 1px 3px rgba(0, 0, 0, 0.35), 0 10px 30px rgba(0, 0, 0, 0.35);
-    --shadow-lg: 0 2px 4px rgba(0, 0, 0, 0.3), 0 24px 60px rgba(0, 0, 0, 0.5);
-    color-scheme: dark;
-}
-
-/* ------------------------------------------------------------------ base */
-*,
-*::before,
-*::after {
-    box-sizing: border-box;
-}
-html {
-    scroll-behavior: smooth;
-    scroll-padding-top: 84px;
-    -webkit-text-size-adjust: 100%;
-}
-body {
-    margin: 0;
-    overflow-x: clip;
-    background-color: var(--bg);
-    background-image: radial-gradient(var(--dot) 1.1px, transparent 1.3px);
-    background-size: 22px 22px;
-    color: var(--ink);
-    font: 400 17px / 1.6 var(--f-body);
-    -webkit-font-smoothing: antialiased;
-}
-img {
-    max-width: 100%;
-}
-[hidden] {
-    /* biome-ignore lint/complexity/noImportantStyles: hidden must win over every display rule */
-    display: none !important;
-}
-h1,
-h2,
-h3 {
-    margin: 0;
-    font-family: var(--f-display);
-    text-wrap: balance;
-    font-optical-sizing: auto;
-}
-p {
-    margin: 0;
-}
-a {
-    color: inherit;
-}
-code,
-kbd,
-pre {
-    font-family: var(--f-mono);
-}
-/* No specificity, so any class can restyle a code element. */
-:where(:not(pre) > code) {
-    font-size: 0.86em;
-    padding: 0.1em 0.38em;
-    border-radius: 5px;
-    background: var(--surface-2);
-    color: var(--ink);
-}
-kbd {
-    display: inline-block;
-    min-width: 1.7em;
-    padding: 0.05em 0.45em;
-    border: 1px solid var(--line);
-    border-bottom-width: 2px;
-    border-radius: 6px;
-    background: var(--surface);
-    color: var(--ink);
-    font-size: 0.8em;
-    text-align: center;
-    line-height: 1.5;
-}
-:focus-visible {
-    outline: 2.5px solid var(--pin);
-    outline-offset: 2px;
-}
-.sprite {
-    position: absolute;
-    width: 0;
-    height: 0;
-    overflow: hidden;
-}
-.sr-only {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    overflow: hidden;
-    clip: rect(0 0 0 0);
-    white-space: nowrap;
-}
-.skip {
-    position: absolute;
-    left: 16px;
-    top: -60px;
-    z-index: 100;
-    padding: 8px 14px;
-    border-radius: 8px;
-    background: var(--ink);
-    color: var(--bg);
-}
-.skip:focus {
-    top: 12px;
-}
-.wrap {
-    width: 100%;
-    max-width: 1200px;
-    margin-inline: auto;
-    padding-inline: 20px;
-}
-svg {
-    width: 1em;
-    height: 1em;
-}
-
-/* --------------------------------------------------------------- buttons */
-.btn {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: 8px;
-    padding: 12px 20px;
-    border: 1.5px solid transparent;
-    border-radius: 12px;
-    font: 700 16px / 1.2 var(--f-body);
-    text-decoration: none;
-    cursor: pointer;
-    transition:
-        transform 0.18s var(--spring),
-        background-color 0.15s,
-        box-shadow 0.15s;
-}
-.btn:hover {
-    transform: translateY(-2px);
-}
-.btn:active {
-    transform: translateY(0) scale(0.97);
-}
-.btn-sm {
-    padding: 7px 14px;
-    font-size: 14px;
-}
-.btn-lg {
-    padding: 15px 28px;
-    font-size: 18px;
-}
-.btn-tab {
-    background: var(--tab);
-    color: var(--tab-ink);
-    box-shadow: 0 6px 18px -8px var(--tab);
-}
-.btn-tab:hover {
-    background: var(--tab-hover);
-}
-.btn-ghost {
-    border-color: var(--line);
-    color: var(--ink);
-    background: var(--surface);
-}
-.btn-ghost:hover {
-    background: var(--surface-2);
-}
-.btn-ink {
-    background: var(--ink);
-    color: var(--bg);
-}
-.btn-revert {
-    background: var(--st-revert);
-    color: #fff;
-}
-.btn svg {
-    width: 14px;
-    height: 14px;
-}
-
+/* ---------------------------------------------------------------- pieces */
 .copy {
     display: inline-grid;
     place-items: center;
@@ -383,55 +68,6 @@ svg {
     box-shadow: 0 8px 20px -10px rgba(60, 40, 10, 0.55);
     border-radius: 2px 2px 14px 2px;
     rotate: 3deg;
-}
-
-/* ------------------------------------------------------------------- nav */
-.nav {
-    position: sticky;
-    top: env(safe-area-inset-top, 0px);
-    z-index: 50;
-    background: var(--nav-bg);
-    backdrop-filter: blur(12px) saturate(1.2);
-    -webkit-backdrop-filter: blur(12px) saturate(1.2);
-    border-bottom: 1px solid color-mix(in srgb, var(--line) 70%, transparent);
-}
-.nav-in {
-    display: flex;
-    align-items: center;
-    gap: 24px;
-    height: 64px;
-}
-.brand {
-    display: inline-flex;
-    align-items: center;
-    gap: 9px;
-    font: 700 22px / 1 var(--f-display);
-    letter-spacing: -0.02em;
-    text-decoration: none;
-}
-.brand img {
-    display: block;
-    transition: rotate 0.4s var(--spring);
-}
-.brand:hover img {
-    rotate: -14deg;
-}
-.nav-links {
-    display: flex;
-    gap: 4px;
-    margin-left: auto;
-}
-.nav-links a {
-    padding: 6px 12px;
-    border-radius: 999px;
-    color: var(--ink-2);
-    font-size: 15px;
-    font-weight: 500;
-    text-decoration: none;
-}
-.nav-links a:hover {
-    color: var(--ink);
-    background: var(--surface-2);
 }
 
 /* ------------------------------------------------------------------ hero */
@@ -1069,9 +705,6 @@ svg {
 .lpin svg {
     width: 13px;
     height: 13px;
-}
-[data-status="acknowledged"] {
-    --pc: var(--st-ack);
 }
 .nt-pin[data-status="acknowledged"],
 .rv-pin[data-status="acknowledged"] {
@@ -3209,33 +2842,6 @@ svg {
     }
 }
 
-.code {
-    margin: 0;
-    padding: 14px 16px;
-    overflow-x: auto;
-    border-radius: 12px;
-    background: var(--term-bg);
-    color: var(--term-ink);
-    font-size: 13px;
-    line-height: 1.6;
-}
-.code .k {
-    color: #f0a3c4;
-}
-.code .s {
-    color: var(--term-green);
-}
-.code .c {
-    color: var(--term-dim);
-    font-style: italic;
-}
-.code .t {
-    color: var(--term-blue);
-}
-.code .a {
-    color: var(--term-amber);
-}
-
 /* ----------------------------------------------------------------- board */
 /* The board as packages/board draws it: a sidebar on the page colour, then a list card and a note card. */
 .board {
@@ -4363,32 +3969,6 @@ code.h-msg {
     animation-delay: 3s;
 }
 
-/* ---------------------------------------------------------------- footer */
-.foot {
-    padding-block: 36px 48px;
-    border-top: 1px solid var(--line);
-    background: var(--surface);
-}
-.foot-in {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 12px 28px;
-}
-.foot p {
-    color: var(--ink-2);
-    font-size: 15px;
-}
-.foot-links {
-    display: flex;
-    gap: 18px;
-    margin-left: auto;
-}
-.foot-links a {
-    font-weight: 600;
-    text-underline-offset: 3px;
-}
-
 /* ------------------------------------------------------------------ apps */
 /* A phone running the demo shop with Notato's native bar, the platform's own look, and what the agent receives. */
 .apps {
@@ -5207,12 +4787,6 @@ code.h-msg {
     .apps {
         grid-template-columns: minmax(0, 1fr);
     }
-    .nav-links {
-        display: none;
-    }
-    .nav-in > .btn {
-        margin-left: auto;
-    }
     .hero-side,
     .stage-grid,
     .agents-grid,
@@ -5289,9 +4863,6 @@ code.h-msg {
     .ph-screen {
         height: 600px;
     }
-    body {
-        font-size: 16px;
-    }
     .hero {
         padding-top: 28px;
     }
@@ -5341,9 +4912,6 @@ code.h-msg {
         grid-auto-flow: column;
         justify-content: start;
     }
-    .foot-links {
-        margin-left: 0;
-    }
 }
 /* The demo app lays itself out by its own width. */
 @container (max-width: 560px) {
@@ -5377,28 +4945,12 @@ code.h-msg {
         bottom: auto;
         top: 52px;
     }
-}
-@container (max-width: 560px) {
     .basket.v-cards .row small {
         display: none;
     }
 }
 
 @media (prefers-reduced-motion: reduce) {
-    *,
-    *::before,
-    *::after {
-        /* biome-ignore lint/complexity/noImportantStyles: reduced motion overrides every animation */
-        animation-duration: 0.01ms !important;
-        /* biome-ignore lint/complexity/noImportantStyles: reduced motion overrides every animation */
-        animation-iteration-count: 1 !important;
-        /* biome-ignore lint/complexity/noImportantStyles: reduced motion overrides every animation */
-        animation-delay: 0s !important;
-        /* biome-ignore lint/complexity/noImportantStyles: reduced motion overrides every transition */
-        transition-duration: 0.01ms !important;
-        /* biome-ignore lint/complexity/noImportantStyles: reduced motion overrides smooth scrolling */
-        scroll-behavior: auto !important;
-    }
     .scribble path {
         stroke-dashoffset: 0;
     }

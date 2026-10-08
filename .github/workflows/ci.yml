@@ -17,11 +17,11 @@ jobs:
         name: Lint, types, tests
         runs-on: ubuntu-latest
         steps:
-            - uses: actions/checkout@v4
-            - uses: oven-sh/setup-bun@v2
+            - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+            - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
               with:
                   bun-version: latest
-            - uses: actions/setup-node@v4
+            - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
               with:
                   node-version: 24
             - run: bun install --frozen-lockfile
@@ -34,6 +34,9 @@ jobs:
                   bun run build:schema
                   git diff --exit-code packages/schema/schema.json
             - run: bun run test
+            # The docs are cut from the READMEs by heading, and the build fails when a heading they need is gone.
+            - name: The website and docs build
+              run: bun run build:site
 
     # Each platform builds its own binary and runs the smoke test against it: the real artefact, on the real OS.
     binaries:
@@ -45,13 +48,13 @@ jobs:
                 include:
                     - { os: ubuntu-latest, target: bun-linux-x64, exe: notato }
                     - { os: ubuntu-24.04-arm, target: bun-linux-arm64, exe: notato }
-                    - { os: macos-14, target: bun-darwin-arm64, exe: notato }
-                    - { os: macos-13, target: bun-darwin-x64, exe: notato }
+                    - { os: macos-15, target: bun-darwin-arm64, exe: notato }
+                    - { os: macos-15-intel, target: bun-darwin-x64, exe: notato }
                     - { os: windows-latest, target: bun-windows-x64, exe: notato.exe }
         runs-on: ${{ matrix.os }}
         steps:
-            - uses: actions/checkout@v4
-            - uses: oven-sh/setup-bun@v2
+            - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+            - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
               with:
                   bun-version: latest
             - run: bun install --frozen-lockfile
@@ -66,11 +69,11 @@ jobs:
         needs: checks
         runs-on: ubuntu-latest
         steps:
-            - uses: actions/checkout@v4
-            - uses: oven-sh/setup-bun@v2
+            - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+            - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
               with:
                   bun-version: latest
-            - uses: actions/setup-node@v4
+            - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
               with:
                   node-version: 24
             - run: bun install --frozen-lockfile
@@ -93,11 +96,11 @@ jobs:
         needs: checks
         runs-on: ubuntu-latest
         steps:
-            - uses: actions/checkout@v4
-            - uses: oven-sh/setup-bun@v2
+            - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+            - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
               with:
                   bun-version: latest
-            - uses: actions/setup-node@v4
+            - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
               with:
                   node-version: 24
             - run: bun install --frozen-lockfile
@@ -119,7 +122,7 @@ jobs:
         needs: checks
         runs-on: ubuntu-latest
         steps:
-            - uses: actions/checkout@v4
+            - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
             - run: docker build -t notato:ci .
             - name: Run it and call it
               run: |

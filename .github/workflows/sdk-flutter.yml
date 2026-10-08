@@ -19,12 +19,13 @@ jobs:
         name: Analyze, tests and the example
         runs-on: ubuntu-latest
         steps:
-            - uses: actions/checkout@v4
-            - uses: subosito/flutter-action@v2
+            - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+            - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
               with:
                   channel: stable
+                  cache: true
             # The contract tests run the server's Zod schema over the package's JSON.
-            - uses: oven-sh/setup-bun@v2
+            - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
             - run: bun install --frozen-lockfile
             - name: Analyze
               working-directory: sdks/flutter

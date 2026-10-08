@@ -1,0 +1,66 @@
+name: Bug report
+description: Something in Notato does not work the way the docs say.
+labels: ["bug"]
+body:
+    - type: markdown
+      attributes:
+          value: |
+              Thanks for taking the time. A security problem goes in a [private report](https://github.com/notatorg/notato/security/advisories/new) instead.
+    - type: dropdown
+      id: part
+      attributes:
+          label: Which part of Notato?
+          multiple: true
+          options:
+              - The server or the `notato` command
+              - The board
+              - MCP or a coding agent
+              - Web toolbar (@notato/browser, @notato/react, the bookmark)
+              - Angular
+              - Browser extension
+              - React Native
+              - Flutter
+              - SwiftUI
+              - Android
+              - .NET MAUI
+              - Webhooks
+              - The website or docs
+              - Something else
+      validations:
+          required: true
+    - type: textarea
+      id: what
+      attributes:
+          label: What happened
+          description: And what you expected to happen instead.
+      validations:
+          required: true
+    - type: textarea
+      id: steps
+      attributes:
+          label: How to make it happen
+          description: The smallest set of steps you can find. A repository or a snippet helps a lot.
+          placeholder: |
+              1. Run `npx notato`
+              2. …
+      validations:
+          required: true
+    - type: input
+      id: version
+      attributes:
+          label: Notato version
+          description: "`npx notato --version`, or the SDK's version."
+      validations:
+          required: true
+    - type: textarea
+      id: environment
+      attributes:
+          label: Where it runs
+          description: OS, browser or device, framework and its version, and the coding agent if it is involved.
+          placeholder: macOS 26, Chrome 141, React 19 with Vite 7, Claude Code
+    - type: textarea
+      id: doctor
+      attributes:
+          label: Output of `npx notato doctor`
+          description: If the loop between the app, the server and the agent is involved. Take out anything private first.
+          render: text

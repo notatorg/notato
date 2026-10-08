@@ -39,6 +39,7 @@ SwiftPM has no switch: it reads `Package.swift` at the tag, so pushing the tag i
 - **NuGet.** An API key scoped to pushing `Notato.*`; reserving the `Notato.` prefix is worth asking for.
 - **pub.dev.** The first version goes up by hand (`flutter pub publish` in `sdks/flutter`, signed in as the account that should own it; a verified publisher is better). Then, on the package's admin page, turn on automated publishing from GitHub Actions for `notatorg/notato` with the tag pattern `v{{version}}`: the release job publishes with the workflow's own identity, and no secret is needed. `notato` was free on pub.dev in October 2026.
 - **Swift.** Nothing; adding the repository to the Swift Package Index is optional.
+- **GitHub.** Turn on private vulnerability reporting (Settings › Code security), which [SECURITY.md](SECURITY.md) sends reports to, and reported content (Settings › Moderation options), which the [code of conduct](CODE_OF_CONDUCT.md) relies on. Once the first release is on the registries, take the "Not released yet" note out of the README.
 
 ## Where the metadata lives
 

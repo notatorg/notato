@@ -17,6 +17,7 @@
         "test": "bun run test:node && bun run test:bun",
         "test:node": "vitest run",
         "test:bun": "bun test packages/server packages/cli packages/board packages/extension scripts",
+        "check": "bun run lint && bun run typecheck && bun run test && bun run build:site",
         "build:board": "bun run --filter @notato/board build",
         "build:extension": "bun run --filter @notato/extension build",
         "build:site": "bun site/build.ts",

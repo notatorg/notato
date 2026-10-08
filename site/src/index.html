@@ -9,6 +9,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wdth,wght@12..96,75..100,400..800&family=Caveat:wght@500..700&family=Figtree:ital,wght@0,400..700;1,400&family=JetBrains+Mono:wght@400;500;700&display=swap">
+<link rel="stylesheet" href="base.css">
 <link rel="stylesheet" href="site.css">
 <script type="module" src="site.js"></script>
 </head>
@@ -72,7 +73,7 @@
           <a class="btn btn-ghost" href="#try">Try it on this page</a>
         </div>
         <p class="works-with"><span>Works with</span> <a href="#agents">Claude Code</a> <a href="#agents">Codex</a> <a href="#agents">Cursor</a> <a href="#agents">Gemini CLI</a> <a href="#agents">Copilot</a> <a href="#agents">any MCP client</a></p>
-        <p class="works-with"><span>Runs in</span> <a href="#everywhere">React</a> <a href="#everywhere">any web page</a> <a href="#apps">SwiftUI</a> <a href="#apps">Jetpack Compose</a> <a href="#apps">.NET MAUI</a></p>
+        <p class="works-with"><span>Runs in</span> <a href="#everywhere">React</a> <a href="#everywhere">Angular</a> <a href="#everywhere">any web page</a> <a href="#apps">SwiftUI</a> <a href="#apps">Jetpack Compose</a> <a href="#apps">.NET MAUI</a> <a href="#apps">React Native</a> <a href="#apps">Flutter</a></p>
       </div>
     </div>
   </div>
@@ -184,7 +185,7 @@
         <p>Write the note. Say if it's a fix, a change, a question, an approval or a request for variants, and how much it matters.</p>
       </li>
       <li class="step">
-        <div class="step-art art-get" aria-hidden="true"><span class="mini-term"><i>● notato_watch</i><i>⎿ 1 note from Dom</i><i>src/Basket.tsx:44:9</i></span><span class="mini-shot"></span></div>
+        <div class="step-art art-get" aria-hidden="true"><span class="mini-term"><i>● notato_watch</i><i>⎿ 1 note from Alex</i><i>src/Basket.tsx:44:9</i></span><span class="mini-shot"></span></div>
         <h3><span class="step-n">3</span>Your agent gets it</h3>
         <p>The note reaches your coding agent over MCP with the screenshots, the component path, and the file, line and column.</p>
       </li>
@@ -233,7 +234,7 @@
           <label><input type="radio" name="intent" value="variants"><span>Variants</span></label>
         </fieldset>
         <div class="convo" aria-live="polite">
-          <p class="bubble you"><span class="who">Dom</span><span class="intent-note">The total doesn't change when I remove an item</span></p>
+          <p class="bubble you"><span class="who">Alex</span><span class="intent-note">The total doesn't change when I remove an item</span></p>
           <p class="bubble agent"><span class="who intent-who">Claude</span><span class="intent-reply">removeItem never recalculated the total. Fixed in Basket.tsx:44, committed 9e1c0d2 on its own, resolved.</span></p>
         </div>
       </article>
@@ -378,7 +379,7 @@
     <header class="sec-head">
       <p class="tag">section#apps</p>
       <h2>Your phone apps, too</h2>
-      <p class="sec-lede">Native SDKs for SwiftUI, Jetpack Compose and Views, and .NET MAUI put the same toolbar in your iOS and Android apps. Tap an element, write a note, and your agent gets the screenshot and the file and line it was written at, just as it does on the web. Same server, same board, same agent loop.</p>
+      <p class="sec-lede">SDKs for SwiftUI, Jetpack Compose and Views, .NET MAUI, React Native and Flutter put the same toolbar in your iOS and Android apps. Tap an element, write a note, and your agent gets the screenshot and the file and line it was written at, just as it does on the web. Same server, same board, same agent loop.</p>
     </header>
 
     <div class="apps">
@@ -386,6 +387,8 @@
         <button type="button" role="tab" id="at-swift" aria-controls="ap-swift" aria-selected="true" data-app="swift">SwiftUI <small>iOS 17+</small></button>
         <button type="button" role="tab" id="at-compose" aria-controls="ap-compose" aria-selected="false" tabindex="-1" data-app="compose">Jetpack Compose &amp; Views <small>Android 7+</small></button>
         <button type="button" role="tab" id="at-maui" aria-controls="ap-maui" aria-selected="false" tabindex="-1" data-app="maui">.NET MAUI <small>iOS · Android · Mac</small></button>
+        <button type="button" role="tab" id="at-rn" aria-controls="ap-rn" aria-selected="false" tabindex="-1" data-app="rn">React Native <small>Expo or bare</small></button>
+        <button type="button" role="tab" id="at-flutter" aria-controls="ap-flutter" aria-selected="false" tabindex="-1" data-app="flutter">Flutter <small>iOS · Android · macOS</small></button>
       </div>
 
       <div class="phone-wrap" aria-hidden="true">
@@ -454,7 +457,7 @@ struct ShopApp: App {
           </ul>
           <a class="guide-link" href="docs/android.html">Android setup guide</a>
           <pre class="code"><code data-lang="kotlin">dependencies {
-    debugImplementation("dev.notato:notato-compose:0.1.0")
+    debugImplementation("dev.notato:notato-compose:{{version}}")
 }
 
 class ShopApp : Application() {
@@ -480,6 +483,39 @@ builder.UseMauiApp&lt;App&gt;();
 builder.UseNotato(options =&gt; options.Project = "spudshop-app");
 #endif</code></pre>
         </div>
+        <div class="app-panel" role="tabpanel" id="ap-rn" aria-labelledby="at-rn" hidden>
+          <h3>React Native</h3>
+          <ul class="ticks">
+            <li>The view under your finger, picked the way React Native's Element Inspector picks it, with your components around it and the file and line Metro maps them to</li>
+            <li>React Native 0.76 and later on the New Architecture, in Expo (Expo Go included) or a bare app</li>
+            <li><code>&lt;NotatoMask&gt;</code> keeps a view's pixels and text out of notes. In a release build <code>&lt;Notato&gt;</code> is your app and nothing else</li>
+          </ul>
+          <a class="guide-link" href="docs/react-native.html">React Native setup guide</a>
+          <pre class="code"><code data-lang="tsx">import { Notato } from "@notato/react-native"
+import { expoStorage } from "@notato/react-native/expo"
+
+export default function App() {
+  return (
+    &lt;Notato project="spudshop-rn" storage={expoStorage}&gt;
+      &lt;Navigation /&gt;
+    &lt;/Notato&gt;
+  )
+}</code></pre>
+        </div>
+        <div class="app-panel" role="tabpanel" id="ap-flutter" aria-labelledby="at-flutter" hidden>
+          <h3>Flutter</h3>
+          <ul class="ticks">
+            <li>The widget you wrote, its file, line and column, and your widgets around it, from Flutter's own widget creation tracking. Nothing to mark</li>
+            <li>iOS, Android and macOS on Flutter 3.32 and later. On the web, notes stay in memory</li>
+            <li><code>NotatoMask</code> keeps a widget's pixels and text out of notes. In a release build <code>Notato</code> is your app and nothing else</li>
+          </ul>
+          <a class="guide-link" href="docs/flutter.html">Flutter setup guide</a>
+          <pre class="code"><code data-lang="dart">import 'package:notato/notato.dart';
+
+void main() {
+  runApp(const Notato(project: 'spudshop-flutter', child: ShopApp()));
+}</code></pre>
+        </div>
         <div class="app-gets">
           <p class="app-gets-title"><span class="ag-dot"></span>What your agent gets</p>
           <div class="ag-log"></div>
@@ -490,12 +526,12 @@ builder.UseNotato(options =&gt; options.Project = "spudshop-app");
     <ul class="app-feats">
       <li><h3>Phones on any network</h3><p><code>npx notato --tunnel</code> puts the server on your machine behind a dev tunnel that only answers with the device's token. The simulator and emulator use localhost.</p></li>
       <li><h3>Notes outlast a bad signal</h3><p>A note made while the server can't be reached is kept on the device and sent as soon as it can be.</p></li>
-      <li><h3>The app's own log</h3><p>Recent <code>Logger</code> and <code>os_log</code> messages, logcat warnings, or the MAUI app's log come with every note.</p></li>
-      <li><h3>Private by default</h3><p>Password fields are always covered. <code>.notatoMask()</code>, <code>Modifier.notatoMask()</code> and <code>Feedback.Mask</code> hide anything else, pixels and text.</p></li>
+      <li><h3>The app's own log</h3><p>Recent <code>Logger</code> and <code>os_log</code> messages, logcat warnings, the MAUI app's log, or React Native's and Flutter's warnings and errors come with every note.</p></li>
+      <li><h3>Private by default</h3><p>Password fields are always covered. <code>.notatoMask()</code>, <code>Modifier.notatoMask()</code>, <code>Feedback.Mask</code> and <code>NotatoMask</code> hide anything else, pixels and text.</p></li>
       <li><h3>Testers on real devices</h3><p>In test mode notes stay on the phone, then go out as a zip through the share sheet, ready for your agent to import.</p></li>
-      <li><h3>Out of the way</h3><p>Drag the bar anywhere, fold it into the potato, or shake the phone to hide it. Turn Notato on and off from your own settings screen.</p></li>
+      <li><h3>Out of the way</h3><p>Drag the bar anywhere, fold it into the potato, or hide it from its menu. Turn Notato on and off from your own settings screen.</p></li>
       <li><h3>Sheets, dialogs and lists</h3><p>Pick things inside modal pages, sheets, full-screen dialogs and lazy lists. The note says which screen it was on.</p></li>
-      <li><h3>Nothing in release</h3><p><code>#if DEBUG</code>, a <code>debugImplementation</code> dependency, or a Debug-only package: release builds ship none of it.</p></li>
+      <li><h3>Nothing in release</h3><p><code>#if DEBUG</code>, a <code>debugImplementation</code> dependency or a Debug-only package ships none of it, and in React Native and Flutter a release build draws only your app.</p></li>
     </ul>
   </div>
 </section>
@@ -506,11 +542,12 @@ builder.UseNotato(options =&gt; options.Project = "spudshop-app");
     <header class="sec-head">
       <p class="tag">section#everywhere</p>
       <h2>Any web app, and pages you didn't build</h2>
-      <p class="sec-lede">React apps get the SDK. Anything else on the web gets a bookmark or the Chrome extension, with nothing to install in the page. The same server and MCP tools are behind all of them, and behind the phone apps above.</p>
+      <p class="sec-lede">React and Angular apps get an SDK, and any other app can start the toolbar itself. A page you didn't build gets a bookmark or the Chrome extension, with nothing to install in it. The same server and MCP tools are behind all of them, and behind the phone apps above.</p>
     </header>
     <div class="plat">
       <div class="plat-tabs" role="tablist" aria-label="Platform">
         <button type="button" role="tab" id="pt-react" aria-controls="pp-react" aria-selected="true">React</button>
+        <button type="button" role="tab" id="pt-angular" aria-controls="pp-angular" aria-selected="false" tabindex="-1">Angular</button>
         <button type="button" role="tab" id="pt-page" aria-controls="pp-page" aria-selected="false" tabindex="-1">Any page</button>
         <button type="button" role="tab" id="pt-ext" aria-controls="pp-ext" aria-selected="false" tabindex="-1">Chrome extension</button>
       </div>
@@ -529,6 +566,22 @@ builder.UseNotato(options =&gt; options.Project = "spudshop-app");
 {import.meta.env.DEV &amp;&amp; (
   &lt;Notato mode="dev" project="spudshop" server="http://localhost:4747" /&gt;
 )}</code></pre>
+        </div>
+      </div>
+      <div class="plat-panel" role="tabpanel" id="pp-angular" aria-labelledby="pt-angular" data-device="browser" data-src="ProductCard in App › ProductList" hidden>
+        <div class="plat-copy">
+          <h3>Angular 19 and later</h3>
+          <ul class="ticks">
+            <li><code>provideNotato()</code> in the app config. It starts only in development builds, and production never loads the toolbar</li>
+            <li>Each note names the component the element belongs to, and the components around it</li>
+            <li>Runs outside Angular's zone, so it never sets off change detection</li>
+          </ul>
+          <a class="guide-link" href="docs/angular.html">Angular setup guide</a>
+          <pre class="code"><code data-lang="ts">import { provideNotato } from "@notato/angular"
+
+export const appConfig: ApplicationConfig = {
+  providers: [provideNotato({ project: "spudshop" })],
+}</code></pre>
         </div>
       </div>
       <div class="plat-panel" role="tabpanel" id="pp-page" aria-labelledby="pt-page" data-device="bookmark" data-src="button.pay · project localhost-5173" hidden>
@@ -636,7 +689,7 @@ npx notato inject   # prints the bookmark page, a console line and a script tag<
         <span class="b-proj"><i class="b-tile">S</i>spudshop-ios<i class="b-new"></i><em class="b-count" data-count="ios">1</em></span>
         <span class="b-proj"><i class="b-tile">S</i>spudshop-android<em class="b-count" data-count="android">2</em></span>
         <span class="b-proj"><i class="b-tile">C</i>checkout-web<em class="b-count"></em></span>
-        <span class="b-me"><i>D</i><span><b>Dom</b><u>Change name</u></span></span>
+        <span class="b-me"><i>A</i><span><b>Alex</b><u>Change name</u></span></span>
       </aside>
       <div class="b-main">
         <div class="b-listcard">
