@@ -4,15 +4,15 @@ import Foundation
 enum AppInfo {
     static func name(_ configuration: NotatoConfiguration) -> String {
         configuration.appName
-            ?? Foundation.Bundle.main.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String
-            ?? Foundation.Bundle.main.object(forInfoDictionaryKey: "CFBundleName") as? String
+            ?? Bundle.main.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String
+            ?? Bundle.main.object(forInfoDictionaryKey: "CFBundleName") as? String
             ?? "app"
     }
 
     static func version(_ configuration: NotatoConfiguration) -> String? {
         if let version = configuration.appVersion { return version }
-        let short = Foundation.Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
-        let build = Foundation.Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String
+        let short = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
+        let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String
         switch (short, build) {
         case let (s?, b?): return "\(s) (\(b))"
         case let (s?, nil): return s
@@ -21,7 +21,7 @@ enum AppInfo {
         }
     }
 
-    static var bundleId: String { Foundation.Bundle.main.bundleIdentifier ?? "app" }
+    static var bundleId: String { Bundle.main.bundleIdentifier ?? "app" }
 }
 
 /// Turns the compiler's absolute `#filePath` into a path from the repository root, the way the agent sees the code.
@@ -30,18 +30,20 @@ enum SourcePaths {
     private static let lock = NSLock()
 
     nonisolated(unsafe) private static var types: [String: [(line: Int, name: String)]] = [:]
+    /// A line that opens a type (or an extension of one), and its name.
+    private static let declaration = try! NSRegularExpression(
+        pattern: #"^\s*(?:@\w+\s+)*(?:(?:public|internal|private|fileprivate|final|open)\s+)*(?:struct|class|enum|actor|extension)\s+([A-Za-z_]\w*)"#)
 
     /// The struct, class or enum `line` is inside, read from the source file when it can be read.
     static func enclosingType(_ path: String, line: Int) -> String? {
         lock.lock()
         defer { lock.unlock() }
         if types[path] == nil {
-            var found: [(Int, String)] = []
+            var found: [(line: Int, name: String)] = []
             if let text = try? String(contentsOfFile: path, encoding: .utf8) {
-                let pattern = try! NSRegularExpression(pattern: #"^\s*(?:@\w+\s+)*(?:(?:public|internal|private|fileprivate|final|open)\s+)*(?:struct|class|enum|actor|extension)\s+([A-Za-z_]\w*)"#)
                 for (index, row) in text.components(separatedBy: "\n").enumerated() {
                     let range = NSRange(row.startIndex..., in: row)
-                    if let match = pattern.firstMatch(in: row, range: range), let name = Range(match.range(at: 1), in: row) {
+                    if let match = declaration.firstMatch(in: row, range: range), let name = Range(match.range(at: 1), in: row) {
                         found.append((index + 1, String(row[name])))
                     }
                 }
@@ -88,16 +90,17 @@ enum IdentityBuilder {
         let around = registry.around(element.frame, in: window)
         let screen = around.last(where: { $0.kind == .screen }) ?? registry.screens(in: window).last
         // A mark exactly the element's size is the element itself, not something around it.
-        let views = around.filter { $0.kind != .screen }
-        let own = views.last { $0.kind == .view && abs($0.frame.width - element.frame.width) < 2.5 && abs($0.frame.height - element.frame.height) < 2.5 }
+        let views = around.filter { $0.kind == .view }
+        let own = views.last { abs($0.frame.width - element.frame.width) < 2.5 && abs($0.frame.height - element.frame.height) < 2.5 }
         let containers = around.filter { $0.id != own?.id }
-        // The innermost marked view around it, else (a navigation title, a toolbar button) the screen it is on.
-        let located = own ?? views.last(where: { $0.id != own?.id && $0.kind == .view }) ?? screen
+        // The element's own mark, else the innermost marked view around it, else (a navigation title, a toolbar button)
+        // the screen it is on.
+        let located = own ?? views.last ?? screen
         let source = located.map {
             SourceLocation(file: SourcePaths.relative($0.file, root: sourceRoot), line: $0.line, col: max(1, $0.column), nearest: $0.id == own?.id ? nil : true)
         }
         let path = around.map(\.name).reduce(into: [String]()) { names, name in if names.last != name { names.append(name) } }
-        let component = (own ?? views.last(where: { $0.kind == .view }) ?? screen).map { mark in
+        let component = located.map { mark in
             ComponentInfo(name: mark.name, source: SourcePaths.relative(mark.file, root: sourceRoot), path: path.count >= 2 ? path : nil)
         }
         let text = element.text

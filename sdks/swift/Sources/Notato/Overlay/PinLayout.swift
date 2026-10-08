@@ -12,6 +12,7 @@ enum PinLayout {
     static let step: CGFloat = 22
     /// Below the status bar.
     static let top: CGFloat = 50
+    /// The least room between a pin and the window's sides.
     static let margin: CGFloat = 2
     /// Places tried to each side of the first, and rows of them, before a pin is let overlap another.
     static let sideways = 8

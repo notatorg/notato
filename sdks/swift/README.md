@@ -1,6 +1,6 @@
 # Notato for SwiftUI
 
-Figma-style comments for a running iOS app. Tap an element, write a note, and it reaches your coding agent (Claude Code, Codex, Cursor, Gemini CLI, Copilot and others) over MCP with a screenshot, the Swift file and line it was written at (for views you mark), what VoiceOver would call it, and the app's recent log. It is the iOS client of the same Notato server the web and .NET MAUI SDKs use: the notes, the board, the MCP tools and the status loop (open, acknowledged, resolved, revert) are the same.
+Figma-style comments for a running iOS app. Tap an element, write a note, and it reaches your coding agent (Claude Code, Codex, Cursor, Gemini CLI, Copilot and others) over MCP with a screenshot, the Swift file and line it was written at (for views you mark), what VoiceOver would call it, and the app's recent log. It is the iOS client of the same Notato server the web, Android, .NET MAUI, React Native and Flutter SDKs use: the notes, the board, the MCP tools and the status loop (open, acknowledged, resolved, revert) are the same.
 
 SwiftUI and UIKit apps on iOS 17 and later (and Mac Catalyst), as a Swift package with no dependencies.
 
@@ -114,20 +114,30 @@ struct DeveloperSettings: View {
 | `select("#AddToCart")`                                          | Select an element as if it had been tapped, and open the note for it                                                                                                          |
 | `annotate("#AddToCart", comment:, options:)`                    | Make a note with no UI, as a person or (with `agentName`) an agent. Throws if the server refuses it. `AnnotateOptions(peopleOnly: true)` keeps a person's note from the agent |
 | `annotations`, `pendingCount`, `connection`, `connectionDetail` | What Notato knows, for a status line or a badge                                                                                                                               |
-| `package(upload:)`                                              | Test mode: the device's notes as a bundle zip                                                                                                                                 |
+| `packageNotes(upload:)`                                         | Test mode: the device's notes as a bundle zip, uploaded when a server is set                                                                                                  |
 
 The sample's **Feedback** tab does each of these.
 
 ## What a note carries
 
-The same schema as the web and MAUI SDKs (`environment.platform` is `ios`):
+The same schema as every Notato SDK (`environment.platform` is `ios`):
 
 - **Which element**, from the accessibility tree: its role (`button`, `heading`, `text`, `textbox`, `switch`, …), its label, its accessibility identifier (as the test id), its value, and its frame. SwiftUI puts every control there with no work from the app; `.accessibilityIdentifier("AddToCart")` makes the steadiest selector.
 - **Where it is in the code**: the marked view it is, or the nearest one around it (`"nearest": true`), as `swift/App/ProductList.swift:52:17`; the component path (`ProductList › ProductCard`); the screen and its file.
 - **What was on screen**: the window with the element outlined and the pin's number drawn on, and a crop around it. Notato's own window is never in them.
 - **Context** (`context.ios`): the screen and the screens showing, the view controllers, the device, iOS version, idiom, orientation, colour scheme, text size and locale.
 - **The app's log** (`context.console`, the web SDK's shape): the app's own `Logger` / `os_log` messages since launch (from info up), read back from the unified log. Apple's frameworks are left out.
-- **Network** (`context.network`) when the app adds `NotatoNetworkRecorder` to a session's `protocolClasses`. URLs are recorded without their query strings. Each request is made again through Notato's own session, which hands every part back to the app's session as it comes: the response, the body a piece at a time, redirects (which the app's session and its delegate follow or not, as before) and authentication challenges, server trust included, which the app's delegate answers (so certificate pinning still applies). What a protocol cannot carry over is the app's session configuration: Notato's session has the system's defaults (the shared cookie store, cache and credentials) with each request's own headers, timeout and cache policy. Upload tasks (`upload(for:from:)`, whose body a protocol cannot read), streams and web sockets are not recorded and go to the network untouched.
+- **Network** (`context.network`, the latest 50 requests) when the app adds `NotatoNetworkRecorder` to a session's `protocolClasses` (see below). URLs are recorded without their query strings. Each request is made again through Notato's own session, which hands every part back to the app's session as it comes: the response, the body a piece at a time, redirects (which the app's session and its delegate follow or not, as they would without Notato) and authentication challenges, server trust included, which the app's delegate answers (so certificate pinning still applies). What a protocol cannot carry over is the app's session configuration: Notato's session has the system's defaults (the shared cookie store, cache and credentials) with each request's own headers, timeout and cache policy. Upload tasks (`upload(for:from:)`, whose body a protocol cannot read), streams and web sockets are not recorded and go to the network untouched.
+
+To record a session's requests, put the recorder in front of its protocols when the session is made:
+
+```swift
+let configuration = URLSessionConfiguration.default
+#if DEBUG
+configuration.protocolClasses = [NotatoNetworkRecorder.self] + (configuration.protocolClasses ?? [])
+#endif
+let session = URLSession(configuration: configuration)
+```
 
 ### What is never recorded
 
@@ -194,15 +204,30 @@ Notato draws its UI in SwiftUI, in a window of its own above the app's window in
 The package's manifest is `Package.swift` at the repository root (SwiftPM finds a package only there), so `swift` and `xcodebuild` run from the root:
 
 ```bash
-swift test                                   # model, client, selectors, privacy, zip, and the schema contract (needs bun)
+swift test                                       # model, client, selectors, privacy, zip, and the schema contract (needs bun)
 xcodebuild test -scheme Notato -destination 'platform=iOS Simulator,name=iPhone 17 Pro'   # the same, and what needs UIKit
-open sdks/swift/Example/ShopSample.xcodeproj # the sample: a shop with a list, a detail page, a checkout sheet, a Feedback tab
-npx notato --port 4799 --dir "$(mktemp -d)"  # a scratch server for the UI tests (in another terminal)
+open sdks/swift/Example/ShopSample.xcodeproj     # the sample: a shop with a list, a detail page, a checkout sheet, a Feedback tab
+npx notato dev --port 4799 --dir "$(mktemp -d)"  # a scratch server for the UI tests (in another terminal)
 TEST_RUNNER_NOTATO_SERVER=http://localhost:4799 xcodebuild test -project sdks/swift/Example/ShopSample.xcodeproj \
   -scheme ShopSample -destination 'platform=iOS Simulator,name=iPhone 17 Pro'
 NOTATO_TEST_SERVER=http://localhost:4799 swift test   # also runs the tests that need a real server (skipped without it)
 ```
 
 The UI tests post notes, so they talk to a scratch server on 4799 unless told otherwise, never to 4747, where a real server (and its webhooks) may be running.
+
+The package's sources, in `Sources/Notato`:
+
+|                         |                                                                                                        |
+| ----------------------- | ------------------------------------------------------------------------------------------------------ |
+| `Notato.swift`          | The public `Notato` object: its state, on and off, the notes it knows and the queue that sends them    |
+| `Notato+Server.swift`   | The connection to the server: its event stream, and what each event does                               |
+| `Notato+Annotate.swift` | `annotate` and `select` from code                                                                      |
+| `Configuration.swift`   | `NotatoConfiguration`, from code, Info.plist, JSON or the environment                                  |
+| `Model/`                | The schema's types (`Annotation` and the rest), and a note as Notato keeps it (`NoteRecord`)           |
+| `Net/`                  | The server's HTTP API and its event stream                                                             |
+| `Inspection/`           | The accessibility tree, marks (`.notato()`), selectors, privacy, and the identity a note carries       |
+| `Capture/`              | Screenshots, and the device's context                                                                  |
+| `Runtime/`              | What is kept on the device (notes, runtime choices), the bundle zip, and the log and network recorders |
+| `Overlay/`              | The overlay window, its toolbar, pins and model; `Overlay/Sheets/` holds the note card and the sheets  |
 
 `swift test` runs on the Mac (the overlay is compiled only for UIKit); on the simulator the package's tests also cover marks per window and the device context, and skip the contract checks (no processes there). The contract tests run the server's own Zod schema over the JSON this package writes (`scripts/validate.ts`), and are skipped when `bun` is not installed.

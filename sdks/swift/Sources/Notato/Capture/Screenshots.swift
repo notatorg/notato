@@ -29,10 +29,11 @@ enum ScreenshotTaker {
 enum ScreenshotComposer {
     private static let outline = UIColor(red: 0.937, green: 0.267, blue: 0.267, alpha: 1)
     private static let maskColor = UIColor(red: 0.612, green: 0.639, blue: 0.686, alpha: 1)
+    private static let pinColor = UIColor(red: 0.145, green: 0.388, blue: 0.922, alpha: 1)
     private static let cropPadding: CGFloat = 24
 
     /// The two pictures, covered where `screen` says: what was private when it was taken.
-    static func compose(_ screen: CapturedScreen, targets: [CGRect], pin: Int?, maxScale: Double) -> ComposedScreenshots? {
+    static func compose(_ screen: CapturedScreen, targets: [CGRect], pin: Int?, maxScale: Double) -> ComposedScreenshots {
         let masks = screen.covers
         let scale = max(1, min(screen.picture.scale, CGFloat(maxScale)))
         let format = UIGraphicsImageRendererFormat()
@@ -75,7 +76,7 @@ enum ScreenshotComposer {
         let radius: CGFloat = 12
         let center = CGPoint(x: target.maxX - 2, y: max(radius, target.minY))
         let circle = UIBezierPath(arcCenter: center, radius: radius, startAngle: 0, endAngle: .pi * 2, clockwise: true)
-        UIColor(red: 0.145, green: 0.388, blue: 0.922, alpha: 1).setFill()
+        pinColor.setFill()
         circle.fill()
         UIColor.white.setStroke()
         circle.lineWidth = 2

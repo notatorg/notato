@@ -6,9 +6,11 @@ import OSLog
 public enum NotatoConnection: String, Sendable {
     /// Notato is switched off.
     case disabled
-    /// No server: notes stay on the device (test mode) until packaged.
+    /// No server: notes stay on the device (test mode, or `noServer`) until packaged.
     case local
+    /// Connecting to the server, or connecting again after it went away.
     case connecting
+    /// Connected: notes go to the server as they are made, and its changes come back live.
     case connected
     /// The server cannot be reached. Notes are kept and sent when it can.
     case offline
@@ -16,135 +18,18 @@ public enum NotatoConnection: String, Sendable {
     case refused
 }
 
-/// Optional details for `Notato.annotate`.
-public struct AnnotateOptions: Sendable {
-    /// `Severity.blocker`, `.major`, `.minor`, `.nit`.
-    public var severity: String?
-    /// `Intent.fix`, `.change`, `.question`, `.approve`.
-    public var intent: String?
-    /// Recorded as an agent's note when set; a person's otherwise.
-    public var agentName: String?
-    public var steps: [AgentStep]?
-    /// Take a screenshot (when allowed).
-    public var screenshot: Bool
-    /// People only: the note and its thread stay between people and never reach the agent. A person's note only: it is
-    /// left off an agent's (`agentName`).
-    public var peopleOnly: Bool
-
-    public init(severity: String? = nil, intent: String? = nil, agentName: String? = nil, steps: [AgentStep]? = nil, screenshot: Bool = true,
-                peopleOnly: Bool = false) {
-        self.severity = severity
-        self.intent = intent
-        self.agentName = agentName
-        self.steps = steps
-        self.screenshot = screenshot
-        self.peopleOnly = peopleOnly
-    }
-}
-
+/// Why Notato could not do what the app asked: it is off, nothing on screen matches a selector, there is nothing to
+/// package. The message is written to be shown to a person.
 public struct NotatoError: LocalizedError, Sendable {
     public let message: String
     public var errorDescription: String? { message }
 }
 
-/// What became of one attempt to send a note.
-enum SendOutcome: Equatable {
-    /// The server has it.
-    case sent
-    /// The server will never take it as it is (400, 409, 413, 415 or 422). It is marked failed with the server's
-    /// reason and kept on the device, and the notes after it are sent all the same.
-    case refused(String)
-    /// Not now: the server cannot be reached, or answered 401, 403, 404, 408, 429 or 5xx. It stays queued, and so does
-    /// everything after it, until the next connection or launch.
-    case held(NotatoServerError)
-    /// Nothing was sent: there is no server, or the note was sent, refused or deleted already, or is on its way.
-    case skipped
-
-    /// What to tell the person who just made the note, or nil when it went.
-    var problem: String? {
-        switch self {
-        case .sent, .skipped: return nil
-        case let .refused(message): return "The server refused it: \(message)"
-        case let .held(error) where error.status == 0: return "Saved. It's sent when the server can be reached."
-        case let .held(error): return "Saved on this device, not sent: \(error.message)"
-        }
-    }
-}
-
 let log = Logger(subsystem: "com.notato.sdk", category: "Notato")
 
-/// A note Notato knows of: from the server, or made here and not sent yet.
-@MainActor
-@Observable
-final class NoteRecord: Identifiable {
-    var annotation: Annotation
-    /// Made here and not yet taken by the server (or, in test mode, not yet packaged).
-    var pending: Bool
-    /// Why the server refused it for good: it stays on the device, marked failed, and is not sent again.
-    var error: String?
-    /// Why it has not been sent yet, when the server said (a project it does not know, a token it does not take).
-    var notice: String?
-    /// Made on this device in this run.
-    var mine: Bool
-    /// Its screenshots while it is not sent: the files they are kept in, read only when it is sent or packaged.
-    @ObservationIgnored var assets: [String: KeptAsset]?
-    /// The marked view it was made on, followed live for its pin.
-    @ObservationIgnored var markId: UUID?
-    /// On its way to the server now.
-    @ObservationIgnored var sending = false
-    /// Deleted on this device: never sent again, and deleted on the server too if a copy was already on its way.
-    @ObservationIgnored var deleted = false
-    /// Its first selector, parsed, and the text it was parsed from (`selector`).
-    @ObservationIgnored private var parsed: (source: String, selector: Selectors.Parsed?)?
-
-    /// The annotation's id, which never changes.
-    nonisolated let id: String
-    /// Where, when and on which platform it was made, which the server never changes either: enough to tell which
-    /// notes are on a screen, and in which order, without reading each annotation.
-    nonisolated let route: String
-    nonisolated let createdAt: String
-    nonisolated let platform: String
-
-    init(_ annotation: Annotation, pending: Bool = false, mine: Bool = false, assets: [String: KeptAsset]? = nil) {
-        self.id = annotation.id
-        self.route = annotation.route
-        self.createdAt = annotation.createdAt
-        self.platform = annotation.environment.platform
-        self.annotation = annotation
-        self.pending = pending
-        self.mine = mine
-        self.assets = assets
-    }
-
-    /// The note's selector, parsed once (and again only if the server changes it): pins look for their element twice
-    /// a second.
-    var selector: Selectors.Parsed? {
-        guard let source = annotation.target.identity.first?.selector else { return nil }
-        if let parsed, parsed.source == source { return parsed.selector }
-        let selector = try? Selectors.parse(source)
-        parsed = (source, selector)
-        return selector
-    }
-}
-
-/// The notes on one screen, in pin order: oldest first, so a note keeps its number as more are made.
-@MainActor
-struct ScreenNotes {
-    var all: [NoteRecord] = []
-    /// The notes pinned on the screen: the newest `PinLayout.maxPins` of those made on this platform (a note from
-    /// another is about another app's screen of the same name), with their numbers among `all`. Every note is in the
-    /// Notes list all the same.
-    var pinned: [(number: Int, record: NoteRecord)] = []
-
-    var count: Int { all.count }
-
-    /// The newest `limit`, still in pin order, with their numbers.
-    func newest(_ limit: Int) -> [(number: Int, record: NoteRecord)] {
-        all.indices.suffix(limit).map { (number: $0 + 1, record: all[$0]) }
-    }
-}
-
 /// Notato at runtime: switch it on and off, start annotating, select an element, or annotate one from code.
+///
+/// Start it once, as early as the app starts, and leave it out of release builds:
 ///
 /// ```swift
 /// @main struct ShopApp: App {
@@ -159,18 +44,25 @@ struct ScreenNotes {
 @MainActor
 @Observable
 public final class Notato {
+    /// The one Notato of the app. It is `@Observable`, so a view can read its state and be drawn again as it changes.
     public static let shared = Notato()
 
     // ---- what the app and the overlay read ----------------------------------------------------------------------
 
+    /// What Notato was started with, or nil before `start`.
     public private(set) var configuration: NotatoConfiguration?
+    /// Whether Notato is on: its overlay showing (unless the toolbar is hidden) and its connection open.
     public private(set) var isEnabled = false
+    /// Whether the floating toolbar shows. Hidden, the app can still drive Notato from code.
     public private(set) var isToolbarVisible = true
+    /// Whether the next tap selects what is under it.
     public internal(set) var isAnnotating = false
-    public private(set) var connection: NotatoConnection = .disabled
+    /// How Notato stands with its server.
+    public internal(set) var connection: NotatoConnection = .disabled
     /// The last connection problem, fit to show to a person.
-    public private(set) var connectionDetail: String?
-    /// The notes Notato knows of for this project, from the server and from this device.
+    public internal(set) var connectionDetail: String?
+    /// The notes Notato knows of for this project, from the server and from this device. Those read from the server's
+    /// list are summaries, without their `context` and `steps`; those made here or heard of since are whole.
     public var annotations: [Annotation] { records.map(\.annotation) }
     /// Notes made on this device that have not reached the server yet.
     public var pendingCount: Int { records.lazy.filter(\.pending).count }
@@ -181,15 +73,23 @@ public final class Notato {
     /// Moves on whenever a note is added or forgotten: what is worked out from the notes (`notes(onRoute:)`) is kept
     /// until it does.
     private(set) var generation = 0
+    /// What the person chose on the device, over the configuration.
     var state = RuntimeState(remember: true)
+    /// Whether the server takes screenshots: one that has them off wins over the configuration.
     var serverScreenshots = true
+    /// Why the configuration cannot be used, when it cannot: Notato stays off.
     var problem: String?
 
+    /// Where this project's notes not sent yet are kept.
     @ObservationIgnored var store: LocalStore?
     @ObservationIgnored var client: NotatoClient?
+    /// Reads the server's event stream while Notato is on (`restartSync`).
     @ObservationIgnored var syncTask: Task<Void, Never>?
+    /// When Notato started: the log a note carries goes back to here.
     @ObservationIgnored var started = Date()
+    /// The overlay, while Notato is on (none without UIKit).
     @ObservationIgnored var platform: PlatformHooks?
+    /// The notes kept on the device have been read in.
     @ObservationIgnored private var loaded = false
     /// Notes deleted here while a copy was on its way to the server: the server's word of them is not taken back in.
     @ObservationIgnored private var deletedHere: Set<String> = []
@@ -199,7 +99,7 @@ public final class Notato {
     @ObservationIgnored private var screens: (generation: Int, notes: [String: ScreenNotes])?
 
     /// What `environment.platform` says on notes made here.
-    static let platform = "ios"
+    static let platformName = "ios"
 
     private init() {}
 
@@ -211,10 +111,12 @@ public final class Notato {
     }
 
     var mode: NotatoMode { configuration?.mode ?? .dev }
+    /// The server: one typed into Settings, else the configured one.
     var server: URL? {
         if let override = state.server { return URL(string: override) }
         return configuration?.resolvedServer
     }
+    /// Whether notes go to a server as they are made. In test mode a server only receives packages.
     var hasServer: Bool { server != nil && mode != .test }
     var authorName: String? { state.author ?? configuration?.author }
     var screenshotsWanted: Bool { state.screenshots ?? configuration?.screenshots ?? true }
@@ -270,8 +172,10 @@ public final class Notato {
         restartSync()
     }
 
+    /// Shows the floating toolbar. Remembered like `enable()`.
     public func showToolbar() { setToolbar(true) }
 
+    /// Hides the floating toolbar (and stops annotating). Shaking the device, or `showToolbar()`, brings it back.
     public func hideToolbar() { setToolbar(false) }
 
     func setToolbar(_ visible: Bool) {
@@ -286,6 +190,7 @@ public final class Notato {
         isAnnotating = true
     }
 
+    /// Stops annotating, and lets go of anything selected.
     public func stopAnnotating() {
         isAnnotating = false
         platform?.clearSelection()
@@ -368,7 +273,7 @@ public final class Notato {
         for (route, notes) in Dictionary(grouping: records, by: \.route) {
             let all = notes.sorted { ($0.createdAt, $0.id) < ($1.createdAt, $1.id) }
             var pinned: [(number: Int, record: NoteRecord)] = []
-            for (offset, record) in all.enumerated().reversed() where record.platform == platform {
+            for (offset, record) in all.enumerated().reversed() where record.platform == platformName {
                 pinned.append((offset + 1, record))
                 if pinned.count == PinLayout.maxPins { break }
             }
@@ -428,7 +333,11 @@ public final class Notato {
             await store?.remove(record.id)
             if record.deleted {
                 // Deleted here while it was on its way: delete it there too.
-                try? await client.delete(id: stored.annotation.id)
+                do {
+                    try await client.delete(id: stored.annotation.id)
+                } catch {
+                    log.warning("Notato could not delete a note on the server: \(error.localizedDescription, privacy: .public)")
+                }
                 return .skipped
             }
             return .sent
@@ -478,128 +387,16 @@ public final class Notato {
         return Set(now.filter { gone.contains($0.id) && !$0.pending }.map(\.id))
     }
 
-    // ---- the server: live updates over server-sent events ------------------------------------------------------------
+    // ---- the server's copies of notes -----------------------------------------------------------------------------
 
-    func restartSync() {
-        syncTask?.cancel()
-        syncTask = nil
-        guard isEnabled, let configuration else { return }
-        client = server.map { client(for: $0) }
-        guard hasServer, let client else {
-            connection = .local
-            connectionDetail = mode == .test ? nil : "No server is set: notes stay on this device."
-            return
-        }
-        let project = configuration.project
-        let agent = mode == .agent
-        syncTask = Task { [weak self] in
-            var delay: UInt64 = 1
-            while !Task.isCancelled {
-                self?.connection = .connecting
-                do {
-                    for try await event in client.events(project: project, agent: agent) {
-                        await self?.handle(event, client: client)
-                        delay = 1
-                    }
-                    if Task.isCancelled { return }
-                    self?.setConnection(.offline, "The server closed the connection.")
-                } catch let error as NotatoServerError where error.permanent {
-                    self?.setConnection(.refused, error.message)
-                    delay = 10
-                } catch {
-                    if Task.isCancelled { return }
-                    self?.setConnection(.offline, (error as? NotatoServerError)?.message ?? error.localizedDescription)
-                }
-                try? await Task.sleep(nanoseconds: delay * 1_000_000_000)
-                delay = min(10, delay * 2)
-            }
-        }
-    }
-
-    /// A client of `server`, with the project token when the server may have it (`token(for:configuration:)`).
-    func client(for server: URL, session: URLSession = NotatoClient.sharedSession) -> NotatoClient {
-        NotatoClient(base: server, token: configuration.flatMap { Self.token(for: server, configuration: $0) }, session: session)
-    }
-
-    /// The project token, if `server` may have it: only the server it was configured for does (the same scheme, host
-    /// and port). A server typed into Settings gets none, so the token never goes anywhere it was not set up to go,
-    /// over plain http least of all.
-    static func token(for server: URL, configuration: NotatoConfiguration) -> String? {
-        guard let token = configuration.token, !token.isEmpty, let configured = configuration.resolvedServer,
-              let origin = origin(of: server), origin == Self.origin(of: configured) else { return nil }
-        return token
-    }
-
-    /// Scheme, host and port, with the scheme's own port when none is written.
-    private static func origin(of url: URL) -> String? {
-        guard let scheme = url.scheme?.lowercased(), let host = url.host?.lowercased(), !host.isEmpty else { return nil }
-        let port = url.port ?? (scheme == "https" ? 443 : scheme == "http" ? 80 : -1)
-        return "\(scheme)://\(host):\(port)"
-    }
-
-    /// Tries the server again now, instead of waiting out the backoff between attempts (the menu's Retry).
-    func retryConnection() {
-        guard isEnabled, hasServer else { return }
-        restartSync()
-    }
-
-    private func setConnection(_ next: NotatoConnection, _ detail: String?) {
-        guard isEnabled else { return }
-        connection = next
-        connectionDetail = detail
-    }
-
-    func handle(_ event: ServerSentEvent, client: NotatoClient) async {
-        switch event.event {
-        case "hello":
-            setConnection(.connected, nil)
-            serverScreenshots = (try? await client.config())?.screenshots ?? serverScreenshots
-            // The notes made while away go first, so the list read next has them.
-            let held = await flush()
-            await reload(client)
-            // Connected, yet a note was not taken (an unknown project, a token that may not write): say why.
-            if let held, held.status != 0 {
-                platform?.toast("Notes not sent: \(held.message)")
-            }
-        case "created", "updated", "replied":
-            if let data = event.data.data(using: .utf8), let body = try? NotatoJSON.decoder.decode(ServerEventData.self, from: data), let annotation = body.annotation {
-                upsert(annotation)
-            }
-        case "deleted":
-            if let data = event.data.data(using: .utf8), let body = try? NotatoJSON.decoder.decode(ServerEventData.self, from: data), let id = body.id {
-                if let record = record(id), !record.pending { forget { $0 === record } }
-                deletedHere.remove(id)
-            }
-        case "annotate-request":
-            if let data = event.data.data(using: .utf8), let request = try? NotatoJSON.decoder.decode(AnnotateRequest.self, from: data) {
-                Task { await self.answerRelay(request, client: client) }
-            }
-        default:
-            break
-        }
-    }
-
-    /// Reads every note of the project, a page at a time, then forgets those the server no longer has. Nothing is
-    /// forgotten unless every page came: a list cut short would look like deletions. The list is a summary (no
-    /// context, no steps), which is all the overlay shows and a small part of a note's size.
-    private func reload(_ client: NotatoClient) async {
-        guard let project = configuration?.project else { return }
-        let known = Set(records.lazy.filter { !$0.pending }.map(\.id))
-        let items: [StoredAnnotation]
-        do {
-            items = try await client.list(project: project, summary: true)
-        } catch is CancellationError {
-            return
-        } catch {
-            log.error("Notato could not read the project's notes from the server: \(error.localizedDescription, privacy: .public)")
-            return
-        }
-        merge(items.map(\.annotation), summary: true)
-        let forgotten = Self.forgotten(known: known, listed: items, now: records)
-        if !forgotten.isEmpty { forget { forgotten.contains($0.id) } }
-    }
-
+    /// One note from the server: an event, or the answer to something done to it.
     func upsert(_ annotation: Annotation) { merge([annotation]) }
+
+    /// The server says a note was deleted. One still waiting to be sent from here is kept: it was made here, after.
+    func deletedOnServer(_ id: String) {
+        if let record = record(id), !record.pending { forget { $0 === record } }
+        deletedHere.remove(id)
+    }
 
     /// Takes in notes from the server, in one pass through the index: each one known takes the server's copy, one
     /// waiting to be sent that the server turns out to have is sent, and the rest are added. A `summary` (a list read
@@ -639,30 +436,6 @@ public final class Notato {
         return true
     }
 
-    /// Agent mode: an agent asked, through `notato_annotate`, for something in this app to be annotated.
-    private func answerRelay(_ request: AnnotateRequest, client: NotatoClient) async {
-        let result: RelayResult
-        do {
-            let annotation = try await annotate(request.args.target, comment: request.args.comment, options: AnnotateOptions(
-                severity: request.args.severity, intent: request.args.intent, agentName: request.args.author ?? "agent", steps: request.args.steps))
-            if let record = record(annotation.id), record.pending, let notice = record.notice {
-                // Made, but the server answered and did not take it (a project it does not know, say): reporting it
-                // filed would send the agent looking for a note the server does not have.
-                let reason = notice.hasSuffix(".") ? notice : notice + "."
-                result = RelayResult(ok: false, annotationId: nil, error: "The note was made on the device but the server did not take it: \(reason) It is sent again on the next connection.")
-            } else {
-                result = RelayResult(ok: true, annotationId: annotation.id, error: nil)
-            }
-        } catch {
-            result = RelayResult(ok: false, annotationId: nil, error: error.localizedDescription)
-        }
-        do {
-            try await client.relayResult(requestId: request.requestId, result)
-        } catch {
-            log.warning("Notato could not report an annotate result: \(error.localizedDescription, privacy: .public)")
-        }
-    }
-
     // ---- acting on a note, as the person ---------------------------------------------------------------------
 
     private func connectedClient() throws -> NotatoClient {
@@ -689,18 +462,25 @@ public final class Notato {
         // On its way now: the server's copy, when it lands, would replace this change.
         guard !record.sending else { throw NotatoError(message: "The note is being sent: try again in a moment.") }
         record.annotation = record.annotation.settingPeopleOnly(on, by: author)
-        if let store { _ = try? await store.keep(record.annotation) }
+        do {
+            try await store?.keep(record.annotation)
+        } catch {
+            log.error("Notato could not keep a note's change on the device: \(error.localizedDescription, privacy: .public)")
+        }
     }
 
+    /// Asks the agent to undo a resolved note's change, with why when the person said.
     func requestRevert(_ id: String, reason: String?) async throws {
         let note = reason?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false ? reason : "Please undo this change."
         upsert(try await connectedClient().setStatus(id: id, status: Status.revertRequested, note: note, author: .human(authorName)).annotation)
     }
 
+    /// Takes a revert request back: the note is resolved again.
     func cancelRevert(_ id: String) async throws {
         upsert(try await connectedClient().setStatus(id: id, status: Status.resolved, note: "Revert request taken back.", author: .human(authorName)).annotation)
     }
 
+    /// Deletes a note, on the server too once it has it.
     func delete(_ id: String) async throws {
         let record = record(id)
         if let record, !record.pending, hasServer {
@@ -715,6 +495,8 @@ public final class Notato {
         await store?.remove(id)
     }
 
+    /// What the person saved in Settings. A server typed in replaces the configured one (and gets no token) until
+    /// reset; changing it forgets the notes read from the old one.
     func saveSettings(name: String, screenshots: Bool, server: String) {
         state.author = name
         state.screenshots = screenshots == (configuration?.screenshots ?? true) ? nil : screenshots
@@ -741,6 +523,7 @@ public final class Notato {
         server.map { url in url.host.map { "\($0)\(url.port.map { ":\($0)" } ?? "")" } ?? url.absoluteString }
     }
 
+    /// How Notato stands with its server, in a sentence for Settings and VoiceOver.
     func describeConnection() -> String {
         let host = serverHost
         switch connection {
@@ -758,8 +541,16 @@ public final class Notato {
     // ---- test mode: a bundle zip -----------------------------------------------------------------------------------
 
     /// Packages this device's notes as a bundle zip (`feedback.md`, `annotations.json`, `shots/`), the format
-    /// `notato_import_bundle` reads, and uploads it when a server is set. Returns the zip's file URL.
-    public func package(upload: Bool = true) async throws -> URL {
+    /// `notato_import_bundle` reads, and uploads it when `upload` is true and a server is set. Returns the zip's file
+    /// URL. Throws `NotatoServerError` when the upload fails; the zip is written all the same.
+    public func packageNotes(upload: Bool = true) async throws -> URL {
+        let url = try await writePackage()
+        if upload { try await uploadPackage(url) }
+        return url
+    }
+
+    /// Writes this device's notes to a bundle zip in the temporary folder, and returns where.
+    func writePackage() async throws -> URL {
         guard let configuration else { throw NotatoError(message: "Notato has not been started.") }
         let mine = records.filter { $0.pending || (mode == .test && $0.mine) }
         if mine.isEmpty { throw NotatoError(message: "Nothing to package yet: make at least one note.") }
@@ -767,14 +558,19 @@ public final class Notato {
         let (bundle, files) = BundleWriter.build(items, project: configuration.project, author: authorName,
                                                  appName: AppInfo.name(configuration), appVersion: AppInfo.version(configuration))
         let formatter = DateFormatter()
+        // A file name, not a date for people: the same digits whatever the device's calendar and language.
+        formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.dateFormat = "yyyyMMdd-HHmm"
         let url = FileManager.default.temporaryDirectory
             .appendingPathComponent("notato-\(SafeIds.folder(forProject: configuration.project))-\(formatter.string(from: Date())).zip")
         // Written to the file a screenshot at a time, each read from where it is kept, off the main actor.
         try await Task.detached { try BundleWriter.write(bundle, files: files, to: url) }.value
-        if upload, let server {
-            try await client(for: server).uploadBundle(project: configuration.project, file: url)
-        }
         return url
+    }
+
+    /// Uploads a package to the server, when one is set.
+    func uploadPackage(_ url: URL) async throws {
+        guard let configuration, let server else { return }
+        try await client(for: server).uploadBundle(project: configuration.project, file: url)
     }
 }

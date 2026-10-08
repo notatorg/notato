@@ -1,10 +1,8 @@
 #if canImport(UIKit)
 import UIKit
 
-/// Reads what is on screen from the accessibility tree: every control SwiftUI (or UIKit) draws reports its role,
-/// label, identifier, value and frame there, which is what makes elements identifiable without the app marking them.
-/// iOS builds the accessibility tree of an app (what VoiceOver reads) only when an assistive technology or a UI test
-/// asks for it. Notato reads that tree to describe what was tapped, so while it is on it loads UIKit's and SwiftUI's
+/// Switches on the accessibility tree that `AccessibilityScanner` reads. iOS builds the accessibility tree of an app
+/// (what VoiceOver reads) only when an assistive technology or a UI test asks for it. Notato reads that tree to describe what was tapped, so while it is on it loads UIKit's and SwiftUI's
 /// accessibility bundles into the app and switches on application accessibility, as UI-testing tools do. The setting is
 /// the system's, not the app's: Notato remembers what it was and puts it back when it is switched off or the app goes
 /// to the background. `NotatoConfiguration.readAccessibility = false` leaves it alone (identity then comes from
@@ -80,7 +78,7 @@ enum AccessibilityRuntime {
         bundlesLoaded = true
         let root = ProcessInfo.processInfo.environment["IPHONE_SIMULATOR_ROOT"] ?? ""
         for name in ["UIKit", "SwiftUI"] {
-            if let bundle = Foundation.Bundle(path: root + "/System/Library/AccessibilityBundles/\(name).axbundle"), !bundle.isLoaded {
+            if let bundle = Bundle(path: root + "/System/Library/AccessibilityBundles/\(name).axbundle"), !bundle.isLoaded {
                 _ = bundle.load()
             }
         }

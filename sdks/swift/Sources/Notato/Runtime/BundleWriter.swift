@@ -15,19 +15,21 @@ enum BundleWriter {
             let n = String(format: "%02d", index + 1)
             if let shots = annotation.screenshots, let full = item.assets[shots.full.id], full.isThere {
                 var fullRef = shots.full
-                fullRef.path = "shots/\(n)-full.png"
-                files[fullRef.path!] = full
+                let fullPath = "shots/\(n)-full.png"
+                fullRef.path = fullPath
+                files[fullPath] = full
                 var cropRef: AssetRef?
                 if var crop = shots.crop, let kept = item.assets[crop.id], kept.isThere {
-                    crop.path = "shots/\(n)-crop.png"
-                    files[crop.path!] = kept
+                    let cropPath = "shots/\(n)-crop.png"
+                    crop.path = cropPath
+                    files[cropPath] = kept
                     cropRef = crop
                 }
                 annotation.screenshots = Screenshots(full: fullRef, crop: cropRef)
             } else {
                 annotation.screenshots = nil
             }
-            annotation.bundleId = AlwaysPresent(id)
+            annotation.bundleId = id
             annotation.mode = NotatoMode.test.rawValue
             annotations.append(annotation)
         }
@@ -48,7 +50,7 @@ enum BundleWriter {
         do {
             try writer.add("feedback.md", Data(markdown(bundle).utf8))
             try writer.add("annotations.json", try NotatoJSON.encoder.encode(bundle))
-            for name in files.keys.sorted() { try writer.add(name, try files[name]!.read()) }
+            for (name, asset) in files.sorted(by: { $0.key < $1.key }) { try writer.add(name, try asset.read()) }
             try writer.finish()
         } catch {
             writer.abandon()

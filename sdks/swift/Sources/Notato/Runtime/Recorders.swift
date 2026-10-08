@@ -121,6 +121,8 @@ struct Ring<Element> {
 /// whose body a protocol cannot read, and stream and web socket tasks are not recorded: they go to the network as they
 /// would without it.
 public final class NotatoNetworkRecorder: URLProtocol, @unchecked Sendable {
+    /// The most requests kept: the latest.
+    static let limit = 50
     private static let lock = NSLock()
     nonisolated(unsafe) private static var entries: [NetworkEntry] = []
     nonisolated(unsafe) private static var current: Relay?
@@ -156,7 +158,7 @@ public final class NotatoNetworkRecorder: URLProtocol, @unchecked Sendable {
     private static func add(_ entry: NetworkEntry) {
         lock.withLock {
             entries.append(entry)
-            if entries.count > 50 { entries.removeFirst(entries.count - 50) }
+            if entries.count > limit { entries.removeFirst(entries.count - limit) }
         }
     }
 

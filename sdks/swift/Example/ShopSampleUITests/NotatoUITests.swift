@@ -2,7 +2,7 @@ import XCTest
 
 /// Drives Notato's overlay the way a person does, with real taps and typing. Needs a scratch Notato server: the tests post
 /// notes to it, so it is never the default 4747, where a real one (with its webhooks) may be running. Start one with
-/// `npx notato --port 4799 --dir "$(mktemp -d)"`, or give another as NOTATO_SERVER
+/// `npx notato dev --port 4799 --dir "$(mktemp -d)"`, or give another as NOTATO_SERVER
 /// (`TEST_RUNNER_NOTATO_SERVER=… xcodebuild test`).
 @MainActor
 final class NotatoUITests: XCTestCase {

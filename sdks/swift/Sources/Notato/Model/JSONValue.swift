@@ -40,26 +40,28 @@ public enum JSONValue: Codable, Sendable, Equatable {
     }
 
     /// Any Encodable value as JSON, for building `context` entries from typed records.
-    public static func from<T: Encodable>(_ value: T) -> JSONValue {
+    static func from<T: Encodable>(_ value: T) -> JSONValue {
         guard let data = try? JSONEncoder().encode(value),
               let decoded = try? JSONDecoder().decode(JSONValue.self, from: data) else { return .null }
         return decoded
     }
 }
 
-/// A value the schema requires to be present even when it is null (`bundleId`): synthesized Codable would leave the key out.
+/// An optional the schema requires to be present even when it is null (`Annotation.bundleId`): synthesized Codable
+/// would leave the key out. Public only because a public property uses it; read the property, not this.
+@propertyWrapper
 public struct AlwaysPresent<Value: Codable & Sendable & Equatable>: Codable, Sendable, Equatable {
-    public var value: Value?
+    public var wrappedValue: Value?
 
-    public init(_ value: Value?) { self.value = value }
+    public init(wrappedValue: Value?) { self.wrappedValue = wrappedValue }
 
     public init(from decoder: Decoder) throws {
         let container = try decoder.singleValueContainer()
-        value = container.decodeNil() ? nil : try container.decode(Value.self)
+        wrappedValue = container.decodeNil() ? nil : try container.decode(Value.self)
     }
 
     public func encode(to encoder: Encoder) throws {
         var container = encoder.singleValueContainer()
-        if let value { try container.encode(value) } else { try container.encodeNil() }
+        if let wrappedValue { try container.encode(wrappedValue) } else { try container.encodeNil() }
     }
 }

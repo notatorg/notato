@@ -19,8 +19,9 @@ struct AccountView: View {
             }
             Section {
                 Button("Sign in") {
-                    // Something for Notato's log capture to attach to a note about this button.
-                    logger.error("Sign in failed for \(email, privacy: .public): the demo has no accounts")
+                    // Something for Notato's log capture to attach to a note about this button. What was typed stays
+                    // out of the log, as it would in a real app.
+                    logger.error("Sign in failed: the demo has no accounts")
                 }
                 .accessibilityIdentifier("SignIn")
                 Text("Forgot your password?").font(.footnote).foregroundStyle(.blue)

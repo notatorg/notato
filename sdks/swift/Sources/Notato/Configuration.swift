@@ -1,6 +1,6 @@
 import Foundation
 
-/// Who annotates, and where the notes go. The same three modes as the web and MAUI SDKs.
+/// Who annotates, and where the notes go. The same three modes as every Notato SDK.
 public enum NotatoMode: String, Sendable, Codable, CaseIterable {
     /// The developer, live to a local `notato dev` server that your coding agent reads over MCP.
     case dev
@@ -10,6 +10,7 @@ public enum NotatoMode: String, Sendable, Codable, CaseIterable {
     case agent
 }
 
+/// The corner the toolbar starts in, until someone drags it elsewhere.
 public enum ToolbarCorner: String, Sendable, Codable, CaseIterable {
     case bottomTrailing, bottomLeading, topTrailing, topLeading
 }
@@ -25,14 +26,16 @@ public struct NotatoConfiguration: Sendable, Equatable {
     public var project: String
     /// Whether Notato is on when the app starts. `Notato.shared.enable()` and `.disable()` change it at runtime.
     public var enabled: Bool = true
+    /// Who annotates, and where the notes go.
     public var mode: NotatoMode = .dev
     /// The server. Defaults to `localhost:4747` in dev and agent mode and to none in test mode.
     public var server: URL?
     /// Leave the server out entirely, even in dev mode: notes stay on the device.
     public var noServer: Bool = false
-    /// A project token (`pft_…`) for a shared `notato serve`.
+    /// A project token (`pft_…`) for a shared `notato serve`. Sent only to `server` (the same scheme, host and port),
+    /// never to a server typed into the toolbar's settings.
     public var token: String?
-    /// Recorded on every note. Default to the app's display name and version.
+    /// The app's name and version, recorded on every note. They default to the bundle's display name and version.
     public var appName: String?
     public var appVersion: String?
     /// The name on this person's notes. They can change it in the toolbar's settings.
@@ -42,7 +45,9 @@ public struct NotatoConfiguration: Sendable, Equatable {
     /// Cover editable text fields in screenshots and leave what is typed in them out of notes. Defaults to on in test and
     /// agent mode. Secure fields always are; `.notatoMask(false)` opts a field out, `.notatoMask()` makes any view private.
     public var maskInputs: Bool?
+    /// Whether the floating toolbar shows at launch. People can drag it and fold it; where they leave it is remembered.
     public var showToolbar: Bool = true
+    /// The corner the toolbar starts in.
     public var toolbarPosition: ToolbarCorner = .bottomTrailing
     /// Shaking the device shows or hides the toolbar.
     public var shakeToToggle: Bool = true
@@ -50,6 +55,7 @@ public struct NotatoConfiguration: Sendable, Equatable {
     public var rememberRuntimeState: Bool = true
     /// Attach the app's recent log messages (its own os_log / Logger entries) to each note.
     public var captureLogs: Bool = true
+    /// The most log messages a note carries: the latest.
     public var logLimit: Int = 50
     /// The scale screenshots are stored at, at most. Phones are 3x; 2x is plenty to read and half the size.
     public var maxScreenshotScale: Double = 2
@@ -61,6 +67,7 @@ public struct NotatoConfiguration: Sendable, Equatable {
     /// source file when the files can be read (the simulator, a Mac); set it for anything else.
     public var sourceRoot: String?
 
+    /// A configuration for `project`, with every other setting at its default.
     public init(project: String, mode: NotatoMode = .dev, server: URL? = nil) {
         self.project = project
         self.mode = mode
@@ -74,9 +81,10 @@ public struct NotatoConfiguration: Sendable, Equatable {
         return mode == .test ? nil : Self.defaultServer
     }
 
+    /// Whether text fields are masked: `maskInputs`, or on in test and agent mode when it is not set.
     public var resolvedMaskInputs: Bool { maskInputs ?? (mode != .dev) }
 
-    /// Why this configuration cannot be used, or nil.
+    /// Why this configuration cannot be used, or nil. `Notato.start` logs it and stays off.
     public var problem: String? {
         if project.isEmpty { return "Notato needs a project id: set Project in the Notato configuration." }
         // As the server checks it (`[\w.@-]` in JavaScript is ASCII only), and so always a safe folder name.
@@ -94,7 +102,7 @@ public struct NotatoConfiguration: Sendable, Equatable {
 
     /// Reads the `Notato` dictionary of the app's Info.plist (keys as in the README: `Project`, `Mode`, `Server`, …),
     /// then the environment. Nil when there is no project anywhere.
-    public static func fromInfoPlist(_ bundle: Foundation.Bundle = .main, key: String = "Notato",
+    public static func fromInfoPlist(_ bundle: Bundle = .main, key: String = "Notato",
                                      environment: [String: String] = ProcessInfo.processInfo.environment) -> NotatoConfiguration? {
         let values = bundle.object(forInfoDictionaryKey: key) as? [String: Any] ?? [:]
         return from(values, environment: environment)

@@ -210,8 +210,8 @@ public extension View {
         modifier(MarkModifier(kind: .view, name: name ?? defaultName(file, line), file: file, line: line, column: column))
     }
 
-    /// Marks a screen: the root view of a page. Its name (the file's, unless given) becomes the note's route, and
-    /// anything on it that is not marked itself is located in this file.
+    /// Marks a screen: the root view of a page. Its name (the type it is written in, unless given) becomes part of the
+    /// note's route, and anything on it that is not marked itself is located in this file.
     func notatoScreen(_ name: String? = nil, file: String = #filePath, line: Int = #line, column: Int = #column) -> some View {
         modifier(MarkModifier(kind: .screen, name: name ?? defaultName(file, line), file: file, line: line, column: column))
     }

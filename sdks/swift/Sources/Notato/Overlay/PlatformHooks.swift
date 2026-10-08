@@ -6,16 +6,28 @@ import CoreMotion
 
 /// What is selected, and the picture taken when it was (with what to cover in it, as it was then).
 struct SelectionState {
+    /// What the note is about.
     var elements: [ScreenElement]
+    /// Everything on screen with it, which its selector must tell it apart from.
     var all: [ScreenElement]
+    /// The target's kind as the schema has it: `element`, or `area` for a spot with nothing described there.
     var kind: String
     var screen: CapturedScreen?
+    /// The marked view it is, followed live for its pin.
     var markId: UUID?
 }
 
 /// The iOS side of Notato: an overlay window over each of the app's windows, picking, screenshots, pins.
 @MainActor
 final class PlatformHooks {
+    /// How often the overlay catches up with the app: its windows, its screen, the pins.
+    private static let tickInterval: TimeInterval = 0.25
+    /// The least time between two reads of the accessibility tree for pins, the costly part of a tick.
+    private static let scanInterval: TimeInterval = 0.5
+    /// How hard a shake must be, in g, and how long after one before another counts.
+    private static let shakeForce = 2.6
+    private static let shakeInterval: TimeInterval = 1
+
     let notato: Notato
     var sessions: [OverlaySession] = []
     private var observers: [NSObjectProtocol] = []
@@ -29,6 +41,7 @@ final class PlatformHooks {
 
     // ---- windows -----------------------------------------------------------------------------------------------
 
+    /// Notato switched on: an overlay over each of the app's windows, kept up to date until `detach`.
     func attach() {
         if notato.configuration?.readAccessibility != false {
             AccessibilityRuntime.activate()
@@ -42,12 +55,13 @@ final class PlatformHooks {
                 MainActor.assumeIsolated { self?.attachAll() }
             })
         }
-        timer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in
+        timer = Timer.scheduledTimer(withTimeInterval: Self.tickInterval, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated { self?.tick() }
         }
         startShake()
     }
 
+    /// Notato switched off: the overlays closed, and application accessibility put back.
     func detach() {
         for observer in observers { NotificationCenter.default.removeObserver(observer) }
         observers = []
@@ -102,7 +116,7 @@ final class PlatformHooks {
             guard let a = data?.acceleration else { return }
             let force = sqrt(a.x * a.x + a.y * a.y + a.z * a.z)
             MainActor.assumeIsolated {
-                guard let self, force > 2.6, Date().timeIntervalSince(self.lastShake) > 1 else { return }
+                guard let self, force > Self.shakeForce, Date().timeIntervalSince(self.lastShake) > Self.shakeInterval else { return }
                 self.lastShake = Date()
                 self.notato.setToolbar(!self.notato.isToolbarVisible)
             }
@@ -117,7 +131,6 @@ final class PlatformHooks {
     private func tick() {
         attachAll()
         for session in sessions {
-            session.tick += 1
             let route = route(of: session)
             if route != session.route {
                 session.route = route
@@ -141,7 +154,7 @@ final class PlatformHooks {
     /// are pins to place; between reads, the pins stay where they were put (`PinBoard`).
     private func placements(_ session: OverlaySession, _ pinned: [(number: Int, record: NoteRecord)]) -> [PinPlacement] {
         guard !pinned.isEmpty, let window = session.appWindow else { return [] }
-        let scanned = Date().timeIntervalSince(session.lastScan) > 0.5
+        let scanned = Date().timeIntervalSince(session.lastScan) > Self.scanInterval
         if scanned {
             session.scanned = scan(window)
             session.lastScan = Date()
@@ -224,21 +237,17 @@ final class PlatformHooks {
         // A marked view smaller than the accessibility element under the finger is the more precise answer.
         if let mark = MarkRegistry.shared.around(CGRect(origin: point, size: .zero), kinds: [.view], in: window).last,
            element.map({ area(mark.frame) < area($0.frame) * 0.9 }) ?? true {
-            element = ScreenElement(role: nil, label: mark.name, value: nil, identifier: mark.name, frame: mark.frame, control: "View")
+            element = ScreenElement(marked: mark)
             markId = mark.id
         }
-        let kind: String
-        if element == nil {
-            // Nothing is described there: note the spot itself.
-            element = ScreenElement(role: nil, label: nil, value: nil, identifier: nil,
-                                    frame: CGRect(x: point.x - 32, y: point.y - 32, width: 64, height: 64).intersection(window.bounds), control: "Area")
-            kind = "area"
-        } else {
-            kind = "element"
-        }
+        // Nothing is described there: note the spot itself.
+        let kind = element == nil ? "area" : "element"
+        let picked = element ?? ScreenElement(role: nil, label: nil, value: nil, identifier: nil,
+                                              frame: CGRect(x: point.x - 32, y: point.y - 32, width: 64, height: 64).intersection(window.bounds),
+                                              control: "Area")
         // The picture from the first tap is kept as another element is chosen, with its covers.
         let screen = session.selection?.screen ?? (notato.screenshotsOn ? capture(window, elements: scanned) : nil)
-        select(SelectionState(elements: [element!], all: all, kind: kind, screen: screen, markId: markId), in: session)
+        select(SelectionState(elements: [picked], all: all, kind: kind, screen: screen, markId: markId), in: session)
     }
 
     func select(_ selection: SelectionState, in session: OverlaySession) {
@@ -266,7 +275,7 @@ final class PlatformHooks {
             toast("That is the whole screen.", in: session)
             return
         }
-        selection.elements = [ScreenElement(role: nil, label: parent.name, value: nil, identifier: parent.name, frame: parent.frame, control: parent.kind == .screen ? "Screen" : "View")]
+        selection.elements = [ScreenElement(marked: parent)]
         selection.markId = parent.id
         selection.kind = "element"
         select(selection, in: session)
@@ -336,12 +345,12 @@ final class PlatformHooks {
 
         let size = session.appWindow?.bounds.size ?? .zero
         let annotation = Annotation(
-            id: ULID.make(), projectId: configuration.project, bundleId: AlwaysPresent(nil), author: author, mode: mode,
+            id: ULID.make(), projectId: configuration.project, bundleId: nil, author: author, mode: mode,
             createdAt: NotatoJSON.timestamp(),
             url: "ios://\(AppInfo.bundleId)\(route)", route: route,
             appName: AppInfo.name(configuration), appVersion: AppInfo.version(configuration),
             environment: EnvironmentInfo(userAgent: DeviceContext.userAgent(configuration), viewport: Viewport(w: size.width, h: size.height),
-                                         dpr: Double(session.appWindow?.traitCollection.displayScale ?? 2), platform: Notato.platform,
+                                         dpr: Double(session.appWindow?.traitCollection.displayScale ?? 2), platform: Notato.platformName,
                                          sdk: SDKInfo(name: NotatoSDK.name, version: NotatoSDK.version)),
             target: Target(kind: selection.elements.count > 1 ? "multi" : selection.kind, identity: identity,
                            rect: PageRect(x: round2(union.minX), y: round2(union.minY), w: round2(union.width), h: round2(union.height))),
@@ -366,8 +375,7 @@ final class PlatformHooks {
             }
             if let parsed = try? Selectors.parse(selector), let id = parsed.id,
                let mark = MarkRegistry.shared.all(.view, in: window).last(where: { $0.name == id }) {
-                let element = ScreenElement(role: nil, label: mark.name, value: nil, identifier: mark.name, frame: mark.frame, control: "View")
-                return (session, SelectionState(elements: [element], all: all, kind: "element", screen: nil, markId: mark.id))
+                return (session, SelectionState(elements: [ScreenElement(marked: mark)], all: all, kind: "element", screen: nil, markId: mark.id))
             }
         }
         return nil
@@ -375,77 +383,29 @@ final class PlatformHooks {
 
     // ---- sharing a package ---------------------------------------------------------------------------------------
 
+    /// Packages the notes, uploads the zip when a server is set, and opens the share sheet with it. A failed upload
+    /// still shares the zip.
     func packageAndShare(in session: OverlaySession) async {
-        var problem: String?
         let url: URL
         do {
-            do {
-                url = try await notato.package(upload: notato.server != nil)
-            } catch let error as NotatoServerError {
-                problem = error.message
-                url = try await notato.package(upload: false)
-            }
+            url = try await notato.writePackage()
         } catch {
             toast(error.localizedDescription, in: session)
             return
         }
-        guard let presenter = topController(session.appWindow?.rootViewController) else { return }
+        var uploadProblem: String?
+        do {
+            try await notato.uploadPackage(url)
+        } catch {
+            uploadProblem = error.localizedDescription
+        }
+        guard let presenter = session.appWindow?.rootViewController?.topPresented else { return }
         let share = UIActivityViewController(activityItems: [url], applicationActivities: nil)
         share.popoverPresentationController?.sourceView = presenter.view
         share.popoverPresentationController?.sourceRect = CGRect(x: presenter.view.bounds.midX, y: presenter.view.bounds.maxY - 60, width: 1, height: 1)
         presenter.present(share, animated: true)
-        toast(problem.map { "Packaged, but not uploaded: \($0)" } ?? (notato.server == nil ? "Packaged. Send the zip to the developer." : "Packaged and uploaded."), in: session)
-    }
-
-    func topController(_ root: UIViewController?) -> UIViewController? {
-        var vc = root
-        while let presented = vc?.presentedViewController, !presented.isBeingDismissed { vc = presented }
-        return vc
-    }
-}
-
-extension Notato {
-    /// Makes a note about the element a selector finds on screen, without any UI, as a person or (with
-    /// `agentName`) an agent: `#AddToCart`, `button:text("Add to cart")`, `ProductDetail text:text("£89")`. Throws
-    /// when nothing matches, or when the server refuses the note for good (it stays on the device, marked failed); a
-    /// note the server cannot take yet is returned, and sent when it can be.
-    @discardableResult
-    public func annotate(_ selector: String, comment: String, options: AnnotateOptions = AnnotateOptions()) async throws -> Annotation {
-        guard isEnabled, let platform else { throw NotatoError(message: "Notato is off. Call enable() first.") }
-        let comment = comment.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !comment.isEmpty else { throw NotatoError(message: "A note needs a comment.") }
-        var found = try platform.find(selector)
-        if found == nil {
-            // The accessibility tree is built lazily the first time it is read: look again once it has been.
-            try await Task.sleep(nanoseconds: 500_000_000)
-            found = try platform.find(selector)
-        }
-        guard case (let session, var selection)? = found else {
-            let route = platform.sessions.first.map { platform.route(of: $0) } ?? "?"
-            throw NotatoError(message: "no element on the screen matches \"\(selector)\" (the app is on \(route)). iOS selectors look like #identifier, button:text(\"Add to cart\") or text:text(\"£89\"):nth(2).")
-        }
-        if options.screenshot, screenshotsOn, let window = session.appWindow { selection.screen = platform.capture(window, elements: selection.all) }
-        let author: Author = options.agentName.map { .agent($0) } ?? .human(authorName)
-        let record = await platform.create(selection, comment: comment, intent: options.intent, severity: options.severity, author: author,
-                                           mode: options.agentName == nil ? mode.rawValue : NotatoMode.agent.rawValue, steps: options.steps,
-                                           peopleOnly: options.peopleOnly && options.agentName == nil, in: session)
-        // A note the server will never take is no note to report back (to an agent's `notato_annotate`, say). One that
-        // waits for the server is: it is sent when it can be.
-        if case let .refused(message) = await send(record) {
-            throw NotatoError(message: "The server refused the note: \(message)")
-        }
-        return record.annotation
-    }
-
-    /// Selects the element a selector finds, as if it had been tapped, and opens the note for it.
-    public func select(_ selector: String) throws {
-        guard isEnabled, let platform else { throw NotatoError(message: "Notato is off. Call enable() first.") }
-        guard case (let session, var selection)? = try platform.find(selector) else {
-            throw NotatoError(message: "No element on the screen matches \"\(selector)\".")
-        }
-        isAnnotating = true
-        if screenshotsOn, let window = session.appWindow { selection.screen = platform.capture(window, elements: selection.all) }
-        platform.select(selection, in: session)
+        let done = notato.server == nil ? "Packaged. Send the zip to the developer." : "Packaged and uploaded."
+        toast(uploadProblem.map { "Packaged, but not uploaded: \($0)" } ?? done, in: session)
     }
 }
 #else
@@ -458,16 +418,5 @@ final class PlatformHooks {
     func clearSelection() {}
     func toast(_ message: String) {}
     func toolbarPositionReset() {}
-}
-
-extension Notato {
-    @discardableResult
-    public func annotate(_ selector: String, comment: String, options: AnnotateOptions = AnnotateOptions()) async throws -> Annotation {
-        throw NotatoError(message: "Notato's overlay needs UIKit (iOS or Mac Catalyst).")
-    }
-
-    public func select(_ selector: String) throws {
-        throw NotatoError(message: "Notato's overlay needs UIKit (iOS or Mac Catalyst).")
-    }
 }
 #endif

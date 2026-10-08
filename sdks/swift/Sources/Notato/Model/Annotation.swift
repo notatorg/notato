@@ -3,6 +3,7 @@ import Foundation
 // The wire shapes of @notato/schema (packages/schema/src/index.ts), the contract with the server. Enumerations
 // travel as strings, so a value added to the schema later does not break reading what the server sends.
 
+/// What a note asks for (`Annotation.intent`).
 public enum Intent {
     public static let fix = "fix"
     public static let change = "change"
@@ -11,6 +12,7 @@ public enum Intent {
     public static let variants = "variants"
 }
 
+/// How much a note matters (`Annotation.severity`).
 public enum Severity {
     public static let blocker = "blocker"
     public static let major = "major"
@@ -18,7 +20,8 @@ public enum Severity {
     public static let nit = "nit"
 }
 
-/// open → acknowledged → resolved; a resolved change can be asked to be undone (revert_requested → reverted).
+/// Where a note stands (`Annotation.status`): open → acknowledged → resolved; a resolved change can be asked to be
+/// undone (revert_requested → reverted).
 public enum Status {
     public static let open = "open"
     public static let acknowledged = "acknowledged"
@@ -29,6 +32,7 @@ public enum Status {
     public static let dismissed = "dismissed"
 }
 
+/// Who wrote a note or a reply: a person, or an agent.
 public struct Author: Codable, Sendable, Equatable {
     /// `human` or `agent`.
     public var kind: String
@@ -53,12 +57,14 @@ public struct PageRect: Codable, Sendable, Equatable {
     }
 }
 
+/// A screenshot: its content address (sha256) and its size in pixels.
 public struct AssetRef: Codable, Sendable, Equatable {
     public var id: String
     /// `image/png` or `image/webp`.
     public var mime: String
     public var w: Int
     public var h: Int
+    /// Where it is in a bundle zip (`shots/01-full.png`); nil elsewhere.
     public var path: String?
 }
 
@@ -71,6 +77,7 @@ public struct SourceLocation: Codable, Sendable, Equatable {
     public var nearest: Bool?
 }
 
+/// The marked view (`.notato()`) an element is, or is inside.
 public struct ComponentInfo: Codable, Sendable, Equatable {
     public var name: String
     public var source: String?
@@ -78,6 +85,7 @@ public struct ComponentInfo: Codable, Sendable, Equatable {
     public var path: [String]?
 }
 
+/// What a note is about, as precisely as it can be told: how to find it again, what it is and where it is written.
 public struct ElementIdentity: Codable, Sendable, Equatable {
     /// On iOS, the screen and the accessibility element: `ProductDetailView button:text("Add to cart")`.
     public var selector: String
@@ -129,6 +137,7 @@ extension String {
     }
 }
 
+/// One thing an agent did on its way to a note (`tap`, `type`, …), on what, and when.
 public struct AgentStep: Codable, Sendable, Equatable {
     public var action: String
     public var target: String?
@@ -140,6 +149,7 @@ public struct AgentStep: Codable, Sendable, Equatable {
     }
 }
 
+/// One entry in a note's thread.
 public struct Reply: Codable, Sendable, Equatable, Identifiable {
     public var id: String
     public var author: Author
@@ -162,11 +172,13 @@ extension Reply {
     }
 }
 
+/// The window's size, in points.
 public struct Viewport: Codable, Sendable, Equatable {
     public var w: Double
     public var h: Double
 }
 
+/// Where a note was made: the platform, the device and the window.
 public struct EnvironmentInfo: Codable, Sendable, Equatable {
     public var userAgent: String
     public var viewport: Viewport
@@ -177,11 +189,13 @@ public struct EnvironmentInfo: Codable, Sendable, Equatable {
     public var sdk: SDKInfo? = nil
 }
 
+/// The SDK that made a note, and its version.
 public struct SDKInfo: Codable, Sendable, Equatable {
     public var name: String
     public var version: String
 }
 
+/// What a note is about: one element or several, and the rectangle around them.
 public struct Target: Codable, Sendable, Equatable {
     /// `element`, `text`, `area` or `multi`.
     public var kind: String
@@ -190,23 +204,30 @@ public struct Target: Codable, Sendable, Equatable {
     public var selectedText: String?
 }
 
+/// A note's pictures.
 public struct Screenshots: Codable, Sendable, Equatable {
     /// The whole window with the target outlined.
     public var full: AssetRef
     public var crop: AssetRef?
 }
 
+/// A note: what someone said about a place in the app, with everything an agent needs to find and fix it.
 public struct Annotation: Codable, Sendable, Equatable, Identifiable {
     /// A ULID.
     public var id: String
     public var projectId: String
-    /// Null outside a bundle, and always written: the schema requires the key.
-    public var bundleId: AlwaysPresent<String>
+    /// The bundle a tester's note was packaged in; nil outside one. Always written, as null when nil: the schema
+    /// requires the key.
+    @AlwaysPresent public var bundleId: String?
     public var author: Author
+    /// The mode it was made in: `dev`, `test` or `agent`.
     public var mode: String
+    /// ISO 8601, with milliseconds.
     public var createdAt: String
 
+    /// `ios://<bundle id><route>`.
     public var url: String
+    /// The screens showing when it was made, outermost first: `/ProductList/ProductDetail`.
     public var route: String
     public var appName: String?
     public var appVersion: String?
@@ -214,8 +235,11 @@ public struct Annotation: Codable, Sendable, Equatable, Identifiable {
 
     public var target: Target
     public var comment: String
+    /// `Severity`'s values, or nil.
     public var severity: String?
+    /// `Intent`'s values, or nil.
     public var intent: String?
+    /// Alternatives an agent offered to choose from, carried as the server sent them.
     public var variants: JSONValue?
 
     public var screenshots: Screenshots?
@@ -223,6 +247,7 @@ public struct Annotation: Codable, Sendable, Equatable, Identifiable {
     /// Keyed by plugin id: `console`, `network`, `ios`. The server never interprets it.
     public var context: [String: JSONValue]
 
+    /// `Status`'s values, or one from a newer server.
     public var status: String
     public var thread: [Reply]
     /// People only: the note and its whole thread are between people, and never reach the agent. Written only when
