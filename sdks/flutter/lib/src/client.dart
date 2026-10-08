@@ -7,22 +7,34 @@ import 'package:http/http.dart' as http;
 import 'annotation.dart';
 import 'events.dart';
 
-/// What went wrong talking to the server: its reason, and its status, or none when it could not be reached.
+/// What went wrong: the server could not be reached or would not do it, or there is nothing to annotate. Its message
+/// is fit to show to a person.
 class NotatoException implements Exception {
+  /// A problem, with the server's HTTP status when it answered.
   const NotatoException(this.message, [this.status]);
+
+  /// What went wrong, fit to show to a person.
   final String message;
+
+  /// The server's HTTP status, or null when it could not be reached or the problem is not the server's.
   final int? status;
 
+  @override
+  String toString() => message;
+}
+
+/// What a server's refusal means for the app and for the note.
+extension ServerRefusal on NotatoException {
   /// The server will not take this app as it is (a missing or wrong token, a project it cannot use): not a blip.
-  bool get permanent => status != null && status! >= 400 && status! < 500 && status != 408 && status != 429;
+  bool get permanent {
+    final status = this.status;
+    return status != null && status >= 400 && status < 500 && status != 408 && status != 429;
+  }
 
   /// The server will never take this note as it is (malformed, too large, an id it has for another): it is marked
   /// failed and the notes after it are still sent. Anything else (401, 403, an unknown project's 404, 408, 429, 5xx, no
   /// answer) is about the server or the app rather than the note, and holds the queue for a later try.
   bool get refusesNote => const {400, 409, 413, 415, 422}.contains(status);
-
-  @override
-  String toString() => message;
 }
 
 /// How the event stream stands.
@@ -70,21 +82,12 @@ class NotatoClient {
     );
   }
 
-  /// One request, with what the server answered decoded, or a [NotatoException].
-  Future<Object?> _call(
-    String method,
-    String url, {
-    Object? json,
-    Duration timeout = const Duration(seconds: 30),
-  }) async {
+  /// One request and what the server answered, decoded, within [timeout]; anything that goes wrong is a
+  /// [NotatoException].
+  Future<Object?> _request(http.BaseRequest Function() build, Duration timeout) async {
     final client = _newClient();
     try {
-      final request = http.Request(method, Uri.parse(url))..headers.addAll(_auth);
-      if (json != null) {
-        request.headers['Content-Type'] = 'application/json';
-        request.body = jsonEncode(json);
-      }
-      return _decode(await _within(client, request, timeout));
+      return _decode(await _within(client, build(), timeout));
     } on NotatoException {
       rethrow;
     } on TimeoutException {
@@ -95,32 +98,34 @@ class NotatoClient {
       client.close();
     }
   }
+
+  /// A request with a JSON body, or none.
+  Future<Object?> _call(String method, String url, {Object? json, Duration timeout = const Duration(seconds: 30)}) =>
+      _request(() {
+        final request = http.Request(method, Uri.parse(url))..headers.addAll(_auth);
+        if (json != null) {
+          request.headers['Content-Type'] = 'application/json';
+          request.body = jsonEncode(json);
+        }
+        return request;
+      }, timeout);
 
   static Map<String, Object?> _map(Object? body) =>
       body is Map ? body.cast<String, Object?>() : throw const NotatoException('the server answered with nothing');
 
   /// Sends a note and its screenshots (`asset:<id>` files, as every SDK sends them). Returns it as the server stored it:
   /// `{seq, annotation}`.
-  Future<Map<String, Object?>> send(Map<String, Object?> annotation, List<Shot> shots) async {
-    final client = _newClient();
-    try {
+  Future<Map<String, Object?>> send(Map<String, Object?> annotation, List<Shot> shots) async => _map(
+    await _request(() {
       final request = http.MultipartRequest('POST', Uri.parse('$_projectUrl/annotations'))
         ..headers.addAll(_auth)
         ..fields['annotation'] = jsonEncode(annotation);
       for (final shot in shots) {
         request.files.add(http.MultipartFile.fromBytes('asset:${shot.id}', shot.bytes, filename: '${shot.id}.png'));
       }
-      return _map(_decode(await _within(client, request, const Duration(seconds: 60))));
-    } on NotatoException {
-      rethrow;
-    } on TimeoutException {
-      throw const NotatoException('the Notato server did not answer in time');
-    } catch (error) {
-      throw NotatoException('cannot reach the Notato server at $server ($error)');
-    } finally {
-      client.close();
-    }
-  }
+      return request;
+    }, const Duration(seconds: 60)),
+  );
 
   /// The most pages [list] reads: 100,000 notes.
   static const maxPages = 200;
@@ -151,6 +156,7 @@ class NotatoClient {
     throw const NotatoException('the project has more notes than Notato reads ($maxPages pages)');
   }
 
+  /// Replies on a note's thread, as [author]. An aside is kept from the agent.
   Future<Map<String, Object?>> reply(String id, String body, Map<String, Object?> author, {bool aside = false}) async =>
       _map(
         await _call(
@@ -160,6 +166,7 @@ class NotatoClient {
         ),
       );
 
+  /// Moves a note to another status, with a line in its thread saying why.
   Future<Map<String, Object?>> setStatus(String id, String status, String note, Map<String, Object?> author) async =>
       _map(
         await _call(
@@ -169,9 +176,11 @@ class NotatoClient {
         ),
       );
 
+  /// Turns People only on or off; the server records the change in the thread.
   Future<Map<String, Object?>> setPeopleOnly(String id, bool on, Map<String, Object?> author) async =>
       _map(await _call('PATCH', '$server/annotations/${_segment(id)}', json: {'peopleOnly': on, 'author': author}));
 
+  /// Deletes a note.
   Future<void> delete(String id) => _call('DELETE', '$server/annotations/${_segment(id)}');
 
   /// Agent mode: what became of a relayed `notato_annotate`.
@@ -190,23 +199,12 @@ class NotatoClient {
   }
 
   /// Test mode: a package of notes, as the bundle zip `notato_import_bundle` reads.
-  Future<void> uploadBundle(List<int> zip) async {
-    final client = _newClient();
-    try {
-      final request = http.Request('POST', Uri.parse('$_projectUrl/bundles'))
-        ..headers.addAll({..._auth, 'Content-Type': 'application/zip'})
-        ..bodyBytes = zip;
-      _decode(await _within(client, request, const Duration(seconds: 120)));
-    } on NotatoException {
-      rethrow;
-    } on TimeoutException {
-      throw const NotatoException('the Notato server did not answer in time');
-    } catch (error) {
-      throw NotatoException('cannot reach the Notato server at $server ($error)');
-    } finally {
-      client.close();
-    }
-  }
+  Future<void> uploadBundle(List<int> zip) => _request(
+    () => http.Request('POST', Uri.parse('$_projectUrl/bundles'))
+      ..headers.addAll({..._auth, 'Content-Type': 'application/zip'})
+      ..bodyBytes = zip,
+    const Duration(seconds: 120),
+  );
 
   /// Follows the project's events (`/projects/:id/events`, with [agent] its relayed annotate requests too): notes made,
   /// changed, replied to and deleted, and whether an agent is there. Reconnects when the stream drops or goes quiet for
@@ -216,9 +214,14 @@ class NotatoClient {
     void Function(ServerEvent event) onEvent,
     void Function(StreamState state, String? detail) onState, {
     bool agent = false,
-  }) => EventFollower._(this, onEvent, onState, agent).._open();
+  }) {
+    final follower = EventFollower._(this, onEvent, onState, agent);
+    unawaited(follower._open());
+    return follower;
+  }
 }
 
+/// The project's event stream, followed: opened again whenever it drops or goes quiet, until it is cancelled.
 class EventFollower {
   EventFollower._(this._client, this._onEvent, this._onState, this._agent);
 
@@ -296,9 +299,10 @@ class EventFollower {
     _retry?.cancel();
     _wait = const Duration(seconds: 1);
     _http?.close();
-    _open();
+    unawaited(_open());
   }
 
+  /// Stops following: closes the stream and opens no other.
   void cancel() {
     _stopped = true;
     _retry?.cancel();

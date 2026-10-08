@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
@@ -6,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'icons.dart';
 import 'theme.dart';
 
+/// The icons' PNGs, decoded the first time each is drawn.
 final _decoded = <String, Uint8List>{};
 Uint8List _bytes(String name, String data) => _decoded[name] ??= base64Decode(data);
 
@@ -24,7 +26,6 @@ class NotatoIcon extends StatelessWidget {
       height: size,
       color: color,
       colorBlendMode: BlendMode.srcIn,
-      filterQuality: FilterQuality.medium,
       gaplessPlayback: true,
     ),
   );
@@ -38,7 +39,7 @@ class Potato extends StatelessWidget {
   @override
   Widget build(BuildContext context) => ExcludeSemantics(
     child: Transform.rotate(
-      angle: -8 * 3.14159265 / 180,
+      angle: -8 * math.pi / 180,
       child: Image.memory(_bytes('potato', notatoPotato), width: size, height: size, gaplessPlayback: true),
     ),
   );
@@ -219,6 +220,7 @@ class HeaderButton extends StatelessWidget {
   }
 }
 
+/// How a sheet's button looks: plain, the accent (the action the sheet is for), red words, or red.
 enum ButtonKind { plain, primary, danger, destructive }
 
 /// A sheet's buttons: as wide as they can be.
@@ -337,6 +339,7 @@ class SheetTile extends StatelessWidget {
   }
 }
 
+/// How a tile's icon is drawn: plain, on the accent, or red.
 enum TileStyle { plain, primary, danger }
 
 /// A row of a sheet, as the menu's: a tile, a title with a line under it, and a chevron when it opens another sheet.

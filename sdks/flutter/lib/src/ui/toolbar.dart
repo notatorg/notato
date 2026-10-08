@@ -4,7 +4,10 @@ import '../config.dart';
 import 'parts.dart';
 import 'theme.dart';
 
+/// The toolbar's height, and the folded button's size.
 const toolbarHeight = 54.0;
+
+/// How far the toolbar keeps from the screen's edges.
 const _margin = 12.0;
 
 /// The toolbar: grip, Annotate with the count of notes on this screen, ⋯ and the chevron that folds it into a round

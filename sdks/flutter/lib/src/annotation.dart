@@ -30,6 +30,9 @@ class DeviceInfo {
   final String? dart;
 }
 
+/// The platform this SDK's notes say they were made on (`environment.platform`), and the notes it pins.
+const notatoPlatform = 'flutter';
+
 double _round2(double n) => (n * 100).roundToDouble() / 100;
 
 /// `flutter://spud-shop/checkout`: where a note was made, in the shape of a URL like every SDK's.
@@ -126,7 +129,7 @@ Map<String, Object?> buildAnnotation({
       'userAgent': '$appName${appVersion == null ? '' : '/$appVersion'} (${device.os} ${device.osVersion}) Flutter',
       'viewport': {'w': _round2(device.width), 'h': _round2(device.height)},
       'dpr': device.pixelRatio,
-      'platform': 'flutter',
+      'platform': notatoPlatform,
       'sdk': {'name': notatoSdkName, 'version': notatoSdkVersion},
     },
     'target': {

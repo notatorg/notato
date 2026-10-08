@@ -16,7 +16,9 @@ import 'config.dart';
 import 'controller.dart';
 import 'identity.dart';
 import 'ids.dart';
+import 'note_book.dart';
 import 'platform.dart';
+import 'runtime.dart';
 import 'selectors.dart';
 import 'serial.dart';
 import 'storage.dart';
@@ -28,29 +30,54 @@ import 'ui/sheets.dart';
 import 'ui/theme.dart';
 import 'ui/toolbar.dart';
 
-/// Keeps the name of the route on top, for notes to be filed under (add it to your app's `navigatorObservers`).
+/// Knows the screen the person is on by its route's name, for notes to be filed under. Add [Notato.navigatorObserver]
+/// to your app's `navigatorObservers`.
 class NotatoRouteObserver extends NavigatorObserver {
-  String? current;
+  /// The navigator's routes, bottom first.
+  final _routes = <Route<dynamic>>[];
 
-  void _set(Route<dynamic>? route) {
-    final name = route?.settings.name;
-    if (name != null) current = name;
+  /// The name of the topmost route that has one, or null. A dialog or an unnamed page over a named screen keeps that
+  /// screen's name.
+  String? get current {
+    for (final route in _routes.reversed) {
+      final name = route.settings.name;
+      if (name != null) return name;
+    }
+    return null;
   }
 
   @override
-  void didPush(Route<dynamic> route, Route<dynamic>? previousRoute) => _set(route);
+  void didPush(Route<dynamic> route, Route<dynamic>? previousRoute) {
+    // A navigator that went away (the app built a new one) says nothing of its routes: they are gone from it.
+    _routes
+      ..removeWhere((r) => !r.isActive)
+      ..add(route);
+  }
+
   @override
-  void didPop(Route<dynamic> route, Route<dynamic>? previousRoute) => _set(previousRoute);
+  void didPop(Route<dynamic> route, Route<dynamic>? previousRoute) => _routes.remove(route);
+
   @override
-  void didReplace({Route<dynamic>? newRoute, Route<dynamic>? oldRoute}) => _set(newRoute);
+  void didRemove(Route<dynamic> route, Route<dynamic>? previousRoute) => _routes.remove(route);
+
   @override
-  void didRemove(Route<dynamic> route, Route<dynamic>? previousRoute) => _set(previousRoute);
+  void didReplace({Route<dynamic>? newRoute, Route<dynamic>? oldRoute}) {
+    final at = oldRoute == null ? -1 : _routes.indexOf(oldRoute);
+    if (newRoute == null) {
+      if (at >= 0) _routes.removeAt(at);
+    } else if (at >= 0) {
+      _routes[at] = newRoute;
+    } else {
+      _routes.add(newRoute);
+    }
+  }
 }
 
 /// Notato for Flutter: wrap your app in it. People tap Annotate, then any widget, and write what should change; the
 /// note reaches your coding agent with a screenshot, the widget and the file and line it is written at. In a release
 /// build it is your app and nothing else, unless [enabled] says otherwise.
 class Notato extends StatefulWidget {
+  /// Notato around [child], your app, for [project] on the server.
   const Notato({
     super.key,
     required this.project,
@@ -77,6 +104,8 @@ class Notato extends StatefulWidget {
 
   /// The project the notes belong to on the server. Letters, digits and `. _ - @`, not only dots.
   final String project;
+
+  /// Your app.
   final Widget child;
 
   /// `dev` (default): notes go live to `notato dev` and your agent. `test`: notes stay on the device until packaged as a
@@ -90,7 +119,11 @@ class Notato extends StatefulWidget {
 
   /// A project token (`pft_…`), for a shared server (`notato serve`).
   final String? token;
+
+  /// The app's name, recorded on every note. Default: `Flutter app`.
   final String? appName;
+
+  /// The app's version, recorded on every note.
   final String? appVersion;
 
   /// The name on this person's notes. They can change it in the toolbar's settings.
@@ -103,6 +136,8 @@ class Notato extends StatefulWidget {
   /// Whether Notato is on at launch. Default: debug builds. The app can switch it at runtime ([notato]). Picking a
   /// widget needs a debug build either way.
   final bool? enabled;
+
+  /// Show the toolbar at launch. The app can show or hide it at runtime.
   final bool showToolbar;
 
   /// The corner the toolbar starts in. People can drag it; where they leave it is remembered.
@@ -120,6 +155,8 @@ class Notato extends StatefulWidget {
 
   /// Attach the app's recent errors and `debugPrint` messages to each note.
   final bool captureLogs;
+
+  /// How many of the app's recent messages each note keeps, at most.
   final int logLimit;
 
   /// Pixels per point screenshots are kept at, at most. Phones are 2x to 3.5x; 2x is plenty.
@@ -130,6 +167,7 @@ class Notato extends StatefulWidget {
   final NotatoStorageFactory? storage;
 
   /// For tests: makes the HTTP clients the SDK uses.
+  @visibleForTesting
   final http.Client Function()? httpClient;
 
   /// Add to `MaterialApp(navigatorObservers: [Notato.navigatorObserver])` for notes to know the screen by its route.
@@ -148,6 +186,7 @@ class _Selection {
   final ({Shot? full, Shot? crop}) shots;
 }
 
+/// A pin as it is drawn: its note and number, and where its widget is now, or was (detached) when it cannot be found.
 class _Pin {
   const _Pin(this.record, this.number, this.rect, this.detached);
   final NoteRecord record;
@@ -159,6 +198,7 @@ class _Pin {
 /// The most pins drawn on one screen: the newest. The Notes list has every one.
 const maxPins = 150;
 
+/// The overlay: Notato's host, its pins, toolbar, composer and sheets, drawn over the app without ever rebuilding it.
 class _NotatoState extends State<Notato> with WidgetsBindingObserver implements NotatoHost {
   final _appKey = GlobalKey();
   final _shotKey = GlobalKey();
@@ -194,7 +234,7 @@ class _NotatoState extends State<Notato> with WidgetsBindingObserver implements 
 
   /// Decided once: a release build that changed its mind later would put the app in another place in the tree, and
   /// Flutter would build it again from scratch.
-  late final bool _available = kDebugMode || widget.enabled == true;
+  late final bool _available = kDebugMode || (widget.enabled ?? false);
 
   NotatoConfig get _config => NotatoConfig.resolve(
     project: widget.project,
@@ -220,27 +260,27 @@ class _NotatoState extends State<Notato> with WidgetsBindingObserver implements 
     super.initState();
     if (!_available) return;
     WidgetsBinding.instance.addObserver(this);
-    notato.addListener(_changed);
-    notato.attachHost(this);
-    notato.configure(_config, httpClient: widget.httpClient, storage: widget.storage);
+    runtime.addListener(_changed);
+    runtime.attachHost(this);
+    unawaited(runtime.configure(_config, httpClient: widget.httpClient, storage: widget.storage));
     _routeTimer = Timer.periodic(const Duration(milliseconds: 500), (_) {
-      if (mounted && notato.isEnabled && _drawnRoute != null && route() != _drawnRoute) _changed();
+      if (mounted && runtime.isEnabled && _drawnRoute != null && route() != _drawnRoute) _changed();
     });
   }
 
   @override
   void didUpdateWidget(Notato old) {
     super.didUpdateWidget(old);
-    if (_available) notato.configure(_config, httpClient: widget.httpClient, storage: widget.storage);
+    if (_available) unawaited(runtime.configure(_config, httpClient: widget.httpClient, storage: widget.storage));
   }
 
   @override
   void dispose() {
     if (_available) {
       WidgetsBinding.instance.removeObserver(this);
-      notato.removeListener(_changed);
+      runtime.removeListener(_changed);
       // Nothing, when another Notato has taken this one's place already.
-      notato.detach(this);
+      runtime.detach(this);
       _ui
         ..remove()
         ..dispose();
@@ -254,7 +294,7 @@ class _NotatoState extends State<Notato> with WidgetsBindingObserver implements 
   void _changed() {
     if (!mounted) return;
     // Annotating stopped from code: the selection goes with it.
-    if (!notato.isAnnotating) _selection = null;
+    if (!runtime.isAnnotating) _selection = null;
     setState(() {});
     _schedulePins();
   }
@@ -308,7 +348,7 @@ class _NotatoState extends State<Notato> with WidgetsBindingObserver implements 
     if (target is String) {
       List<TreeElement> found;
       try {
-        found = query(elementsUnder(root, maskInputs: notato.maskInputs), target);
+        found = query(elementsUnder(root, maskInputs: runtime.maskInputs), target);
       } on SelectorException catch (e) {
         throw NotatoException('Not a selector Notato reads: ${e.message}');
       }
@@ -316,20 +356,20 @@ class _NotatoState extends State<Notato> with WidgetsBindingObserver implements 
       // The first one on screen; else the first at all (scrolled away, say). Read again in full for the note.
       final screen = _screen;
       final match = found.firstWhere((e) => e.picked.rect.overlaps(screen), orElse: () => found.first).picked;
-      final full = identify(match.element, match.box, stop: root, maskInputs: notato.maskInputs);
+      final full = identify(match.element, match.box, stop: root, maskInputs: runtime.maskInputs);
       if (full == null) throw NotatoException('Nothing on this screen matches "$target".');
       return full;
     }
     final element = switch (target) {
-      GlobalKey key => key.currentContext as Element?,
-      Element element => element,
+      GlobalKey(:final currentContext) => currentContext as Element?,
+      final Element element => element,
       _ => null,
     };
     final box = element?.renderObject;
     if (element == null || box is! RenderBox || !box.hasSize) {
       throw const NotatoException('That widget is not on screen.');
     }
-    final picked = identify(element, box, stop: root, maskInputs: notato.maskInputs);
+    final picked = identify(element, box, stop: root, maskInputs: runtime.maskInputs);
     if (picked == null) throw const NotatoException('That widget is not one the app wrote: nothing to annotate.');
     return picked;
   }
@@ -343,13 +383,13 @@ class _NotatoState extends State<Notato> with WidgetsBindingObserver implements 
   Future<({Shot? full, Shot? crop})> _photograph(Picked picked, int pin, String id) async {
     final boundary = _shotKey.currentContext?.findRenderObject();
     final app = _appBox;
-    if (!mounted || !notato.screenshotsOn || boundary is! RenderRepaintBoundary || app == null) {
+    if (!mounted || !runtime.screenshotsOn || boundary is! RenderRepaintBoundary || app == null) {
       return (full: null, crop: null);
     }
     Rect local(Rect global) => boundary.globalToLocal(global.topLeft) & global.size;
     final rect = local(picked.rect);
-    final covers = coversUnder(app, maskInputs: notato.maskInputs).map(local).toList();
-    final ratio = math.min(View.of(context).devicePixelRatio, notato.configuration?.maxScreenshotScale ?? 2);
+    final covers = coversUnder(app, maskInputs: runtime.maskInputs).map(local).toList();
+    final ratio = math.min(View.of(context).devicePixelRatio, runtime.configuration?.maxScreenshotScale ?? 2);
     ui.Image? plain;
     ui.Image? outlined;
     try {
@@ -380,7 +420,7 @@ class _NotatoState extends State<Notato> with WidgetsBindingObserver implements 
 
   @override
   void select(Picked picked) {
-    notato.startAnnotating();
+    runtime.startAnnotating();
     unawaited(_choose(picked));
   }
 
@@ -403,7 +443,7 @@ class _NotatoState extends State<Notato> with WidgetsBindingObserver implements 
   // ---- picking and writing a note ----------------------------------------------------------------------------------
 
   Future<void> _choose(Picked picked, {_Selection? keep}) async {
-    final pin = keep?.pin ?? notato.nextPin(route());
+    final pin = keep?.pin ?? runtime.nextPin(route());
     final id = keep?.id ?? ulid();
     final shots = await capture(picked, pin, id);
     if (!mounted) return;
@@ -417,7 +457,7 @@ class _NotatoState extends State<Notato> with WidgetsBindingObserver implements 
     final root = _appElement;
     final box = _appBox;
     if (root == null || box == null) return;
-    final picked = pickAt(box, global, stop: root, maskInputs: notato.maskInputs);
+    final picked = pickAt(box, global, stop: root, maskInputs: runtime.maskInputs);
     if (picked == null) {
       toast('Nothing to annotate there.');
       return;
@@ -429,7 +469,7 @@ class _NotatoState extends State<Notato> with WidgetsBindingObserver implements 
     final selection = _selection;
     final root = _appElement;
     if (selection == null || root == null) return;
-    final parent = parentOf(selection.picked, stop: root, maskInputs: notato.maskInputs);
+    final parent = parentOf(selection.picked, stop: root, maskInputs: runtime.maskInputs);
     if (parent == null) {
       toast('Nothing around this one to select.');
       return;
@@ -439,16 +479,16 @@ class _NotatoState extends State<Notato> with WidgetsBindingObserver implements 
 
   void _cancel() {
     setState(() => _selection = null);
-    notato.stopAnnotating();
+    runtime.stopAnnotating();
   }
 
   Future<void> _send(Draft draft) async {
     final chosen = _selection;
     if (chosen == null) return;
     setState(() => _selection = null);
-    notato.stopAnnotating();
+    runtime.stopAnnotating();
     try {
-      final made = await notato.createNote(
+      final made = await runtime.createNote(
         chosen.picked,
         comment: draft.comment,
         intent: draft.intent,
@@ -459,7 +499,7 @@ class _NotatoState extends State<Notato> with WidgetsBindingObserver implements 
         full: chosen.shots.full,
         crop: chosen.shots.crop,
       );
-      toast(made.problem ?? (notato.hasServer ? 'Sent' : 'Saved on this device. Package it from the menu.'));
+      toast(made.problem ?? (runtime.hasServer ? 'Sent' : 'Saved on this device. Package it from the menu.'));
     } catch (e) {
       toast('Not saved: $e');
     }
@@ -471,7 +511,7 @@ class _NotatoState extends State<Notato> with WidgetsBindingObserver implements 
       toast('Annotating needs a debug build of the app.');
       return;
     }
-    notato.startAnnotating();
+    runtime.startAnnotating();
   }
 
   void _open(Sheet? sheet) => setState(() => _sheet = sheet);
@@ -488,7 +528,7 @@ class _NotatoState extends State<Notato> with WidgetsBindingObserver implements 
       });
       return true;
     }
-    if (_selection != null || notato.isAnnotating) {
+    if (_selection != null || runtime.isAnnotating) {
       _cancel();
       return true;
     }
@@ -499,11 +539,11 @@ class _NotatoState extends State<Notato> with WidgetsBindingObserver implements 
 
   void _schedulePins() {
     final wanted =
-        notato.isEnabled &&
-        notato.pinsVisible &&
+        runtime.isEnabled &&
+        runtime.pinsVisible &&
         _selection == null &&
-        !notato.isAnnotating &&
-        notato.pinsOn(route()).isNotEmpty;
+        !runtime.isAnnotating &&
+        runtime.pinsOn(route()).isNotEmpty;
     if (!wanted) {
       _pinTimer?.cancel();
       _pinTimer = null;
@@ -533,7 +573,7 @@ class _NotatoState extends State<Notato> with WidgetsBindingObserver implements 
   void _placePins() {
     final root = _appElement;
     if (!mounted || root == null) return;
-    final here = notato.pinsOn(route());
+    final here = runtime.pinsOn(route());
     // Nothing drawn, and the same screen with the same notes as the last time: the pins are where they were.
     if (!_drawn && identical(_placedFor, here)) return;
     _drawn = false;
@@ -552,7 +592,7 @@ class _NotatoState extends State<Notato> with WidgetsBindingObserver implements 
       Rect? found;
       if (identity is Map) {
         try {
-          elements ??= elementsUnder(root, maskInputs: notato.maskInputs);
+          elements ??= elementsUnder(root, maskInputs: runtime.maskInputs);
           index ??= indexOf(elements);
           final matches = query(elements, selectorToFind(identity.cast<String, Object?>()), index: index).take(12);
           // Of several alike (a list's rows), the one nearest where the note was made.
@@ -665,7 +705,7 @@ class _NotatoState extends State<Notato> with WidgetsBindingObserver implements 
   }
 
   Widget _buildUi(BuildContext context) {
-    if (!notato.isEnabled) return const SizedBox.shrink();
+    if (!runtime.isEnabled) return const SizedBox.shrink();
     final media = MediaQuery.of(context);
     final size = media.size;
     final rootBox = _rootKey.currentContext?.findRenderObject();
@@ -674,10 +714,10 @@ class _NotatoState extends State<Notato> with WidgetsBindingObserver implements 
     final hiding = _capturing != null;
     final selection = _selection;
     final screen = _drawnRoute = route();
-    final here = notato.notesOn(screen);
+    final here = runtime.notesOn(screen);
     final sheet = _sheet;
     final spots = placePins([for (final p in _pins) toLocal(p.rect)], size.width, top: media.padding.top + 4);
-    final problem = switch (notato.connection) {
+    final problem = switch (runtime.connection) {
       NotatoConnection.connecting => Brand.connecting,
       NotatoConnection.offline || NotatoConnection.refused => Brand.offline,
       _ => null,
@@ -687,7 +727,7 @@ class _NotatoState extends State<Notato> with WidgetsBindingObserver implements 
     return Stack(
       children: [
         // Takes the taps that pick while annotating; Notato's own controls sit above it.
-        if (notato.isAnnotating && sheet == null)
+        if (runtime.isAnnotating && sheet == null)
           Positioned.fill(
             child: GestureDetector(
               key: const ValueKey('NotatoPicker'),
@@ -713,28 +753,28 @@ class _NotatoState extends State<Notato> with WidgetsBindingObserver implements 
                   ),
                 ),
               ),
-          if (notato.isAnnotating && selection == null && sheet == null)
+          if (runtime.isAnnotating && selection == null && sheet == null)
             Positioned(
               top: media.padding.top + 4,
               left: 16,
               right: 16,
               child: Center(child: HintBar(done: _cancel)),
             ),
-          if (notato.isToolbarVisible && selection == null)
+          if (runtime.isToolbarVisible && selection == null)
             Toolbar(
               room: size,
               insets: media.padding,
-              place: (x: notato.toolbar.x, y: notato.toolbar.y),
-              corner: notato.configuration?.toolbarPosition ?? NotatoPosition.bottomRight,
-              folded: notato.toolbar.folded,
-              annotating: notato.isAnnotating,
+              place: (x: runtime.toolbar.x, y: runtime.toolbar.y),
+              corner: runtime.configuration?.toolbarPosition ?? NotatoPosition.bottomRight,
+              folded: runtime.toolbar.folded,
+              annotating: runtime.isAnnotating,
               count: here.length,
               problem: problem,
-              problemLabel: notato.describeConnection(),
-              onAnnotate: () => notato.isAnnotating ? _cancel() : _startAnnotating(),
+              problemLabel: runtime.describeConnection(),
+              onAnnotate: () => runtime.isAnnotating ? _cancel() : _startAnnotating(),
               onMenu: () => _open(const MenuSheetKind()),
-              onFold: notato.setFolded,
-              onMoved: notato.placeToolbar,
+              onFold: runtime.setFolded,
+              onMoved: runtime.placeToolbar,
             ),
           if (selection != null)
             Positioned(
@@ -747,8 +787,7 @@ class _NotatoState extends State<Notato> with WidgetsBindingObserver implements 
                   key: ValueKey(selection.id),
                   title: _title(selection.picked),
                   subtitle: _subtitle(selection.picked),
-                  screenshotsOff: !notato.screenshotsOn,
-                  canParent: true,
+                  screenshotsOff: !runtime.screenshotsOn,
                   onParent: _parent,
                   onCancel: _cancel,
                   onSend: _send,
@@ -788,20 +827,20 @@ class _NotatoState extends State<Notato> with WidgetsBindingObserver implements 
     );
   }
 
-  Widget _sheetFor(Sheet sheet, List<({int number, NoteRecord record})> here) => switch (sheet) {
+  Widget _sheetFor(Sheet sheet, ScreenNotes here) => switch (sheet) {
     MenuSheetKind() => MenuSheet(
-      notato: notato,
+      runtime: runtime,
       here: here.length,
-      pins: notato.pinsOn(_drawnRoute ?? route()).length,
+      pins: runtime.pinsOn(_drawnRoute ?? route()).length,
       open: _open,
       annotate: _startAnnotating,
-      packageAndShare: () => notato.packageAndShare().then(toast, onError: (Object e) => toast('$e')),
+      packageAndShare: () => unawaited(runtime.packageAndShare().then(toast, onError: (Object e) => toast('$e'))),
     ),
-    ListSheetKind() => NotesSheet(notato: notato, list: here, open: _open, annotate: _startAnnotating),
-    SettingsSheetKind() => SettingsSheet(notato: notato, open: _open, toast: toast),
-    ClearSheetKind() => ClearSheet(notato: notato, open: _open, toast: toast),
+    ListSheetKind() => NotesSheet(runtime: runtime, list: here, open: _open, annotate: _startAnnotating),
+    SettingsSheetKind() => SettingsSheet(runtime: runtime, open: _open, toast: toast),
+    ClearSheetKind() => ClearSheet(runtime: runtime, open: _open, toast: toast),
     PinSheetKind(:final id, :final fromList) => () {
-      final record = notato.notes.where((r) => r.id == id).firstOrNull;
+      final record = runtime.note(id);
       if (record == null) {
         return const Padding(
           padding: EdgeInsets.all(20),
@@ -811,7 +850,7 @@ class _NotatoState extends State<Notato> with WidgetsBindingObserver implements 
       final number = here.where((n) => n.record.id == id).firstOrNull?.number ?? 0;
       return NoteCard(
         key: ValueKey(id),
-        notato: notato,
+        runtime: runtime,
         record: record,
         number: number,
         fromList: fromList,
@@ -828,13 +867,12 @@ class _NotatoState extends State<Notato> with WidgetsBindingObserver implements 
     return component == null || component == tag ? tag : '$component › $tag';
   }
 
+  /// What the composer says under the title: the widget's key or text, and the file and line it is written at.
   String? _subtitle(Picked picked) {
     final id = picked.identity;
-    final said = id['testId'] != null
-        ? '#${id['testId']}'
-        : id['text'] is String
-        ? '“${(id['text'] as String).length > 40 ? (id['text'] as String).substring(0, 40) : id['text']}”'
-        : id['name'] as String?;
+    final testId = id['testId'] as String?;
+    final text = id['text'] as String?;
+    final said = testId != null ? '#$testId' : (text != null ? '“${clip(text, 40)}”' : id['name'] as String?);
     final source = id['source'] as Map?;
     final where = source == null ? null : '${(source['file'] as String).split('/').last}:${source['line']}';
     final parts = [?said, ?where];
@@ -842,6 +880,7 @@ class _NotatoState extends State<Notato> with WidgetsBindingObserver implements 
   }
 }
 
+/// The outline around the widget a note is about, with the note's number.
 class _Outline extends StatelessWidget {
   const _Outline({required this.pin});
   final int pin;

@@ -21,6 +21,7 @@ Future<NotatoStorage?> openStorage(String project) async {
 /// How long a file waits to be written after a change: a burst of changes is one write.
 const writeDelay = Duration(milliseconds: 300);
 
+/// A project's notes, screenshots and choices as files in a folder: `notes.json`, `settings.json` and `shots/`.
 class FileStorage implements NotatoStorage {
   FileStorage(this.root);
   final Directory root;
@@ -42,9 +43,6 @@ class FileStorage implements NotatoStorage {
     }
     return null;
   }
-
-  @override
-  bool get persistent => true;
 
   @override
   List<LocalNote> loadNotes() {
@@ -104,6 +102,7 @@ class _Writer {
   Timer? _timer;
   var _writing = false;
   var _again = false;
+  Completer<void>? _settled;
 
   Object? get value => _value;
 
@@ -135,15 +134,15 @@ class _Writer {
       } while (_again);
     } finally {
       _writing = false;
+      if (_timer == null) {
+        _settled?.complete();
+        _settled = null;
+      }
     }
   }
 
   /// For tests: done when what was saved so far is on the disk.
-  Future<void> get settled async {
-    while (_timer != null || _writing) {
-      await Future<void>.delayed(const Duration(milliseconds: 20));
-    }
-  }
+  Future<void> get settled => _timer == null && !_writing ? Future.value() : (_settled ??= Completer<void>()).future;
 }
 
 /// For tests: done when everything saved so far through any [FileStorage] is on the disk.

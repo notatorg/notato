@@ -14,7 +14,6 @@ class Composer extends StatefulWidget {
     required this.title,
     this.subtitle,
     required this.screenshotsOff,
-    required this.canParent,
     required this.onParent,
     required this.onCancel,
     required this.onSend,
@@ -22,7 +21,8 @@ class Composer extends StatefulWidget {
   final String title;
   final String? subtitle;
   final bool screenshotsOff;
-  final bool canParent;
+
+  /// Selects the widget around this one.
   final VoidCallback onParent;
   final VoidCallback onCancel;
   final ValueChanged<Draft> onSend;
@@ -99,35 +99,33 @@ class _ComposerState extends State<Composer> {
                       ],
                     ),
                   ),
-                  if (widget.canParent) ...[
-                    const SizedBox(width: 8),
-                    Semantics(
-                      button: true,
-                      hint: 'Select the widget around this one',
-                      child: Material(
-                        color: p.soft,
-                        shape: const StadiumBorder(),
-                        child: InkWell(
-                          customBorder: const StadiumBorder(),
-                          onTap: widget.onParent,
-                          child: SizedBox(
-                            height: 30,
-                            child: Padding(
-                              padding: const EdgeInsets.symmetric(horizontal: 11),
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  NotatoIcon('up', size: 13, color: p.text),
-                                  const SizedBox(width: 4),
-                                  const Text('Parent', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600)),
-                                ],
-                              ),
+                  const SizedBox(width: 8),
+                  Semantics(
+                    button: true,
+                    hint: 'Select the widget around this one',
+                    child: Material(
+                      color: p.soft,
+                      shape: const StadiumBorder(),
+                      child: InkWell(
+                        customBorder: const StadiumBorder(),
+                        onTap: widget.onParent,
+                        child: SizedBox(
+                          height: 30,
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 11),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                NotatoIcon('up', size: 13, color: p.text),
+                                const SizedBox(width: 4),
+                                const Text('Parent', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600)),
+                              ],
                             ),
                           ),
                         ),
                       ),
                     ),
-                  ],
+                  ),
                   const SizedBox(width: 8),
                   HeaderButton.close(onPressed: widget.onCancel, label: 'Cancel'),
                 ],

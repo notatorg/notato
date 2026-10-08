@@ -5,5 +5,24 @@ analyzer:
     - build/**
     - example/build/**
 
+linter:
+  rules:
+    - always_declare_return_types
+    - avoid_redundant_argument_values
+    - comment_references
+    - directives_ordering
+    - discarded_futures
+    - document_ignores
+    - missing_code_block_language_in_doc_comment
+    - only_throw_errors
+    - prefer_final_in_for_each
+    - prefer_final_locals
+    - prefer_single_quotes
+    - unawaited_futures
+    - unintended_html_in_doc_comment
+    - unnecessary_lambdas
+    - unnecessary_parenthesis
+    - use_if_null_to_convert_nulls_to_bools
+
 formatter:
   page_width: 120

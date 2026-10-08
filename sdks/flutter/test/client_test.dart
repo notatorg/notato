@@ -28,9 +28,8 @@ class SilentClient extends http.BaseClient {
     closed = true;
     if (!_answer.isCompleted) _answer.completeError(http.ClientException('Client is already closed'));
     if (!_body.isClosed) {
-      _body
-        ..addError(http.ClientException('Connection closed while receiving data'))
-        ..close();
+      _body.addError(http.ClientException('Connection closed while receiving data'));
+      unawaited(_body.close());
     }
   }
 }

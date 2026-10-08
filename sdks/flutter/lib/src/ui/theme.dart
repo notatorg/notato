@@ -16,7 +16,6 @@ abstract final class Bar {
 
 abstract final class Brand {
   static const accent = Color(0xFF1F8A78);
-  static const accentPressed = Color(0xFF187465);
   static const danger = Color(0xFFD6453D);
   static const selection = Color(0xFFE5484D);
   static const connected = Color(0xFF2E9A5B);
@@ -71,6 +70,9 @@ Color statusColor(String status) => switch (status) {
   'dismissed' => const Color(0xFF9A9A9A),
   _ => Brand.accent,
 };
+
+/// At most [max] characters of [text], ending in an ellipsis when it was cut.
+String clip(String text, int max) => text.length > max ? '${text.substring(0, max - 1)}…' : text;
 
 /// "2h ago".
 String? ago(String iso, [DateTime? now]) {

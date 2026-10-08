@@ -11,8 +11,21 @@ enum NotatoMode {
 }
 
 /// The corner the toolbar starts in.
-enum NotatoPosition { bottomRight, bottomLeft, topRight, topLeft }
+enum NotatoPosition {
+  /// The bottom right corner, the default.
+  bottomRight,
 
+  /// The bottom left corner.
+  bottomLeft,
+
+  /// The top right corner, under the status bar.
+  topRight,
+
+  /// The top left corner, under the status bar.
+  topLeft,
+}
+
+/// Where `notato dev` listens: the server in dev and agent mode unless the app says otherwise.
 const defaultServer = 'http://localhost:4747';
 
 /// The configuration with its defaults filled in.
@@ -55,7 +68,8 @@ class NotatoConfig {
   final int logLimit;
   final double maxScreenshotScale;
 
-  /// `server`: null for the mode's default (localhost in dev and agent mode, none in test mode), empty for none.
+  /// The `Notato` widget's options with their defaults filled in. `server`: null for the mode's default (localhost in
+  /// dev and agent mode, none in test mode), empty for none.
   static NotatoConfig resolve({
     required String project,
     NotatoMode mode = NotatoMode.dev,

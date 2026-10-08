@@ -1,13 +1,12 @@
 import 'storage.dart';
 
-/// Keeps everything in memory: gone when the app restarts.
+/// Keeps everything in memory: gone when the app restarts. `Notato(storage: (_) async => MemoryStorage())` keeps notes
+/// and choices for this run only.
 class MemoryStorage implements NotatoStorage {
   var _notes = <LocalNote>[];
   var _settings = <String, Object?>{};
   final _assets = <String, List<int>>{};
 
-  @override
-  bool get persistent => false;
   @override
   List<LocalNote> loadNotes() => _notes;
   @override

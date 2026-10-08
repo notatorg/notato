@@ -14,8 +14,10 @@ import 'package:flutter/widgets.dart';
 /// NotatoMask(private: false, child: TextField(decoration: InputDecoration(hintText: 'Search')))
 /// ```
 class NotatoMask extends SingleChildRenderObjectWidget {
+  /// Marks [child] as private, or (`private: false`) its text fields as fine to record.
   const NotatoMask({super.key, this.private = true, super.child});
 
+  /// Private: covered in screenshots and never recorded. False: the text fields inside are recorded.
   final bool private;
 
   @override
@@ -28,5 +30,7 @@ class NotatoMask extends SingleChildRenderObjectWidget {
 /// The render side of [NotatoMask]: screenshots find what to cover by it, and text is not read from under it.
 class RenderNotatoMask extends RenderProxyBox {
   RenderNotatoMask(this.isPrivate);
+
+  /// What [NotatoMask.private] says. Read only when Notato looks at the screen, so a change needs no repaint.
   bool isPrivate;
 }

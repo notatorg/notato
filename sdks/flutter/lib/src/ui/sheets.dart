@@ -1,8 +1,12 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart' hide Badge;
 
 import '../annotation.dart';
 import '../config.dart';
 import '../controller.dart';
+import '../note_book.dart';
+import '../runtime.dart';
 import 'parts.dart';
 import 'theme.dart';
 
@@ -11,22 +15,27 @@ sealed class Sheet {
   const Sheet();
 }
 
+/// The toolbar's ⋯ menu.
 class MenuSheetKind extends Sheet {
   const MenuSheetKind();
 }
 
+/// The Notes list.
 class ListSheetKind extends Sheet {
   const ListSheetKind();
 }
 
+/// The settings.
 class SettingsSheetKind extends Sheet {
   const SettingsSheetKind();
 }
 
+/// Test mode: whether to clear the notes on the device.
 class ClearSheetKind extends Sheet {
   const ClearSheetKind();
 }
 
+/// A note's card, opened from its pin or from the Notes list (and Back goes to the list).
 class PinSheetKind extends Sheet {
   const PinSheetKind(this.id, {this.fromList = false});
   final String id;
@@ -45,14 +54,14 @@ String _device(BuildContext context) => switch (Theme.of(context).platform) {
 class MenuSheet extends StatelessWidget {
   const MenuSheet({
     super.key,
-    required this.notato,
+    required this.runtime,
     required this.here,
     required this.pins,
     required this.open,
     required this.annotate,
     required this.packageAndShare,
   });
-  final NotatoController notato;
+  final NotatoRuntime runtime;
 
   /// The notes on this screen.
   final int here;
@@ -66,29 +75,29 @@ class MenuSheet extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final p = Palette.of(context);
-    final host = notato.serverHost;
+    final host = runtime.serverHost;
     final device = _device(context);
-    final pending = notato.pendingCount;
-    final subline = '${_capital(notato.mode.name)} mode · ${host ?? 'notes stay on this $device'}';
-    final pill = !notato.hasServer
+    final pending = runtime.pendingCount;
+    final subline = '${_capital(runtime.mode.name)} mode · ${host ?? 'notes stay on this $device'}';
+    final pill = !runtime.hasServer
         ? null
-        : switch (notato.connection) {
+        : switch (runtime.connection) {
             NotatoConnection.connected => ('Connected', Brand.connected),
             NotatoConnection.connecting => ('Connecting…', statusColor('acknowledged')),
             NotatoConnection.offline => ('Offline', Brand.offline),
             NotatoConnection.refused => ('Refused', Brand.offline),
             _ => null,
           };
-    final problem = !notato.hasServer
+    final problem = !runtime.hasServer
         ? null
-        : switch (notato.connection) {
+        : switch (runtime.connection) {
             NotatoConnection.offline => (
               "Can't reach the server",
               "${host ?? 'The server'} isn't answering. Notes stay on this $device and send when it's back.",
             ),
             NotatoConnection.refused => (
               'The server refused this app',
-              notato.connectionDetail ?? "${host ?? 'The server'} did not accept this app's token or project.",
+              runtime.connectionDetail ?? "${host ?? 'The server'} did not accept this app's token or project.",
             ),
             _ => null,
           };
@@ -165,7 +174,7 @@ class MenuSheet extends StatelessWidget {
                   borderRadius: BorderRadius.circular(10),
                   child: InkWell(
                     borderRadius: BorderRadius.circular(10),
-                    onTap: notato.retryConnection,
+                    onTap: runtime.retryConnection,
                     child: Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
                       child: Text(
@@ -191,23 +200,23 @@ class MenuSheet extends StatelessWidget {
                   onTap: () => run(annotate),
                 ),
                 MenuRow(
-                  tile: SheetTile.icon(notato.pinsVisible ? 'eyeOff' : 'eye'),
-                  title: notato.pinsVisible ? 'Hide pins' : 'Show pins',
+                  tile: SheetTile.icon(runtime.pinsVisible ? 'eyeOff' : 'eye'),
+                  title: runtime.pinsVisible ? 'Hide pins' : 'Show pins',
                   detail: pins == 0
                       ? 'No pins on this screen'
                       : pins == 1
                       ? '1 pin on this screen'
                       : '$pins pins on this screen',
-                  onTap: () => run(notato.togglePins),
+                  onTap: () => run(runtime.togglePins),
                 ),
                 MenuRow(
                   tile: const SheetTile.icon('list'),
                   title: 'Notes',
-                  detail: '$here on this screen · ${notato.notes.length} in all',
+                  detail: '$here on this screen · ${runtime.notes.length} in all',
                   opens: true,
                   onTap: () => open(const ListSheetKind()),
                 ),
-                if (notato.mode == NotatoMode.test && pending > 0) ...[
+                if (runtime.mode == NotatoMode.test && pending > 0) ...[
                   MenuRow(
                     tile: const SheetTile.icon('package'),
                     title: 'Package and share',
@@ -237,14 +246,14 @@ class MenuSheet extends StatelessWidget {
                   title: 'Hide toolbar',
                   detail: 'The app can bring it back',
                   separated: true,
-                  onTap: () => run(notato.hideToolbar),
+                  onTap: () => run(runtime.hideToolbar),
                 ),
                 MenuRow(
                   tile: const SheetTile.icon('power', style: TileStyle.danger),
                   title: 'Turn Notato off',
                   detail: 'Until the app turns it on again',
                   danger: true,
-                  onTap: () => run(notato.disable),
+                  onTap: () => run(runtime.disable),
                 ),
               ],
             ),
@@ -255,19 +264,20 @@ class MenuSheet extends StatelessWidget {
   }
 }
 
-/// The notes on this screen, each opening its card.
 /// Every note on this screen, newest first, each opening its card: a list that builds only the rows in sight.
 class NotesSheet extends StatelessWidget {
-  const NotesSheet({super.key, required this.notato, required this.list, required this.open, required this.annotate});
-  final NotatoController notato;
-  final List<({int number, NoteRecord record})> list;
+  const NotesSheet({super.key, required this.runtime, required this.list, required this.open, required this.annotate});
+  final NotatoRuntime runtime;
+
+  /// The notes on this screen, numbered, oldest first.
+  final ScreenNotes list;
   final ValueChanged<Sheet?> open;
   final VoidCallback annotate;
 
   @override
   Widget build(BuildContext context) {
     final p = Palette.of(context);
-    final others = notato.notes.length - list.length;
+    final others = runtime.notes.length - list.length;
     final footer = others <= 0 ? 0 : 1;
     return Column(
       mainAxisSize: MainAxisSize.min,
@@ -275,7 +285,7 @@ class NotesSheet extends StatelessWidget {
       children: [
         SheetHeader(
           title: 'Notes',
-          subtitle: '${list.length} on this screen · ${notato.notes.length} in all',
+          subtitle: '${list.length} on this screen · ${runtime.notes.length} in all',
           leading: HeaderButton.back(onPressed: () => open(const MenuSheetKind())),
           trailing: HeaderButton.close(onPressed: () => open(null)),
         ),
@@ -337,8 +347,8 @@ class NotesSheet extends StatelessWidget {
 
 /// Your name, screenshots and the server; Reset goes back to the app's configuration.
 class SettingsSheet extends StatefulWidget {
-  const SettingsSheet({super.key, required this.notato, required this.open, required this.toast});
-  final NotatoController notato;
+  const SettingsSheet({super.key, required this.runtime, required this.open, required this.toast});
+  final NotatoRuntime runtime;
   final ValueChanged<Sheet?> open;
   final ValueChanged<String> toast;
 
@@ -347,11 +357,11 @@ class SettingsSheet extends StatefulWidget {
 }
 
 class _SettingsSheetState extends State<SettingsSheet> {
-  late final _name = TextEditingController(text: widget.notato.authorName ?? '');
+  late final _name = TextEditingController(text: widget.runtime.authorName ?? '');
   late final _server = TextEditingController(
-    text: widget.notato.server != widget.notato.configuration?.server ? (widget.notato.server ?? '') : '',
+    text: widget.runtime.server != widget.runtime.configuration?.server ? (widget.runtime.server ?? '') : '',
   );
-  late bool _screenshots = widget.notato.screenshotsWanted;
+  late bool _screenshots = widget.runtime.screenshotsWanted;
 
   @override
   void dispose() {
@@ -362,7 +372,7 @@ class _SettingsSheetState extends State<SettingsSheet> {
 
   @override
   Widget build(BuildContext context) {
-    final notato = widget.notato;
+    final runtime = widget.runtime;
     final p = Palette.of(context);
     return Column(
       mainAxisSize: MainAxisSize.min,
@@ -370,7 +380,7 @@ class _SettingsSheetState extends State<SettingsSheet> {
       children: [
         SheetHeader(
           title: 'Settings',
-          subtitle: 'Project ${notato.configuration?.project ?? ''} · ${_capital(notato.mode.name)} mode',
+          subtitle: 'Project ${runtime.configuration?.project ?? ''} · ${_capital(runtime.mode.name)} mode',
           leading: HeaderButton.back(onPressed: () => widget.open(const MenuSheetKind())),
           trailing: HeaderButton.close(onPressed: () => widget.open(null)),
         ),
@@ -399,19 +409,19 @@ class _SettingsSheetState extends State<SettingsSheet> {
                   style: TextStyle(color: p.text, fontSize: 15),
                   decoration: fieldDecoration(
                     context,
-                    notato.configuration?.server ?? 'No server: notes stay on this device',
+                    runtime.configuration?.server ?? 'No server: notes stay on this device',
                   ),
                 ),
                 const SizedBox(height: 6),
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 4),
-                  child: Text(notato.describeConnection(), style: TextStyle(fontSize: 12, color: p.muted)),
+                  child: Text(runtime.describeConnection(), style: TextStyle(fontSize: 12, color: p.muted)),
                 ),
                 const SizedBox(height: 8),
                 FlagToggle(
                   tile: const SheetTile.icon('camera'),
                   title: 'Screenshots',
-                  hint: notato.serverScreenshots
+                  hint: runtime.serverScreenshots
                       ? 'Each note takes one of the screen'
                       : 'The server has them turned off',
                   value: _screenshots,
@@ -428,7 +438,7 @@ class _SettingsSheetState extends State<SettingsSheet> {
               child: SheetButton(
                 'Reset',
                 onPressed: () {
-                  notato.resetRuntimeState();
+                  runtime.resetRuntimeState();
                   widget.open(null);
                 },
               ),
@@ -440,7 +450,7 @@ class _SettingsSheetState extends State<SettingsSheet> {
                 key: const ValueKey('NotatoSaveSettings'),
                 kind: ButtonKind.primary,
                 onPressed: () {
-                  final message = notato.saveSettings(
+                  final message = runtime.saveSettings(
                     name: _name.text,
                     screenshots: _screenshots,
                     server: _server.text,
@@ -457,15 +467,16 @@ class _SettingsSheetState extends State<SettingsSheet> {
   }
 }
 
+/// Test mode: asks before the notes on the device are cleared.
 class ClearSheet extends StatelessWidget {
-  const ClearSheet({super.key, required this.notato, required this.open, required this.toast});
-  final NotatoController notato;
+  const ClearSheet({super.key, required this.runtime, required this.open, required this.toast});
+  final NotatoRuntime runtime;
   final ValueChanged<Sheet?> open;
   final ValueChanged<String> toast;
 
   @override
   Widget build(BuildContext context) {
-    final n = notato.pendingCount;
+    final n = runtime.pendingCount;
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -493,7 +504,7 @@ class ClearSheet extends StatelessWidget {
                 'Clear',
                 kind: ButtonKind.destructive,
                 onPressed: () {
-                  notato.clearLocal();
+                  runtime.clearLocal();
                   open(null);
                   toast('Notes cleared');
                 },
@@ -577,14 +588,14 @@ const _keptHere = 'Kept on this device. Package it from the menu to share it.';
 class NoteCard extends StatefulWidget {
   const NoteCard({
     super.key,
-    required this.notato,
+    required this.runtime,
     required this.record,
     required this.number,
     required this.fromList,
     required this.open,
     required this.toast,
   });
-  final NotatoController notato;
+  final NotatoRuntime runtime;
   final NoteRecord record;
   final int number;
   final bool fromList;
@@ -608,51 +619,49 @@ class _NoteCardState extends State<NoteCard> {
     super.dispose();
   }
 
-  void _run(Future<void> Function() action, String done) {
+  /// Runs one of the card's actions: the card closes and says [done] when it worked, and says what went wrong when it
+  /// did not. One at a time.
+  Future<void> _run(Future<void> Function() action, String done) async {
     if (_busy) return;
     setState(() {
       _busy = true;
       _problem = null;
     });
-    action()
-        .then(
-          (_) {
-            widget.open(null);
-            widget.toast(done);
-          },
-          onError: (Object e) {
-            if (mounted) setState(() => _problem = '$e');
-          },
-        )
-        .whenComplete(() {
-          if (mounted) setState(() => _busy = false);
-        });
+    try {
+      await action();
+      widget.open(null);
+      widget.toast(done);
+    } catch (e) {
+      if (mounted) setState(() => _problem = '$e');
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
   }
 
-  void _setPeopleOnly(bool on) {
+  /// The People only switch: shows the new value while the change is made, and the old one again if it fails.
+  Future<void> _setPeopleOnly(bool on) async {
     if (_asked != null || on == widget.record.peopleOnly) return;
     setState(() {
       _asked = on;
       _problem = null;
     });
-    widget.notato
-        .setPeopleOnly(widget.record.id, on)
-        .catchError((Object e) {
-          if (mounted) setState(() => _problem = '$e');
-        })
-        .whenComplete(() {
-          if (mounted) setState(() => _asked = null);
-        });
+    try {
+      await widget.runtime.setPeopleOnly(widget.record.id, on);
+    } catch (e) {
+      if (mounted) setState(() => _problem = '$e');
+    } finally {
+      if (mounted) setState(() => _asked = null);
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     final p = Palette.of(context);
-    final notato = widget.notato;
+    final runtime = widget.runtime;
     final record = widget.record;
     final a = record.annotation;
     final status = record.status;
-    final live = notato.hasServer && !record.pending;
+    final live = runtime.hasServer && !record.pending;
     final author = a['author'] as Map? ?? const {};
     final byline = [
       author['name'] as String? ?? (author['kind'] == 'agent' ? 'An agent' : null),
@@ -664,7 +673,7 @@ class _NoteCardState extends State<NoteCard> {
       final text = identity['text'] as String?;
       target =
           '${identity['tag']}${identity['testId'] != null ? ' #${identity['testId']}' : ''}'
-          '${text != null ? ' “${text.length > 30 ? '${text.substring(0, 29)}…' : text}”' : ''}';
+          '${text != null ? ' “${clip(text, 30)}”' : ''}';
     }
     final thread = ((a['thread'] as List?) ?? const []).whereType<Map>().map((m) => m.cast<String, Object?>()).toList();
     final intent = a['intent'] as String?;
@@ -674,19 +683,21 @@ class _NoteCardState extends State<NoteCard> {
         if (status == 'resolved')
           SheetButton(
             'Ask the agent to revert',
-            onPressed: () =>
-                _run(() => notato.requestRevert(record.id, reason: _reply.text), 'Asked the agent to undo that change'),
+            onPressed: () => _run(
+              () => runtime.requestRevert(record.id, reason: _reply.text),
+              'Asked the agent to undo that change',
+            ),
           ),
         if (status == 'revert_requested')
           SheetButton(
             'Cancel request',
-            onPressed: () => _run(() => notato.cancelRevert(record.id), 'Revert request taken back'),
+            onPressed: () => _run(() => runtime.cancelRevert(record.id), 'Revert request taken back'),
           ),
         if (record.mine && status == 'open')
           SheetButton(
             'Delete',
             kind: ButtonKind.danger,
-            onPressed: () => _run(() => notato.delete(record.id), 'Note deleted'),
+            onPressed: () => _run(() => runtime.delete(record.id), 'Note deleted'),
           ),
         SheetButton(
           'Reply',
@@ -699,17 +710,19 @@ class _NoteCardState extends State<NoteCard> {
               return;
             }
             final aside = _aside;
-            _run(() async {
-              await notato.reply(record.id, text, aside: aside);
-              if (mounted) setState(() => _aside = false);
-            }, aside ? 'Aside sent' : 'Reply sent');
+            unawaited(
+              _run(() async {
+                await runtime.reply(record.id, text, aside: aside);
+                if (mounted) setState(() => _aside = false);
+              }, aside ? 'Aside sent' : 'Reply sent'),
+            );
           },
         ),
       ] else
         SheetButton(
           'Delete',
           kind: ButtonKind.danger,
-          onPressed: () => _run(() => notato.delete(record.id), 'Note deleted'),
+          onPressed: () => _run(() => runtime.delete(record.id), 'Note deleted'),
         ),
     ];
     return Column(
@@ -755,12 +768,12 @@ class _NoteCardState extends State<NoteCard> {
                 if (record.pending) ...[
                   const SizedBox(height: 8),
                   Text(
-                    !notato.hasServer
+                    !runtime.hasServer
                         ? _keptHere
                         : record.failed != null
                         ? 'Not sent: ${record.failed}'
                         : 'Not sent yet: ${record.waiting ?? 'it goes when the server can be reached.'}',
-                    style: TextStyle(fontSize: 12.5, color: notato.hasServer ? statusColor('acknowledged') : p.muted),
+                    style: TextStyle(fontSize: 12.5, color: runtime.hasServer ? statusColor('acknowledged') : p.muted),
                   ),
                 ],
                 const SizedBox(height: 12),

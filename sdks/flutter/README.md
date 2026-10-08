@@ -4,7 +4,7 @@ People tap a widget in your running Flutter app and write what should change, an
 
 It is the same client as the Swift, Android and .NET MAUI SDKs: the toolbar and its **⋯** menu, the three modes, threads and replies, People only and asides, revert, an offline queue, masking, and a runtime API. Variants are web-only.
 
-Flutter 3.32 and later, on iOS, Android and macOS. On the web, notes are kept in memory and a package cannot be shared, only uploaded.
+Flutter 3.38.1 and later, on iOS, Android and macOS. On the web, notes are kept in memory and a package cannot be shared, only uploaded.
 
 ## Set up
 
@@ -23,7 +23,7 @@ void main() {
 }
 ```
 
-And let it know the screens, so notes are filed under the route they were made on:
+And let it know the screens, so notes are filed under the route they were made on (a dialog, or a page pushed without a name, keeps the name of the screen under it):
 
 ```dart
 MaterialApp(navigatorObservers: [Notato.navigatorObserver], ...)
@@ -43,38 +43,38 @@ A phone on Wi-Fi needs the server's [dev tunnel](../../README.md#phones-a-dev-tu
 
 ## Options
 
-| Option                           | Default                                     |                                                                                                                       |
-| -------------------------------- | ------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
-| `project`                        | (required)                                  | Project id on the server. Letters, digits and `. _ - @`, not only dots                                                |
-| `mode`                           | `NotatoMode.dev`                            | `dev`, `test` or `agent` (see below)                                                                                  |
-| `server`                         | `http://localhost:4747` (none in test mode) | `''` for no server: notes stay on the device                                                                          |
-| `token`                          |                                             | A project token (`pft_…`) for a shared `notato serve`                                                                 |
-| `route`                          | the last route `navigatorObserver` saw      | A function that says the screen: notes are filed under it, and its pins shown on it                                   |
-| `enabled`                        | debug builds                                | Whether Notato is on at launch. The app can switch it at runtime. Picking a widget needs a debug build either way     |
-| `showToolbar`, `toolbarPosition` | `true`, `bottomRight`                       | The toolbar and the corner it starts in. Where people drag it is remembered                                           |
-| `author`                         |                                             | The name on this person's notes. They can change it in the settings                                                   |
-| `screenshots`                    | `true`                                      | A server that has screenshots off wins either way                                                                     |
-| `maskInputs`                     | on in test and agent mode                   | Cover text fields in screenshots and leave their values out of notes (password fields always are)                     |
-| `rememberRuntimeState`           | `true`                                      | Keep runtime choices across launches                                                                                  |
-| `captureLogs`, `logLimit`        | `true`, `50`                                | Attach the app's recent errors (`FlutterError`, uncaught ones) and `debugPrint` messages                              |
-| `appName`, `appVersion`          | `Flutter app`                               | Recorded on every note                                                                                                |
-| `maxScreenshotScale`             | `2`                                         | Pixels per point screenshots are kept at. Phones are 2x to 3.5x; 2x is plenty                                         |
-| `storage`                        | the app's support folder                    | Where notes and choices are kept: `(_) async => MemoryStorage()` keeps them for this run only                         |
+| Option                           | Default                                      |                                                                                                                   |
+| -------------------------------- | -------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| `project`                        | (required)                                   | Project id on the server. Letters, digits and `. _ - @`, not only dots                                            |
+| `mode`                           | `NotatoMode.dev`                             | `dev`, `test` or `agent` (see below)                                                                              |
+| `server`                         | `http://localhost:4747` (none in test mode)  | `''` for no server: notes stay on the device                                                                      |
+| `token`                          |                                              | A project token (`pft_…`) for a shared `notato serve`                                                             |
+| `route`                          | the top named route `navigatorObserver` sees | A function that says the screen: notes are filed under it, and its pins shown on it                               |
+| `enabled`                        | debug builds                                 | Whether Notato is on at launch. The app can switch it at runtime. Picking a widget needs a debug build either way |
+| `showToolbar`, `toolbarPosition` | `true`, `bottomRight`                        | The toolbar and the corner it starts in. Where people drag it is remembered                                       |
+| `author`                         |                                              | The name on this person's notes. They can change it in the settings                                               |
+| `screenshots`                    | `true`                                       | A server that has screenshots off wins either way                                                                 |
+| `maskInputs`                     | on in test and agent mode                    | Cover text fields in screenshots and leave their values out of notes (password fields always are)                 |
+| `rememberRuntimeState`           | `true`                                       | Keep runtime choices across launches                                                                              |
+| `captureLogs`, `logLimit`        | `true`, `50`                                 | Attach the app's recent errors (`FlutterError`, uncaught ones) and `debugPrint` messages                          |
+| `appName`, `appVersion`          | `Flutter app`                                | Recorded on every note                                                                                            |
+| `maxScreenshotScale`             | `2`                                          | Pixels per point screenshots are kept at. Phones are 2x to 3.5x; 2x is plenty                                     |
+| `storage`                        | the app's support folder                     | Where notes and choices are kept: `(_) async => MemoryStorage()` keeps them for this run only                     |
 
 In a release build `Notato` is your app and nothing else, unless `enabled` is `true` when it mounts (that is decided once, so the app is never built again from scratch because Notato came or went). A `Notato` that takes the place of another (a parent rebuilt it with a new key) leaves Notato running.
 
 ## At runtime: `notato`
 
-|                                          |                                                                                                                       |
-| ---------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
-| `notato` (a `ChangeNotifier`)            | Listen to it for its state: `isEnabled`, `isToolbarVisible`, `isAnnotating`, `connection`, `notes`, `pendingCount`    |
-| `enable()`, `disable()`, `setEnabled(…)` | On and off. A choice made here wins over `enabled` until `resetRuntimeState()`                                        |
-| `showToolbar()`, `hideToolbar()`         | The toolbar. Off still lets the app drive Notato from code                                                            |
-| `startAnnotating()`, `stopAnnotating()`  | The next tap selects what is under it                                                                                 |
-| `select(key)`, `select('#save')`         | Select a widget (a `GlobalKey`, an `Element`, or a selector) as if it had been tapped, and open the note for it       |
-| `annotate('#save', comment, …)`          | Make a note with no UI, as a person or (with `agentName`) an agent. `peopleOnly: true` keeps a person's note from the agent |
-| `packageNotes(upload: …)`                | Test mode: the device's notes as a bundle zip                                                                         |
-| `recordRequest(…)`                       | Add an HTTP request to the `network` context of later notes                                                           |
+|                                          |                                                                                                                                      |
+| ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| `notato` (a `Listenable`)                | Listen to it for its state: `isEnabled`, `isToolbarVisible`, `isAnnotating`, `mode`, `connection`, `agents`, `notes`, `pendingCount` |
+| `enable()`, `disable()`, `setEnabled(…)` | On and off. A choice made here wins over `enabled` until `resetRuntimeState()`                                                       |
+| `showToolbar()`, `hideToolbar()`         | The toolbar. Off still lets the app drive Notato from code                                                                           |
+| `startAnnotating()`, `stopAnnotating()`  | The next tap selects what is under it                                                                                                |
+| `select(key)`, `select('#save')`         | Select a widget (a `GlobalKey`, an `Element`, or a selector) as if it had been tapped, and open the note for it                      |
+| `annotate('#save', comment, …)`          | Make a note with no UI, as a person or (with `agentName`) an agent. `peopleOnly: true` keeps a person's note from the agent          |
+| `packageNotes(upload: …)`                | Test mode: the device's notes as a bundle zip                                                                                        |
+| `recordRequest(…)`                       | Add an HTTP request to the `network` context of later notes                                                                          |
 
 ```dart
 ListenableBuilder(
@@ -83,7 +83,7 @@ ListenableBuilder(
 )
 ```
 
-The example's **Feedback** card does each of these.
+The example's **Feedback** card switches Notato and its toolbar, and makes a note from code.
 
 ## What the agent gets
 
@@ -113,14 +113,14 @@ Password fields stay masked whatever the mark, and a private mark around a `priv
 
 What a note's selector looks like, and what an agent passes to `notato_annotate` or `notato.annotate`:
 
-|                        |                                                                                                       |
-| ---------------------- | ----------------------------------------------------------------------------------------------------- |
+|                        |                                                                                                            |
+| ---------------------- | ---------------------------------------------------------------------------------------------------------- |
 | `#save`                | The widget's key (`ValueKey('save')`, `ValueKey(42)`, `ValueKey(Tab.home)`), or its `Semantics` identifier |
-| `Text`, `button`       | The widget's type, its role (`button`, `textbox`, `switch`, `img`…), or your widget class; `*` for any |
-| `[label="Pay now"]`    | The semantics label, exactly                                                                          |
-| `:text("Add to cart")` | The text or label contains this, ignoring case                                                        |
-| `:nth(2)`              | The second match, in painting order                                                                   |
-| `ProductCard > …`      | Leading names are your widgets around it; one the app does not have (a screen's name) is ignored      |
+| `Text`, `button`       | The widget's type, its role (`button`, `textbox`, `switch`, `img`…), or your widget class; `*` for any     |
+| `[label="Pay now"]`    | The semantics label, exactly                                                                               |
+| `:text("Add to cart")` | The text or label contains this, ignoring case                                                             |
+| `:nth(2)`              | The second match, in painting order                                                                        |
+| `ProductCard > …`      | Leading names are your widgets around it; one the app does not have (a screen's name) is ignored           |
 
 ## Modes
 

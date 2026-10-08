@@ -1,11 +1,11 @@
 {
-    "name": "notato_example",
-    "short_name": "notato_example",
+    "name": "Spud Shop: Notato example",
+    "short_name": "Spud Shop",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#0175C2",
     "theme_color": "#0175C2",
-    "description": "A new Flutter project.",
+    "description": "Notato's Flutter example: a small shop to annotate.",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [

@@ -131,16 +131,15 @@ final _passThroughName = RegExp(r'(Builder|Listener|Provider|Consumer|Selector|S
 bool isAppComponent(Element element) {
   // Inherited and parent-data widgets (proxies) only pass their child on.
   if (element is! StatelessElement && element is! StatefulElement) return false;
-  final name = _typeName(element.widget);
+  final name = typeName(element.widget);
   if (_passThrough.contains(name) || _passThroughName.hasMatch(name)) return false;
   Element? child;
   element.visitChildren((c) => child ??= c);
   return child != null && isLocal(child!);
 }
 
-String typeName(Widget widget) => _typeName(widget);
-
-String _typeName(Widget widget) {
+/// A widget's class name, without its type arguments: `StreamBuilder`, not `StreamBuilder<int>`.
+String typeName(Widget widget) {
   final name = widget.runtimeType.toString();
   final generic = name.indexOf('<');
   return generic > 0 ? name.substring(0, generic) : name;
@@ -309,7 +308,7 @@ Picked? identify(Element element, RenderBox box, {required Element stop, bool ma
   var componentIndex = -1;
   for (var i = 0; i < above.length; i++) {
     if (!isAppComponent(above[i])) continue;
-    final name = _typeName(above[i].widget);
+    final name = typeName(above[i].widget);
     if (components.isEmpty) componentIndex = i;
     if (components.isEmpty || components.last != name) components.add(name);
     if (components.length >= maxPath) break;
@@ -363,7 +362,7 @@ Picked describe(
   final path = components.reversed.toList();
   final component = components.isEmpty ? null : components.first;
 
-  final tag = _typeName(view.widget);
+  final tag = typeName(view.widget);
   String? testId;
   Element? testIdOn;
   String? label;
@@ -384,7 +383,7 @@ Picked describe(
       label ??= widget.properties.label;
     }
     if (widget is Tooltip) label ??= widget.message;
-    final type = _typeName(widget);
+    final type = typeName(widget);
     if (container == null && e != view && _buttons.contains(type) && isLocal(e)) container = e;
     if (_buttons.contains(type)) role ??= 'button';
     role ??= _roles[type];
@@ -422,7 +421,7 @@ Picked describe(
   String part(Element e) {
     final id = testIdOn == e || (testIdOn != null && testIdOn != container && e == view) ? '#$testId' : '';
     final named = e == view && label != null ? '[label="${label.replaceAll(r'\', r'\\').replaceAll('"', r'\"')}"]' : '';
-    return '${_typeName(e.widget)}$id$named';
+    return '${typeName(e.widget)}$id$named';
   }
 
   final selector = [?component, if (container != null) part(container), part(view)].join(' > ');
