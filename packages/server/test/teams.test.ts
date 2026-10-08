@@ -33,7 +33,7 @@ describe("the teams format", () => {
     it("says what happened and shows the note with the facts that matter", () => {
         const { text, card } = sent("annotation.created");
         expect(text).toContain("Notato · checkout-web");
-        expect(text).toContain("New note from Dom");
+        expect(text).toContain("New note from Alex");
         expect(text).toContain(sampleAnnotation.comment);
         const facts = card.body.find((b: { type: string }) => b.type === "FactSet").facts;
         expect(facts).toContainEqual({ title: "Page", value: "/checkout" });

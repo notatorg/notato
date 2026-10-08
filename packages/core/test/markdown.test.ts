@@ -274,7 +274,7 @@ describe("variants", () => {
 
 describe("who it is from", () => {
     it("names the person or agent and says which, and does not repeat itself when there is no name", () => {
-        expect(renderAnnotation(rich())).toContain("From: Dom (human)");
+        expect(renderAnnotation(rich())).toContain("From: Alex (human)");
         expect(renderAnnotation(rich({ author: { kind: "agent" } }))).toContain("From: an agent ·");
         expect(renderAnnotation(rich({ author: { kind: "human" } }))).toContain("From: someone ·");
         expect(renderAnnotation(rich({ author: { kind: "agent", name: "Claude" } }))).toContain(

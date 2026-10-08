@@ -5,7 +5,7 @@ export const sampleAnnotation: Annotation = {
     id: "01JA0000000000000000000001",
     projectId: "checkout-web",
     bundleId: null,
-    author: { kind: "human", name: "Dom" },
+    author: { kind: "human", name: "Alex" },
     mode: "dev",
     createdAt: "2026-10-05T10:00:00.000Z",
     url: "http://localhost:5173/checkout?step=2",
