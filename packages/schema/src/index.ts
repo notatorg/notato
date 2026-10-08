@@ -96,7 +96,7 @@ export const ElementIdentity = z.object({
         .optional(),
     /** The elements around it, outermost first, as short selectors: where it sits in the page. */
     ancestors: z.array(z.string()).optional(),
-    /** MAUI AutomationId later. */
+    /** The id the native toolkit gives the element, where it has one: MAUI's AutomationId, React Native's nativeID. */
     platformId: z.string().optional(),
 });
 
@@ -128,7 +128,7 @@ export const Reply = z.object({
 
 /**
  * What kind of app made a note, so which code to look in. These are the ones the SDKs in this repository send; the field
- * is open, so a newer SDK (Flutter, React Native) is never refused by a server that predates it.
+ * is open, so an SDK for a new kind of app is never refused by a server that predates it.
  */
 export const KNOWN_PLATFORMS = [
     "web",

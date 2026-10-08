@@ -1,8 +1,9 @@
 import { mkdirSync } from "node:fs";
-import { join, resolve } from "node:path";
-import { createInterface } from "node:readline/promises";
+import { join } from "node:path";
 import { parseArgs } from "node:util";
 import { Authenticator, FileBlobStore, LocalBackend, SqliteStore } from "@notato/server";
+import { dataDir, PROJECT_ID } from "../options.ts";
+import { isInteractive, terminalConfirm } from "../terminal.ts";
 
 const HELP = `notato project
 
@@ -24,21 +25,9 @@ Options:
   -d, --dir <path>    Data directory (default ./.notato, or $NOTATO_DIR)
   -h, --help          Show this help`;
 
-/** What the server accepts: letters, digits and `_ . @ -`, but never only dots. */
-const PROJECT_ID = /^(?!\.+$)[\w.@-]{1,128}$/;
-
 export interface ProjectCommandOptions {
     /** Asks the person to confirm. Absent when there is no terminal to ask in. */
     confirm?: (question: string) => Promise<boolean>;
-}
-
-async function terminalConfirm(question: string): Promise<boolean> {
-    const rl = createInterface({ input: process.stdin, output: process.stdout });
-    try {
-        return /^y(es)?$/i.test((await rl.question(`${question} [y/N] `)).trim());
-    } finally {
-        rl.close();
-    }
 }
 
 const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
@@ -68,7 +57,7 @@ export async function runProjectCommand(
         throw new Error("give a project id: letters, digits and _ . @ - (not only dots)");
     const project = id as string;
 
-    const dir = resolve(values.dir ?? process.env.NOTATO_DIR ?? join(process.cwd(), ".notato"));
+    const dir = dataDir(values.dir);
     mkdirSync(dir, { recursive: true });
     const store = new SqliteStore(join(dir, "notato.db"));
     const backend = new LocalBackend(store, new FileBlobStore(join(dir, "assets")));
@@ -131,9 +120,7 @@ export async function runProjectCommand(
                 ? ""
                 : `; ${tokens === 1 ? "its token" : `its ${tokens} tokens`} ${done ? `no longer work${tokens === 1 ? "s" : ""}` : "will stop working"}`;
         if (!values.yes) {
-            const confirm =
-                options.confirm ??
-                (process.stdin.isTTY && process.stdout.isTTY ? terminalConfirm : undefined);
+            const confirm = options.confirm ?? (isInteractive() ? terminalConfirm : undefined);
             if (!confirm)
                 throw new Error(
                     `this deletes ${goes}${stops(false)}. There is no terminal to ask in: pass --yes to delete it`

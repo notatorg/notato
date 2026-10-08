@@ -1,4 +1,4 @@
-import { join, resolve } from "node:path";
+import { resolve } from "node:path";
 import { parseArgs } from "node:util";
 import {
     CONFIG_FILE,
@@ -9,6 +9,8 @@ import {
     type SettingName,
     writeSetting,
 } from "@notato/server";
+import { configFile } from "../options.ts";
+import { type CommandOutput, collectOutput, print, UsageError } from "../output.ts";
 import { describeWebhook, runWebhook } from "./webhook.ts";
 
 const HELP = `notato config
@@ -39,12 +41,6 @@ Options:
 A page can also turn screenshots off for itself with <Notato screenshots={false} />. The server's setting wins:
 a page cannot turn them on if the server has them off.`;
 
-export interface ConfigResult {
-    code: number;
-    stdout: string;
-    stderr: string;
-}
-
 const names = Object.keys(SETTINGS).join(", ");
 
 function settingName(raw: string | undefined): SettingName {
@@ -54,21 +50,13 @@ function settingName(raw: string | undefined): SettingName {
     return raw as SettingName;
 }
 
-class UsageError extends Error {}
-
 /** The command, without touching the process: what it prints and the exit code come back as data. */
 export function runConfig(
     argv: string[],
     env: Record<string, string | undefined> = process.env,
     defaultCwd: string = process.cwd()
-): ConfigResult {
-    const out: string[] = [];
-    const err: string[] = [];
-    const result = (code: number): ConfigResult => ({
-        code,
-        stdout: out.join("\n"),
-        stderr: err.join("\n"),
-    });
+): CommandOutput {
+    const { out, err, done } = collectOutput();
     try {
         const { values, positionals } = parseArgs({
             args: argv,
@@ -81,10 +69,10 @@ export function runConfig(
         });
         if (values.help) {
             out.push(HELP);
-            return result(0);
+            return done(0);
         }
         const cwd = resolve(values.cwd ?? defaultCwd);
-        const file = resolve(cwd, values.file ?? env.NOTATO_CONFIG ?? join(cwd, CONFIG_FILE));
+        const file = configFile(values.file, cwd, env);
         const [action = "show", ...rest] = positionals;
         const source = createConfigSource({ file, env });
 
@@ -103,14 +91,14 @@ export function runConfig(
                 err.push(
                     `\n${file}: ${now.error}.\nUntil it is fixed the server treats every setting as off, to be safe (no screenshots, no agents), and sends no webhooks.`
                 );
-                return result(1);
+                return done(1);
             }
             out.push(
                 now.webhooks.length
                     ? `\nWebhooks:\n${now.webhooks.map((w) => `  ${describeWebhook(w)}`).join("\n")}`
                     : "\nWebhooks: none (notato config webhook add <url>)"
             );
-            return result(0);
+            return done(0);
         }
 
         if (action === "get") {
@@ -118,7 +106,7 @@ export function runConfig(
             const now = source();
             if (now.error) throw new Error(`${file}: ${now.error}`);
             out.push(now[name] ? "on" : "off");
-            return result(0);
+            return done(0);
         }
 
         if (action === "set") {
@@ -143,7 +131,7 @@ export function runConfig(
                         : "A running server refuses agents from their next call, and tells them why."
                     : "A running server applies this on its next request; pages ask the server before each screenshot."
             );
-            return result(0);
+            return done(0);
         }
 
         if (action === "unset") {
@@ -158,13 +146,13 @@ export function runConfig(
                     `${name} was not set in ${file}; the default (${SETTINGS[name].default}) applies.`
                 );
             }
-            return result(0);
+            return done(0);
         }
 
         throw new UsageError(`unknown action "${action}". Use show, get, set or unset`);
     } catch (error) {
         err.push(`notato config: ${error instanceof Error ? error.message : String(error)}`);
-        return result(error instanceof UsageError ? 2 : 1);
+        return done(error instanceof UsageError ? 2 : 1);
     }
 }
 
@@ -192,11 +180,9 @@ function subcommand(argv: string[]): { word: string; index: number } | undefined
 export async function runConfigCommand(argv: string[]): Promise<number> {
     // `webhook` can send a request, so it is the one part that is not synchronous.
     const sub = subcommand(argv);
-    const { code, stdout, stderr } =
+    return print(
         sub?.word === "webhook"
             ? await runWebhook(argv.filter((_, i) => i !== sub.index))
-            : runConfig(argv);
-    if (stdout) console.log(stdout);
-    if (stderr) console.error(stderr);
-    return code;
+            : runConfig(argv)
+    );
 }

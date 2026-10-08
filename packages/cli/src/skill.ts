@@ -1,14 +1,9 @@
 import { createHash } from "node:crypto";
 
-/**
- * The skills are Agent Skills (a folder with a SKILL.md), which Claude Code, Codex, Cursor, Gemini CLI, Copilot and
- * others all read; `init` writes them into the skills folder of each agent it sets up (see agents.ts). These are where
- * they go for Claude Code.
- */
-export const SKILL_PATH = ".claude/skills/notato/SKILL.md";
-/** The skill that has the agent review the app itself and file what it finds as annotations. */
-export const CRITIQUE_SKILL_PATH = ".claude/skills/notato-critique/SKILL.md";
+// The skills are Agent Skills (a folder with a SKILL.md), which Claude Code, Codex, Cursor, Gemini CLI, Copilot and
+// others all read; `init` writes them into the skills folder of each agent it sets up (see agents.ts).
 
+/** The skill that teaches the loop: watch, acknowledge, fix, commit, resolve, and undo a change when asked. */
 const MAIN = `---
 name: notato
 description: "Works through UI feedback that people pinned to the running app with Notato, and undoes a change when asked. USE FOR: /notato or $notato, watch notato, fix notato annotations, handle UI feedback from the app, FOLLOW-UP replies, VARIANT CHOSEN, offer variants, REVERT REQUESTED, revert a notato change. DO NOT USE FOR: general bug reports that did not come from Notato, or feedback pasted into the chat (just handle that directly); having the agent review the app itself (that is the notato-critique skill). INVOKES: the notato MCP tools (notato_watch, notato_get, notato_acknowledge, notato_reply, notato_resolve, notato_dismiss, notato_reverted, notato_variants_ready), git."
@@ -91,6 +86,7 @@ An annotation marked **REVERT REQUESTED** means the person looked at the change 
 Do not call \`notato_acknowledge\`, \`notato_resolve\` or \`notato_dismiss\` on a revert request: they are refused so the request cannot be lost. A revert request that is cancelled goes back to resolved, and nothing is needed from you.
 `;
 
+/** The skill that has the agent review the running app itself and file what it finds as annotations. */
 const CRITIQUE = `---
 name: notato-critique
 description: "Has the agent review the running app itself, the way a careful designer or tester would, and file what it finds as Notato annotations, then work through them. USE FOR: /notato-critique or $notato-critique, critique the UI, review this page, audit the app for visual and usability problems, self-driving notato. DO NOT USE FOR: handling feedback people already filed (that is the notato skill), or reviewing code that is not running."
@@ -137,8 +133,6 @@ When you have filed them, call \`notato_list_open\`, then work them exactly as t
 export interface SkillFile {
     /** The skill's name, which is also its folder. */
     name: string;
-    /** Where it goes for Claude Code, relative to the directory the agent starts in. */
-    path: string;
     /** Its file inside any agent's skills folder. */
     file: string;
     body: string;
@@ -150,14 +144,12 @@ export interface SkillFile {
 export const SKILLS: SkillFile[] = [
     {
         name: "notato",
-        path: SKILL_PATH,
         file: "notato/SKILL.md",
         body: MAIN,
         note: "teaches the agent the loop; ask it to watch Notato",
     },
     {
         name: "notato-critique",
-        path: CRITIQUE_SKILL_PATH,
         file: "notato-critique/SKILL.md",
         body: CRITIQUE,
         note: "has the agent review the running app and file what it finds",

@@ -1,5 +1,7 @@
 import { parseArgs } from "node:util";
 import { bundledUi, DEFAULT_PORT, runServe } from "@notato/server";
+import { parsePort } from "../options.ts";
+import { stopOnSignals } from "../process.ts";
 
 const HELP = `notato serve
 
@@ -46,14 +48,9 @@ export async function runServeCommand(argv: string[], version: string): Promise<
         console.log(HELP);
         return 0;
     }
-    const port = values.port === undefined ? undefined : Number(values.port);
-    if (port !== undefined && (!Number.isInteger(port) || port < 0 || port > 65535)) {
-        throw new Error(`--port must be a number between 0 and 65535, got "${values.port}"`);
-    }
-
     const runtime = await runServe({
         host: values.host,
-        port,
+        port: parsePort(values.port),
         dir: values.dir,
         version,
         adminUser: values["admin-user"],
@@ -64,9 +61,7 @@ export async function runServeCommand(argv: string[], version: string): Promise<
         mcp: values["no-mcp"] ? false : undefined,
         ui: bundledUi(),
     });
-    const stop = () => void runtime.stop().finally(() => process.exit(0));
-    process.on("SIGINT", stop);
-    process.on("SIGTERM", stop);
+    stopOnSignals(() => runtime.stop());
     // The server keeps the process alive.
     return 0;
 }

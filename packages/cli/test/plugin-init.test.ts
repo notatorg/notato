@@ -1,17 +1,15 @@
 import { afterEach, describe, expect, it } from "bun:test";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
-import { formatReport, runInit } from "../src/commands/init.ts";
-import { runRevert } from "../src/commands/revert.ts";
+import { existsSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { runInit } from "../src/init/init.ts";
+import { formatReport } from "../src/init/report.ts";
+import { runRevert } from "../src/init/revert.ts";
+import { read, removeTempDirs, tempDir } from "./helpers.ts";
 
 // Init sets up the agents it finds on this machine; these tests are about Claude Code unless they say otherwise.
 process.env.NOTATO_AGENTS = "claude";
 
-const dirs: string[] = [];
-afterEach(() => {
-    for (const d of dirs.splice(0)) rmSync(d, { recursive: true, force: true });
-});
+afterEach(removeTempDirs);
 
 const MAIN = `import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
@@ -74,9 +72,7 @@ const FILES: Record<string, string> = {
     "app-shell/package.json": pkg(
         "app-shell",
         { "@notato/react": "^0.1.0" },
-        {
-            aspire: 'vite build && concurrently "vite build --watch" "vite preview"',
-        }
+        { "dev:built": 'vite build && concurrently "vite build --watch" "vite preview"' }
     ),
     "app-shell/index.html": INDEX,
     "app-shell/vite.config.ts": HOST_CONFIG,
@@ -87,17 +83,8 @@ const FILES: Record<string, string> = {
     "order-history/src/main.tsx": MAIN,
 };
 
-function repo(over: Record<string, string> = {}): string {
-    const root = mkdtempSync(join(tmpdir(), "notato-plugin-"));
-    dirs.push(root);
-    mkdirSync(join(root, ".git"));
-    for (const [path, content] of Object.entries({ ...FILES, ...over })) {
-        mkdirSync(dirname(join(root, path)), { recursive: true });
-        writeFileSync(join(root, path), content);
-    }
-    return root;
-}
-const read = (root: string, path: string) => readFileSync(join(root, path), "utf8");
+const repo = (over: Record<string, string> = {}) =>
+    tempDir("notato-plugin-", { ".git/HEAD": "ref: refs/heads/main\n", ...FILES, ...over });
 const snapshot = (root: string) =>
     Object.fromEntries(Object.keys(FILES).map((path) => [path, read(root, path)]));
 

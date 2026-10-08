@@ -1,7 +1,6 @@
 import { afterEach, describe, expect, it } from "bun:test";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { existsSync } from "node:fs";
+import { join } from "node:path";
 import {
     addToAgentConfig,
     detectAgents,
@@ -10,19 +9,16 @@ import {
     parseAgents,
     removeFromAgentConfig,
 } from "../src/agents.ts";
-import { formatReport, type InitOptions, runInit } from "../src/commands/init.ts";
-import { formatRevertReport, runRevert } from "../src/commands/revert.ts";
+import { runInit } from "../src/init/init.ts";
+import { formatReport, formatRevertReport } from "../src/init/report.ts";
+import { runRevert } from "../src/init/revert.ts";
 import { renderSkill } from "../src/skill.ts";
+import { fakeCommands, read, removeTempDirs, tempDir, writeFiles } from "./helpers.ts";
 
-const dirs: string[] = [];
-afterEach(() => {
-    for (const d of dirs.splice(0)) rmSync(d, { recursive: true, force: true });
-});
+afterEach(removeTempDirs);
 
 function app(extra: Record<string, string> = {}): string {
-    const dir = mkdtempSync(join(tmpdir(), "notato-agents-"));
-    dirs.push(dir);
-    const files: Record<string, string> = {
+    return tempDir("notato-agents-", {
         "package.json": JSON.stringify({
             name: "shop",
             dependencies: { react: "^19" },
@@ -32,28 +28,17 @@ function app(extra: Record<string, string> = {}): string {
         "src/main.tsx": `import { createRoot } from "react-dom/client"\nimport App from "./App"\n\ncreateRoot(document.getElementById("root")!).render(<App />)\n`,
         ".gitignore": "node_modules\n",
         ...extra,
-    };
-    for (const [name, content] of Object.entries(files)) {
-        mkdirSync(dirname(join(dir, name)), { recursive: true });
-        writeFileSync(join(dir, name), content);
-    }
-    return dir;
+    });
 }
 
-const read = (dir: string, file: string) => readFileSync(join(dir, file), "utf8");
 const json = (dir: string, file: string) => JSON.parse(read(dir, file));
 
-/** Every agent command installed, each call recorded, each answered with `answer`. */
-function installed(answer = { code: 0, output: "Added" }) {
-    const calls: string[][] = [];
-    const opts: Pick<InitOptions, "run" | "which"> = {
-        which: (name) => `/usr/local/bin/${name}`,
-        run: async (command) => {
-            calls.push(command);
-            return answer;
-        },
-    };
-    return { calls, opts };
+/** The app's own files again in `sub`, a folder below `root`, as in a repository of several apps. */
+function appBelow(root: string, sub: string, files: Record<string, string> = {}): string {
+    const dir = join(root, sub);
+    const app = ["package.json", "index.html", "src/main.tsx"].map((f) => [f, read(root, f)]);
+    writeFiles(dir, { ...Object.fromEntries(app), ...files });
+    return dir;
 }
 
 describe("choosing agents", () => {
@@ -198,14 +183,14 @@ describe("agent config files", () => {
 describe("init for every agent", () => {
     it("registers Codex with its command and the others in their project files, with skills where each reads them", async () => {
         const dir = app();
-        const { calls, opts } = installed();
+        const { commands, opts } = fakeCommands();
         const report = await runInit({
             cwd: dir,
             agents: ["claude", "codex", "cursor", "gemini", "copilot"],
             ...opts,
         });
 
-        expect(calls).toEqual([
+        expect(commands).toEqual([
             // Codex keeps one list for every folder, so it has no one project to be kept to.
             ["claude", "mcp", "add", "notato", "--", "npx", "notato", "dev", "--project", "shop"],
             ["codex", "mcp", "add", "notato", "--", "npx", "notato", "dev"],
@@ -243,7 +228,7 @@ describe("init for every agent", () => {
         const again = await runInit({
             cwd: dir,
             agents: ["cursor", "gemini", "copilot"],
-            ...installed().opts,
+            ...fakeCommands().opts,
         });
         expect(again.changes.every((c) => c.action === "unchanged")).toBe(true);
         expect(again.mcp).toBe("already");
@@ -251,14 +236,8 @@ describe("init for every agent", () => {
 
     it("points the project files at the app's binary from the agent's folder", async () => {
         const root = app();
-        const appDir = join(root, "web");
-        mkdirSync(join(appDir, "node_modules/.bin"), { recursive: true });
-        for (const file of ["package.json", "index.html", "src/main.tsx"]) {
-            mkdirSync(dirname(join(appDir, file)), { recursive: true });
-            writeFileSync(join(appDir, file), read(root, file));
-        }
-        writeFileSync(join(appDir, "node_modules/.bin/notato"), "#!/bin/sh\n");
-        const { opts } = installed();
+        const appDir = appBelow(root, "web", { "node_modules/.bin/notato": "#!/bin/sh\n" });
+        const { opts } = fakeCommands();
         await runInit({ cwd: appDir, agentDir: "..", agents: ["cursor", "codex"], ...opts });
         expect(json(root, ".cursor/mcp.json").mcpServers.notato).toEqual({
             command: "./web/node_modules/.bin/notato",
@@ -268,14 +247,8 @@ describe("init for every agent", () => {
 
     it("on Windows, starts the binary's .cmd shim through cmd, with a path cmd can read", async () => {
         const root = app();
-        const appDir = join(root, "web");
-        mkdirSync(join(appDir, "node_modules/.bin"), { recursive: true });
-        for (const file of ["package.json", "index.html", "src/main.tsx"]) {
-            mkdirSync(dirname(join(appDir, file)), { recursive: true });
-            writeFileSync(join(appDir, file), read(root, file));
-        }
-        writeFileSync(join(appDir, "node_modules/.bin/notato.cmd"), "@echo off\n");
-        const { opts } = installed();
+        const appDir = appBelow(root, "web", { "node_modules/.bin/notato.cmd": "@echo off\n" });
+        const { opts } = fakeCommands();
         await runInit({
             cwd: appDir,
             agentDir: "..",
@@ -293,16 +266,10 @@ describe("init for every agent", () => {
     });
 
     it("finds a binary hoisted to the workspace root, without a false warning", async () => {
-        const root = app();
-        const appDir = join(root, "packages/board");
-        for (const file of ["package.json", "index.html", "src/main.tsx"]) {
-            mkdirSync(dirname(join(appDir, file)), { recursive: true });
-            writeFileSync(join(appDir, file), read(root, file));
-        }
-        mkdirSync(join(root, ".git"));
-        mkdirSync(join(root, "node_modules/.bin"), { recursive: true });
-        writeFileSync(join(root, "node_modules/.bin/notato"), "#!/bin/sh\n");
-        const { opts } = installed();
+        const root = app({ ".git/HEAD": "ref: refs/heads/main\n" });
+        const appDir = appBelow(root, "packages/board");
+        writeFiles(root, { "node_modules/.bin/notato": "#!/bin/sh\n" });
+        const { opts } = fakeCommands();
         const report = await runInit({
             cwd: appDir,
             agentDir: "../..",
@@ -318,7 +285,7 @@ describe("init for every agent", () => {
 
     it("leaves a config with comments alone and says what to add", async () => {
         const dir = app({ ".vscode/mcp.json": '// my servers\n{ "servers": {} }\n' });
-        const report = await runInit({ cwd: dir, agents: ["copilot"], ...installed().opts });
+        const report = await runInit({ cwd: dir, agents: ["copilot"], ...fakeCommands().opts });
         expect(read(dir, ".vscode/mcp.json")).toBe('// my servers\n{ "servers": {} }\n');
         expect(report.mcp).toBe("failed");
         expect(report.warnings.join()).toContain(
@@ -328,14 +295,14 @@ describe("init for every agent", () => {
 
     it("writes nothing on a dry run, but shows the files it would write", async () => {
         const dir = app();
-        const { calls, opts } = installed();
+        const { commands, opts } = fakeCommands();
         const report = await runInit({
             cwd: dir,
             dryRun: true,
             agents: ["codex", "cursor"],
             ...opts,
         });
-        expect(calls).toEqual([]);
+        expect(commands).toEqual([]);
         expect(existsSync(join(dir, ".cursor"))).toBe(false);
         expect(report.changes.find((c) => c.file === ".cursor/mcp.json")).toMatchObject({
             action: "created",
@@ -358,12 +325,12 @@ describe("revert for every agent", () => {
         await runInit({
             cwd: dir,
             agents: ["claude", "codex", "cursor", "gemini", "copilot"],
-            ...installed().opts,
+            ...fakeCommands().opts,
         });
 
-        const { calls, opts } = installed({ code: 0, output: "Removed" });
+        const { commands, opts } = fakeCommands({ code: 0, output: "Removed" });
         const report = await runRevert({ cwd: dir, ...opts });
-        expect(calls).toEqual([["claude", "mcp", "remove", "notato"]]);
+        expect(commands).toEqual([["claude", "mcp", "remove", "notato"]]);
         expect(existsSync(join(dir, ".cursor"))).toBe(false);
         expect(existsSync(join(dir, ".gemini"))).toBe(false);
         expect(json(dir, ".vscode/mcp.json")).toEqual({ servers: { other: { command: "x" } } });
@@ -374,9 +341,9 @@ describe("revert for every agent", () => {
             "removed the MCP server from Claude Code"
         );
 
-        const codex = installed({ code: 0, output: "Removed" });
+        const codex = fakeCommands({ code: 0, output: "Removed" });
         await runRevert({ cwd: dir, agents: ["codex"], ...codex.opts });
-        expect(codex.calls).toEqual([["codex", "mcp", "remove", "notato"]]);
+        expect(codex.commands).toEqual([["codex", "mcp", "remove", "notato"]]);
     });
 
     it("reverting one agent leaves the others' skills, and a shared folder another agent still uses", async () => {

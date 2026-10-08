@@ -1,5 +1,7 @@
 import { parseArgs } from "node:util";
 import { bookmarklet, consoleSnippet, scriptUrl } from "@notato/server";
+import { localServer, PROJECT_ID } from "../options.ts";
+import { type CommandOutput, print } from "../output.ts";
 
 const HELP = `notato inject
 
@@ -8,22 +10,16 @@ are looking at, a line to paste into the browser console, or a script tag. It wo
 Start the server first (\`notato dev\`); the page loads its script from there.
 
 Options:
-      --server <url>    The server (default http://localhost:4747, or $NOTATO_PORT)
+      --server <url>    The server (default http://127.0.0.1:4747, or $NOTATO_PORT)
   -p, --project <id>    The project the notes go to (default: each page's own host and port)
       --token <token>   A project token, for a server started with \`notato serve\` ($NOTATO_TOKEN)
   -h, --help            Show this help`;
-
-export interface InjectResult {
-    code: number;
-    stdout: string;
-    stderr: string;
-}
 
 /** The command, without touching the process: what it prints comes back as data. */
 export function runInject(
     argv: string[],
     env: Record<string, string | undefined> = process.env
-): InjectResult {
+): CommandOutput {
     try {
         const { values } = parseArgs({
             args: argv,
@@ -35,17 +31,15 @@ export function runInject(
             },
         });
         if (values.help) return { code: 0, stdout: HELP, stderr: "" };
-        const server = (values.server ?? `http://127.0.0.1:${env.NOTATO_PORT ?? 4747}`).replace(
-            /\/$/,
-            ""
-        );
-        new URL(server); // a bad address is said here, not by a bookmark that does nothing
+        const server = (values.server ?? localServer(env)).replace(/\/$/, "");
+        // A bad address is reported here, rather than by a bookmark that does nothing.
+        new URL(server);
         const project = values.project;
-        if (project && !/^[\w.@-]{1,128}$/.test(project))
+        if (project && !PROJECT_ID.test(project))
             return {
                 code: 2,
                 stdout: "",
-                stderr: `notato inject: "${project}" is not a project id (letters, digits, . _ @ -)`,
+                stderr: `notato inject: "${project}" is not a project id (letters, digits and _ . @ -, not only dots)`,
             };
         const options = { project, token: values.token ?? env.NOTATO_TOKEN };
         const page = new URL("/bookmarklet", server);
@@ -84,8 +78,5 @@ export function runInject(
 }
 
 export async function runInjectCommand(argv: string[]): Promise<number> {
-    const { code, stdout, stderr } = runInject(argv);
-    if (stdout) console.log(stdout);
-    if (stderr) console.error(stderr);
-    return code;
+    return print(runInject(argv));
 }

@@ -2,6 +2,8 @@ import { writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { DETAILS } from "@notato/core";
+import { Intent, Status } from "@notato/schema";
+import { localServer } from "../options.ts";
 
 const HELP = `notato export
 
@@ -11,8 +13,8 @@ Notato server, so start one first (\`notato dev\` or \`notato serve\`).
 Options:
   -p, --project <id>    Which project (default: the only one the server has)
   -d, --detail <level>  ${DETAILS.join(", ")} (default standard)
-  -s, --status <list>   Only these statuses, comma separated: open,acknowledged,resolved,revert_requested,reverted,dismissed
-  -i, --intent <list>   Only these intents: fix,change,question,approve,variants
+  -s, --status <list>   Only these statuses, comma separated: ${Status.options.join(",")}
+  -i, --intent <list>   Only these intents: ${Intent.options.join(",")}
   -b, --by <name>       Only what this person wrote (the name on their notes)
       --route <path>    Only annotations on this route
   -o, --out <file>      Write to a file instead of printing
@@ -113,7 +115,7 @@ export async function runExportCommand(argv: string[]): Promise<number> {
     }
     try {
         const markdown = await exportMarkdown({
-            server: values.server ?? `http://127.0.0.1:${process.env.NOTATO_PORT ?? 4747}`,
+            server: values.server ?? localServer(),
             token: values.token ?? process.env.NOTATO_TOKEN,
             project: values.project,
             detail: values.detail,

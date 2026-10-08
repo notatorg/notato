@@ -26,27 +26,26 @@ let filled: [(String, String)] = [
     ("grip", (([6, 12, 18] as [Int]).map { "<circle cx='9' cy='\($0)' r='1.6'/><circle cx='15' cy='\($0)' r='1.6'/>" }).joined()),
 ]
 
-func png(svg: String, size: Int) -> Data {
-    guard let image = NSImage(data: Data(svg.utf8)) else { fatalError("cannot read \(svg)") }
+/// Draws `image` into a new `size`-pixel square bitmap, as PNG data.
+func pngData(_ image: NSImage, size: Int, interpolation: NSImageInterpolation = .default) -> Data {
     let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: size, pixelsHigh: size, bitsPerSample: 8, samplesPerPixel: 4,
                                hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0)!
     NSGraphicsContext.saveGraphicsState()
     NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
+    NSGraphicsContext.current?.imageInterpolation = interpolation
     image.draw(in: NSRect(x: 0, y: 0, width: size, height: size))
     NSGraphicsContext.restoreGraphicsState()
     return rep.representation(using: .png, properties: [:])!
 }
 
+func png(svg: String, size: Int) -> Data {
+    guard let image = NSImage(data: Data(svg.utf8)) else { fatalError("cannot read \(svg)") }
+    return pngData(image, size: size)
+}
+
 func resized(_ url: URL, size: Int) -> Data {
     guard let image = NSImage(contentsOf: url) else { fatalError("no \(url.path)") }
-    let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: size, pixelsHigh: size, bitsPerSample: 8, samplesPerPixel: 4,
-                               hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0)!
-    NSGraphicsContext.saveGraphicsState()
-    NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
-    NSGraphicsContext.current?.imageInterpolation = .high
-    image.draw(in: NSRect(x: 0, y: 0, width: size, height: size))
-    NSGraphicsContext.restoreGraphicsState()
-    return rep.representation(using: .png, properties: [:])!
+    return pngData(image, size: size, interpolation: .high)
 }
 
 let root = URL(fileURLWithPath: CommandLine.arguments.count > 1 ? CommandLine.arguments[1] : FileManager.default.currentDirectoryPath)

@@ -1,12 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, spyOn } from "bun:test";
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { Authenticator, runServe, type ServeRuntime, SqliteStore } from "@notato/server";
 import { runProjectCommand } from "../src/commands/project.ts";
 import { runTokenCommand } from "../src/commands/token.ts";
+import { removeTempDirs, tempDir } from "./helpers.ts";
 
-const dirs: string[] = [];
 const serves: ServeRuntime[] = [];
 let out: string[] = [];
 let err: string[] = [];
@@ -24,14 +23,10 @@ afterEach(async () => {
     (console.log as unknown as { mockRestore(): void }).mockRestore();
     (console.error as unknown as { mockRestore(): void }).mockRestore();
     for (const s of serves.splice(0)) await s.stop();
-    for (const d of dirs.splice(0)) rmSync(d, { recursive: true, force: true });
+    removeTempDirs();
 });
 
-const tmp = () => {
-    const dir = mkdtempSync(join(tmpdir(), "notato-project-"));
-    dirs.push(dir);
-    return dir;
-};
+const tmp = () => tempDir("notato-project-");
 
 /** Reads the data directory the way a server would. */
 async function inStore<T>(dir: string, read: (store: SqliteStore) => Promise<T>): Promise<T> {
@@ -156,7 +151,7 @@ describe("notato project", () => {
     });
 });
 
-describe("notato token create", () => {
+describe("notato token", () => {
     it("refuses a project that does not exist, and says how to create it", async () => {
         const dir = tmp();
         await expect(runTokenCommand(["create", "shop", "-d", dir])).rejects.toThrow(
@@ -167,5 +162,13 @@ describe("notato token create", () => {
         expect(await runTokenCommand(["create", "shop", "-d", dir])).toBe(0);
         expect(out[0]).toMatch(/^pft_/);
         expect(await runTokenCommand(["create", "*", "-d", dir])).toBe(0);
+    });
+
+    it("rejects an unknown command before it opens, or creates, the data directory", async () => {
+        const dir = join(tmp(), "data");
+        await expect(runTokenCommand(["crate", "shop", "-d", dir])).rejects.toThrow(
+            'unknown token command "crate"'
+        );
+        expect(existsSync(dir)).toBe(false);
     });
 });

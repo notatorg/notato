@@ -1,18 +1,21 @@
-import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { type Dirent, existsSync, readdirSync, readFileSync } from "node:fs";
 import { basename, dirname, isAbsolute, join, relative } from "node:path";
 import {
     analyzeFederation,
     classifyFederation,
     type FederationInfo,
+    type FederationRole,
     federationRole,
 } from "./federation.ts";
-import { isGeneratedNotatoComponent } from "./init-transforms.ts";
+import { isGeneratedNotatoComponent } from "./init/transforms.ts";
+
+// Finding the React apps in a repository, and the files in an app that init edits.
 
 /**
  * A federation host loads other apps (remotes) into its own page at runtime, so one toolbar in the host reaches
  * all of them. A remote is loaded by a host; a standalone app is neither.
  */
-export type AppRole = "host" | "remote" | "standalone";
+export type AppRole = FederationRole;
 
 export interface AppInfo {
     /** Absolute path. */
@@ -43,10 +46,12 @@ const VITE_CONFIGS = [
     "vite.config.mjs",
     "vite.config.cjs",
 ];
-/** The Vite config file in `dir`, as a file name, or null. */
-export function viteConfigFile(dir: string): string | null {
-    return VITE_CONFIGS.find((name) => existsSync(join(dir, name))) ?? null;
-}
+const NEXT_LAYOUTS = ["app", "src/app"].flatMap((dir) =>
+    ["tsx", "jsx", "js"].map((ext) => `${dir}/layout.${ext}`)
+);
+const NEXT_PAGES_APPS = ["pages", "src/pages"].flatMap((dir) =>
+    ["tsx", "jsx", "js"].map((ext) => `${dir}/_app.${ext}`)
+);
 
 const NO_FEDERATION: FederationInfo = {
     present: false,
@@ -55,7 +60,8 @@ const NO_FEDERATION: FederationInfo = {
     exposes: [],
 };
 
-function readJson(path: string): Record<string, unknown> | null {
+/** A JSON file's object, or null when it is missing or not JSON. */
+export function readJson(path: string): Record<string, unknown> | null {
     try {
         return JSON.parse(readFileSync(path, "utf8")) as Record<string, unknown>;
     } catch {
@@ -63,13 +69,71 @@ function readJson(path: string): Record<string, unknown> | null {
     }
 }
 
+/** Whether a package.json lists `name` in its dependencies or devDependencies. */
+export function dependsOn(pkg: Record<string, unknown>, name: string): boolean {
+    return Boolean(
+        (pkg.dependencies as Record<string, string> | undefined)?.[name] ??
+            (pkg.devDependencies as Record<string, string> | undefined)?.[name]
+    );
+}
+
+/** The first of `candidates` (paths relative to `dir`) that exists, or null. */
+export function firstExisting(dir: string, candidates: string[]): string | null {
+    return candidates.find((c) => existsSync(join(dir, c))) ?? null;
+}
+
+/** The Vite config file in `dir`, as a file name, or null. */
+export function viteConfigFile(dir: string): string | null {
+    return firstExisting(dir, VITE_CONFIGS);
+}
+
+/** The module script `index.html` points at, which is where a Vite app mounts React, relative to `dir`. */
+export function viteEntry(dir: string): string | null {
+    const html = existsSync(join(dir, "index.html"))
+        ? readFileSync(join(dir, "index.html"), "utf8")
+        : "";
+    const src =
+        /<script[^>]*type=["']module["'][^>]*src=["']([^"']+)["']/i.exec(html)?.[1] ??
+        /<script[^>]*src=["']([^"']+)["'][^>]*type=["']module["']/i.exec(html)?.[1];
+    const fromHtml = src && !/^https?:/.test(src) ? src.replace(/^\//, "") : null;
+    if (fromHtml && existsSync(join(dir, fromHtml))) return fromHtml;
+    return firstExisting(dir, [
+        "src/main.tsx",
+        "src/main.jsx",
+        "src/index.tsx",
+        "src/index.jsx",
+        "main.tsx",
+        "main.jsx",
+    ]);
+}
+
+/** Where a Next.js app has its root, relative to `dir`: the App Router's layout, else the Pages Router's _app. */
+export interface NextRoot {
+    file: string;
+    router: "app" | "pages";
+}
+
+export function nextRoot(dir: string): NextRoot | null {
+    const layout = firstExisting(dir, NEXT_LAYOUTS);
+    if (layout) return { file: layout, router: "app" };
+    const pagesApp = firstExisting(dir, NEXT_PAGES_APPS);
+    return pagesApp ? { file: pagesApp, router: "pages" } : null;
+}
+
+/**
+ * Where init writes the client component that renders the toolbar in a Next.js app, relative to the app: beside the
+ * root layout, or in the components folder next to `pages`.
+ */
+export function nextComponentFile(root: NextRoot, extension: string): string {
+    const name = `notato-dev${extension}`;
+    if (root.router === "app") return join(dirname(root.file), name);
+    return join(root.file.startsWith("src/") ? "src" : ".", "components", name);
+}
+
 /** Module Federation shows up in the Vite config; `analyzeFederation` reads what the app declares there. */
 function federationOf(dir: string): FederationInfo {
-    for (const name of VITE_CONFIGS) {
-        const path = join(dir, name);
-        if (existsSync(path)) return analyzeFederation(readFileSync(path, "utf8"));
-    }
-    return NO_FEDERATION;
+    const config = viteConfigFile(dir);
+    return config ? analyzeFederation(readFileSync(join(dir, config), "utf8")) : NO_FEDERATION;
 }
 
 /**
@@ -170,7 +234,7 @@ function classify(apps: AppInfo[]): AppInfo[] {
 export function discoverApps(root: string, maxDepth = 3): AppInfo[] {
     const found: AppInfo[] = [];
     const walk = (dir: string, depth: number) => {
-        let entries: import("node:fs").Dirent[];
+        let entries: Dirent[];
         try {
             entries = readdirSync(dir, { withFileTypes: true });
         } catch {

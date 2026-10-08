@@ -8,7 +8,7 @@
 // A new SDK adds where its version is written to SDK_STAMPS (an npm package under sdks/ is found on its own).
 
 import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
-import { join, relative } from "node:path";
+import { join } from "node:path";
 import { ROOT } from "./repo.ts";
 
 /** A place a version is written: the file, and a pattern whose first group is the version. */
@@ -33,7 +33,11 @@ export const SDK_STAMPS: Record<string, Stamp[]> = {
         },
     ],
     // The Maven coordinates and BuildConfig.NOTATO_VERSION.
-    android: [{ file: "sdks/android/gradle.properties", pattern: /^VERSION_NAME=(.+)$/m }],
+    android: [
+        { file: "sdks/android/gradle.properties", pattern: /^VERSION_NAME=(.+)$/m },
+        // The README's install line, which Gradle users copy as it is.
+        { file: "sdks/android/README.md", pattern: /dev\.notato:notato-compose:([^"]+)"/ },
+    ],
     // The NuGet package and the assembly version notes report.
     dotnet: [{ file: "sdks/dotnet/Directory.Build.props", pattern: /<Version>([^<]+)<\/Version>/ }],
     // The pub.dev package, and what notes report.
@@ -43,7 +47,8 @@ export const SDK_STAMPS: Record<string, Stamp[]> = {
     ],
 };
 
-const SEMVER = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/;
+/** A release version: major.minor.patch, with an optional pre-release (`0.3.0-rc.1`). */
+export const SEMVER = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/;
 
 /** Every package.json in the workspaces that carries a version (examples need none). */
 export function npmStamps(): Stamp[] {
@@ -65,6 +70,7 @@ export function currentVersion(): string {
         .version;
 }
 
+/** Every place the version is written: the root package.json, every npm package, and each SDK's own. */
 export function allStamps(): Stamp[] {
     return [
         { file: "package.json", pattern: /"version": "([^"]+)"/ },
@@ -118,11 +124,11 @@ if (import.meta.main) {
         console.error("run `bun scripts/version.ts <version>` to set every one");
         process.exit(1);
     }
-    if (!asked)
+    if (!asked) {
+        const stamps = readStamps();
+        const others = stamps.map((s) => s.file).filter((f) => !f.endsWith("package.json"));
         console.log(
-            `${version}: ${readStamps().length} places agree (${readStamps()
-                .map((s) => relative(ROOT, join(ROOT, s.file)))
-                .filter((f) => !f.endsWith("package.json"))
-                .join(", ")} and the package.json files)`
+            `${version}: ${stamps.length} places agree (${others.join(", ")} and the package.json files)`
         );
+    }
 }

@@ -1,8 +1,8 @@
 import { z } from "zod";
 import { definitions } from "../src/index.ts";
 
-// One source of truth: the Zod schemas. This emits JSON Schema so a future C# client
-// can generate its models from the same file.
+// One source of truth: the Zod schemas. This writes them out as JSON Schema (schema.json), so the SDKs in other
+// languages (C#, Swift, Kotlin, Dart) can check their models against the same contract.
 const defs: Record<string, unknown> = {};
 for (const [name, schema] of Object.entries(definitions)) {
     const { $schema: _ignored, ...json } = z.toJSONSchema(schema, {

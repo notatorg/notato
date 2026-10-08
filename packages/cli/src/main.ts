@@ -1,9 +1,5 @@
 #!/usr/bin/env bun
 import pkg from "../package.json";
-
-// Releases inline the tag's version with `bun build --define`; from source it is the package version.
-const version = process.env.NOTATO_VERSION ?? pkg.version;
-
 import { runConfigCommand } from "./commands/config.ts";
 import { runDevCommand } from "./commands/dev.ts";
 import { runDoctorCommand } from "./commands/doctor.ts";
@@ -15,6 +11,9 @@ import { runProjectCommand } from "./commands/project.ts";
 import { runServeCommand } from "./commands/serve.ts";
 import { runStartCommand } from "./commands/start.ts";
 import { runTokenCommand } from "./commands/token.ts";
+
+// Releases inline the tag's version with `bun build --define`; from source it is the package version.
+const version = process.env.NOTATO_VERSION ?? pkg.version;
 
 const HELP = `notato ${version}
 

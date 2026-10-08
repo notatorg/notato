@@ -12,7 +12,7 @@
     ],
     "dependencies": {
         "@notato/schema": "workspace:*",
-        "ulid": "^3.0.2",
-        "fflate": "^0.8.2"
+        "fflate": "^0.8.2",
+        "ulid": "^3.0.2"
     }
 }

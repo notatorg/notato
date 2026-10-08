@@ -25,6 +25,8 @@ describe("notato inject", () => {
     it("says what is wrong with a project id or a server address, as a usage error", () => {
         expect(runInject(["--project", "has space"], {})).toMatchObject({ code: 2 });
         expect(runInject(["--project", "has space"], {}).stderr).toContain("is not a project id");
+        // The server refuses an id of only dots, so a bookmark with one would do nothing.
+        expect(runInject(["--project", ".."], {})).toMatchObject({ code: 2 });
         expect(runInject(["--server", "not a url"], {})).toMatchObject({ code: 2 });
         expect(runInject(["--bogus"], {}).code).toBe(2);
     });

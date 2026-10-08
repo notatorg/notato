@@ -1,6 +1,6 @@
 import type { Annotation, Bundle } from "./index.ts";
 
-/** A fully populated annotation. Used by tests, `notato doctor`, and the example app. */
+/** A fully populated annotation: for tests, and for the samples `notato doctor`, webhook tests and the docs send. */
 export const sampleAnnotation: Annotation = {
     id: "01JA0000000000000000000001",
     projectId: "checkout-web",
@@ -53,6 +53,7 @@ export const sampleAnnotation: Annotation = {
     ],
 };
 
+/** A bundle of one test-mode annotation. */
 export const sampleBundle: Bundle = {
     id: "01JA0000000000000000000003",
     projectId: "checkout-web",

@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, it } from "bun:test";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
-import { formatReport, type InitOptions, runInit } from "../src/commands/init.ts";
+import { existsSync } from "node:fs";
+import { join } from "node:path";
+import { type InitOptions, runInit } from "../src/init/init.ts";
+import { formatReport } from "../src/init/report.ts";
 import {
     addImport,
     addToGitignore,
@@ -11,7 +11,8 @@ import {
     addToViteEntry,
     nextClientComponent,
     projectIdFromPackage,
-} from "../src/init-transforms.ts";
+} from "../src/init/transforms.ts";
+import { fakeCommands, read, removeTempDirs, tempDir } from "./helpers.ts";
 
 // Init sets up the agents it finds on this machine; these tests are about Claude Code unless they say otherwise.
 process.env.NOTATO_AGENTS = "claude";
@@ -230,21 +231,9 @@ describe("addToGitignore", () => {
 
 // ---- whole-app runs --------------------------------------------------------------------------------------
 
-const dirs: string[] = [];
-afterEach(() => {
-    for (const d of dirs.splice(0)) rmSync(d, { recursive: true, force: true });
-});
+afterEach(removeTempDirs);
 
-function app(files: Record<string, string>): string {
-    const dir = mkdtempSync(join(tmpdir(), "notato-init-"));
-    dirs.push(dir);
-    for (const [path, content] of Object.entries(files)) {
-        mkdirSync(dirname(join(dir, path)), { recursive: true });
-        writeFileSync(join(dir, path), content);
-    }
-    return dir;
-}
-const read = (dir: string, path: string) => readFileSync(join(dir, path), "utf8");
+const app = (files: Record<string, string>) => tempDir("notato-init-", files);
 
 const pkg = (extra: Record<string, unknown> = {}, name = "@acme/shop") =>
     JSON.stringify({
@@ -253,18 +242,6 @@ const pkg = (extra: Record<string, unknown> = {}, name = "@acme/shop") =>
         devDependencies: { vite: "^8", "@notato/react": "^0.1.0" },
         ...extra,
     });
-
-function claude(result: { code: number; output: string } = { code: 0, output: "Added" }) {
-    const calls: string[][] = [];
-    const opts: Pick<InitOptions, "run" | "which"> = {
-        which: () => "/usr/local/bin/claude",
-        run: async (command) => {
-            calls.push(command);
-            return result;
-        },
-    };
-    return { calls, opts };
-}
 
 const VITE_APP = {
     "package.json": pkg(),
@@ -277,7 +254,7 @@ const VITE_APP = {
 describe("runInit on a Vite app", () => {
     it("edits the entry, ignores .notato/, and registers the MCP server", async () => {
         const dir = app(VITE_APP);
-        const { calls, opts } = claude();
+        const { commands, opts } = fakeCommands();
         const report = await runInit({ cwd: dir, ...opts });
         expect(report).toMatchObject({
             framework: "vite",
@@ -287,7 +264,7 @@ describe("runInit on a Vite app", () => {
         });
         expect(read(dir, "src/main.tsx")).toContain("import.meta.env.DEV && (");
         expect(read(dir, ".gitignore")).toContain(".notato/");
-        expect(calls).toEqual([
+        expect(commands).toEqual([
             ["claude", "mcp", "add", "notato", "--", "npx", "notato", "dev", "--project", "shop"],
         ]);
         expect(report.changes.map((c) => [c.file, c.action])).toEqual([
@@ -311,12 +288,14 @@ describe("runInit on a Vite app", () => {
 
     it("is safe to run twice: nothing changes and the registration is 'already'", async () => {
         const dir = app(VITE_APP);
-        await runInit({ cwd: dir, ...claude().opts });
+        await runInit({ cwd: dir, ...fakeCommands().opts });
         const before = read(dir, "src/main.tsx");
         const second = await runInit({
             cwd: dir,
-            ...claude({ code: 1, output: 'MCP server "notato" already exists in local config' })
-                .opts,
+            ...fakeCommands({
+                code: 1,
+                output: 'MCP server "notato" already exists in local config',
+            }).opts,
         });
         expect(read(dir, "src/main.tsx")).toBe(before);
         expect(second.changes.every((c) => c.action === "unchanged")).toBe(true);
@@ -350,9 +329,9 @@ describe("runInit on a Vite app", () => {
     });
 
     it("keeps a user-scoped Claude Code server to no one project, and says so", async () => {
-        const { calls, opts } = claude();
+        const { commands, opts } = fakeCommands();
         const report = await runInit({ cwd: app(VITE_APP), mcpScope: "user", ...opts });
-        expect(calls[0]?.slice(-3)).toEqual(["npx", "notato", "dev"]);
+        expect(commands[0]?.slice(-3)).toEqual(["npx", "notato", "dev"]);
         expect(report.notes.join("\n")).toContain("handed every project's notes, not only shop's");
     });
 
@@ -371,18 +350,18 @@ describe("runInit on a Vite app", () => {
 
     it("writes nothing and does not touch Claude on a dry run", async () => {
         const dir = app(VITE_APP);
-        const { calls, opts } = claude();
+        const { commands, opts } = fakeCommands();
         const report = await runInit({ cwd: dir, dryRun: true, ...opts });
         expect(read(dir, "src/main.tsx")).toBe(VITE_MAIN);
         expect(read(dir, ".gitignore")).toBe("node_modules\n");
         expect(report.changes[0]?.action).toBe("edited");
-        expect(calls).toEqual([]);
+        expect(commands).toEqual([]);
         expect(formatReport(report, true)).toContain("would set up");
     });
 
     it("honours --server, --project, --mcp-scope and --no-mcp", async () => {
         const dir = app(VITE_APP);
-        const { calls, opts } = claude();
+        const { commands, opts } = fakeCommands();
         await runInit({
             cwd: dir,
             server: "http://localhost:9999",
@@ -392,7 +371,7 @@ describe("runInit on a Vite app", () => {
         });
         expect(read(dir, "src/main.tsx")).toContain('server="http://localhost:9999"');
         expect(read(dir, "src/main.tsx")).toContain('project="custom"');
-        expect(calls[0]).toEqual([
+        expect(commands[0]).toEqual([
             "claude",
             "mcp",
             "add",
@@ -406,17 +385,17 @@ describe("runInit on a Vite app", () => {
             "--project",
             "custom",
         ]);
-        const skipped = claude();
+        const skipped = fakeCommands();
         expect((await runInit({ cwd: app(VITE_APP), mcp: false, ...skipped.opts })).mcp).toBe(
             "skipped"
         );
-        expect(skipped.calls).toEqual([]);
+        expect(skipped.commands).toEqual([]);
     });
 
     it("wraps npx in cmd on Windows, where Claude Code cannot start a .cmd shim directly", async () => {
-        const { calls, opts } = claude();
+        const { commands, opts } = fakeCommands();
         await runInit({ cwd: app(VITE_APP), platform: "win32", ...opts });
-        expect(calls[0]).toEqual([
+        expect(commands[0]).toEqual([
             "claude",
             "mcp",
             "add",
@@ -438,7 +417,7 @@ describe("runInit on a Vite app", () => {
         expect(formatReport(missing, false)).toContain("claude mcp add notato -- npx notato dev");
         const failed = await runInit({
             cwd: app(VITE_APP),
-            ...claude({ code: 2, output: "boom" }).opts,
+            ...fakeCommands({ code: 2, output: "boom" }).opts,
         });
         expect(failed.mcp).toBe("failed");
         expect(failed.warnings.join()).toContain("boom");

@@ -1,4 +1,4 @@
-import { join, resolve } from "node:path";
+import { resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { sampleAnnotation } from "@notato/schema";
 import {
@@ -13,8 +13,10 @@ import {
     type WebhookEvent,
     writeWebhooks,
 } from "@notato/server";
+import { configFile } from "../options.ts";
+import { type CommandOutput, collectOutput, UsageError } from "../output.ts";
 
-export const WEBHOOK_HELP = `notato config webhook
+const HELP = `notato config webhook
 
 Sends an event to a URL whenever an annotation is created or changes: a Slack or Discord channel, a build hook,
 your own service. They are kept in ${CONFIG_FILE} and a running server picks a change up on its own.
@@ -38,14 +40,6 @@ Options for add:
 Common options:
   -f, --file <path>      The config file (default $NOTATO_CONFIG, or ./${CONFIG_FILE})
   -C, --cwd <path>       Treat this as the current directory`;
-
-export interface WebhookResult {
-    code: number;
-    stdout: string;
-    stderr: string;
-}
-
-class UsageError extends Error {}
 
 const labelOf = (w: Webhook) => w.name ?? w.url;
 
@@ -84,14 +78,8 @@ export async function runWebhook(
     env: Record<string, string | undefined> = process.env,
     defaultCwd: string = process.cwd(),
     deps: WebhookDeps = {}
-): Promise<WebhookResult> {
-    const out: string[] = [];
-    const err: string[] = [];
-    const result = (code: number): WebhookResult => ({
-        code,
-        stdout: out.join("\n"),
-        stderr: err.join("\n"),
-    });
+): Promise<CommandOutput> {
+    const { out, err, done } = collectOutput();
     try {
         const { values, positionals } = parseArgs({
             args: argv,
@@ -108,11 +96,11 @@ export async function runWebhook(
             },
         });
         if (values.help) {
-            out.push(WEBHOOK_HELP);
-            return result(0);
+            out.push(HELP);
+            return done(0);
         }
         const cwd = resolve(values.cwd ?? defaultCwd);
-        const file = resolve(cwd, values.file ?? env.NOTATO_CONFIG ?? join(cwd, CONFIG_FILE));
+        const file = configFile(values.file, cwd, env);
         const [action = "list", ...rest] = positionals;
 
         if (action === "list" || action === "show") {
@@ -123,7 +111,7 @@ export async function runWebhook(
                 out.push(`Webhooks (${file}):`);
                 for (const w of hooks) out.push(`  ${describeWebhook(w)}`);
             }
-            return result(0);
+            return done(0);
         }
 
         if (action === "add") {
@@ -166,7 +154,7 @@ export async function runWebhook(
                 "A running server starts sending to it with the next event. Try it: notato config webhook test " +
                     (added.name ?? added.url)
             );
-            return result(0);
+            return done(0);
         }
 
         if (action === "remove" || action === "rm") {
@@ -174,7 +162,7 @@ export async function runWebhook(
             const gone = find(hooks, rest[0]);
             writeWebhooks(file, (list) => list.filter((w) => w.url !== gone.url));
             out.push(`Removed ${labelOf(gone)}.`);
-            return result(0);
+            return done(0);
         }
 
         if (action === "test") {
@@ -199,13 +187,13 @@ export async function runWebhook(
             });
             if (ok) {
                 out.push(`Sent a sample ${event} to ${labelOf(hook)}; it answered with success.`);
-                return result(0);
+                return done(0);
             }
             err.push(
                 `The test to ${labelOf(hook)} did not get through.`,
                 ...log.map((l) => `  ${l}`)
             );
-            return result(1);
+            return done(1);
         }
 
         throw new UsageError(`unknown action "${action}". Use list, add, remove or test`);
@@ -213,6 +201,6 @@ export async function runWebhook(
         err.push(
             `notato config webhook: ${error instanceof Error ? error.message : String(error)}`
         );
-        return result(error instanceof UsageError ? 2 : 1);
+        return done(error instanceof UsageError ? 2 : 1);
     }
 }

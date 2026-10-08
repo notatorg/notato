@@ -25,7 +25,7 @@ describe("zod schema", () => {
     });
 });
 
-describe("what was added for intent, source and context", () => {
+describe("intent, status, source and context", () => {
     const parse = (over: Record<string, unknown>) =>
         Annotation.safeParse({ ...sampleAnnotation, ...over });
 

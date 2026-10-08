@@ -1,6 +1,7 @@
 {
     "name": "@notato/cli",
     "version": "0.2.0",
+    "description": "The notato command: the local and shared server, init, doctor and the rest. Published as the `notato` package, compiled to one binary per platform.",
     "private": true,
     "type": "module",
     "bin": {

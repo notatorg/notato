@@ -99,7 +99,7 @@ export function parseAgents(values: string[] | undefined): AgentId[] | undefined
 
 /**
  * The agents this project looks set up for: their command is installed, or their folder is in the project. Claude
- * Code when there is no sign of any, as before there was a choice.
+ * Code when there is no sign of any.
  */
 export function detectAgents(dirs: string[], which: (name: string) => string | null): AgentId[] {
     const has = (path: string) => dirs.some((d) => existsSync(join(d, path)));
@@ -115,6 +115,27 @@ export function detectAgents(dirs: string[], which: (name: string) => string | n
     };
     const found = AGENT_IDS.filter((id) => signs[id]());
     return found.length ? found : ["claude"];
+}
+
+/**
+ * The agents to set up or check: the ones asked for, else those NOTATO_AGENTS names, else the ones the project in
+ * `dirs` looks set up for.
+ */
+export function resolveAgents(
+    asked: AgentId[] | undefined,
+    dirs: string[],
+    which: (name: string) => string | null
+): AgentId[] {
+    const fromEnv = process.env.NOTATO_AGENTS ? [process.env.NOTATO_AGENTS] : undefined;
+    return asked ?? parseAgents(fromEnv) ?? detectAgents(dirs, which);
+}
+
+/** Where Claude Code keeps a registration: `local` (its default, this folder for you), `project` or `user`. */
+export type McpScope = "local" | "project" | "user";
+
+/** The `--scope` words for an agent's own `mcp add` or `mcp remove`: only Claude Code has scopes. */
+export function scopeArgs(agent: Agent, scope: McpScope | undefined): string[] {
+    return agent.id === "claude" && scope && scope !== "local" ? ["--scope", scope] : [];
 }
 
 /** The one-line command to register Notato by hand with an agent that has a command for it. */

@@ -1,5 +1,7 @@
 import { parseArgs } from "node:util";
 import { DEFAULT_PORT, localUrl, mcpRefusal, runDev } from "@notato/server";
+import { parsePort, wantsTunnel } from "../options.ts";
+import { stopOnSignals } from "../process.ts";
 
 const HELP = `notato start
 
@@ -53,22 +55,15 @@ export async function runStartCommand(argv: string[], version: string): Promise<
         console.log(HELP);
         return 0;
     }
-    const port = values.port === undefined ? undefined : Number(values.port);
-    if (port !== undefined && (!Number.isInteger(port) || port < 0 || port > 65535)) {
-        throw new Error(`--port must be a number between 0 and 65535, got "${values.port}"`);
-    }
-    const tunnel =
-        values.tunnel === true || /^(1|true|yes|on)$/i.test(process.env.NOTATO_TUNNEL ?? "");
-
+    // Its own lines go to stdout below; the server's log stays on stderr.
     const dev = await runDev({
-        port,
+        port: parsePort(values.port),
         dir: values.dir,
         configFile: values.config,
         version,
-        tunnel,
+        tunnel: wantsTunnel(values.tunnel),
         stdio: false,
         mcp: values["no-mcp"] ? false : undefined,
-        // Its own lines go to stdout below; the server's log stays on stderr.
     });
     const base = localUrl(dev.port);
 
@@ -115,10 +110,7 @@ export async function runStartCommand(argv: string[], version: string): Promise<
         });
     }
 
-    // Nothing reads stdin, so stop on a signal, taking the tunnel host with it.
-    const stop = () => void dev.close().finally(() => process.exit(0));
-    process.on("SIGINT", stop);
-    process.on("SIGTERM", stop);
-    process.on("SIGHUP", stop);
+    // Closing takes the tunnel host with it.
+    stopOnSignals(() => dev.close());
     return 0;
 }

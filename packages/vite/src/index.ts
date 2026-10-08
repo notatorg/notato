@@ -56,9 +56,9 @@ function isWorktree(dir: string, gitFile: string): boolean {
 }
 
 /**
- * Records where each element is written in your source, as a `data-notato-src` attribute, so Notato can tell
- * Claude the exact file, line and column even in a built app, where React no longer knows. Add it next to the React
- * plugin; it only does anything when `VITE_NOTATO=true`.
+ * Records where each element is written in your source, as a `data-notato-src` attribute, so Notato can tell your
+ * coding agent the exact file, line and column even in a built app, where React no longer knows. Add it next to the
+ * React plugin; it only does anything when `VITE_NOTATO=true`.
  */
 export function notatoSource(options: NotatoSourceOptions = {}): Plugin {
     let active = false;

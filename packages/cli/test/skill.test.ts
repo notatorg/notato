@@ -1,23 +1,23 @@
 import { afterEach, describe, expect, it } from "bun:test";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
-import { runInit } from "../src/commands/init.ts";
-import { runRevert } from "../src/commands/revert.ts";
-import { CRITIQUE_SKILL_PATH, renderSkill, SKILL_PATH, SKILLS, skillState } from "../src/skill.ts";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { AGENTS } from "../src/agents.ts";
+import { runInit } from "../src/init/init.ts";
+import { runRevert } from "../src/init/revert.ts";
+import { renderSkill, SKILLS, skillState } from "../src/skill.ts";
+import { removeTempDirs, tempDir } from "./helpers.ts";
 
 // Init sets up the agents it finds on this machine; these tests are about Claude Code unless they say otherwise.
 process.env.NOTATO_AGENTS = "claude";
 
-const dirs: string[] = [];
-afterEach(() => {
-    for (const d of dirs.splice(0)) rmSync(d, { recursive: true, force: true });
-});
+afterEach(removeTempDirs);
+
+/** Where Claude Code reads the skills from, in the folder it starts in. */
+const SKILL_PATH = ".claude/skills/notato/SKILL.md";
+const CRITIQUE_SKILL_PATH = ".claude/skills/notato-critique/SKILL.md";
 
 function app(extra: Record<string, string> = {}): string {
-    const dir = mkdtempSync(join(tmpdir(), "notato-skill-"));
-    dirs.push(dir);
-    const files: Record<string, string> = {
+    return tempDir("notato-skill-", {
         "package.json": JSON.stringify({
             name: "shop",
             dependencies: { react: "^19" },
@@ -27,12 +27,7 @@ function app(extra: Record<string, string> = {}): string {
         "src/main.tsx": 'import { App } from "./App"\ncreateRoot(el).render(<App />)\n',
         ".gitignore": "node_modules\n",
         ...extra,
-    };
-    for (const [path, content] of Object.entries(files)) {
-        mkdirSync(dirname(join(dir, path)), { recursive: true });
-        writeFileSync(join(dir, path), content);
-    }
-    return dir;
+    });
 }
 const skillFile = (dir: string) => join(dir, SKILL_PATH);
 
@@ -141,9 +136,10 @@ describe("the critique skill", () => {
         expect(skillState(text, "notato-critique")).toBe("current");
         expect(skillState(`${text}\nours\n`, "notato-critique")).toBe("edited");
     });
-    it("every skill has a path under .claude/skills/<name>/SKILL.md", () => {
-        for (const s of SKILLS) expect(s.path).toBe(`.claude/skills/${s.name}/SKILL.md`);
-        expect(SKILLS.map((s) => s.path)).toEqual([SKILL_PATH, CRITIQUE_SKILL_PATH]);
+    it("every skill is a SKILL.md in a folder of its own name, which is where Claude Code reads it", () => {
+        const paths = SKILLS.map((s) => join(AGENTS.claude.skillsDir, s.file));
+        expect(paths).toEqual([SKILL_PATH, CRITIQUE_SKILL_PATH]);
+        for (const s of SKILLS) expect(s.file).toBe(`${s.name}/SKILL.md`);
     });
 });
 
@@ -242,31 +238,24 @@ describe("init writes the skill", () => {
     });
 
     it("leaves the repo's other skills alone", async () => {
-        const aspire = "---\nname: aspire\n---\nAspire notes\n";
-        const dir = app({ ".claude/skills/aspire/SKILL.md": aspire });
+        const deploy = "---\nname: deploy\n---\nHow we deploy\n";
+        const dir = app({ ".claude/skills/deploy/SKILL.md": deploy });
         await runInit({ cwd: dir, mcp: false });
-        expect(readFileSync(join(dir, ".claude/skills/aspire/SKILL.md"), "utf8")).toBe(aspire);
+        expect(readFileSync(join(dir, ".claude/skills/deploy/SKILL.md"), "utf8")).toBe(deploy);
     });
 
     it("goes where Claude Code starts, not into the app, when they differ", async () => {
-        const root = mkdtempSync(join(tmpdir(), "notato-skill-root-"));
-        dirs.push(root);
-        mkdirSync(join(root, ".git"));
-        mkdirSync(join(root, "web/src"), { recursive: true });
-        writeFileSync(
-            join(root, "web/package.json"),
-            JSON.stringify({
+        const root = tempDir("notato-skill-root-", {
+            ".git/HEAD": "ref: refs/heads/main\n",
+            "web/package.json": JSON.stringify({
                 name: "web",
                 dependencies: { react: "^19" },
                 devDependencies: { vite: "^8" },
-            })
-        );
-        writeFileSync(
-            join(root, "web/index.html"),
-            '<script type="module" src="/src/main.tsx"></script>'
-        );
-        writeFileSync(join(root, "web/src/main.tsx"), "render(<App />)\n");
-        await runInit({ cwd: join(root, "web"), claudeDir: "..", mcp: false });
+            }),
+            "web/index.html": '<script type="module" src="/src/main.tsx"></script>',
+            "web/src/main.tsx": "render(<App />)\n",
+        });
+        await runInit({ cwd: join(root, "web"), agentDir: "..", mcp: false });
         expect(existsSync(join(root, SKILL_PATH))).toBe(true);
         expect(existsSync(join(root, "web", SKILL_PATH))).toBe(false);
     });
@@ -289,10 +278,10 @@ describe("init --revert and the skill", () => {
     });
 
     it("keeps .claude/skills when another skill lives in it", async () => {
-        const dir = app({ ".claude/skills/aspire/SKILL.md": "---\nname: aspire\n---\n" });
+        const dir = app({ ".claude/skills/deploy/SKILL.md": "---\nname: deploy\n---\n" });
         await runInit({ cwd: dir, mcp: false });
         await runRevert({ cwd: dir, mcp: false });
-        expect(existsSync(join(dir, ".claude/skills/aspire/SKILL.md"))).toBe(true);
+        expect(existsSync(join(dir, ".claude/skills/deploy/SKILL.md"))).toBe(true);
         expect(existsSync(join(dir, ".claude/skills/notato"))).toBe(false);
     });
 

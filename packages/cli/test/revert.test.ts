@@ -1,9 +1,10 @@
 import { afterEach, describe, expect, it } from "bun:test";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
-import { AmbiguousAppError, type InitOptions, runInit } from "../src/commands/init.ts";
-import { formatRevertReport, runRevert } from "../src/commands/revert.ts";
+import { existsSync, rmSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { AmbiguousAppError } from "../src/init/choose-app.ts";
+import { runInit } from "../src/init/init.ts";
+import { formatRevertReport } from "../src/init/report.ts";
+import { runRevert } from "../src/init/revert.ts";
 import {
     addToGitignore,
     addToNextLayout,
@@ -15,17 +16,15 @@ import {
     removeFromNextLayout,
     removeFromNextPagesApp,
     removeFromViteEntry,
-} from "../src/init-transforms.ts";
+} from "../src/init/transforms.ts";
+import { fakeCommands, read, removeTempDirs, tempDir, writeFiles } from "./helpers.ts";
 
 // Init sets up the agents it finds on this machine; these tests are about Claude Code unless they say otherwise.
 process.env.NOTATO_AGENTS = "claude";
 
 const setup = { project: "shop", server: "http://localhost:4747" };
 
-const dirs: string[] = [];
-afterEach(() => {
-    for (const d of dirs.splice(0)) rmSync(d, { recursive: true, force: true });
-});
+afterEach(removeTempDirs);
 
 // ---- the transforms: what init writes, revert takes back out, exactly ------------------------------------
 
@@ -196,22 +195,7 @@ describe("removeFromGitignore", () => {
 
 // ---- whole runs: init, then revert, and the project is as it was --------------------------------------------
 
-function tree(files: Record<string, string>): string {
-    const dir = mkdtempSync(join(tmpdir(), "notato-revert-"));
-    dirs.push(dir);
-    for (const [path, content] of Object.entries(files)) {
-        mkdirSync(dirname(join(dir, path)), { recursive: true });
-        writeFileSync(join(dir, path), content);
-    }
-    return dir;
-}
-const read = (dir: string, path: string) => readFileSync(join(dir, path), "utf8");
-const write = (dir: string, files: Record<string, string>) => {
-    for (const [path, content] of Object.entries(files)) {
-        mkdirSync(dirname(join(dir, path)), { recursive: true });
-        writeFileSync(join(dir, path), content);
-    }
-};
+const tree = (files: Record<string, string>) => tempDir("notato-revert-", files);
 
 const pkg = (extra: Record<string, unknown> = {}, scripts: Record<string, string> = {}) =>
     JSON.stringify({
@@ -224,19 +208,6 @@ const pkg = (extra: Record<string, unknown> = {}, scripts: Record<string, string
 const INDEX =
     '<!doctype html><div id="root"></div><script type="module" src="/src/main.tsx"></script>';
 
-/** Stands in for the `claude` command and records what it was asked to run. */
-function claude(result: { code: number; output: string } = { code: 0, output: "ok" }) {
-    const calls: Array<{ command: string[]; cwd: string }> = [];
-    const opts: Pick<InitOptions, "run" | "which"> = {
-        which: () => "/usr/local/bin/claude",
-        run: async (command, cwd) => {
-            calls.push({ command, cwd });
-            return result;
-        },
-    };
-    return { calls, opts };
-}
-
 const VITE_APP = {
     "package.json": pkg(),
     "index.html": INDEX,
@@ -247,10 +218,10 @@ const VITE_APP = {
 describe("runRevert on a Vite app", () => {
     it("undoes init: the files are as they were, and the registration is removed", async () => {
         const dir = tree(VITE_APP);
-        await runInit({ cwd: dir, ...claude().opts });
+        await runInit({ cwd: dir, ...fakeCommands().opts });
         expect(read(dir, "src/main.tsx")).not.toBe(TWO_SPACE);
 
-        const c = claude();
+        const c = fakeCommands();
         const report = await runRevert({ cwd: dir, ...c.opts });
         expect(read(dir, "src/main.tsx")).toBe(TWO_SPACE);
         expect(read(dir, ".gitignore")).toBe("node_modules\n");
@@ -283,7 +254,7 @@ describe("runRevert on a Vite app", () => {
         const dir = tree(VITE_APP);
         await runInit({ cwd: dir, mcp: false });
         await runRevert({ cwd: dir, mcp: false });
-        const c = claude({ code: 1, output: "No MCP server found with name: notato" });
+        const c = fakeCommands({ code: 1, output: "No MCP server found with name: notato" });
         const again = await runRevert({ cwd: dir, ...c.opts });
         expect(again.changes.every((x) => x.action === "unchanged")).toBe(true);
         expect(again.warnings).toEqual([]);
@@ -295,7 +266,7 @@ describe("runRevert on a Vite app", () => {
         const dir = tree(VITE_APP);
         await runInit({ cwd: dir, mcp: false });
         const after = read(dir, "src/main.tsx");
-        const c = claude();
+        const c = fakeCommands();
         const report = await runRevert({ cwd: dir, dryRun: true, ...c.opts });
         expect(read(dir, "src/main.tsx")).toBe(after);
         expect(c.calls).toEqual([]);
@@ -307,7 +278,7 @@ describe("runRevert on a Vite app", () => {
     it("passes the scope through, and --no-mcp skips Claude Code", async () => {
         const dir = tree(VITE_APP);
         await runInit({ cwd: dir, mcp: false });
-        const scoped = claude();
+        const scoped = fakeCommands();
         await runRevert({ cwd: dir, mcpScope: "project", ...scoped.opts });
         expect(scoped.calls[0]?.command).toEqual([
             "claude",
@@ -317,14 +288,17 @@ describe("runRevert on a Vite app", () => {
             "project",
             "notato",
         ]);
-        const skipped = claude();
+        const skipped = fakeCommands();
         expect((await runRevert({ cwd: dir, mcp: false, ...skipped.opts })).mcp).toBe("skipped");
         expect(skipped.calls).toEqual([]);
     });
 
     it("reports a failed removal as a failure, not as already gone", async () => {
         const dir = tree(VITE_APP);
-        const report = await runRevert({ cwd: dir, ...claude({ code: 1, output: "boom" }).opts });
+        const report = await runRevert({
+            cwd: dir,
+            ...fakeCommands({ code: 1, output: "boom" }).opts,
+        });
         expect(report.mcp).toBe("failed");
         expect(report.warnings.join()).toContain("boom");
     });
@@ -339,7 +313,10 @@ describe("runRevert on a Vite app", () => {
     it("keeps .notato/ ignored while the folder is there, so its database and tokens cannot be committed", async () => {
         const dir = tree(VITE_APP);
         await runInit({ cwd: dir, mcp: false });
-        write(dir, { ".notato/device.json": '{"token":"secret"}', ".notato/notato.db": "data" });
+        writeFiles(dir, {
+            ".notato/device.json": '{"token":"secret"}',
+            ".notato/notato.db": "data",
+        });
         const report = await runRevert({ cwd: dir, mcp: false });
         expect(read(dir, ".gitignore")).toContain(".notato/");
         expect(report.changes.find((c) => c.file === ".gitignore")).toMatchObject({
@@ -351,7 +328,7 @@ describe("runRevert on a Vite app", () => {
 
         // A data folder further down (a server started in one app of a repo) counts too.
         rmSync(join(dir, ".notato"), { recursive: true });
-        write(dir, { "tools/.notato/notato.db": "data" });
+        writeFiles(dir, { "tools/.notato/notato.db": "data" });
         await runRevert({ cwd: dir, mcp: false });
         expect(read(dir, ".gitignore")).toContain(".notato/");
 
@@ -471,11 +448,11 @@ describe("runRevert in a repo of several apps", () => {
         expect(read(dir, ".gitignore")).toBe("node_modules\n");
     });
 
-    it("registers and removes for the repo root: the .gitignore and Claude Code follow --claude-dir", async () => {
+    it("registers and removes for the repo root: the .gitignore and Claude Code follow --agent-dir", async () => {
         const dir = repo();
-        await runInit({ cwd: dir, claudeDir: ".", mcp: false });
-        const c = claude();
-        await runRevert({ cwd: dir, claudeDir: ".", ...c.opts });
+        await runInit({ cwd: dir, agentDir: ".", mcp: false });
+        const c = fakeCommands();
+        await runRevert({ cwd: dir, agentDir: ".", ...c.opts });
         expect(c.calls[0]?.cwd).toBe(dir);
         expect(read(dir, ".gitignore")).toBe("node_modules\n");
     });

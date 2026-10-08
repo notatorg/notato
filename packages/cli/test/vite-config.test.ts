@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { addToViteConfig, removeFromViteConfig } from "../src/init-transforms.ts";
+import { addToViteConfig, removeFromViteConfig } from "../src/init/transforms.ts";
 
 /** The shape of a typical federated app: ESM, semicolons, 4 spaces, one entry per line. */
 const REPO_CONFIG = `import { defineConfig, loadEnv } from "vite";

@@ -1,22 +1,17 @@
 import { afterEach, describe, expect, it } from "bun:test";
 import { createHmac } from "node:crypto";
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { runConfig } from "../src/commands/config.ts";
 import { runWebhook } from "../src/commands/webhook.ts";
+import { removeTempDirs, tempDir } from "./helpers.ts";
 
-const dirs: string[] = [];
 const servers: Array<{ stop(force?: boolean): void }> = [];
 afterEach(() => {
     for (const s of servers.splice(0)) s.stop(true);
-    for (const d of dirs.splice(0)) rmSync(d, { recursive: true, force: true });
+    removeTempDirs();
 });
-const tmp = () => {
-    const dir = mkdtempSync(join(tmpdir(), "notato-wh-"));
-    dirs.push(dir);
-    return dir;
-};
+const tmp = () => tempDir("notato-wh-");
 const fileOf = (dir: string) => join(dir, "notato.config.json");
 const run = (dir: string, args: string[], env: Record<string, string | undefined> = {}) =>
     runWebhook(args, env, dir);

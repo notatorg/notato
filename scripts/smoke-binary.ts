@@ -257,7 +257,7 @@ await step("notato dev: MCP over stdio, screenshots as images, SQLite", async ()
     };
     assert(after.annotation.status === "resolved", "resolving over MCP did not reach the server");
 
-    const doctor = await run(["doctor", "--server", base, "--no-claude"]);
+    const doctor = await run(["doctor", "--server", base, "--no-agents"]);
     assert(doctor.code === 0, `doctor failed:\n${doctor.stdout}`);
     assert(
         doctor.stdout.includes("screenshot bytes matched"),

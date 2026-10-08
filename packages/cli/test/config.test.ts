@@ -1,18 +1,11 @@
 import { afterEach, describe, expect, it } from "bun:test";
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { runConfig } from "../src/commands/config.ts";
+import { removeTempDirs, tempDir } from "./helpers.ts";
 
-const dirs: string[] = [];
-afterEach(() => {
-    for (const d of dirs.splice(0)) rmSync(d, { recursive: true, force: true });
-});
-const tmp = () => {
-    const dir = mkdtempSync(join(tmpdir(), "notato-cfg-"));
-    dirs.push(dir);
-    return dir;
-};
+afterEach(removeTempDirs);
+const tmp = () => tempDir("notato-cfg-");
 const run = (dir: string, args: string[], env: Record<string, string | undefined> = {}) =>
     runConfig(args, env, dir);
 const fileOf = (dir: string) => join(dir, "notato.config.json");

@@ -1,4 +1,4 @@
-import { DEFAULT_STYLE, detectStyle, type Style } from "./style.ts";
+import { DEFAULT_STYLE, detectStyle, type Style } from "../style.ts";
 
 /** What a transform did. `reason` explains a no-op, so the CLI can tell the person what to do instead. */
 export interface Edit {
@@ -438,7 +438,7 @@ export function removeFromViteEntry(source: string): Edit {
             return {
                 changed: false,
                 source,
-                reason: "the <Notato /> element has been changed by hand into something I could not safely remove",
+                reason: "the <Notato /> element has been changed by hand into something init could not safely remove",
             };
         }
         out = without;
@@ -571,7 +571,7 @@ export function removeFromViteConfig(source: string): Edit {
         return {
             changed: false,
             source,
-            reason: "notatoSource() is used in a way I could not safely remove",
+            reason: "notatoSource() is used in a way init could not safely remove",
         };
     }
     out = out.replace(PLUGIN_IMPORT_LINE, "");
