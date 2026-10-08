@@ -75,6 +75,8 @@ export function allStamps(): Stamp[] {
     return [
         { file: "package.json", pattern: /"version": "([^"]+)"/ },
         ...npmStamps(),
+        // The extension's build writes its package.json version into the manifest; the source copy keeps up too.
+        { file: "packages/extension/manifest.json", pattern: /"version": "([^"]+)"/ },
         ...Object.values(SDK_STAMPS).flat(),
     ];
 }

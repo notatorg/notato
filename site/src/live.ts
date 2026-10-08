@@ -9,7 +9,6 @@ export function start(): NotatoController {
         mode: "test",
         project: "notato-site",
         appName: "Notato website",
-        enabled: true,
         position: "bottom-right",
     });
 }

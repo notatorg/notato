@@ -2,6 +2,12 @@
     "name": "@notato/schema",
     "version": "0.2.0",
     "description": "The wire format every Notato SDK and server share: Zod schemas for annotations and bundles, and schema.json made from them.",
+    "keywords": [
+        "notato",
+        "annotations",
+        "schema",
+        "zod"
+    ],
     "type": "module",
     "sideEffects": false,
     "exports": {

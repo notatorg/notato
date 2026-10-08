@@ -2,6 +2,11 @@
     "name": "@notato/core",
     "version": "0.2.0",
     "description": "What Notato SDKs share: the annotation pipeline, the Markdown an agent reads, bundles and ids.",
+    "keywords": [
+        "notato",
+        "annotations",
+        "markdown"
+    ],
     "type": "module",
     "sideEffects": false,
     "exports": {

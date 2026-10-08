@@ -74,12 +74,13 @@ const megabytes = (path: string, digits = 0) =>
 
 const REPOSITORY = { type: "git", url: `git+${REPO_URL}.git` };
 
-/** The package.json fields every published package shares. */
-const commonFields = (version: string) => ({
+/** The package.json fields every published package shares; `dir` is where a library's own README is. */
+const commonFields = (version: string, dir?: string) => ({
     version,
+    author: "Notato contributors",
     license: "MIT",
     repository: REPOSITORY,
-    homepage: `${REPO_URL}#readme`,
+    homepage: dir ? `${REPO_URL}/tree/main/${dir}#readme` : `${REPO_URL}#readme`,
     bugs: { url: `${REPO_URL}/issues` },
     publishConfig: { access: "public", provenance: true },
 });
@@ -116,10 +117,11 @@ function writePlatformPackages(targets: Target[], version: string) {
     for (const target of targets) {
         const name = platformName(target);
         const source = join(OUT, "bin", target.bun, binaryName(target));
-        if (!existsSync(source)) {
-            console.log(`  (skipping ${name}: no binary at ${relative(ROOT, source)})`);
-            continue;
-        }
+        // The launcher lists every platform package, so a release without one would install nothing there.
+        if (!existsSync(source))
+            throw new Error(
+                `no binary at ${relative(ROOT, source)} for ${name}: compile it, or pass --targets for the ones you have`
+            );
         const dir = packageDir(name);
         const binary = join(dir, "bin", binaryName(target));
         mkdirSync(dirname(binary), { recursive: true });
@@ -325,7 +327,7 @@ async function buildLibrary(lib: Library, libs: Library[], version: string) {
     writeJson(join(dir, "package.json"), {
         name: lib.name,
         description: lib.pkg.description,
-        ...commonFields(version),
+        ...commonFields(version, lib.dir),
         repository: { ...REPOSITORY, directory: lib.dir },
         ...(lib.pkg.keywords ? { keywords: lib.pkg.keywords } : {}),
         type: "module",

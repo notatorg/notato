@@ -385,16 +385,16 @@ docker run -p 4747:4747 -v notato:/data -e NOTATO_ADMIN_PASSWORD=… ghcr.io/not
 
 ## SDK props
 
-| Prop                                                                                        |                                                                                                        |
-| ------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
-| `mode`                                                                                      | `dev` (default), `test`, `agent`                                                                       |
-| `project`                                                                                   | Project id                                                                                             |
-| `server`, `token`                                                                           | Server URL, and a project token for a shared server                                                    |
-| `appName`, `appVersion`                                                                     | Recorded on every annotation                                                                           |
-| `plugins`                                                                                   | Extra plugins; one with the same `id` as a built-in replaces it (for example a different `screenshot`) |
-| `enabled`                                                                                   | Defaults to off in production builds. Also guard with `import.meta.env.DEV` to ship nothing at all     |
-| `screenshots`                                                                               | `false` never takes a screenshot from this page. A server that has them off wins either way            |
-| `hashRoutes`, `testIdAttributes`, `maskInputs`, `shortcut`, `position`, `author`, `persist` | See the types                                                                                          |
+| Prop                                                                                        |                                                                                                                                     |
+| ------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| `mode`                                                                                      | `dev` (default), `test`, `agent`                                                                                                    |
+| `project`                                                                                   | Project id                                                                                                                          |
+| `server`, `token`                                                                           | Server URL, and a project token for a shared server                                                                                 |
+| `appName`, `appVersion`                                                                     | Recorded on every annotation                                                                                                        |
+| `plugins`                                                                                   | Extra plugins; one with the same `id` as a built-in replaces it (for example a different `screenshot`)                              |
+| `enabled`                                                                                   | `<Notato />` and `provideNotato` only: off in production builds by default. Guard with `import.meta.env.DEV` to ship nothing at all |
+| `screenshots`                                                                               | `false` never takes a screenshot from this page. A server that has them off wins either way                                         |
+| `hashRoutes`, `testIdAttributes`, `maskInputs`, `shortcut`, `position`, `author`, `persist` | See the types                                                                                                                       |
 
 The toolbar lives in a shadow root, so your styles cannot leak in or out. Identity resolves a test id attribute (`data-testid`, `data-qa`, `data-cy`, `data-test`), then role and accessible name, then the shortest unique CSS selector; in a React development build it also records the component and source file.
 
