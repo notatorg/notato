@@ -10,7 +10,13 @@ SwiftUI and UIKit apps on iOS 17 and later (and Mac Catalyst), as a Swift packag
 npx notato dev           # the server your agent reads, on http://localhost:4747
 ```
 
-Add the package (File › Add Package Dependencies…, `https://github.com/notatorg/notato`, or until it is published the path of a clone of the repository), then start it as early as the app starts:
+Add the package: in Xcode, File › Add Package Dependencies… with `https://github.com/notatorg/notato`, or in a `Package.swift`:
+
+```swift
+.package(url: "https://github.com/notatorg/notato", from: "0.1.0"),
+```
+
+with `.product(name: "Notato", package: "notato")` in your target's dependencies. Then start it as early as the app starts:
 
 ```swift
 import SwiftUI

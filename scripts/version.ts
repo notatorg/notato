@@ -31,6 +31,8 @@ export const SDK_STAMPS: Record<string, Stamp[]> = {
             file: "sdks/swift/Sources/Notato/Version.swift",
             pattern: /static let version = "([^"]+)"/,
         },
+        // The README's Package.swift line, which people copy as it is.
+        { file: "sdks/swift/README.md", pattern: /notatorg\/notato", from: "([^"]+)"/ },
     ],
     // The Maven coordinates and BuildConfig.NOTATO_VERSION.
     android: [
