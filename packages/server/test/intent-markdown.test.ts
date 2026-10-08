@@ -1,18 +1,27 @@
 import { afterEach, describe, expect, it } from "bun:test";
-import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import type { Annotation } from "@notato/schema";
-import { type Backend, createMcpServer } from "../src/index.ts";
-import { annotationFixture, filesFor, ingest, makeApp, makeBackend, multipart } from "./helpers.ts";
+import type { Backend } from "../src/index.ts";
+import {
+    annotationFixture,
+    cleanupAfterEach,
+    connectMcp,
+    filesFor,
+    ingest,
+    makeApp,
+    makeBackend,
+    multipart,
+} from "./helpers.ts";
+
+// What a note asks for (its intent: fix, change, question, approve, variants), and notes as Markdown at each level of
+// detail, over HTTP and through the MCP tools.
 
 type Ctx = ReturnType<typeof makeApp>;
 let ctx: Ctx | undefined;
-const cleanups: Array<() => void | Promise<void>> = [];
-afterEach(async () => {
+afterEach(() => {
     ctx?.cleanup();
     ctx = undefined;
-    for (const c of cleanups.splice(0)) await c();
 });
+const defer = cleanupAfterEach();
 
 const ids = async (res: Response) =>
     ((await res.json()) as { items: Array<{ annotation: Annotation }> }).items
@@ -109,6 +118,7 @@ describe("annotations as Markdown over HTTP", () => {
             "compact, standard, detailed, forensic"
         );
         expect((await ctx.call("/annotations/01NOPE/markdown")).status).toBe(404);
+        expect((await ctx.call("/projects/..%2F..%2Fx/markdown")).status).toBe(400);
     });
 
     it("a project's list, filtered the same way the JSON list is, with a title", async () => {
@@ -132,29 +142,12 @@ describe("annotations as Markdown over HTTP", () => {
     });
 });
 
-async function mcp(backend: Backend) {
-    const server = createMcpServer({ backend, version: "test" });
-    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
-    const client = new Client({ name: "test-client", version: "0" });
-    await Promise.all([server.connect(serverTransport), client.connect(clientTransport)]);
-    cleanups.push(() => client.close());
-    const call = async (name: string, args: Record<string, unknown> = {}) =>
-        (await client.callTool({ name, arguments: args })) as unknown as {
-            content: Array<{ type: string; text?: string }>;
-            isError?: boolean;
-        };
-    const text = (r: Awaited<ReturnType<typeof call>>) =>
-        r.content
-            .filter((c) => c.type === "text")
-            .map((c) => c.text)
-            .join("\n");
-    return { client, call, text };
-}
+const mcp = (backend: Backend) => connectMcp(backend, defer, { client: "test-client" });
 
 describe("intent through the MCP tools", () => {
     it("tells the model what each intent means for what it does", async () => {
         const t = makeBackend();
-        cleanups.push(t.cleanup);
+        defer(t.cleanup);
         const { client } = await mcp(t.backend);
         const instructions = client.getInstructions() ?? "";
         expect(instructions).toContain("question means the person wants an answer, not an edit");
@@ -164,7 +157,7 @@ describe("intent through the MCP tools", () => {
 
     it("notato_list_open shows the intent and filters by it", async () => {
         const t = makeBackend();
-        cleanups.push(t.cleanup);
+        defer(t.cleanup);
         await t.backend.ingest(
             annotationFixture({ comment: "Q one", intent: "question" }),
             filesFor()
@@ -182,7 +175,7 @@ describe("intent through the MCP tools", () => {
 
     it("notato_get honours the detail level, and notato_watch too", async () => {
         const t = makeBackend();
-        cleanups.push(t.cleanup);
+        defer(t.cleanup);
         const a = annotationFixture({
             context: { console: [{ level: "log", message: "boot-message" }] },
         });
@@ -198,7 +191,7 @@ describe("intent through the MCP tools", () => {
 
     it("notato_annotate passes the intent and a selector with >>> on to the page", async () => {
         const t = makeBackend();
-        cleanups.push(t.cleanup);
+        defer(t.cleanup);
         const seen: unknown[] = [];
         // Stands in for a connected page: records what the server asked it to annotate.
         const spy = Object.create(t.backend) as Backend;
@@ -224,7 +217,7 @@ describe("intent through the MCP tools", () => {
 
     it("refuses an intent that is not one", async () => {
         const t = makeBackend();
-        cleanups.push(t.cleanup);
+        defer(t.cleanup);
         const { call } = await mcp(t.backend);
         const result = await call("notato_annotate", {
             target: "#x",

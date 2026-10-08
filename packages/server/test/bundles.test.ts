@@ -1,24 +1,27 @@
+import { Database } from "bun:sqlite";
 import { afterEach, describe, expect, it } from "bun:test";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { readBundle } from "@notato/core";
 import type { Annotation } from "@notato/schema";
 import { strToU8, unzipSync, zipSync } from "fflate";
 import { createMcpServer, SqliteStore } from "../src/index.ts";
-import { makeApp, makeBackend, makeBundleZip, PNG } from "./helpers.ts";
+import {
+    cleanupAfterEach,
+    connectMcp,
+    makeApp,
+    makeBackend,
+    makeBundleZip,
+    PNG,
+    tempDir,
+} from "./helpers.ts";
 
 /** A template annotation, for tests that tweak just its target. */
 const originals0 = (await makeBundleZip(1)).originals[0] as Annotation;
 
 let ctx: ReturnType<typeof makeApp>;
-const tmpDirs: string[] = [];
-afterEach(() => {
-    ctx?.cleanup();
-    for (const d of tmpDirs.splice(0)) rmSync(d, { recursive: true, force: true });
-});
+afterEach(() => ctx?.cleanup());
+const defer = cleanupAfterEach();
 
 const postZip = (
     zip: Uint8Array,
@@ -268,6 +271,15 @@ describe("rejecting bad bundles", () => {
         expect(await error(res)).toContain('bundle is for project "checkout-web"');
     });
 
+    it("rejects a bundle for a project id no project can have, instead of making that project", async () => {
+        ctx = makeApp();
+        const { zip } = await makeBundleZip(1, () => ({ projectId: ".." }), { projectId: ".." });
+        const res = await postZip(zip, "/bundles");
+        expect(res.status).toBe(400);
+        expect(await error(res)).toContain("is not a project id");
+        expect((await (await ctx.call("/projects")).json()).items).toEqual([]);
+    });
+
     it("rejects an unsupported schemaVersion and a missing screenshot", async () => {
         ctx = makeApp();
         const { zip } = await makeBundleZip(1);
@@ -318,10 +330,7 @@ describe("rejecting bad bundles", () => {
 
 describe("database migration", () => {
     it("upgrades a version 1 database in place, keeping its annotations", async () => {
-        const dir = mkdtempSync(join(tmpdir(), "notato-migrate-"));
-        tmpDirs.push(dir);
-        const path = join(dir, "old.db");
-        const { Database } = require("bun:sqlite");
+        const path = join(tempDir(defer, "notato-migrate-"), "old.db");
         const old = new Database(path, { create: true });
         old.run("CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)");
         old.run(
@@ -386,22 +395,14 @@ describe("database migration", () => {
 describe("notato_import_bundle", () => {
     async function connect(allowImportPaths?: boolean) {
         const b = makeBackend();
+        defer(b.cleanup);
         const server = createMcpServer({ backend: b.backend, version: "t", allowImportPaths });
-        const [ct, st] = InMemoryTransport.createLinkedPair();
-        const client = new Client({ name: "t", version: "0" });
-        await Promise.all([server.connect(st), client.connect(ct)]);
-        const call = async (name: string, args: Record<string, unknown>) =>
-            (await client.callTool({ name, arguments: args })) as unknown as {
-                isError?: boolean;
-                content: Array<{ text?: string }>;
-            };
-        return { ...b, client, call };
+        return { ...b, ...(await connectMcp(server, defer, { client: "t" })) };
     }
 
     it("loads a zip from a path, then the annotations are workable", async () => {
         const t = await connect();
-        const dir = mkdtempSync(join(tmpdir(), "notato-import-"));
-        tmpDirs.push(dir);
+        const dir = tempDir(defer, "notato-import-");
         const { zip, bundle } = await makeBundleZip(2, (n) => ({ comment: `tester note ${n}` }));
         const file = join(dir, "feedback.zip");
         writeFileSync(file, zip);
@@ -416,8 +417,6 @@ describe("notato_import_bundle", () => {
         expect(listed.content[0]?.text).toContain("tester note 2");
         const again = await t.call("notato_import_bundle", { path: file });
         expect(again.content[0]?.text).toContain("2 already present");
-        await t.client.close();
-        t.cleanup();
     });
 
     it("reports a missing file, a bad file, and a server that does not read paths", async () => {
@@ -426,21 +425,16 @@ describe("notato_import_bundle", () => {
             (await t.call("notato_import_bundle", { path: "/definitely/not/here.zip" })).content[0]
                 ?.text
         ).toContain("No file at");
-        const dir = mkdtempSync(join(tmpdir(), "notato-import-"));
-        tmpDirs.push(dir);
+        const dir = tempDir(defer, "notato-import-");
         const bad = join(dir, "bad.zip");
         writeFileSync(bad, "not a zip");
         const result = await t.call("notato_import_bundle", { path: bad });
         expect(result.isError).toBe(true);
         expect(result.content[0]?.text).toContain("not a readable zip");
-        await t.client.close();
-        t.cleanup();
 
         const locked = await connect(false);
         const refused = await locked.call("notato_import_bundle", { path: bad });
         expect(refused.isError).toBe(true);
         expect(refused.content[0]?.text).toContain("does not read files from disk");
-        await locked.client.close();
-        locked.cleanup();
     });
 });

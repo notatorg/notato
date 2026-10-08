@@ -1,10 +1,7 @@
-import { afterEach, describe, expect, it } from "bun:test";
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { describe, expect, it } from "bun:test";
 import { join } from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
-import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import {
     AgentPresence,
@@ -19,29 +16,23 @@ import {
     parseProjects,
     runDev,
 } from "../src/index.ts";
-import { annotationFixture, filesFor, makeBackend } from "./helpers.ts";
+import {
+    annotationFixture,
+    cleanupAfterEach,
+    connectMcp,
+    filesFor,
+    makeBackend,
+    type ToolResult,
+    tempDir,
+    toolText as text,
+} from "./helpers.ts";
 
-type ToolResult = { isError?: boolean; content: Array<{ type: string; text?: string }> };
-const text = (r: ToolResult) =>
-    r.content
-        .filter((c) => c.type === "text")
-        .map((c) => c.text)
-        .join("\n");
+// Several repositories sharing one server: an agent kept to its own projects (`notato dev --project`,
+// `/mcp?project=`) is handed only their notes, and counts as there only on their pages.
 
-const cleanups: Array<() => void | Promise<void>> = [];
-afterEach(async () => {
-    for (const c of cleanups.splice(0).reverse()) await c();
-});
+const defer = cleanupAfterEach();
 
-async function connect(server: McpServer) {
-    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
-    const client = new Client({ name: "claude-code", version: "0" });
-    await Promise.all([server.connect(serverTransport), client.connect(clientTransport)]);
-    cleanups.push(() => client.close());
-    const call = async (name: string, args: Record<string, unknown> = {}) =>
-        (await client.callTool({ name, arguments: args })) as unknown as ToolResult;
-    return { client, call };
-}
+const connect = (server: McpServer) => connectMcp(server, defer);
 
 const add = async (backend: LocalBackend, projectId: string, comment: string) =>
     (await backend.ingest(annotationFixture({ projectId, comment }), filesFor())).stored.annotation;
@@ -49,7 +40,7 @@ const add = async (backend: LocalBackend, projectId: string, comment: string) =>
 /** One server shared by three apps, and an agent kept to `projects`. */
 async function shared(projects?: string[]) {
     const ctx = makeBackend();
-    cleanups.push(ctx.cleanup);
+    defer(ctx.cleanup);
     const shop = await add(ctx.backend, "shop", "shop: the basket total is wrong");
     const admin = await add(ctx.backend, "admin", "admin: the table header overlaps");
     const blog = await add(ctx.backend, "blog", "blog: the byline is grey on grey");
@@ -207,7 +198,7 @@ describe("several projects in a filter", () => {
 describe("whether an agent is there, per project", () => {
     it("counts an agent kept to some projects only on their pages", () => {
         const presence = new AgentPresence();
-        cleanups.push(() => presence.stop());
+        defer(() => presence.stop());
         const release = presence.hold("pfa_shop", "Claude", ["shop"]);
         presence.touch("pfa_any", "Codex");
         expect(presence.stateFor("shop")).toMatchObject({
@@ -227,7 +218,7 @@ describe("whether an agent is there, per project", () => {
 
     it("tells each page about its own project only", () => {
         const presence = new AgentPresence();
-        cleanups.push(() => presence.stop());
+        defer(() => presence.stop());
         const shop: AgentState[] = [];
         const admin: AgentState[] = [];
         presence.subscribe((s) => shop.push(s), "shop");
@@ -242,11 +233,7 @@ describe("whether an agent is there, per project", () => {
 });
 
 describe("several repositories sharing one dev server", () => {
-    const tmp = () => {
-        const dir = mkdtempSync(join(tmpdir(), "notato-scope-"));
-        cleanups.push(() => rmSync(dir, { recursive: true, force: true }));
-        return dir;
-    };
+    const tmp = () => tempDir(defer, "notato-scope-");
     const dev = async (options: { port?: number; projects?: string[] } = {}) => {
         const rt: DevRuntime = await runDev({
             port: options.port ?? 0,
@@ -257,7 +244,7 @@ describe("several repositories sharing one dev server", () => {
             projects: options.projects,
             log: () => {},
         });
-        cleanups.push(() => rt.close());
+        defer(() => rt.close());
         return rt;
     };
 
@@ -286,7 +273,7 @@ describe("several repositories sharing one dev server", () => {
     it("takes the projects from NOTATO_PROJECT when none are passed", async () => {
         const before = process.env.NOTATO_PROJECT;
         process.env.NOTATO_PROJECT = "shop,admin";
-        cleanups.push(() => {
+        defer(() => {
             if (before === undefined) delete process.env.NOTATO_PROJECT;
             else process.env.NOTATO_PROJECT = before;
         });
@@ -305,7 +292,7 @@ describe("several repositories sharing one dev server", () => {
                 new URL(`http://127.0.0.1:${server.port}/mcp?project=shop`)
             )
         );
-        cleanups.push(() => client.close());
+        defer(() => client.close());
         const listed = text(
             (await client.callTool({ name: "notato_list_open", arguments: {} })) as ToolResult
         );

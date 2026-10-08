@@ -10,6 +10,14 @@ import { filterToQuery } from "./query.ts";
 import type { RelayArgs, RelayResult } from "./relay.ts";
 import type { AnnotationFilter, HandedEntry, StoredAnnotation } from "./storage.ts";
 
+/** How long a health check waits: a server on this machine that takes longer is as good as gone. */
+const HEALTH_TIMEOUT_MS = 1500;
+/** The page size a list is fetched in when the caller wants everything: the most the server gives at once. */
+const PAGE_SIZE = 500;
+/** How long one long-poll asks the server to wait, inside the server's own cap. */
+const WAIT_SLICE_MS = 25_000;
+
+/** The server answered with an error (`status`), or could not be reached at all (no status). */
 export class RemoteError extends Error {
     constructor(
         message: string,
@@ -41,13 +49,19 @@ export class RemoteBackend implements Backend {
         private token?: string
     ) {}
 
-    private async request(path: string, init: RequestInit = {}): Promise<Response> {
-        const headers = new Headers(init.headers);
+    /** Who is asking: this agent's heartbeat (see agents.ts), and the token when the server needs one. */
+    private headers(extra?: HeadersInit): Headers {
+        const headers = new Headers(extra);
         if (this.token) headers.set("Authorization", `Bearer ${this.token}`);
         headers.set(AGENT_HEADER, this.agentId);
         if (this.agentName) headers.set(AGENT_NAME_HEADER, this.agentName);
         if (this.agentProjects?.length)
             headers.set(AGENT_PROJECTS_HEADER, encodeAgentProjects(this.agentProjects));
+        return headers;
+    }
+
+    private async request(path: string, init: RequestInit = {}): Promise<Response> {
+        const headers = this.headers(init.headers);
         try {
             return await fetch(`${this.base}${path}`, { ...init, headers });
         } catch (error) {
@@ -87,7 +101,7 @@ export class RemoteBackend implements Backend {
         let after = filter.afterSeq;
         for (;;) {
             const body = await this.json<{ items: StoredAnnotation[]; next?: number }>(
-                `/annotations?${filterToQuery({ ...filter, afterSeq: after, limit: 500 })}`
+                `/annotations?${filterToQuery({ ...filter, afterSeq: after, limit: PAGE_SIZE })}`
             );
             all.push(...(body?.items ?? []).map((s) => this.parse(s)));
             // An older server sends no `next`: the one page is all there is to have.
@@ -176,7 +190,7 @@ export class RemoteBackend implements Backend {
     ): Promise<boolean> {
         const deadline = Date.now() + timeoutMs;
         while (Date.now() < deadline && !signal?.aborted) {
-            const slice = Math.min(25_000, deadline - Date.now());
+            const slice = Math.min(WAIT_SLICE_MS, deadline - Date.now());
             const query = filterToQuery({ ...filter, limit: 1 });
             query.set("timeoutMs", String(slice));
             try {
@@ -227,14 +241,8 @@ export class RemoteBackend implements Backend {
         try {
             // The attach monitor calls this every few seconds: the agent's heartbeat.
             const res = await fetch(`${this.base}/health`, {
-                signal: AbortSignal.timeout(1500),
-                headers: {
-                    [AGENT_HEADER]: this.agentId,
-                    ...(this.agentName ? { [AGENT_NAME_HEADER]: this.agentName } : {}),
-                    ...(this.agentProjects?.length
-                        ? { [AGENT_PROJECTS_HEADER]: encodeAgentProjects(this.agentProjects) }
-                        : {}),
-                },
+                signal: AbortSignal.timeout(HEALTH_TIMEOUT_MS),
+                headers: this.headers(),
             });
             const body = (await res.json()) as { service?: string };
             return res.ok && body.service === "notato";

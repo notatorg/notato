@@ -1,34 +1,25 @@
-import { afterEach, describe, expect, it } from "bun:test";
-import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
+import { describe, expect, it } from "bun:test";
 import { type Backend, createMcpServer, type LocalBackend } from "../src/index.ts";
-import { annotationFixture, filesFor, makeBackend, PNG } from "./helpers.ts";
+import {
+    annotationFixture,
+    cleanupAfterEach,
+    connectMcp,
+    filesFor,
+    makeBackend,
+    PNG,
+    type ToolResult,
+    toolText as textOf,
+} from "./helpers.ts";
 
-type Content = Array<{ type: string; text?: string; data?: string; mimeType?: string }>;
-interface ToolResult {
-    content: Content;
-    isError?: boolean;
-}
+// The MCP tools an agent works from: reading notes, waiting for them, changing their status and undoing a change.
 
-const cleanups: Array<() => void | Promise<void>> = [];
-afterEach(async () => {
-    for (const c of cleanups.splice(0)) await c();
-});
+const defer = cleanupAfterEach();
 
-async function connect(backend: Backend) {
-    const server = createMcpServer({ backend, version: "test" });
-    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
-    const client = new Client({ name: "claude-code", version: "0" });
-    await Promise.all([server.connect(serverTransport), client.connect(clientTransport)]);
-    cleanups.push(() => client.close());
-    const call = async (name: string, args: Record<string, unknown> = {}) =>
-        (await client.callTool({ name, arguments: args })) as unknown as ToolResult;
-    return { client, server, call };
-}
+const connect = (backend: Backend) => connectMcp(backend, defer);
 
 async function setup() {
     const ctx = makeBackend();
-    cleanups.push(ctx.cleanup);
+    defer(ctx.cleanup);
     return { ...ctx, ...(await connect(ctx.backend)) };
 }
 
@@ -36,32 +27,21 @@ const add = async (backend: LocalBackend, over: Parameters<typeof annotationFixt
     const annotation = annotationFixture(over);
     return (await backend.ingest(annotation, filesFor())).stored;
 };
-const textOf = (r: ToolResult) =>
-    r.content
-        .filter((c) => c.type === "text")
-        .map((c) => c.text)
-        .join("\n");
 const images = (r: ToolResult) => r.content.filter((c) => c.type === "image");
 
 describe("which agent", () => {
     it("signs replies and status changes with the agent the client says it is, and tells the caller", async () => {
         const ctx = makeBackend();
-        cleanups.push(ctx.cleanup);
+        defer(ctx.cleanup);
         const told: Array<string | undefined> = [];
         const server = createMcpServer({
             backend: ctx.backend,
             version: "test",
             onClient: (name) => told.push(name),
         });
-        const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
-        const client = new Client({ name: "codex-mcp-client", version: "0.50.0" });
-        await Promise.all([server.connect(serverTransport), client.connect(clientTransport)]);
-        cleanups.push(() => client.close());
+        const { call } = await connectMcp(server, defer, { client: "codex-mcp-client" });
         const stored = await add(ctx.backend);
-        await client.callTool({
-            name: "notato_reply",
-            arguments: { id: stored.annotation.id, body: "Which one?" },
-        });
+        await call("notato_reply", { id: stored.annotation.id, body: "Which one?" });
         const after = await ctx.backend.get(stored.annotation.id);
         expect(after?.annotation.thread.at(-1)?.author).toEqual({ kind: "agent", name: "Codex" });
         expect(told).toEqual(["Codex"]);
@@ -69,7 +49,7 @@ describe("which agent", () => {
 });
 
 describe("tool surface", () => {
-    it("exposes the plan's tools and tells the model how to use them", async () => {
+    it("exposes its tools and tells the model how to use them", async () => {
         const { client } = await setup();
         const { tools } = await client.listTools();
         expect(tools.map((t) => t.name).sort()).toEqual(
@@ -434,6 +414,19 @@ describe("asking for a resolved change to be undone", () => {
                 await call("notato_watch", { timeoutSeconds: 5, windowMs: 0, screenshots: "none" })
             )
         ).toContain("Second ask");
+    });
+
+    it("hands a request over once, even when a watch for another project comes in between", async () => {
+        const { backend, call, id } = await resolvedChange();
+        await backend.setStatus(id, "revert_requested", "Undo it", HUMAN);
+        const quiet = { timeoutSeconds: 1, windowMs: 0, screenshots: "none" };
+        expect(
+            textOf(await call("notato_watch", { ...quiet, projectId: "checkout-web" }))
+        ).toContain("Undo it");
+        await call("notato_watch", { ...quiet, projectId: "another-app" });
+        expect(
+            textOf(await call("notato_watch", { ...quiet, projectId: "checkout-web" }))
+        ).toContain("No new annotations");
     });
 
     it("puts requests ahead of new annotations in a mixed batch", async () => {

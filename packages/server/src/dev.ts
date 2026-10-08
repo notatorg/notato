@@ -4,7 +4,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import type { Author, Status } from "@notato/schema";
 import { parseProjects } from "./agents.ts";
-import type { Principal } from "./auth.ts";
+import { LOCAL_PRINCIPAL } from "./auth.ts";
 import {
     type AssetBytes,
     type Backend,
@@ -19,9 +19,10 @@ import {
     createConfigSource,
     defaultConfig,
     mcpRefusal,
+    SETTINGS,
 } from "./config.ts";
-import { type AppHandler, createApp } from "./http.ts";
-import { createMcpServer, type McpOptions } from "./mcp.ts";
+import { type AppHandler, type AppOptions, createApp, SERVE_LIMITS } from "./http.ts";
+import { createMcpServer } from "./mcp.ts";
 import { createMcpHttp, jsonRpcError } from "./mcp-http.ts";
 import type { RelayArgs, RelayResult } from "./relay.ts";
 import { isConnectionError, RemoteBackend } from "./remote-backend.ts";
@@ -54,24 +55,19 @@ export interface PrimaryOptions {
     /** Directory holding `notato.db` and `assets/`. */
     dir: string;
     version: string;
-    /** Hooks for later milestones to mount more routes on the dev server. */
-    extend?: Parameters<typeof createApp>[0]["extend"];
     /** The settings in force (see `notato config`). Default: none set. */
     config?: ConfigSource;
     log?: (message: string) => void;
     /** Host names answered besides loopback ones (a dev tunnel's). The array may grow while the server runs. */
     allowedHosts?: string[];
     /** A check before every request (the dev tunnel's device token). */
-    authorize?: Parameters<typeof createApp>[0]["authorize"];
+    authorize?: AppOptions["authorize"];
     /** The address the outside world reaches this server at right now (its dev tunnel's), for screenshot links. */
     publicUrl?: () => string | undefined;
 }
 
 /** How programs on this machine reach a dev server on `port`: the address the board and `notato start` print. */
 export const localUrl = (port: number) => `http://localhost:${port}`;
-
-/** Everyone who reaches `/mcp` in dev mode is the person at this machine, as on the rest of the dev server. */
-const LOCAL_AGENT: Principal = { kind: "admin", username: "local" };
 
 /**
  * `/mcp` in dev mode answers only programs on this machine. Never a web page: agents send no Origin, browsers always
@@ -108,10 +104,7 @@ export function startPrimary(options: PrimaryOptions): PrimaryServer | null {
         server = Bun.serve({
             hostname: options.host,
             port: options.port,
-            // SSE sends a comment every 15s, and a long MCP call pings or sends progress, so connections stay under this.
-            idleTimeout: 255,
-            // A hard ceiling; the app enforces the real per-endpoint limits.
-            maxRequestBodySize: 256 * 1024 * 1024,
+            ...SERVE_LIMITS,
             fetch: (req, srv) => {
                 if (!handler) return new Response("starting", { status: 503 });
                 if (mcp && new URL(req.url).pathname === "/mcp") return mcp.handle(req);
@@ -124,13 +117,9 @@ export function startPrimary(options: PrimaryOptions): PrimaryServer | null {
     }
     mkdirSync(options.dir, { recursive: true });
     const store = new SqliteStore(join(options.dir, "notato.db"));
-    const backend = new LocalBackend(
-        store,
-        new FileBlobStore(join(options.dir, "assets")),
-        undefined,
-        undefined,
-        options.config
-    );
+    const backend = new LocalBackend(store, new FileBlobStore(join(options.dir, "assets")), {
+        config: options.config,
+    });
     const share = new ShareLinks(
         options.dir,
         options.publicUrl ?? (() => process.env.NOTATO_PUBLIC_URL)
@@ -140,7 +129,6 @@ export function startPrimary(options: PrimaryOptions): PrimaryServer | null {
         mode: "dev",
         version: options.version,
         ui: bundledUi(),
-        extend: options.extend,
         allowedHosts: options.allowedHosts ?? "loopback",
         authorize: options.authorize,
         share,
@@ -150,11 +138,11 @@ export function startPrimary(options: PrimaryOptions): PrimaryServer | null {
     mcp = createMcpHttp({
         backend,
         version: options.version,
-        auth: { identify: async () => LOCAL_AGENT },
+        // Everyone who reaches `/mcp` in dev mode is the person at this machine, as on the rest of the dev server.
+        auth: { identify: async () => LOCAL_PRINCIPAL },
         guard: localAgentsOnly,
         refuse: () => mcpRefusal(backend.config()),
         allowImportPaths: true,
-        maxWaitSeconds: 240,
         presence: backend.agents,
     });
     // Annotation events go to the webhooks in the config, off to the side of the API.
@@ -232,9 +220,6 @@ export interface DevOptions {
     /** Speak MCP over stdin/stdout. Off in tests. */
     stdio?: boolean;
     log?: (message: string) => void;
-    /** Extra MCP tools, mounted by later milestones. */
-    tools?: Pick<McpOptions, "extend">;
-    extend?: PrimaryOptions["extend"];
     /** The config file. Default: `$NOTATO_CONFIG`, or `notato.config.json` in the current directory. */
     configFile?: string;
     /**
@@ -291,7 +276,6 @@ export async function runDev(options: DevOptions): Promise<DevRuntime> {
         port,
         dir,
         version: options.version,
-        extend: options.extend,
         config,
         log,
         allowedHosts: gate?.hosts,
@@ -303,7 +287,7 @@ export async function runDev(options: DevOptions): Promise<DevRuntime> {
         log(`warning: ${settings.file}: ${settings.error}. Screenshots are off until it is fixed.`);
     } else if (!settings.screenshots) {
         log(
-            `screenshots are off (${settings.source.screenshots === "env" ? "NOTATO_SCREENSHOTS" : settings.file})`
+            `screenshots are off (${settings.source.screenshots === "env" ? SETTINGS.screenshots.env : settings.file})`
         );
     }
     const refusal = mcpRefusal(settings);
@@ -398,7 +382,6 @@ export async function runDev(options: DevOptions): Promise<DevRuntime> {
     const mcp = createMcpServer({
         backend: switchable,
         version: options.version,
-        extend: options.tools?.extend,
         projects,
         // Attached to another process, that server's setting applies: it refuses this process's requests when off.
         refuse: () => (primary ? mcpRefusal(primary.backend.config()) : null),

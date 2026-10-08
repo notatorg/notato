@@ -1,22 +1,26 @@
 import { afterEach, describe, expect, it } from "bun:test";
-import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import type { Annotation } from "@notato/schema";
 import {
-    type Backend,
-    createMcpServer,
     eventFor,
     type LocalBackend,
     type NotatoEvent,
     startWebhooks,
     type Webhook,
 } from "../src/index.ts";
-import { annotationFixture, filesFor, ingest, makeApp, makeBackend } from "./helpers.ts";
+import {
+    annotationFixture,
+    cleanupAfterEach,
+    connectMcp,
+    filesFor,
+    ingest,
+    makeApp,
+    makeBackend,
+} from "./helpers.ts";
 
-const cleanups: Array<() => void | Promise<void>> = [];
-afterEach(async () => {
-    for (const c of cleanups.splice(0)) await c();
-});
+// Variants: the agent puts a few versions in the code and offers them, the person picks one in the page, and the pick
+// reaches the agent to keep that version and remove the rest.
+
+const defer = cleanupAfterEach();
 
 const OFFER = {
     group: "hero",
@@ -29,12 +33,14 @@ const OFFER = {
 
 async function setup() {
     const ctx = makeBackend();
-    cleanups.push(ctx.cleanup);
+    defer(ctx.cleanup);
     const add = async (over: Partial<Annotation> = {}) =>
         (await ctx.backend.ingest(annotationFixture({ intent: "variants", ...over }), filesFor()))
             .stored;
     return { ...ctx, add };
 }
+
+const watch = { timeoutSeconds: 3, windowMs: 0, screenshots: "none" };
 
 describe("offering variants", () => {
     it("records them on the annotation, acknowledges it, and says so in the thread", async () => {
@@ -206,32 +212,6 @@ describe("choosing a variant", () => {
     });
 });
 
-describe("filtering by who wrote it", () => {
-    it("lists one person's notes, over HTTP and through the query helpers", async () => {
-        const ctx = makeApp();
-        cleanups.push(ctx.cleanup);
-        await ingest(ctx.call, { comment: "from dom", author: { kind: "human", name: "Dom" } });
-        await ingest(ctx.call, { comment: "from ana", author: { kind: "human", name: "Ana" } });
-        await ingest(ctx.call, { comment: "from an agent", author: { kind: "agent" } });
-        const by = async (name: string) =>
-            (
-                (await (
-                    await ctx.call(
-                        `/projects/checkout-web/annotations?by=${encodeURIComponent(name)}`
-                    )
-                ).json()) as {
-                    items: Array<{ annotation: Annotation }>;
-                }
-            ).items.map((i) => i.annotation.comment);
-        expect(await by("Dom")).toEqual(["from dom"]);
-        expect(await by("Ana")).toEqual(["from ana"]);
-        expect(await by("Nobody")).toEqual([]);
-        expect(
-            await (await ctx.call("/projects/checkout-web/markdown?by=Ana&detail=compact")).text()
-        ).toContain("from ana");
-    });
-});
-
 describe("variants over HTTP", () => {
     let ctx: ReturnType<typeof makeApp> | undefined;
     afterEach(() => {
@@ -316,32 +296,11 @@ describe("variants over HTTP", () => {
     });
 });
 
-async function mcp(backend: Backend) {
-    const server = createMcpServer({ backend, version: "test" });
-    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
-    const client = new Client({ name: "claude-code", version: "0" });
-    await Promise.all([server.connect(serverTransport), client.connect(clientTransport)]);
-    cleanups.push(() => client.close());
-    const call = async (name: string, args: Record<string, unknown> = {}) =>
-        (await client.callTool({ name, arguments: args })) as unknown as {
-            content: Array<{ type: string; text?: string }>;
-            isError?: boolean;
-        };
-    const text = (r: Awaited<ReturnType<typeof call>>) =>
-        r.content
-            .filter((c) => c.type === "text")
-            .map((c) => c.text)
-            .join("\n");
-    return { client, call, text };
-}
-
-const watch = { timeoutSeconds: 3, windowMs: 0, screenshots: "none" };
-
 describe("notato_variants_ready", () => {
     it("offers the versions, tells the agent how the page finds them, and shows in the annotation", async () => {
         const t = await setup();
         const { annotation } = await t.add();
-        const { call, text } = await mcp(t.backend);
+        const { call, text } = await connectMcp(t.backend, defer);
         const result = await call("notato_variants_ready", { id: annotation.id, ...OFFER });
         expect(result.isError).toBeUndefined();
         expect(text(result)).toContain("Original, Stacked, Compact");
@@ -355,7 +314,7 @@ describe("notato_variants_ready", () => {
     it("reports problems as errors the agent can act on", async () => {
         const t = await setup();
         const { annotation } = await t.add();
-        const { call, text } = await mcp(t.backend);
+        const { call, text } = await connectMcp(t.backend, defer);
         const dup = await call("notato_variants_ready", {
             id: annotation.id,
             group: "hero",
@@ -379,7 +338,7 @@ describe("notato_variants_ready", () => {
         const { annotation } = await t.add();
         await t.backend.setStatus(annotation.id, "resolved", "done");
         await t.backend.setStatus(annotation.id, "revert_requested", "undo");
-        const { call, text } = await mcp(t.backend);
+        const { call, text } = await connectMcp(t.backend, defer);
         const result = await call("notato_variants_ready", { id: annotation.id, ...OFFER });
         expect(result.isError).toBe(true);
         expect(text(result)).toContain("notato_reverted");
@@ -390,7 +349,7 @@ describe("a pick reaches notato_watch", () => {
     async function picked(name = "Stacked") {
         const t = await setup();
         const { annotation } = await t.add({ comment: "three versions of the hero" });
-        const m = await mcp(t.backend);
+        const m = await connectMcp(t.backend, defer);
         // The agent has seen the annotation as new, offered, and is now waiting.
         await m.call("notato_watch", watch);
         await m.call("notato_variants_ready", { id: annotation.id, ...OFFER });
@@ -425,7 +384,7 @@ describe("a pick reaches notato_watch", () => {
     it("wakes a watch that is already waiting", async () => {
         const t = await setup();
         const { annotation } = await t.add();
-        const { call, text } = await mcp(t.backend);
+        const { call, text } = await connectMcp(t.backend, defer);
         await call("notato_watch", watch);
         await call("notato_variants_ready", { id: annotation.id, ...OFFER });
         const waiting = call("notato_watch", {
@@ -457,7 +416,7 @@ describe("a pick reaches notato_watch", () => {
     it("a pick that is taken back is not delivered", async () => {
         const t = await setup();
         const { annotation } = await t.add();
-        const { call, text } = await mcp(t.backend);
+        const { call, text } = await connectMcp(t.backend, defer);
         await call("notato_watch", watch);
         await call("notato_variants_ready", { id: annotation.id, ...OFFER });
         await t.backend.chooseVariant(annotation.id, "Stacked");
@@ -465,174 +424,6 @@ describe("a pick reaches notato_watch", () => {
         expect(text(await call("notato_watch", { ...watch, timeoutSeconds: 1 }))).toContain(
             "No new annotations"
         );
-    });
-});
-
-describe("replies from the person reach notato_watch", () => {
-    it("delivers a reply to a thread the agent is working on, once, marked FOLLOW-UP", async () => {
-        const t = await setup();
-        const { annotation } = await t.add({ intent: "change", comment: "make the header nicer" });
-        const { call, text } = await mcp(t.backend);
-        await call("notato_watch", watch);
-        await call("notato_acknowledge", { id: annotation.id });
-        await call("notato_reply", {
-            id: annotation.id,
-            body: "Do you mean the colours or the layout?",
-        });
-        // The agent has asked; nothing is waiting for it yet.
-        expect(text(await call("notato_watch", { ...watch, timeoutSeconds: 1 }))).toContain(
-            "No new annotations"
-        );
-        await t.backend.reply(annotation.id, "The layout, please");
-        const out = text(await call("notato_watch", watch));
-        expect(out).toContain("1 reply from the person.");
-        expect(out).toContain("FOLLOW-UP");
-        expect(out).toContain("The layout, please");
-        expect(text(await call("notato_watch", { ...watch, timeoutSeconds: 1 }))).toContain(
-            "No new annotations"
-        );
-        // A second reply is a second delivery.
-        await t.backend.reply(annotation.id, "And keep the logo");
-        expect(text(await call("notato_watch", watch))).toContain("And keep the logo");
-    });
-
-    it("wakes a watch that is waiting, within a few seconds", async () => {
-        const t = await setup();
-        const { annotation } = await t.add({ intent: "question" });
-        const { call, text } = await mcp(t.backend);
-        await call("notato_watch", watch);
-        await call("notato_acknowledge", { id: annotation.id });
-        const waiting = call("notato_watch", {
-            timeoutSeconds: 10,
-            windowMs: 0,
-            screenshots: "none",
-        });
-        await new Promise((r) => setTimeout(r, 100));
-        await t.backend.reply(annotation.id, "Which breakpoint?");
-        const started = Date.now();
-        expect(text(await waiting)).toContain("Which breakpoint?");
-        expect(Date.now() - started).toBeLessThan(4500);
-    });
-
-    it("is not delivered twice with a new annotation, and a new annotation is not a follow-up", async () => {
-        const t = await setup();
-        const { annotation } = await t.add({ comment: "brand new" });
-        await t.backend.reply(annotation.id, "one more detail");
-        const { call, text } = await mcp(t.backend);
-        const out = text(await call("notato_watch", watch));
-        expect(out).toContain("1 new annotation.");
-        expect(out).not.toContain("reply from the person");
-        expect(out).not.toContain("FOLLOW-UP");
-    });
-
-    it("an acknowledged annotation with the person's last word is delivered to a session that starts later", async () => {
-        const t = await setup();
-        const { annotation } = await t.add();
-        await t.backend.setStatus(annotation.id, "acknowledged", "On it", {
-            kind: "agent",
-            name: "Claude",
-        });
-        await t.backend.reply(annotation.id, "Any news?");
-        const { call, text } = await mcp(t.backend);
-        expect(text(await call("notato_watch", watch))).toContain("Any news?");
-    });
-
-    it("a reopened annotation, with the person's note, is delivered", async () => {
-        const t = await setup();
-        const { annotation } = await t.add();
-        const { call, text } = await mcp(t.backend);
-        await call("notato_watch", watch);
-        await call("notato_resolve", { id: annotation.id, summary: "fixed" });
-        await t.backend.setStatus(annotation.id, "open", "Still broken on mobile");
-        const out = text(await call("notato_watch", watch));
-        expect(out).toContain("Still broken on mobile");
-        expect(out).toContain("FOLLOW-UP");
-    });
-
-    it("taking a pick back with a note says something, so it is delivered; without one it is not", async () => {
-        const t = await setup();
-        const { annotation } = await t.add();
-        const { call, text } = await mcp(t.backend);
-        await call("notato_watch", watch);
-        await call("notato_variants_ready", { id: annotation.id, ...OFFER });
-        await t.backend.chooseVariant(annotation.id, "Stacked");
-        await t.backend.chooseVariant(annotation.id, null, "None of these, make it bolder");
-        const out = text(await call("notato_watch", watch));
-        expect(out).toContain("None of these, make it bolder");
-        expect(out).toContain("FOLLOW-UP");
-        const thread = (await t.backend.get(annotation.id))?.annotation.thread ?? [];
-        // The pick is something the person did; taking it back with a note is something they said.
-        expect(thread.filter((r) => r.automatic)).toHaveLength(1);
-        expect(thread.at(-1)?.automatic).toBeUndefined();
-    });
-
-    it("a request for different versions after a pick is delivered, once, and the pick's own note is not", async () => {
-        const t = await setup();
-        const { annotation } = await t.add();
-        const { call, text } = await mcp(t.backend);
-        await call("notato_watch", watch);
-        await call("notato_variants_ready", { id: annotation.id, ...OFFER });
-        await t.backend.chooseVariant(annotation.id, "Stacked", "I like this one");
-        const picked = text(await call("notato_watch", watch));
-        expect(picked).toContain("1 variant pick.");
-        expect(picked).not.toContain("reply from the person");
-        expect(text(await call("notato_watch", { ...watch, timeoutSeconds: 1 }))).toContain(
-            "No new annotations"
-        );
-        await t.backend.reply(annotation.id, "Make Stacked bolder and add a fourth");
-        const out = text(await call("notato_watch", watch));
-        expect(out).toContain("1 reply from the person.");
-        expect(out).toContain("Make Stacked bolder and add a fourth");
-        expect(out).toContain("FOLLOW-UP");
-        // The agent then offers a new set, which clears the pick.
-        await call("notato_variants_ready", {
-            id: annotation.id,
-            group: "hero",
-            options: [{ name: "Original" }, { name: "Bolder" }, { name: "Right" }],
-        });
-        expect((await t.backend.get(annotation.id))?.annotation.status).toBe("acknowledged");
-        expect(text(await call("notato_watch", { ...watch, timeoutSeconds: 1 }))).toContain(
-            "No new annotations"
-        );
-    });
-
-    it("a pick the person has since written about is delivered as their message, not as a pick, and does not make the next watch spin", async () => {
-        const t = await setup();
-        const { annotation } = await t.add();
-        await t.backend.offerVariants(annotation.id, OFFER);
-        await t.backend.chooseVariant(annotation.id, "Stacked");
-        await t.backend.reply(annotation.id, "Actually, make Stacked bolder");
-        // A session that starts after both: the message is what to act on.
-        const { call, text } = await mcp(t.backend);
-        const out = text(await call("notato_watch", watch));
-        expect(out).toContain("1 reply from the person.");
-        expect(out).toContain("make Stacked bolder");
-        expect(out).not.toContain("VARIANT CHOSEN");
-        const started = Date.now();
-        expect(text(await call("notato_watch", { ...watch, timeoutSeconds: 1 }))).toContain(
-            "No new annotations"
-        );
-        expect(Date.now() - started).toBeGreaterThanOrEqual(900);
-        // A fresh pick after that is a pick again.
-        await t.backend.chooseVariant(annotation.id, "Compact");
-        expect(text(await call("notato_watch", watch))).toContain("VARIANT CHOSEN: “Compact”");
-    });
-
-    it("a pick's own note is not also a follow-up, and a resolved annotation's reply is one, still resolved", async () => {
-        const t = await setup();
-        const a = await t.add();
-        const b = await t.add();
-        const { call, text } = await mcp(t.backend);
-        await call("notato_watch", watch);
-        await call("notato_variants_ready", { id: a.annotation.id, ...OFFER });
-        await t.backend.chooseVariant(a.annotation.id, "Stacked", "love it");
-        await t.backend.setStatus(b.annotation.id, "resolved", "done", { kind: "agent" });
-        await t.backend.reply(b.annotation.id, "thanks");
-        const out = text(await call("notato_watch", watch));
-        expect(out).toContain("1 variant pick and 1 reply from the person.");
-        expect(out).toContain("thanks");
-        expect(out).toContain("A plain acknowledgement (thanks, looks good) needs nothing");
-        expect((await t.backend.get(b.annotation.id))?.annotation.status).toBe("resolved");
     });
 });
 
@@ -683,7 +474,7 @@ describe("webhooks for variants", () => {
                 return new Response("ok");
             },
         });
-        cleanups.push(() => receiver.stop(true));
+        defer(() => receiver.stop(true));
         const t = await setup();
         const hooks: Webhook[] = [{ url: `http://127.0.0.1:${receiver.port}/in`, format: "slack" }];
         const dispatcher = startWebhooks({
@@ -696,7 +487,7 @@ describe("webhooks for variants", () => {
             }),
             retryDelaysMs: [5],
         });
-        cleanups.push(() => dispatcher.stop());
+        defer(() => dispatcher.stop());
         const { annotation } = await t.add();
         await t.backend.offerVariants(annotation.id, OFFER);
         await t.backend.chooseVariant(annotation.id, "Stacked");

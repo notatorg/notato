@@ -4,8 +4,9 @@ import { Authenticator } from "./auth.ts";
 import { LocalBackend } from "./backend.ts";
 import { FileBlobStore } from "./blob-store.ts";
 import { CONFIG_FILE, createConfigSource, mcpRefusal } from "./config.ts";
+import { isLoopbackName } from "./cors.ts";
 import { DEFAULT_PORT } from "./dev.ts";
-import { createApp, type UiAssets } from "./http.ts";
+import { createApp, SERVE_LIMITS, type UiAssets } from "./http.ts";
 import { createMcpHttp } from "./mcp-http.ts";
 import { ShareLinks } from "./share.ts";
 import { SqliteStore } from "./sqlite-store.ts";
@@ -43,8 +44,6 @@ export interface ServeRuntime {
     stop(): Promise<void>;
 }
 
-const isLoopback = (host: string) => host === "localhost" || host === "::1" || /^127\./.test(host);
-
 /** The shared server: login, per-project tokens, the HTTP API, streamable HTTP MCP at `/mcp`, and the board UI. */
 export async function runServe(options: ServeOptions): Promise<ServeRuntime> {
     const host = options.host ?? process.env.NOTATO_HOST ?? "127.0.0.1";
@@ -68,14 +67,10 @@ export async function runServe(options: ServeOptions): Promise<ServeRuntime> {
         if (!settings.mcp) log(mcpRefusal(settings) ?? "MCP is off");
     }
     // On a shared server an admin creates each project (and its tokens) before an app can send to it.
-    const backend = new LocalBackend(
-        store,
-        new FileBlobStore(join(dir, "assets")),
-        undefined,
-        undefined,
+    const backend = new LocalBackend(store, new FileBlobStore(join(dir, "assets")), {
         config,
-        { autoCreateProjects: false }
-    );
+        autoCreateProjects: false,
+    });
     // A shared server is reached at its proxy's address, which only the person running it knows: NOTATO_PUBLIC_URL.
     // Without it, webhook messages carry no screenshot.
     const share = new ShareLinks(dir, () => process.env.NOTATO_PUBLIC_URL);
@@ -115,16 +110,13 @@ export async function runServe(options: ServeOptions): Promise<ServeRuntime> {
         version: options.version,
         auth,
         refuse: () => mcpRefusal(backend.config()),
-        maxWaitSeconds: 240,
         presence: backend.agents,
     });
 
     const server = Bun.serve({
         hostname: host,
         port,
-        // Long-poll and MCP responses stay open; the busiest ones ping or send progress well inside this.
-        idleTimeout: 255,
-        maxRequestBodySize: 256 * 1024 * 1024,
+        ...SERVE_LIMITS,
         fetch: (req, srv) => {
             const path = new URL(req.url).pathname;
             if (path === "/mcp") return mcp.handle(req);
@@ -133,7 +125,7 @@ export async function runServe(options: ServeOptions): Promise<ServeRuntime> {
     });
 
     log(`serving on http://${host}:${server.port} (data in ${dir})`);
-    if (!isLoopback(host) && !trustProxy) {
+    if (!isLoopbackName(host) && !trustProxy) {
         log(
             "listening beyond loopback: put a TLS-terminating reverse proxy in front and set NOTATO_TRUST_PROXY=1"
         );

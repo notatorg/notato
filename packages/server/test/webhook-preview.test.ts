@@ -8,7 +8,7 @@ import { SAMPLE_COMMENT, type TestResult } from "../src/settings.ts";
 import { SHARE_KEY_FILE, ShareLinks } from "../src/share.ts";
 import { createTunnelGate } from "../src/tunnel.ts";
 import { buildDelivery } from "../src/webhooks.ts";
-import { ingest, makeApp } from "./helpers.ts";
+import { annotationFixture, filesFor, ingest, makeApp } from "./helpers.ts";
 
 const TUNNEL = "https://abc-4747.uks1.devtunnels.ms";
 const TOKEN = "device-token-for-the-tests-0123456789";
@@ -124,6 +124,27 @@ describe("signed screenshot links", () => {
     it("are not made without an address the outside world can reach", async () => {
         const a = await note();
         expect(new ShareLinks(dir, () => undefined).linksFor(a)).toBeUndefined();
+    });
+
+    it("answer on the public address they were made for, and stop when the note is deleted", async () => {
+        // NOTATO_PUBLIC_URL can be a proxy's own address, which the server's host check knows nothing of.
+        const proxy = "https://notes.example.ngrok.app";
+        const a = await note();
+        const link = new ShareLinks(dir, () => proxy).linksFor(a)?.full ?? "";
+        const fetchIt = () =>
+            ctx.app(new Request(link, { headers: { host: new URL(proxy).host } }));
+        expect((await fetchIt()).status).toBe(200);
+        await ctx.call(`/annotations/${a.id}`, { method: "DELETE" });
+        expect((await fetchIt()).status).toBe(404);
+        // The bytes went with the note.
+        expect(await ctx.backend.asset(a.screenshots?.full.id ?? "")).toBeNull();
+    });
+
+    it("keep a screenshot another note still shows", async () => {
+        const a = (await ctx.backend.ingest(annotationFixture(), filesFor())).stored.annotation;
+        await ctx.backend.ingest(annotationFixture(), filesFor());
+        await ctx.backend.remove(a.id);
+        expect(await ctx.backend.asset(a.screenshots?.full.id ?? "")).not.toBeNull();
     });
 });
 

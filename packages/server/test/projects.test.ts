@@ -329,8 +329,8 @@ describe("annotation ids", () => {
     });
 });
 
-describe("notes with no name on them", () => {
-    it("can be asked for on their own, for an export of what an unnamed agent wrote", async () => {
+describe("notes by who wrote them", () => {
+    it("with no name on them can be asked for on their own, for an export of what an unnamed agent wrote", async () => {
         ctx = makeApp();
         await ingest(ctx.call, { projectId: "w", author: { kind: "agent" } });
         await ingest(ctx.call, { projectId: "w", author: { kind: "agent", name: "Codex" } });
@@ -338,5 +338,29 @@ describe("notes with no name on them", () => {
             await ctx.call("/projects/w/annotations?author=agent&unnamed=1")
         ).json()) as { items: Array<{ annotation: Annotation }> };
         expect(list.items.map((i) => i.annotation.author.name)).toEqual([undefined]);
+    });
+
+    it("can be asked for by the name of who wrote them, as JSON and as Markdown", async () => {
+        const app = makeApp();
+        ctx = app;
+        await ingest(app.call, { comment: "from dom", author: { kind: "human", name: "Dom" } });
+        await ingest(app.call, { comment: "from ana", author: { kind: "human", name: "Ana" } });
+        await ingest(app.call, { comment: "from an agent", author: { kind: "agent" } });
+        const by = async (name: string) =>
+            (
+                (await (
+                    await app.call(
+                        `/projects/checkout-web/annotations?by=${encodeURIComponent(name)}`
+                    )
+                ).json()) as {
+                    items: Array<{ annotation: Annotation }>;
+                }
+            ).items.map((i) => i.annotation.comment);
+        expect(await by("Dom")).toEqual(["from dom"]);
+        expect(await by("Ana")).toEqual(["from ana"]);
+        expect(await by("Nobody")).toEqual([]);
+        expect(
+            await (await app.call("/projects/checkout-web/markdown?by=Ana&detail=compact")).text()
+        ).toContain("from ana");
     });
 });

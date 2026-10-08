@@ -3,6 +3,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
+    AGENT_HEADER,
     type CommandResult,
     createTunnelGate,
     type DevRuntime,
@@ -14,6 +15,7 @@ import {
     startTunnel,
     tunnelUrlIn,
 } from "../src/index.ts";
+import { makeApp } from "./helpers.ts";
 
 const dirs: string[] = [];
 const runtimes: DevRuntime[] = [];
@@ -139,6 +141,41 @@ describe("requests from outside", () => {
                 tunnelled("/status", { authorization: "Bearer pfd_the-right-token-0123456789" })
             )
         ).toBeNull();
+    });
+
+    it("may carry the device token in the query string on a GET, as an event stream sends it", async () => {
+        const gate = createTunnelGate("pfd_the-right-token-0123456789");
+        const outside = (path: string, method = "GET") =>
+            new Request(`https://${TUNNEL_HOST}${path}`, {
+                method,
+                headers: { host: TUNNEL_HOST },
+            });
+        expect(
+            await gate.authorize(outside("/projects/p/events?token=pfd_the-right-token-0123456789"))
+        ).toBeNull();
+        expect((await gate.authorize(outside("/projects/p/events?token=nope")))?.status).toBe(401);
+        // Never for a write: a token in a URL ends up in logs.
+        expect(
+            (
+                await gate.authorize(
+                    outside("/projects/p/annotations?token=pfd_the-right-token-0123456789", "POST")
+                )
+            )?.status
+        ).toBe(401);
+    });
+
+    it("cannot make a page believe an agent is there when the gate turns them away", async () => {
+        const gate = createTunnelGate("pfd_the-right-token-0123456789");
+        const ctx = makeApp({ authorize: gate.authorize, allowedHosts: "any" });
+        try {
+            const res = await ctx.call("/projects", {
+                headers: { host: TUNNEL_HOST, [AGENT_HEADER]: "spoofed" },
+            });
+            expect(res.status).toBe(401);
+            expect(ctx.backend.agents.state.connected).toBe(false);
+        } finally {
+            ctx.cleanup();
+        }
     });
 });
 

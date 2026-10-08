@@ -19,7 +19,7 @@ export interface McpHttpOptions {
     allowImportPaths?: boolean;
     /** Sessions idle this long are closed. */
     idleMs?: number;
-    /** Longest a single `notato_watch` blocks, so it stays inside the server's connection idle timeout. */
+    /** Longest a single `notato_watch` blocks. Default: just inside the server's connection idle timeout. */
     maxWaitSeconds?: number;
     /** Where an open session counts as an agent being there (what pages show), named once it says who it is. */
     presence?: AgentPresence;
@@ -40,6 +40,12 @@ interface Session {
 
 /** How long a quiet session still counts as an agent being there (a client that went away without saying so). */
 const PRESENT_MS = 5 * 60 * 1000;
+/** How long a session may go unused before it is closed. */
+const IDLE_MS = 30 * 60 * 1000;
+/** How often sessions are checked for being quiet or idle. */
+const SWEEP_MS = 60_000;
+/** A `notato_watch` over HTTP returns before the connection's idle timeout (`SERVE_LIMITS.idleTimeout`) ends it. */
+const MAX_WAIT_SECONDS = 240;
 
 export const jsonRpcError = (
     status: number,
@@ -68,7 +74,7 @@ export function createMcpHttp(options: McpHttpOptions): {
     close(): Promise<void>;
 } {
     const sessions = new Map<string, Session>();
-    const idleMs = options.idleMs ?? 30 * 60 * 1000;
+    const idleMs = options.idleMs ?? IDLE_MS;
 
     const sweep = setInterval(() => {
         const cutoff = Date.now() - idleMs;
@@ -80,7 +86,7 @@ export function createMcpHttp(options: McpHttpOptions): {
                 session.release = undefined;
             }
         }
-    }, 60_000);
+    }, SWEEP_MS);
     sweep.unref?.();
 
     const backendFor = (principal: Principal): Backend =>
@@ -156,7 +162,7 @@ export function createMcpHttp(options: McpHttpOptions): {
                 backend: backendFor(principal),
                 version: options.version,
                 allowImportPaths: options.allowImportPaths ?? false,
-                maxWaitSeconds: options.maxWaitSeconds,
+                maxWaitSeconds: options.maxWaitSeconds ?? MAX_WAIT_SECONDS,
                 refuse: options.refuse,
                 projects,
                 onClient: (name) => {

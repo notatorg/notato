@@ -1,10 +1,10 @@
 import { afterEach, describe, expect, it } from "bun:test";
-import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import type { Annotation } from "@notato/schema";
-import { type ConfigSource, createMcpServer } from "../src/index.ts";
+import type { ConfigSource } from "../src/index.ts";
 import {
     annotationFixture,
+    cleanupAfterEach,
+    connectMcp,
     filesFor,
     hex,
     makeApp,
@@ -12,6 +12,8 @@ import {
     multipart,
     PNG,
 } from "./helpers.ts";
+
+const defer = cleanupAfterEach();
 
 const settings =
     (screenshots: boolean): ConfigSource =>
@@ -139,20 +141,7 @@ describe("what a page can ask", () => {
 });
 
 describe("how Claude sees an annotation without a screenshot", () => {
-    async function connect() {
-        const server = createMcpServer({ backend: ctx.backend, version: "test" });
-        const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
-        const client = new Client({ name: "test", version: "0" });
-        await Promise.all([server.connect(serverTransport), client.connect(clientTransport)]);
-        return {
-            client,
-            call: async (name: string, args: Record<string, unknown> = {}) =>
-                (await client.callTool({ name, arguments: args })) as unknown as {
-                    content: Array<{ type: string; text?: string }>;
-                    isError?: boolean;
-                },
-        };
-    }
+    const connect = () => connectMcp(ctx.backend, defer, { client: "test" });
 
     it("is plain text that says there is none, so Claude works from the target instead", async () => {
         ctx = makeApp({}, settings(false));
@@ -161,7 +150,7 @@ describe("how Claude sees an annotation without a screenshot", () => {
         ).json()) as {
             annotation: Annotation;
         };
-        const { call, client } = await connect();
+        const { call } = await connect();
         const got = await call("notato_get", { id: annotation.id });
         expect(got.isError).toBeUndefined();
         expect(got.content.filter((c) => c.type === "image")).toHaveLength(0);
@@ -173,6 +162,5 @@ describe("how Claude sees an annotation without a screenshot", () => {
         const watched = await call("notato_watch", { timeoutSeconds: 5, windowMs: 0 });
         expect(watched.content.filter((c) => c.type === "image")).toHaveLength(0);
         expect(watched.content.map((c) => c.text ?? "").join("\n")).toContain("button hidden");
-        await client.close();
     });
 });

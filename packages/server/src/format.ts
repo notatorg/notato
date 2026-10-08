@@ -1,16 +1,7 @@
-import {
-    awaitsAgent,
-    clip,
-    type Detail,
-    lastWord,
-    pinNumber,
-    renderAnnotation,
-    sharedAgain,
-} from "@notato/core";
+import { clip, type Detail, pinNumber, renderAnnotation, sharedAgain } from "@notato/core";
 import type { Annotation } from "@notato/schema";
+import { FINISHED } from "./backend.ts";
 import type { StoredAnnotation } from "./storage.ts";
-
-export { pinNumber };
 
 /** What an agent is told when the person has asked for a resolved change to be undone. */
 export const REVERT_INSTRUCTIONS =
@@ -45,10 +36,27 @@ export const SHARED_AGAIN_INSTRUCTIONS =
 export const PEOPLE_ONLY_INSTRUCTIONS =
     "⊘ PEOPLE ONLY. The people on this annotation marked it as between themselves, so it is not for you: do not act on it, reply to it or change its status. It reaches you again only if someone turns People only off.";
 
-/** The person's latest word in the thread, when it is theirs to be answered (asides left out). */
-export const lastHumanReply = (a: Annotation) => (awaitsAgent(a) ? lastWord(a) : undefined);
+/** "1 reply", "2 replies": a count with its noun. */
+export const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 
-const FINISHED = new Set(["resolved", "dismissed", "reverted"]);
+/**
+ * The standing instruction for where a note is, written before it, or undefined when it needs none. What the person
+ * just wrote (a follow-up) comes before what its status says: it is what to act on now.
+ */
+function instructionsFor(a: Annotation, followUp: boolean): string[] | undefined {
+    if (a.peopleOnly) return [PEOPLE_ONLY_INSTRUCTIONS];
+    if (a.status === "revert_requested") return [REVERT_INSTRUCTIONS];
+    if (followUp) {
+        if (sharedAgain(a)) return [SHARED_AGAIN_INSTRUCTIONS];
+        return FINISHED.has(a.status)
+            ? [FOLLOW_UP_INSTRUCTIONS, FINISHED_FOLLOW_UP_INSTRUCTIONS]
+            : [FOLLOW_UP_INSTRUCTIONS];
+    }
+    const chosen = a.status === "variant_chosen" ? a.variants?.chosen : undefined;
+    if (chosen === undefined) return undefined;
+    const others = (a.variants?.options ?? []).map((o) => o.name).filter((n) => n !== chosen);
+    return [variantInstructions(chosen, others)];
+}
 
 /** One annotation as Markdown for the model: everything needed to find and fix the thing. */
 export function formatAnnotation(
@@ -56,35 +64,27 @@ export function formatAnnotation(
     options: { screenshotsAttached?: boolean; detail?: Detail; followUp?: boolean } = {}
 ): string {
     const a = stored.annotation;
-    // What the person just wrote comes before the standing instruction for the status: it is what to act on now.
-    const notes = a.peopleOnly
-        ? ["", PEOPLE_ONLY_INSTRUCTIONS]
-        : a.status === "revert_requested"
-          ? ["", REVERT_INSTRUCTIONS]
-          : options.followUp
-            ? sharedAgain(a)
-                ? ["", SHARED_AGAIN_INSTRUCTIONS]
-                : FINISHED.has(a.status)
-                  ? ["", FOLLOW_UP_INSTRUCTIONS, "", FINISHED_FOLLOW_UP_INSTRUCTIONS]
-                  : ["", FOLLOW_UP_INSTRUCTIONS]
-            : a.status === "variant_chosen" && a.variants?.chosen
-              ? [
-                    "",
-                    variantInstructions(
-                        a.variants.chosen,
-                        a.variants.options
-                            .map((o) => o.name)
-                            .filter((n) => n !== a.variants?.chosen)
-                    ),
-                ]
-              : undefined;
+    const instructions = instructionsFor(a, options.followUp ?? false);
     return renderAnnotation(a, {
         detail: options.detail ?? "standard",
         screenshotsAttached: options.screenshotsAttached,
-        notes,
+        // Each instruction in a paragraph of its own.
+        notes: instructions?.flatMap((text) => ["", text]),
         // Asides are for the people on the thread.
         forAgent: true,
     });
+}
+
+/** Where a note points, for a list: its selector, component and (when exact) the file and line it is written at. */
+function targetOf(a: Annotation): string {
+    const target = a.target.identity[0];
+    if (!target) return a.target.kind;
+    const component = target.component ? ` in <${target.component.name}>` : "";
+    const source =
+        target.source && !target.source.nearest
+            ? ` at ${target.source.file}:${target.source.line}`
+            : "";
+    return `\`${target.selector}\`${component}${source}`;
 }
 
 /** A compact table row per annotation, for `notato_list_open`. */
@@ -93,8 +93,8 @@ export function formatList(items: StoredAnnotation[]): string {
     return items
         .map(({ annotation: a }) => {
             const pin = pinNumber(a);
-            const target = a.target.identity[0];
-            return `- ${pin ? `#${pin} ` : ""}${a.id} [${a.status}${a.intent ? `, ${a.intent}` : ""}${a.severity ? `, ${a.severity}` : ""}] ${a.route} · ${target ? `\`${target.selector}\`${target.component ? ` in <${target.component.name}>` : ""}${target.source && !target.source.nearest ? ` at ${target.source.file}:${target.source.line}` : ""}` : a.target.kind} · ${clip(a.comment, 140)}`;
+            const tags = [a.status, a.intent, a.severity].filter(Boolean).join(", ");
+            return `- ${pin ? `#${pin} ` : ""}${a.id} [${tags}] ${a.route} · ${targetOf(a)} · ${clip(a.comment, 140)}`;
         })
         .join("\n");
 }

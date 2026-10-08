@@ -10,6 +10,9 @@ export type Principal =
     | { kind: "admin"; username: string }
     | { kind: "token"; tokenId: string; projectId: string | "*" };
 
+/** Who a request is on a server without logins (`notato dev` on loopback): the person at this machine. */
+export const LOCAL_PRINCIPAL: Principal = { kind: "admin", username: "local" };
+
 export const TOKEN_PREFIX = "pft_";
 
 /** A token, note or bundle for a project this server does not have. */

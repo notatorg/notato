@@ -23,9 +23,9 @@ export interface Mention {
 }
 
 /**
- * Something people can call with `@name` in a note or a reply (`@jira`, `@slack`). The basic shape for now: a name and a
- * description for the `@` menu, whether it can be used right now, and a hook for when it is mentioned. None is built in:
- * mentions are for plugins, and the agent gets what people write without one.
+ * Something people can call with `@name` in a note or a reply (`@jira`, `@slack`): a name and a description for the `@`
+ * menu, whether it can be used right now, and a hook for when it is mentioned. None is built in: mentions are for
+ * plugins, and the agent gets what people write without one.
  */
 export interface MentionPlugin {
     /** A letter, then letters, digits or dashes; matched without case. */
@@ -46,6 +46,8 @@ export class MentionRegistry {
     private plugins = new Map<string, MentionPlugin>();
     private listeners = new Set<(mentions: MentionInfo[]) => void>();
     private unwatch = new Map<string, () => void>();
+    /** The list subscribers were last told, so only a different one is news. */
+    private last = "";
 
     constructor(
         plugins: MentionPlugin[] = [],
@@ -130,11 +132,9 @@ export class MentionRegistry {
         }
     }
 
-    private last = "";
-
     private changed() {
         const mentions = this.list();
-        // Presence changes often (a watch starting, another session); only a different list is news.
+        // A plugin's availability is checked often (each time it says it may have changed): only a different list is news.
         const key = JSON.stringify(mentions);
         if (key === this.last) return;
         this.last = key;

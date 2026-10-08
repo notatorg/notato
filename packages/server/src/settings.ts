@@ -1,23 +1,24 @@
 import { createHash } from "node:crypto";
 import { type Annotation, sampleAnnotation } from "@notato/schema";
 import { z } from "zod";
-import { isAdmin, type Principal } from "./auth.ts";
+import { isAdmin } from "./auth.ts";
 import { RequestError } from "./backend.ts";
 import {
     type ConfigSource,
     parseOnOff,
     SETTINGS,
     type SettingName,
+    type SettingSource,
     writeSetting,
     writeWebhooks,
 } from "./config.ts";
-import { sameOrigin } from "./cors.ts";
-import type { AppContext } from "./http.ts";
+import { assertBoard, json, notFound, type Routes, readJson } from "./routes/common.ts";
 import type { ShareLinks, ShotLinks } from "./share.ts";
 import {
     buildDelivery,
     type Delivery,
     parseWebhooks,
+    secretEnvName,
     secretOf,
     WEBHOOK_EVENTS,
     WEBHOOK_FORMATS,
@@ -66,7 +67,7 @@ export interface SettingsView {
     settings: Array<{
         name: SettingName;
         value: "on" | "off";
-        source: "default" | "file" | "env" | "flag";
+        source: SettingSource;
         default: "on" | "off";
         about: string;
         env: string;
@@ -80,11 +81,11 @@ export interface SettingsView {
 
 export function settingsView(
     config: ConfigSource,
-    env: Record<string, string | undefined> = process.env,
-    share?: ShareLinks
-) {
+    share?: ShareLinks,
+    env: Record<string, string | undefined> = process.env
+): SettingsView {
     const now = config();
-    const view: SettingsView = {
+    return {
         file: config.file ?? null,
         exists: now.file !== undefined,
         error: now.error ?? null,
@@ -106,22 +107,19 @@ export function settingsView(
             events: w.events ?? null,
             project: w.project ?? null,
             screenshots: w.screenshots !== false,
-            secret:
-                w.secret === undefined
-                    ? { kind: "none" }
-                    : w.secret.startsWith("env:")
-                      ? {
-                            kind: "env",
-                            name: w.secret.slice(4),
-                            set: Boolean(env[w.secret.slice(4)]),
-                        }
-                      : { kind: "file" },
+            secret: secretView(w, env),
         })),
         events: WEBHOOK_EVENTS,
         formats: WEBHOOK_FORMATS,
         publicUrl: share?.publicUrl ?? null,
     };
-    return view;
+}
+
+/** How a webhook's secret is shown: by the variable it is read from, or only as being there. */
+function secretView(w: Webhook, env: Record<string, string | undefined>): WebhookView["secret"] {
+    if (w.secret === undefined) return { kind: "none" };
+    const name = secretEnvName(w.secret);
+    return name === undefined ? { kind: "file" } : { kind: "env", name, set: Boolean(env[name]) };
 }
 
 /**
@@ -216,7 +214,7 @@ export function prepareTest(
     const secret = secretOf(hook, options.env);
     if (secret === null) {
         return {
-            error: `${hook.secret?.slice(4)} is not set where the server runs, so a signed test cannot be sent (and no events will be).`,
+            error: `${secretEnvName(hook.secret)} is not set where the server runs, so a signed test cannot be sent (and no events will be).`,
         };
     }
     const event = options.event ?? "annotation.created";
@@ -257,20 +255,20 @@ export function prepareTest(
     };
 }
 
+/** How long a test waits for the other end to answer. */
+const TEST_TIMEOUT_MS = 10_000;
+
 /** Sends a prepared message once and reports what came back: for the board's Test button. */
-export async function sendTest(
-    prepared: Prepared,
-    options: { fetch?: typeof fetch; timeoutMs?: number } = {}
-): Promise<TestResult> {
+export async function sendTest(prepared: Prepared): Promise<TestResult> {
     const { delivery, hook } = prepared;
     const started = performance.now();
     const ms = () => Math.round(performance.now() - started);
     try {
-        const res = await (options.fetch ?? fetch)(hook.url, {
+        const res = await fetch(hook.url, {
             method: "POST",
             headers: delivery.headers,
             body: delivery.body,
-            signal: AbortSignal.timeout(options.timeoutMs ?? 10_000),
+            signal: AbortSignal.timeout(TEST_TIMEOUT_MS),
             redirect: "manual",
         });
         const text = (await res.text().catch(() => "")).replace(/\s+/g, " ").trim().slice(0, 300);
@@ -308,33 +306,10 @@ export async function sendTest(
         return {
             ok: false,
             ms: ms(),
-            detail: timedOut ? "No answer within 10 seconds." : `Could not reach it: ${message}`,
+            detail: timedOut
+                ? `No answer within ${TEST_TIMEOUT_MS / 1000} seconds.`
+                : `Could not reach it: ${message}`,
         };
-    }
-}
-
-/** A sample event, prepared and sent: what the CLI-style test does in one step. */
-export async function testWebhook(
-    hook: Webhook,
-    options: Parameters<typeof prepareTest>[1] & { fetch?: typeof fetch; timeoutMs?: number } = {}
-): Promise<TestResult> {
-    const prepared = prepareTest(hook, options);
-    if ("error" in prepared) return { ok: false, ms: 0, detail: prepared.error };
-    return sendTest(prepared, options);
-}
-
-/**
- * Refuses a request that is not from the board itself (or a tool with no Origin, like curl). An app's page may talk to
- * the server for its annotations, but must never be able to point a webhook somewhere, or create, delete or mint
- * tokens for projects.
- */
-export function assertBoard(req: Request, what = "settings") {
-    const origin = req.headers.get("origin");
-    if (origin !== null && !sameOrigin(req, origin)) {
-        throw new RequestError(
-            `${what} can only be changed from the Notato board or the notato CLI`,
-            403
-        );
     }
 }
 
@@ -363,43 +338,16 @@ function unchanged(list: Webhook[], which: { index: number; fingerprint: string 
     return hook;
 }
 
-async function body<T>(req: Request, schema: z.ZodType<T>): Promise<T> {
-    let raw: unknown;
-    try {
-        raw = await req.json();
-    } catch {
-        throw new RequestError("body must be JSON");
-    }
-    const parsed = schema.safeParse(raw);
-    if (!parsed.success) {
-        const issue = parsed.error.issues[0];
-        throw new RequestError(`${issue?.path.join(".") || "body"}: ${issue?.message}`);
-    }
-    return parsed.data;
-}
-
-export interface SettingsRouteOptions {
-    env?: Record<string, string | undefined>;
-    fetch?: typeof fetch;
-}
-
-/** `/settings` and below, for an admin on the board. Null when the path is not one of them. */
-export async function settingsRoute(
-    req: Request,
-    path: string,
-    principal: Principal,
-    ctx: Pick<AppContext, "backend" | "json"> & { options?: { share?: ShareLinks } },
-    options: SettingsRouteOptions = {}
-): Promise<Response | null> {
+/** `/settings` and below, for an admin on the board. */
+export const settingsRoutes: Routes = async ({ req, url, path, method, principal }, app) => {
     if (path !== "/settings" && !path.startsWith("/settings/")) return null;
     if (!isAdmin(principal))
         throw new RequestError("only an admin can see or change the settings", 403);
     assertBoard(req);
-    const config = ctx.backend.config;
-    const env = options.env ?? process.env;
-    const method = req.method;
-    const share = ctx.options?.share;
-    const view = () => ctx.json(settingsView(config, env, share));
+    const { backend } = app;
+    const { config } = backend;
+    const { share } = app.options;
+    const view = () => json(settingsView(config, share));
     /** Writes, then reads the file back, so what is answered is what is now in force. */
     const changed = (write: () => void) => {
         try {
@@ -410,7 +358,7 @@ export async function settingsRoute(
         }
         config.invalidate?.();
         // Turning MCP off drops the agents now: pages stop showing one as connected, and calls in progress are answered.
-        ctx.backend.agents.refresh();
+        backend.agents.refresh();
         return view();
     };
 
@@ -418,7 +366,7 @@ export async function settingsRoute(
 
     const setting = /^\/settings\/(\w+)$/.exec(path)?.[1];
     if (setting && setting in SETTINGS && method === "PUT") {
-        const { value } = await body(req, SettingBody);
+        const { value } = await readJson(req, SettingBody);
         const file = writable(config);
         return changed(() =>
             writeSetting(file, setting as SettingName, value === null ? null : parseOnOff(value))
@@ -426,7 +374,7 @@ export async function settingsRoute(
     }
 
     if (path === "/settings/webhooks" && method === "POST") {
-        const { hook } = await body(req, AddBody);
+        const { hook } = await readJson(req, AddBody);
         const file = writable(config);
         const added = fromDraft(hook);
         return changed(() =>
@@ -444,19 +392,19 @@ export async function settingsRoute(
     // A test sends a message; a preview answers with exactly what the test would send, and sends nothing.
     const testing = path === "/settings/webhooks/test" || path === "/settings/webhooks/preview";
     if (testing && method === "POST") {
-        const { hook, existing, event, annotationId } = await body(req, TestBody);
+        const { hook, existing, event, annotationId } = await readJson(req, TestBody);
         const target = fromDraft(hook, existing ? current(config, existing) : undefined);
         let annotation: Annotation | undefined;
         if (annotationId) {
-            const found = await ctx.backend.get(annotationId);
+            const found = await backend.get(annotationId);
             if (!found) throw new RequestError("that note no longer exists", 404);
             annotation = found.annotation;
         }
-        const prepared = prepareTest(target, { event, annotation, share, env });
+        const prepared = prepareTest(target, { event, annotation, share });
         if (path.endsWith("/preview")) {
             if ("error" in prepared) throw new RequestError(prepared.error, 409);
             const { delivery } = prepared;
-            return ctx.json({
+            return json({
                 format: target.format,
                 event: delivery.event,
                 url: maskUrl(target.url),
@@ -473,8 +421,8 @@ export async function settingsRoute(
                 notes: prepared.notes,
             });
         }
-        if ("error" in prepared) return ctx.json({ ok: false, ms: 0, detail: prepared.error });
-        return ctx.json(await sendTest(prepared, { fetch: options.fetch }));
+        if ("error" in prepared) return json({ ok: false, ms: 0, detail: prepared.error });
+        return json(await sendTest(prepared));
     }
 
     const one = /^\/settings\/webhooks\/(\d+)$/.exec(path);
@@ -482,7 +430,7 @@ export async function settingsRoute(
         const index = Number(one[1]);
         // Checked against the list as it is read for the write, so a change from `notato config` in between is caught.
         if (method === "PUT") {
-            const edit = await body(req, EditBody);
+            const edit = await readJson(req, EditBody);
             const file = writable(config);
             return changed(() =>
                 writeWebhooks(file, (list) => {
@@ -500,7 +448,7 @@ export async function settingsRoute(
             const file = writable(config);
             const which = {
                 index,
-                fingerprint: new URL(req.url).searchParams.get("fingerprint") ?? "",
+                fingerprint: url.searchParams.get("fingerprint") ?? "",
             };
             return changed(() =>
                 writeWebhooks(file, (list) => {
@@ -511,5 +459,5 @@ export async function settingsRoute(
         }
     }
 
-    return ctx.json({ error: "not found" }, 404);
-}
+    return notFound();
+};

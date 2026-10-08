@@ -28,6 +28,7 @@ import {
     type BundleRecord,
     type HandedEntry,
     inProjects,
+    PROJECT_ID,
     type ProjectRecord,
     type Store,
     type StoredAnnotation,
@@ -117,7 +118,7 @@ export class RequestError extends Error {
 const HUMAN: Author = { kind: "human" };
 
 /** Statuses after which nothing more is expected; going back to open from one is a reopen. */
-const FINISHED = new Set<Status>(["resolved", "dismissed", "reverted"]);
+export const FINISHED = new Set<Status>(["resolved", "dismissed", "reverted"]);
 
 /** What a PATCH may change, all at once. */
 export interface AnnotationChange {
@@ -165,12 +166,18 @@ export function matchesFilter(stored: StoredAnnotation, f: AnnotationFilter): bo
 }
 
 export interface LocalBackendOptions {
+    /** The settings in force (see `notato config`). Read on every use, so a change applies without a restart. */
+    config?: ConfigSource;
     /**
      * Whether a note for a project the server does not have creates it. True for `notato dev`, where whoever runs it
      * owns it and an app should just work; false for `notato serve`, where an admin creates projects (and their tokens)
      * first, so a typo or a stray app cannot invent one.
      */
     autoCreateProjects?: boolean;
+    /** Where changes are announced. Default: a bus of its own. */
+    bus?: EventBus;
+    /** Where `notato_annotate` requests go to pages. Default: a hub of its own. */
+    relay?: RelayHub;
 }
 
 /** The longest project name kept. */
@@ -179,37 +186,56 @@ const PROJECT_NAME_MAX = 80;
 /** The most replies a note takes (status notes from the agent still go on): see `reply`. */
 export const MAX_REPLIES = 1000;
 
+/** The longest comment, reply or note the server takes, in characters. */
+export const TEXT_MAX = 10_000;
+
+/** The rest of what one note may carry as it arrives. */
+const NOTE_LIMITS = { url: 4096, route: 2048, elements: 50, steps: 500, contextBytes: 512 * 1024 };
+
+const count = (n: number) => n.toLocaleString("en-US");
+
 /**
  * What is too large in a note as it arrives, or undefined. The edit and reply endpoints cap their text; a note itself
  * came with no limit but the upload's, so one could carry megabytes into every list page, event and agent's context.
  */
 export function oversized(a: Annotation): string | undefined {
-    if (a.comment.length > 10_000) return "the comment is over 10,000 characters";
-    if (a.url.length > 4096) return "the url is over 4,096 characters";
-    if (a.route.length > 2048) return "the route is over 2,048 characters";
-    if (a.target.identity.length > 50) return "more than 50 elements";
-    if ((a.target.selectedText?.length ?? 0) > 10_000)
-        return "the selected text is over 10,000 characters";
+    const text = `${count(TEXT_MAX)} characters`;
+    if (a.comment.length > TEXT_MAX) return `the comment is over ${text}`;
+    if (a.url.length > NOTE_LIMITS.url)
+        return `the url is over ${count(NOTE_LIMITS.url)} characters`;
+    if (a.route.length > NOTE_LIMITS.route)
+        return `the route is over ${count(NOTE_LIMITS.route)} characters`;
+    if (a.target.identity.length > NOTE_LIMITS.elements)
+        return `more than ${NOTE_LIMITS.elements} elements`;
+    if ((a.target.selectedText?.length ?? 0) > TEXT_MAX) return `the selected text is over ${text}`;
     if (a.thread.length > MAX_REPLIES) return `more than ${MAX_REPLIES} replies`;
-    if (a.thread.some((r) => r.body.length > 10_000)) return "a reply is over 10,000 characters";
-    if ((a.steps?.length ?? 0) > 500) return "more than 500 steps";
-    if (JSON.stringify(a.context).length > 512 * 1024) return "the context is over 512 kB";
+    if (a.thread.some((r) => r.body.length > TEXT_MAX)) return `a reply is over ${text}`;
+    if ((a.steps?.length ?? 0) > NOTE_LIMITS.steps) return `more than ${NOTE_LIMITS.steps} steps`;
+    if (JSON.stringify(a.context).length > NOTE_LIMITS.contextBytes)
+        return `the context is over ${NOTE_LIMITS.contextBytes / 1024} kB`;
     return undefined;
 }
 
+/**
+ * The server's own backend: notes in a `Store`, screenshots in a `BlobStore`, and every change announced on the bus
+ * (to event streams, watching agents, webhooks and mention plugins).
+ */
 export class LocalBackend implements Backend {
+    /** The settings in force (see `notato config`). Read on every use, so a change applies without a restart. */
+    readonly config: ConfigSource;
     readonly autoCreateProjects: boolean;
+    readonly bus: EventBus;
+    readonly relay: RelayHub;
 
     constructor(
         readonly store: Store,
         readonly blobs: BlobStore,
-        readonly bus: EventBus = new EventBus(),
-        readonly relay: RelayHub = new RelayHub(),
-        /** The settings in force (see `notato config`). Read on every use, so a change applies without a restart. */
-        readonly config: ConfigSource = defaultConfig,
         options: LocalBackendOptions = {}
     ) {
+        this.config = options.config ?? defaultConfig;
         this.autoCreateProjects = options.autoCreateProjects ?? true;
+        this.bus = options.bus ?? new EventBus();
+        this.relay = options.relay ?? new RelayHub();
         // An agent only counts as there while the server lets agents in.
         this.agents.allowed = () => this.config().mcp;
     }
@@ -348,6 +374,7 @@ export class LocalBackend implements Backend {
 
     /** Creates the project when this server makes projects on first use; otherwise it must already exist. */
     async ensureProject(projectId: string): Promise<void> {
+        assertProjectId(projectId);
         if (await this.store.getProject(projectId)) return;
         if (!this.autoCreateProjects) throw new UnknownProjectError(projectId);
         await this.store.createProject({
@@ -359,6 +386,7 @@ export class LocalBackend implements Backend {
 
     /** Null when a project with that id already exists. */
     async createProject(id: string, name?: string): Promise<ProjectRecord | null> {
+        assertProjectId(id);
         const record = {
             id,
             name: cleanProjectName(name) || id,
@@ -397,11 +425,6 @@ export class LocalBackend implements Backend {
         for (const id of ids) {
             if ((await this.store.projectsWithAsset(id)).length === 0) await this.blobs.delete(id);
         }
-    }
-
-    /** Severity or comment (and status, if given): all of it or, when any part is refused, none of it. */
-    patch(id: string, change: AnnotationChange) {
-        return this.update(id, change);
     }
 
     setStatus(id: string, status: Status, note?: string, author: Author = HUMAN) {
@@ -547,6 +570,7 @@ export class LocalBackend implements Backend {
                 ? `Took back the pick${variants.chosen ? ` (“${variants.chosen}”)` : ""}.`
                 : `Picked “${name}”.`;
         const at = new Date().toISOString();
+        const said = note?.trim();
         return this.mutate(id, (a) => {
             const offered = a.variants as NonNullable<typeof a.variants>;
             const { chosen: _chosen, chosenAt: _chosenAt, ...rest } = offered;
@@ -554,15 +578,14 @@ export class LocalBackend implements Backend {
                 ...a,
                 status: name === null ? "acknowledged" : "variant_chosen",
                 variants: name === null ? rest : { ...rest, chosen: name, chosenAt: at },
-                // With a note it is something the person said as well as did; without one it only records what they did.
                 thread: [
                     ...a.thread,
-                    // A pick is something the person did, note or not (the note travels with it). Taking one back with a note is
-                    // something they said, which the agent should hear.
+                    // A pick is something the person did, note or not (the note travels with it), so its reply is
+                    // automatic. Taking one back with a note is something they said, which the agent should hear.
                     this.makeReply(
                         author,
-                        note?.trim() ? `${body}\n${note.trim()}` : body,
-                        name !== null || !note?.trim(),
+                        said ? `${body}\n${said}` : body,
+                        name !== null || !said,
                         at
                     ),
                 ],
@@ -794,6 +817,14 @@ export class LocalBackend implements Backend {
         // Mention plugins hear about it here rather than on the bus, which counts the pages and watches listening.
         this.mentions.handle(event);
     }
+}
+
+/** Refuses an id no project can have (see `PROJECT_ID`), such as one a bundle names. */
+function assertProjectId(id: string): void {
+    if (!PROJECT_ID.test(id))
+        throw new RequestError(
+            `"${id.slice(0, 140)}" is not a project id: letters, digits and _ . @ - (not only dots), at most 128`
+        );
 }
 
 /** A project name as kept: one line, trimmed, at most PROJECT_NAME_MAX characters. */

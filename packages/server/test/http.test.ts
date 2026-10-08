@@ -150,6 +150,36 @@ describe("POST /projects/:pid/annotations", () => {
             400
         );
     });
+
+    it("answers malformed percent-encoding with a 400 behind an authorize hook too", async () => {
+        ctx = makeApp({ authorize: async () => null });
+        expect((await ctx.call("/projects/%E0%A4%A/annotations")).status).toBe(400);
+    });
+
+    it("refuses a note whose comment, url or context is far too large, and a thread past a thousand replies", async () => {
+        ctx = makeApp();
+        const big = await ingest(ctx.call, { comment: "x".repeat(10_001) });
+        expect(big.res.status).toBe(413);
+        expect((big.body as unknown as { error: string }).error).toContain(
+            "over 10,000 characters"
+        );
+        const url = await ingest(ctx.call, { url: `https://x/${"y".repeat(5000)}` });
+        expect(url.res.status).toBe(413);
+        const context = await ingest(ctx.call, {
+            context: { console: [{ level: "log", message: "z".repeat(600 * 1024) }] },
+        });
+        expect(context.res.status).toBe(413);
+
+        const ok = await ingest(ctx.call, { comment: "fine" });
+        expect(ok.res.status).toBe(201);
+        const id = ok.body.annotation.id;
+        const reply = (body: string) => ctx.backend.reply(id, body, { kind: "human", name: "Ada" });
+        for (let i = 0; i < 1000; i++) await reply(`reply ${i}`);
+        await expect(reply("one too many")).rejects.toThrow(/1000 replies/);
+        // The agent can still close it with a note.
+        const done = await ctx.backend.setStatus(id, "resolved", "Done.", { kind: "agent" });
+        expect(done?.annotation.thread).toHaveLength(1001);
+    });
 });
 
 describe("reading, updating and deleting", () => {

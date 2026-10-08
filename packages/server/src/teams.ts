@@ -1,3 +1,4 @@
+import { pinNumber } from "@notato/core";
 import type { Annotation } from "@notato/schema";
 import type { ShotLinks } from "./share.ts";
 
@@ -5,6 +6,7 @@ import type { ShotLinks } from "./share.ts";
 // and the chat version) expects. That is a message whose attachments are Adaptive Cards; the workflow posts each card.
 // Given anything else, the template tries to post the whole body as a card, and Teams answers BadRequest.
 
+/** Cut to `n` characters with an ellipsis. Unlike core's `clip`, line breaks stay: a card's text wraps them. */
 const clip = (s: string, n: number) => {
     const t = s.trim();
     return t.length > n ? `${t.slice(0, n - 1).trimEnd()}…` : t;
@@ -49,13 +51,14 @@ const webUrl = (url: string) => {
     }
 };
 
+/** The Adaptive Card for one event: what happened, the note, its screenshot when there is a link, and the facts. */
 export function adaptiveCard(
     event: string,
     a: Annotation,
     links?: ShotLinks
 ): Record<string, unknown> {
     const target = a.target.identity[0];
-    const pin = (a.context.screenshot as { pin?: unknown } | undefined)?.pin;
+    const pin = pinNumber(a);
     const last = a.thread[a.thread.length - 1];
     // A status change with a note, or a reply: what was just said is the news, under the note it is about.
     const latest =
@@ -82,7 +85,7 @@ export function adaptiveCard(
     const body: Array<Record<string, unknown>> = [
         {
             type: "TextBlock",
-            text: `Notato · ${a.projectId}${typeof pin === "number" ? ` · #${pin}` : ""}`,
+            text: `Notato · ${a.projectId}${pin !== undefined ? ` · #${pin}` : ""}`,
             size: "Small",
             isSubtle: true,
             spacing: "None",

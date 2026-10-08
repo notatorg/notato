@@ -2,10 +2,17 @@ import { afterEach, describe, expect, it } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
-import { type DevRuntime, runDev } from "../src/index.ts";
-import { annotationFixture, multipart } from "./helpers.ts";
+import { type DevRuntime, RemoteBackend, runDev } from "../src/index.ts";
+import {
+    annotationFixture,
+    cleanupAfterEach,
+    connectMcp,
+    ingest,
+    makeApp,
+    multipart,
+} from "./helpers.ts";
+
+const defer = cleanupAfterEach();
 
 const dirs: string[] = [];
 const runtimes: DevRuntime[] = [];
@@ -62,19 +69,11 @@ describe("runDev", () => {
         expect(seen.map((s) => s.annotation.id)).toEqual([a.id]);
 
         // The whole MCP path works through the attached process, including images and status changes.
-        const client = new Client({ name: "t", version: "0" });
-        const [c, s] = InMemoryTransport.createLinkedPair();
-        await Promise.all([second.mcp.connect(s), client.connect(c)]);
-        const watched = (await client.callTool({
-            name: "notato_watch",
-            arguments: { timeoutSeconds: 5, windowMs: 0 },
-        })) as {
-            content: Array<{ type: string; text?: string }>;
-        };
+        const { call } = await connectMcp(second.mcp, defer, { client: "t" });
+        const watched = await call("notato_watch", { timeoutSeconds: 5, windowMs: 0 });
         expect(watched.content.some((x) => x.type === "image")).toBe(true);
-        await client.callTool({ name: "notato_resolve", arguments: { id: a.id, summary: "done" } });
+        await call("notato_resolve", { id: a.id, summary: "done" });
         expect((await first.local?.get(a.id))?.annotation.status).toBe("resolved");
-        await client.close();
     });
 
     it("a client blocked in notato_watch is woken by an annotation posted to the primary", async () => {
@@ -133,5 +132,25 @@ describe("runDev", () => {
             `http://127.0.0.1:${two.port}/assets/${(await two.backend.list())[0]?.annotation.screenshots?.full.id}`
         );
         expect(asset.status).toBe(200);
+    });
+});
+
+describe("an attached notato dev", () => {
+    it("sends no empty note, which the HTTP API would refuse", async () => {
+        const ctx = makeApp();
+        try {
+            const { annotation } = await ingest(ctx.call);
+            const server = Bun.serve({
+                port: 0,
+                hostname: "127.0.0.1",
+                fetch: (req) => ctx.app(req),
+            });
+            servers.push(server);
+            const remote = new RemoteBackend(`http://127.0.0.1:${server.port}`);
+            const updated = await remote.setStatus(annotation.id, "acknowledged", "");
+            expect(updated?.annotation.status).toBe("acknowledged");
+        } finally {
+            ctx.cleanup();
+        }
     });
 });

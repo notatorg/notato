@@ -46,7 +46,10 @@ function derived(a: Annotation) {
     };
 }
 
-const DERIVED_COLUMNS: Array<[string, string]> = [
+type Derived = ReturnType<typeof derived>;
+
+/** The derived columns, each with its type, in the order they are written. */
+const DERIVED_COLUMNS: Array<[keyof Derived, string]> = [
     ["awaits_agent", "INTEGER NOT NULL DEFAULT 0"],
     ["people_only", "INTEGER NOT NULL DEFAULT 0"],
     ["diagnostic", "INTEGER NOT NULL DEFAULT 0"],
@@ -55,6 +58,25 @@ const DERIVED_COLUMNS: Array<[string, string]> = [
     ["last_activity_at", "TEXT"],
     ["last_word_id", "TEXT"],
 ];
+const DERIVED_NAMES = DERIVED_COLUMNS.map(([name]) => name);
+
+/** A note's derived values, in the order of `DERIVED_COLUMNS`. */
+const derivedValues = (a: Annotation) => {
+    const d = derived(a);
+    return DERIVED_NAMES.map((name) => d[name]);
+};
+
+/** `a = ?, b = ?` for the derived columns, for an UPDATE. */
+const SET_DERIVED = DERIVED_NAMES.map((name) => `${name} = ?`).join(", ");
+
+const placeholders = (n: number) => Array.from({ length: n }, () => "?").join(", ");
+
+const INSERT_ANNOTATION = `INSERT INTO annotations
+    (id, project_id, bundle_id, status, severity, route, author_kind, created_at, json, ${DERIVED_NAMES.join(", ")})
+    VALUES (${placeholders(9 + DERIVED_NAMES.length)})`;
+
+const UPDATE_ANNOTATION = `UPDATE annotations SET status = ?, severity = ?, route = ?, json = ?, ${SET_DERIVED}
+    WHERE id = ?`;
 
 /**
  * Records in SQLite. The annotation lives as JSON in one column; the columns beside it exist only so
@@ -183,24 +205,10 @@ export class SqliteStore implements Store, AuthStore {
         // Which latest word an agent was handed: set by watch, never by the note itself.
         if (!have.has("handed_reply_id"))
             this.db.run("ALTER TABLE annotations ADD COLUMN handed_reply_id TEXT");
-        const update = this.db.query(
-            `UPDATE annotations SET awaits_agent = ?, people_only = ?, diagnostic = ?, intent = ?, author_name = ?,
-             last_activity_at = ?, last_word_id = ? WHERE seq = ?`
-        );
+        const update = this.db.query(`UPDATE annotations SET ${SET_DERIVED} WHERE seq = ?`);
         this.db.transaction(() => {
-            for (const row of this.db.query("SELECT seq, json FROM annotations").all() as Row[]) {
-                const d = derived(JSON.parse(row.json) as Annotation);
-                update.run(
-                    d.awaits_agent,
-                    d.people_only,
-                    d.diagnostic,
-                    d.intent,
-                    d.author_name,
-                    d.last_activity_at,
-                    d.last_word_id,
-                    row.seq
-                );
-            }
+            for (const row of this.db.query("SELECT seq, json FROM annotations").all() as Row[])
+                update.run(...derivedValues(JSON.parse(row.json) as Annotation), row.seq);
         })();
     }
 
@@ -209,13 +217,8 @@ export class SqliteStore implements Store, AuthStore {
     }
 
     async insertAnnotation(a: Annotation): Promise<StoredAnnotation> {
-        const d = derived(a);
         const result = this.db
-            .query(
-                `INSERT INTO annotations (id, project_id, bundle_id, status, severity, route, author_kind, created_at, json,
-           awaits_agent, people_only, diagnostic, intent, author_name, last_activity_at, last_word_id)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-            )
+            .query(INSERT_ANNOTATION)
             .run(
                 a.id,
                 a.projectId,
@@ -226,13 +229,7 @@ export class SqliteStore implements Store, AuthStore {
                 a.author.kind,
                 a.createdAt,
                 JSON.stringify(a),
-                d.awaits_agent,
-                d.people_only,
-                d.diagnostic,
-                d.intent,
-                d.author_name,
-                d.last_activity_at,
-                d.last_word_id
+                ...derivedValues(a)
             );
         return { seq: Number(result.lastInsertRowid), annotation: a };
     }
@@ -318,25 +315,14 @@ export class SqliteStore implements Store, AuthStore {
                 .get(id) as Row | null;
             if (!row) return null;
             const next = Annotation.parse(mutate(Annotation.parse(JSON.parse(row.json))));
-            const d = derived(next);
             this.db
-                .query(
-                    `UPDATE annotations SET status = ?, severity = ?, route = ?, json = ?, awaits_agent = ?,
-                     people_only = ?, diagnostic = ?, intent = ?, author_name = ?, last_activity_at = ?, last_word_id = ?
-                     WHERE id = ?`
-                )
+                .query(UPDATE_ANNOTATION)
                 .run(
                     next.status,
                     next.severity ?? null,
                     next.route,
                     JSON.stringify(next),
-                    d.awaits_agent,
-                    d.people_only,
-                    d.diagnostic,
-                    d.intent,
-                    d.author_name,
-                    d.last_activity_at,
-                    d.last_word_id,
+                    ...derivedValues(next),
                     id
                 );
             return { seq: row.seq, annotation: next };

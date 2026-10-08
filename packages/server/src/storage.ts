@@ -178,7 +178,14 @@ export interface BlobStore {
     delete(id: string): Promise<boolean>;
 }
 
+/** A screenshot's id: the sha-256 of its bytes, in hex. */
 export const ASSET_ID = /^[0-9a-f]{64}$/;
+
+/**
+ * A project id: letters, digits and `_ . @ -`, at most 128 of them, but never only dots, so it can never name a parent
+ * folder wherever a client keeps a project's notes.
+ */
+export const PROJECT_ID = /^(?!\.+$)[\w.@-]{1,128}$/;
 
 /** Only formats the SDK produces are accepted, so the server never stores or serves arbitrary content. */
 export function sniffImageMime(bytes: Uint8Array): "image/png" | "image/webp" | null {

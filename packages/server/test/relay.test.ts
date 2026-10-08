@@ -1,8 +1,16 @@
 import { afterEach, describe, expect, it } from "bun:test";
-import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
-import { createMcpServer, type DevRuntime, RelayError, RelayHub, runDev } from "../src/index.ts";
-import { annotationFixture, filesFor, makeApp, multipart } from "./helpers.ts";
+import { type Backend, type DevRuntime, RelayError, RelayHub, runDev } from "../src/index.ts";
+import {
+    annotationFixture,
+    cleanupAfterEach,
+    connectMcp,
+    filesFor,
+    makeApp,
+    multipart,
+    waitFor,
+} from "./helpers.ts";
+
+const defer = cleanupAfterEach();
 
 let ctx: ReturnType<typeof makeApp>;
 const runtimes: DevRuntime[] = [];
@@ -139,12 +147,6 @@ async function fakePage(call: ReturnType<typeof makeApp>["call"], projectId = "c
     };
 }
 
-const waitFor = async (check: () => boolean, ms = 3000) => {
-    const end = Date.now() + ms;
-    while (Date.now() < end && !check()) await new Promise((r) => setTimeout(r, 20));
-    return check();
-};
-
 describe("relay over HTTP", () => {
     it("delivers annotate-request events only to agent pages, and registers on connect", async () => {
         ctx = makeApp();
@@ -233,24 +235,14 @@ describe("relay over HTTP", () => {
 });
 
 describe("notato_annotate", () => {
-    async function connect(backend: Parameters<typeof createMcpServer>[0]["backend"]) {
-        const server = createMcpServer({ backend, version: "t" });
-        const [ct, st] = InMemoryTransport.createLinkedPair();
-        const client = new Client({ name: "codex-mcp-client", version: "0" });
-        await Promise.all([server.connect(st), client.connect(ct)]);
-        const call = async (name: string, a: Record<string, unknown>) =>
-            (await client.callTool({ name, arguments: a })) as unknown as {
-                isError?: boolean;
-                content: Array<{ type: string; text?: string }>;
-            };
-        return { client, call };
-    }
+    const connect = (backend: Backend) =>
+        connectMcp(backend, defer, { client: "codex-mcp-client" });
 
     it("files an annotation through the page and returns it with screenshots", async () => {
         ctx = makeApp();
         const page = await fakePage(ctx.call);
         await waitFor(() => ctx.backend.relay.has("checkout-web"));
-        const { client, call } = await connect(ctx.backend);
+        const { call } = await connect(ctx.backend);
         const result = await call("notato_annotate", {
             target: "#pay",
             comment: "Pay button hidden behind banner",
@@ -266,17 +258,15 @@ describe("notato_annotate", () => {
         // The agent is named as the author, so the thread shows who filed it.
         // Signed with the agent the MCP client says it is.
         expect(page.requests[0]?.args.author).toBe("Codex");
-        await client.close();
         await page.close();
     });
 
     it("explains what to do when no page is connected", async () => {
         ctx = makeApp();
-        const { client, call } = await connect(ctx.backend);
+        const { call } = await connect(ctx.backend);
         const result = await call("notato_annotate", { target: "#pay", comment: "x" });
         expect(result.isError).toBe(true);
         expect(result.content[0]?.text).toContain('<Notato mode="agent"');
-        await client.close();
     });
 
     it("reports a page-side failure, and works through an attached notato dev process", async () => {
@@ -326,7 +316,7 @@ describe("notato_annotate", () => {
         })();
         await waitFor(() => first.local?.relay.has("checkout-web") === true);
 
-        const { client, call } = await connect(second.backend);
+        const { call } = await connect(second.backend);
         const result = await call("notato_annotate", {
             target: "#nope",
             comment: "x",
@@ -336,7 +326,6 @@ describe("notato_annotate", () => {
         expect(result.content[0]?.text).toContain(
             'The page could not annotate: no element matches "#nope"'
         );
-        await client.close();
         controller.abort();
     });
 });

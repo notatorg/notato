@@ -1,5 +1,5 @@
 import { createHmac } from "node:crypto";
-import { mentionsIn, renderAnnotation } from "@notato/core";
+import { clip, mentionsIn, renderAnnotation } from "@notato/core";
 import type { Annotation } from "@notato/schema";
 import { ulid } from "ulid";
 import type { ConfigSource } from "./config.ts";
@@ -52,6 +52,8 @@ export interface Webhook {
     screenshots?: boolean;
 }
 
+const FIELDS = ["url", "events", "format", "secret", "name", "project", "screenshots"];
+
 /** Checks a `webhooks` value from a config file. */
 export function parseWebhooks(raw: unknown): { webhooks: Webhook[]; error?: string } {
     if (raw === undefined) return { webhooks: [] };
@@ -62,17 +64,12 @@ export function parseWebhooks(raw: unknown): { webhooks: Webhook[]; error?: stri
         if (!entry || typeof entry !== "object" || Array.isArray(entry))
             return { webhooks: [], error: `${at} must be an object` };
         const e = entry as Record<string, unknown>;
-        for (const key of Object.keys(e)) {
-            if (
-                !["url", "events", "format", "secret", "name", "project", "screenshots"].includes(
-                    key
-                )
-            )
-                return {
-                    webhooks: [],
-                    error: `${at}: unknown field "${key}" (known: url, events, format, secret, name, project, screenshots)`,
-                };
-        }
+        const unknown = Object.keys(e).find((key) => !FIELDS.includes(key));
+        if (unknown !== undefined)
+            return {
+                webhooks: [],
+                error: `${at}: unknown field "${unknown}" (known: ${FIELDS.join(", ")})`,
+            };
         if (typeof e.url !== "string") return { webhooks: [], error: `${at}.url is required` };
         let url: URL;
         try {
@@ -119,15 +116,22 @@ export function parseWebhooks(raw: unknown): { webhooks: Webhook[]; error?: stri
     return { webhooks: out };
 }
 
+const ENV_SECRET = "env:";
+
+/** The environment variable a secret written as `env:NAME` is read from; undefined for one written as it is. */
+export function secretEnvName(secret: string | undefined): string | undefined {
+    return secret?.startsWith(ENV_SECRET) ? secret.slice(ENV_SECRET.length) : undefined;
+}
+
 /** The secret, with `env:NAME` read from the environment. Null when it names a variable that is not set. */
 export function secretOf(
     webhook: Webhook,
     env: Record<string, string | undefined> = process.env
 ): string | null | undefined {
     if (webhook.secret === undefined) return undefined;
-    if (!webhook.secret.startsWith("env:")) return webhook.secret;
-    const value = env[webhook.secret.slice(4)];
-    return value ? value : null;
+    const name = secretEnvName(webhook.secret);
+    if (name === undefined) return webhook.secret;
+    return env[name] || null;
 }
 
 export const signature = (secret: string, body: string) =>
@@ -137,17 +141,17 @@ const label = (w: Webhook) => w.name ?? new URL(w.url).host;
 
 /** What is said in one line, for chat services: who, what happened, and the comment. */
 function summary(event: string, a: Annotation): string {
-    const what = event.replace("annotation.", "").replace("_", " ");
+    const what = event.replace("annotation.", "").replaceAll("_", " ");
     const target = a.target.identity[0];
     const where = target
         ? `${target.role ?? target.tag}${target.name ? ` “${target.name}”` : ""}`
         : a.target.kind;
-    const text = a.comment.replace(/\s+/g, " ").trim();
+    const severity = a.severity ? ` (${a.severity})` : "";
     const picked =
         event === "annotation.variant_chosen" && a.variants?.chosen
             ? ` — picked “${a.variants.chosen}”`
             : "";
-    return `Notato · ${a.projectId}: annotation ${what}${a.severity ? ` (${a.severity})` : ""} on ${a.route} — ${where}: ${text.length > 240 ? `${text.slice(0, 239)}…` : text}${picked}`;
+    return `Notato · ${a.projectId}: annotation ${what}${severity} on ${a.route} — ${where}: ${clip(a.comment, 240)}${picked}`;
 }
 
 /** Slack's own escaping for message text: what is left can be read, but cannot mention or link. */
@@ -217,7 +221,12 @@ export function buildDelivery(
     };
 }
 
+/** A refusal that may pass if tried again: the other end failed, was busy, or timed out waiting. */
 const RETRIABLE = (status: number) => status >= 500 || status === 429 || status === 408;
+/** The waits before each retry of a failed delivery. */
+const RETRY_DELAYS_MS = [1000, 4000, 15000];
+/** How long one delivery waits for the other end to answer. */
+const DELIVERY_TIMEOUT_MS = 5000;
 
 export interface SendOptions {
     fetch?: typeof fetch;
@@ -234,7 +243,7 @@ export async function sendDelivery(
     options: SendOptions = {}
 ): Promise<boolean> {
     const http = options.fetch ?? fetch;
-    const delays = options.retryDelaysMs ?? [1000, 4000, 15000];
+    const delays = options.retryDelaysMs ?? RETRY_DELAYS_MS;
     for (let attempt = 0; ; attempt++) {
         let failure: string;
         try {
@@ -242,7 +251,7 @@ export async function sendDelivery(
                 method: "POST",
                 headers: delivery.headers,
                 body: delivery.body,
-                signal: AbortSignal.timeout(options.timeoutMs ?? 5000),
+                signal: AbortSignal.timeout(options.timeoutMs ?? DELIVERY_TIMEOUT_MS),
                 redirect: "manual",
             });
             if (res.ok) return true;

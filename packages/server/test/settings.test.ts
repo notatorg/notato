@@ -2,8 +2,8 @@ import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createConfigSource, json, signature } from "../src/index.ts";
-import { maskUrl, type SettingsView, settingsRoute, type TestResult } from "../src/settings.ts";
+import { Authenticator, createApp, createConfigSource, signature } from "../src/index.ts";
+import { maskUrl, type SettingsView, type TestResult } from "../src/settings.ts";
 import { makeApp } from "./helpers.ts";
 
 const SLACK = "https://hooks.slack.com/services/T000/B000/XXXXSECRETXXXX";
@@ -129,17 +129,16 @@ describe("who may use it", () => {
     });
 
     it("refuses anyone but an admin", async () => {
-        const req = new Request("http://localhost:4747/settings", {
-            headers: { host: "localhost:4747" },
-        });
-        await expect(
-            settingsRoute(
-                req,
-                "/settings",
-                { kind: "token", tokenId: "t", projectId: "*" },
-                { backend: ctx.backend, json }
-            )
-        ).rejects.toThrow("only an admin");
+        const auth = new Authenticator(ctx.store);
+        const { token } = await auth.issueToken("*", "an agent");
+        const app = createApp({ backend: ctx.backend, mode: "serve", version: "test", auth });
+        const res = await app(
+            new Request("http://localhost:4747/settings", {
+                headers: { host: "localhost:4747", authorization: `Bearer ${token}` },
+            })
+        );
+        expect(res.status).toBe(403);
+        expect(await res.text()).toContain("only an admin");
     });
 });
 

@@ -313,6 +313,28 @@ describe("eventFor", () => {
         expect(eventFor(event("updated", "open"), "open")).toBe("annotation.updated");
         expect(eventFor(event("updated", "resolved"), undefined)).toBe("annotation.resolved");
     });
+    it("tells a change from a status change by what the event carries, so a restart forgets nothing", async () => {
+        const ctx = makeBackend();
+        try {
+            const seen: string[] = [];
+            ctx.backend.bus.subscribe((e) => {
+                const name = eventFor(e, e.previous?.status, e.previous?.offeredAt);
+                if (name) seen.push(name);
+            });
+            const { stored } = await ctx.backend.ingest(annotationFixture(), filesFor());
+            const id = stored.annotation.id;
+            await ctx.backend.setStatus(id, "resolved", "Done.", { kind: "agent" });
+            // Changing the severity of a resolved note is an update, not a second "resolved".
+            await ctx.backend.update(id, { severity: "blocker" });
+            expect(seen).toEqual([
+                "annotation.created",
+                "annotation.resolved",
+                "annotation.updated",
+            ]);
+        } finally {
+            ctx.cleanup();
+        }
+    });
 });
 
 describe("startWebhooks, from the events of a real backend", () => {

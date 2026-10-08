@@ -48,7 +48,7 @@ export function corsHeaders(req: Request, extra: string[]): Record<string, strin
     return {
         "Access-Control-Allow-Origin": origin,
         Vary: "Origin",
-        "Access-Control-Allow-Methods": "GET, POST, PATCH, DELETE, OPTIONS",
+        "Access-Control-Allow-Methods": "GET, POST, PUT, PATCH, DELETE, OPTIONS",
         "Access-Control-Allow-Headers": "Content-Type, Authorization, Last-Event-ID",
         "Access-Control-Allow-Private-Network": "true",
         "Access-Control-Max-Age": "600",

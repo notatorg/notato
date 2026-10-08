@@ -1,15 +1,97 @@
+import { afterEach } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
+import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { buildBundle, writeBundle } from "@notato/core";
 import { type Annotation, sampleAnnotation } from "@notato/schema";
 import {
+    type Backend,
     type ConfigSource,
     createApp,
+    createMcpServer,
     FileBlobStore,
     LocalBackend,
     SqliteStore,
 } from "../src/index.ts";
+
+// ---- housekeeping ----------------------------------------------------------------------------------------------
+
+/** Something to undo once a test is over: close a client, stop a server, remove a folder. */
+export type Cleanup = () => unknown;
+
+/**
+ * Undoes, after each test of the file that calls it (once, at the top), what the test handed to the function it
+ * returns, last first.
+ */
+export function cleanupAfterEach(): (cleanup: Cleanup) => void {
+    const pending: Cleanup[] = [];
+    afterEach(async () => {
+        for (const cleanup of pending.splice(0).reverse()) await cleanup();
+    });
+    return (cleanup) => {
+        pending.push(cleanup);
+    };
+}
+
+/** A new empty folder, removed once the test is over. */
+export function tempDir(defer: (cleanup: Cleanup) => void, prefix = "notato-test-"): string {
+    const dir = mkdtempSync(join(tmpdir(), prefix));
+    defer(() => rmSync(dir, { recursive: true, force: true }));
+    return dir;
+}
+
+/** Waits until `check` holds, looking every 20ms; resolves with whether it did within `ms`. */
+export async function waitFor(
+    check: () => boolean | Promise<boolean>,
+    ms = 3000
+): Promise<boolean> {
+    const end = Date.now() + ms;
+    while (Date.now() < end && !(await check())) await Bun.sleep(20);
+    return check();
+}
+
+// ---- MCP -------------------------------------------------------------------------------------------------------
+
+/** A tool call's result as the MCP client hands it back. */
+export interface ToolResult {
+    isError?: boolean;
+    content: Array<{ type: string; text?: string; data?: string; mimeType?: string }>;
+}
+
+/** The text parts of a tool result, one per line. */
+export const toolText = (result: ToolResult) =>
+    result.content
+        .filter((c) => c.type === "text")
+        .map((c) => c.text)
+        .join("\n");
+
+/**
+ * An MCP client talking in memory to `target`: a server made with `createMcpServer`, or a backend to make a default one
+ * for. The client calls itself `client`, which is the agent the server signs its replies with ("claude-code": Claude).
+ */
+export async function connectMcp(
+    target: Backend | McpServer,
+    defer: (cleanup: Cleanup) => void,
+    { client: name = "claude-code" }: { client?: string } = {}
+) {
+    const server =
+        target instanceof McpServer
+            ? target
+            : createMcpServer({ backend: target, version: "test" });
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    const client = new Client({ name, version: "0" });
+    await Promise.all([server.connect(serverTransport), client.connect(clientTransport)]);
+    defer(() => client.close());
+    /** Calls a tool and hands back its result. */
+    const call = async (tool: string, args: Record<string, unknown> = {}) =>
+        (await client.callTool({ name: tool, arguments: args })) as unknown as ToolResult;
+    return { client, server, call, text: toolText };
+}
+
+// ---- notes as an SDK sends them --------------------------------------------------------------------------------
 
 /** A real 1×1 PNG, so magic-byte sniffing sees what the SDK would send. */
 export const PNG = Uint8Array.from(
@@ -74,13 +156,7 @@ export function multipart(
 export function makeBackend(config?: ConfigSource) {
     const dir = mkdtempSync(join(tmpdir(), "notato-test-"));
     const store = new SqliteStore(":memory:");
-    const backend = new LocalBackend(
-        store,
-        new FileBlobStore(join(dir, "assets")),
-        undefined,
-        undefined,
-        config
-    );
+    const backend = new LocalBackend(store, new FileBlobStore(join(dir, "assets")), { config });
     return {
         backend,
         store,

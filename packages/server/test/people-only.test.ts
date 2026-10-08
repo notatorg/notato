@@ -1,15 +1,21 @@
-import { afterEach, describe, expect, it } from "bun:test";
-import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
+import { describe, expect, it } from "bun:test";
 import { awaitsAgent, lastWord, renderAnnotation } from "@notato/core";
 import type { Annotation, Reply } from "@notato/schema";
-import { type Backend, createMcpServer } from "../src/index.ts";
-import { annotationFixture, filesFor, makeApp, makeBackend } from "./helpers.ts";
+import type { Backend } from "../src/index.ts";
+import {
+    annotationFixture,
+    cleanupAfterEach,
+    connectMcp,
+    filesFor,
+    makeApp,
+    makeBackend,
+    toolText,
+} from "./helpers.ts";
 
-const cleanups: Array<() => void | Promise<void>> = [];
-afterEach(async () => {
-    for (const c of cleanups.splice(0)) await c();
-});
+// People only: a note people keep between themselves, which the agent never gets until someone turns it off; and an
+// aside, a reply kept from the agent.
+
+const defer = cleanupAfterEach();
 
 const AGENT = { kind: "agent" as const, name: "Claude" };
 const DOM = { kind: "human" as const, name: "Dom" };
@@ -17,32 +23,19 @@ const SAM = { kind: "human" as const, name: "Sam" };
 
 async function setup() {
     const ctx = makeBackend();
-    cleanups.push(ctx.cleanup);
+    defer(ctx.cleanup);
     const add = async (over: Partial<Annotation> = {}) =>
         (await ctx.backend.ingest(annotationFixture(over), filesFor())).stored.annotation;
     return { ...ctx, add };
 }
 
+/** An agent's tool calls, each answered as whether it was refused and its text. */
 async function mcp(backend: Backend) {
-    const server = createMcpServer({ backend, version: "test" });
-    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
-    const client = new Client({ name: "claude-code", version: "0" });
-    await Promise.all([server.connect(serverTransport), client.connect(clientTransport)]);
-    cleanups.push(() => client.close());
-    const call = async (name: string, args: Record<string, unknown> = {}) => {
-        const r = (await client.callTool({ name, arguments: args })) as unknown as {
-            isError?: boolean;
-            content: Array<{ type: string; text?: string }>;
-        };
-        return {
-            isError: Boolean(r.isError),
-            text: r.content
-                .filter((c) => c.type === "text")
-                .map((c) => c.text)
-                .join("\n"),
-        };
+    const { call } = await connectMcp(backend, defer);
+    return async (name: string, args: Record<string, unknown> = {}) => {
+        const result = await call(name, args);
+        return { isError: Boolean(result.isError), text: toolText(result) };
     };
-    return call;
 }
 
 const watch = { timeoutSeconds: 2, windowMs: 0, screenshots: "none" };
@@ -152,7 +145,7 @@ describe("People only", () => {
 
     it("is recorded in the thread each time someone turns it on or off, and only a person can", async () => {
         const ctx = makeApp();
-        cleanups.push(ctx.cleanup);
+        defer(ctx.cleanup);
         const a = annotationFixture({ projectId: "web" });
         await ctx.backend.ingest(a, filesFor());
         const patch = (body: object) =>
@@ -269,7 +262,7 @@ describe("an aside", () => {
         expect(() => t.backend.reply(a.id, "psst", AGENT, { aside: true })).toThrow();
 
         const ctx = makeApp();
-        cleanups.push(ctx.cleanup);
+        defer(ctx.cleanup);
         const b = annotationFixture({ projectId: "web" });
         await ctx.backend.ingest(b, filesFor());
         const res = await ctx.call(`/annotations/${b.id}/replies`, {
