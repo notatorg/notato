@@ -20,9 +20,17 @@ enum PinLayout {
 
     /// The places tried for a pin, from the first: leftward along its row, then rightward, then the same on the rows
     /// below. A fixed number (68), so a crowded or narrow window cannot keep it looking.
+    // Spelled out step by step: as one expression it is too much for the Swift 6.1 type checker (Xcode 16).
     private static let tries: [CGPoint] = {
-        let offsets: [CGFloat] = [0] + (1...sideways).map { -CGFloat($0) * step } + (1...sideways).map { CGFloat($0) * step }
-        return (0..<rows).flatMap { row in offsets.map { CGPoint(x: $0, y: CGFloat(row) * step) } }
+        let left: [CGFloat] = (1...sideways).map { (n: Int) -> CGFloat in -CGFloat(n) * step }
+        let right: [CGFloat] = (1...sideways).map { (n: Int) -> CGFloat in CGFloat(n) * step }
+        let offsets: [CGFloat] = [0] + left + right
+        var places: [CGPoint] = []
+        for row in 0..<rows {
+            let y = CGFloat(row) * step
+            places += offsets.map { (x: CGFloat) -> CGPoint in CGPoint(x: x, y: y) }
+        }
+        return places
     }()
 
     /// The top left of each pin, in order: the first to claim a place keeps it. Each place tried is checked against

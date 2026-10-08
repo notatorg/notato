@@ -3,7 +3,6 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Notato.Maui.Model;
 using System.Net;
-using System.Runtime.CompilerServices;
 using System.Text;
 using System.Text.Json;
 
@@ -12,8 +11,23 @@ namespace Notato.Maui.Tests;
 internal static class Fixtures
 {
     /// <summary>packages/schema/schema.json: generated from the Zod schema the server validates with.</summary>
-    public static string SchemaPath([CallerFilePath] string here = "") =>
-        Path.GetFullPath(Path.Combine(Path.GetDirectoryName(here)!, "..", "..", "..", "..", "packages", "schema", "schema.json"));
+    /// <remarks>
+    /// Found by looking up from the test assembly. This file's own path cannot be used: a CI build maps source paths
+    /// to <c>/_/</c> (ContinuousIntegrationBuild).
+    /// </remarks>
+    public static string SchemaPath()
+    {
+        for (DirectoryInfo? dir = new(AppContext.BaseDirectory); dir is not null; dir = dir.Parent)
+        {
+            string candidate = Path.Combine(dir.FullName, "packages", "schema", "schema.json");
+            if (File.Exists(candidate))
+            {
+                return candidate;
+            }
+        }
+
+        throw new FileNotFoundException("packages/schema/schema.json is not in any folder above the test assembly.");
+    }
 
     /// <summary>An annotation shaped like one the SDK makes, with every optional part filled in.</summary>
     public static Annotation Annotation(string? bundleId = null) => new()
