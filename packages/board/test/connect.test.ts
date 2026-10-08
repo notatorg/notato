@@ -22,34 +22,34 @@ describe("connecting an app to a shared server", () => {
         server: "https://notato.example.com",
         project: "checkout-web",
         needsToken: true,
-        token: "pft_abc-123",
+        token: "notato_abc-123",
     });
 
     it("fills in the server, the project and the token in every SDK's own words", () => {
         expect(code(g.react)).toContain(
-            '<Notato project="checkout-web" server="https://notato.example.com" token="pft_abc-123" enabled />'
+            '<Notato project="checkout-web" server="https://notato.example.com" token="notato_abc-123" enabled />'
         );
         expect(code(g.angular)).toContain(
-            'provideNotato({ project: "checkout-web", server: "https://notato.example.com", token: "pft_abc-123", enabled: true })'
+            'provideNotato({ project: "checkout-web", server: "https://notato.example.com", token: "notato_abc-123", enabled: true })'
         );
         expect(code(g["react-native"])).toContain(
-            '<Notato project="checkout-web" server="https://notato.example.com" token="pft_abc-123" enabled storage={expoStorage}>'
+            '<Notato project="checkout-web" server="https://notato.example.com" token="notato_abc-123" enabled storage={expoStorage}>'
         );
         expect(code(g.maui)).toContain('options.Project = "checkout-web";');
         expect(code(g.maui)).toContain('options.Server = "https://notato.example.com";');
-        expect(code(g.maui)).toContain('options.Token = "pft_abc-123";');
+        expect(code(g.maui)).toContain('options.Token = "notato_abc-123";');
         expect(code(g.swift)).toContain(
             'NotatoConfiguration(project: "checkout-web", server: URL(string: "https://notato.example.com"))'
         );
-        expect(code(g.swift)).toContain('notato.token = "pft_abc-123"');
+        expect(code(g.swift)).toContain('notato.token = "notato_abc-123"');
         expect(code(g.android)).toContain(
-            'NotatoConfig(project = "checkout-web", server = "https://notato.example.com", token = "pft_abc-123")'
+            'NotatoConfig(project = "checkout-web", server = "https://notato.example.com", token = "notato_abc-123")'
         );
         expect(code(g.page)).toBe(
-            '<script src="https://notato.example.com/inject.js?project=checkout-web&token=pft_abc-123"></script>'
+            '<script src="https://notato.example.com/inject.js?project=checkout-web&token=notato_abc-123"></script>'
         );
         expect(g.page.steps[0]?.link?.href).toBe(
-            "/bookmarklet?project=checkout-web&token=pft_abc-123"
+            "/bookmarklet?project=checkout-web&token=notato_abc-123"
         );
     });
 

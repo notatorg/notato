@@ -176,7 +176,7 @@ await step("notato serve: embedded UI, login, tokens, annotations", async () => 
     assert(created.code === 0, `project create failed: ${created.stderr}`);
     const made = await run(["token", "create", "smoke", "--dir", dir]);
     assert(
-        made.code === 0 && made.stdout.startsWith("pft_"),
+        made.code === 0 && made.stdout.startsWith("notato_"),
         `token create failed: ${made.stderr}`
     );
     const headers = { Authorization: `Bearer ${made.stdout}` };

@@ -86,8 +86,8 @@ function ConnectApp({ me, project, name }: { me: Me; project: string; name: stri
                     <div className="connect-note-body">
                         <p>
                             <strong>Apps need a token for this project.</strong> Where the snippets
-                            say <code>pft_…</code>, put one. A token is shown only once, when it is
-                            made: make one here, or under{" "}
+                            say <code>notato_…</code>, put one. A token is shown only once, when it
+                            is made: make one here, or under{" "}
                             <a href={projectHref(project, "settings")}>Project settings</a>.
                         </p>
                         <button

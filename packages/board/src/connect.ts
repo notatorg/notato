@@ -41,7 +41,7 @@ export interface ConnectTarget {
     version?: string;
 }
 
-export const TOKEN_PLACEHOLDER = "pft_…";
+export const TOKEN_PLACEHOLDER = "notato_…";
 /** Where every SDK looks when it is given no server. */
 const DEFAULT_SERVER = "http://localhost:4747";
 

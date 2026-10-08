@@ -153,21 +153,21 @@ describe("the worker's requests", () => {
         };
         const pageSent = {
             kind: "fetch" as const,
-            url: "http://localhost:4747/projects/p/annotations?limit=500&token=pft_page",
+            url: "http://localhost:4747/projects/p/annotations?limit=500&token=notato_page",
             init: {
                 headers: [
-                    ["authorization", "Bearer pft_page"],
-                    ["x-notato-token", "pft_page"],
+                    ["authorization", "Bearer notato_page"],
+                    ["x-notato-token", "notato_page"],
                     ["accept", "application/json"],
                 ] as Array<[string, string]>,
             },
         };
-        await worker(record, { ...SITE, token: "pft_site" }).handle(
+        await worker(record, { ...SITE, token: "notato_site" }).handle(
             "https://app.example",
             pageSent
         );
         expect(seen[0]?.url).toBe("http://localhost:4747/projects/p/annotations?limit=500");
-        expect(seen[0]?.headers.get("authorization")).toBe("Bearer pft_site");
+        expect(seen[0]?.headers.get("authorization")).toBe("Bearer notato_site");
         expect(seen[0]?.headers.get("x-notato-token")).toBeNull();
         expect(seen[0]?.headers.get("accept")).toBe("application/json");
         // A site without a token sends none, whatever the page put in.
@@ -352,14 +352,14 @@ describe("the worker's streams", () => {
                     headers: { "content-type": "text/event-stream" },
                 });
             },
-            { ...SITE, token: "pft_site" }
+            { ...SITE, token: "notato_site" }
         );
         const t = port();
         w.stream("https://app.example", t.p);
-        t.begin("http://localhost:4747/projects/p/events?agent=1&token=pft_page");
+        t.begin("http://localhost:4747/projects/p/events?agent=1&token=notato_page");
         await tick();
         expect(seen[0]?.url).toBe("http://localhost:4747/projects/p/events?agent=1");
-        expect(seen[0]?.headers.get("authorization")).toBe("Bearer pft_site");
+        expect(seen[0]?.headers.get("authorization")).toBe("Bearer notato_site");
         expect(seen[0]?.headers.get("accept")).toBe("text/event-stream");
         t.hangUp();
     });

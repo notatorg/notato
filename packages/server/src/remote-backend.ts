@@ -38,7 +38,7 @@ export function isConnectionError(error: unknown): boolean {
  */
 export class RemoteBackend implements Backend {
     /** Names this agent to the server on every request, so pages know someone is listening (see agents.ts). */
-    private readonly agentId = `pfa_${crypto.randomUUID()}`;
+    private readonly agentId = `agent_${crypto.randomUUID()}`;
     /** The agent this process serves ("Codex"), once its MCP client has said; sent with the heartbeat. */
     agentName: string | undefined;
     /** The projects that agent is kept to (`notato dev --project`), so only their pages say it is there. */

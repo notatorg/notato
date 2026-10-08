@@ -304,7 +304,7 @@ export async function runDev(options: DevOptions): Promise<DevRuntime> {
     /** This process's own MCP, while it is open over stdio: an agent the server it runs counts as there. */
     let stdioOpen = false;
     let releaseAgent: (() => void) | undefined;
-    const agentId = `pfa_${crypto.randomUUID()}`;
+    const agentId = `agent_${crypto.randomUUID()}`;
     /** The agent on the other end of this process's MCP ("Codex"), once its client has introduced itself. */
     let agentLabel: string | undefined;
 

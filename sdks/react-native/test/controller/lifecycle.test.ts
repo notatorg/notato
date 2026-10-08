@@ -94,13 +94,13 @@ describe("the token", () => {
     it("goes only to the configured server, never to one typed into the settings", () => {
         const server = fakeServer();
         const { notato } = start(
-            { project: "shop", server: "http://localhost:4799", token: "pft_secret" },
+            { project: "shop", server: "http://localhost:4799", token: "notato_secret" },
             server
         );
         const follow = vi.mocked(server.transport.follow);
         expect(follow.mock.calls.at(-1)?.[0]).toMatchObject({
             server: "http://localhost:4799",
-            token: "pft_secret",
+            token: "notato_secret",
         });
         notato.saveSettings({ name: "", screenshots: true, server: "http://evil.example.com" });
         expect(follow.mock.calls.at(-1)?.[0].server).toBe("http://evil.example.com");

@@ -117,7 +117,7 @@ class Notato extends StatefulWidget {
   /// where a server set here gets the packages. An empty string for none in any mode.
   final String? server;
 
-  /// A project token (`pft_…`), for a shared server (`notato serve`).
+  /// A project token (`notato_…`), for a shared server (`notato serve`).
   final String? token;
 
   /// The app's name, recorded on every note. Default: `Flutter app`.

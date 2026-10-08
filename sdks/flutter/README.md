@@ -48,7 +48,7 @@ A phone on Wi-Fi needs the server's [dev tunnel](../../README.md#phones-a-dev-tu
 | `project`                        | (required)                                   | Project id on the server. Letters, digits and `. _ - @`, not only dots                                            |
 | `mode`                           | `NotatoMode.dev`                             | `dev`, `test` or `agent` (see below)                                                                              |
 | `server`                         | `http://localhost:4747` (none in test mode)  | `''` for no server: notes stay on the device                                                                      |
-| `token`                          |                                              | A project token (`pft_…`) for a shared `notato serve`                                                             |
+| `token`                          |                                              | A project token (`notato_…`) for a shared `notato serve`                                                          |
 | `route`                          | the top named route `navigatorObserver` sees | A function that says the screen: notes are filed under it, and its pins shown on it                               |
 | `enabled`                        | debug builds                                 | Whether Notato is on at launch. The app can switch it at runtime. Picking a widget needs a debug build either way |
 | `showToolbar`, `toolbarPosition` | `true`, `bottomRight`                        | The toolbar and the corner it starts in. Where people drag it is remembered                                       |

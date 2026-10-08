@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import type { Annotation } from "@notato/schema";
-import { TOKEN_PREFIX } from "../src/index.ts";
+import { sha256Hex, TOKEN_PREFIX } from "../src/index.ts";
 import {
     annotationFixture,
     cleanupAfterEach,
@@ -107,6 +107,25 @@ describe("project tokens", () => {
         expect(
             await waitFor(async () => (await s.rt.store.listTokens())[0]?.lastUsedAt !== undefined)
         ).toBe(true);
+    });
+
+    it("made by earlier versions, with the old pft_ prefix, still work", async () => {
+        const s = await start();
+        await createProject(s, "p");
+        const old = "pft_made-by-an-earlier-version-of-notato";
+        await s.rt.store.createToken({
+            id: "old",
+            projectId: "p",
+            name: "old",
+            tokenHash: await sha256Hex(new TextEncoder().encode(old)),
+            createdAt: new Date().toISOString(),
+        });
+        expect((await s.call("/projects/p/annotations", { headers: bearer(old) })).status).toBe(
+            200
+        );
+        expect(
+            (await s.call("/projects/p/annotations", { headers: bearer("pft_unknown") })).status
+        ).toBe(401);
     });
 });
 

@@ -41,14 +41,14 @@ public class ClientTests
             }
 
             Recorder handler = new(_ => Fixtures.Stored(HttpStatusCode.Created, annotation, 7));
-            NotatoClient client = new(new HttpClient(handler), "http://localhost:4747/", "pft_secret");
+            NotatoClient client = new(new HttpClient(handler), "http://localhost:4747/", "notato_secret");
 
             PostedAnnotation result = await client.PostAnnotationAsync(annotation, files);
 
             Assert.Equal(7, result.Stored.Seq);
             (HttpRequestMessage request, string body) = Assert.Single(handler.Seen);
             Assert.Equal("http://localhost:4747/projects/maui-sample/annotations", request.RequestUri!.ToString());
-            Assert.Equal("Bearer pft_secret", request.Headers.Authorization!.ToString());
+            Assert.Equal("Bearer notato_secret", request.Headers.Authorization!.ToString());
             Assert.StartsWith("multipart/form-data", request.Content!.Headers.ContentType!.ToString());
             Assert.Contains("name=\"annotation\"", body);
             Assert.Contains($"name=\"asset:{new string('a', 64)}\"", body);
@@ -266,7 +266,7 @@ public class ClientTests
             }
 
             Recorder handler = new(_ => new HttpResponseMessage(HttpStatusCode.Created));
-            await new NotatoClient(new HttpClient(handler), "http://localhost:4747", "pft_secret").UploadBundleAsync("maui-sample", path);
+            await new NotatoClient(new HttpClient(handler), "http://localhost:4747", "notato_secret").UploadBundleAsync("maui-sample", path);
 
             (HttpRequestMessage request, string _) = Assert.Single(handler.Seen);
             Assert.Equal("/projects/maui-sample/bundles", request.RequestUri!.AbsolutePath);

@@ -21,7 +21,7 @@ export interface NotatoConfig {
      * server set here gets the packages. `null` for none in any mode: notes stay on the device.
      */
     server?: string | null;
-    /** A project token (`pft_…`), for a shared server (`notato serve`). It is only ever sent to `server`. */
+    /** A project token (`notato_…`), for a shared server (`notato serve`). It is only ever sent to `server`. */
     token?: string;
     /** The app's name and version, recorded on every note. Default "React Native app". */
     appName?: string;

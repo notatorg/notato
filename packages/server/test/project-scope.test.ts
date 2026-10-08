@@ -199,8 +199,8 @@ describe("whether an agent is there, per project", () => {
     it("counts an agent kept to some projects only on their pages", () => {
         const presence = new AgentPresence();
         defer(() => presence.stop());
-        const release = presence.hold("pfa_shop", "Claude", ["shop"]);
-        presence.touch("pfa_any", "Codex");
+        const release = presence.hold("agent_shop", "Claude", ["shop"]);
+        presence.touch("agent_any", "Codex");
         expect(presence.stateFor("shop")).toMatchObject({
             sessions: 2,
             names: ["Claude", "Codex"],
@@ -223,7 +223,7 @@ describe("whether an agent is there, per project", () => {
         const admin: AgentState[] = [];
         presence.subscribe((s) => shop.push(s), "shop");
         presence.subscribe((s) => admin.push(s), "admin");
-        const release = presence.hold("pfa_shop", "Claude", ["shop"]);
+        const release = presence.hold("agent_shop", "Claude", ["shop"]);
         expect(shop.map((s) => s.connected)).toEqual([true]);
         expect(admin).toEqual([]);
         release();

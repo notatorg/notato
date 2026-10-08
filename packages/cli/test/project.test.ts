@@ -45,7 +45,7 @@ describe("notato project", () => {
             await runProjectCommand(["create", "checkout-web", "--name", "Checkout", "-d", dir])
         ).toBe(0);
         const token = out[0] ?? "";
-        expect(token).toMatch(/^pft_/);
+        expect(token).toMatch(/^notato_/);
         expect(err.join()).toContain("shown once");
 
         const rt = await runServe({
@@ -160,7 +160,7 @@ describe("notato token", () => {
         await runProjectCommand(["create", "shop", "-d", dir]);
         out = [];
         expect(await runTokenCommand(["create", "shop", "-d", dir])).toBe(0);
-        expect(out[0]).toMatch(/^pft_/);
+        expect(out[0]).toMatch(/^notato_/);
         expect(await runTokenCommand(["create", "*", "-d", dir])).toBe(0);
     });
 

@@ -129,43 +129,53 @@ describe("requests from outside", () => {
     });
 
     it("need the device token, while local ones go through as before", async () => {
-        const gate = createTunnelGate("pfd_the-right-token-0123456789");
+        const gate = createTunnelGate("notato_device_the-right-token-0123456789");
         expect(await gate.authorize(new Request("http://localhost:4748/status"))).toBeNull();
         expect((await gate.authorize(tunnelled("/status")))?.status).toBe(401);
         expect(
-            (await gate.authorize(tunnelled("/status", { authorization: "Bearer pfd_wrong" })))
-                ?.status
+            (
+                await gate.authorize(
+                    tunnelled("/status", { authorization: "Bearer notato_device_wrong" })
+                )
+            )?.status
         ).toBe(401);
         expect(
             await gate.authorize(
-                tunnelled("/status", { authorization: "Bearer pfd_the-right-token-0123456789" })
+                tunnelled("/status", {
+                    authorization: "Bearer notato_device_the-right-token-0123456789",
+                })
             )
         ).toBeNull();
     });
 
     it("may carry the device token in the query string on a GET, as an event stream sends it", async () => {
-        const gate = createTunnelGate("pfd_the-right-token-0123456789");
+        const gate = createTunnelGate("notato_device_the-right-token-0123456789");
         const outside = (path: string, method = "GET") =>
             new Request(`https://${TUNNEL_HOST}${path}`, {
                 method,
                 headers: { host: TUNNEL_HOST },
             });
         expect(
-            await gate.authorize(outside("/projects/p/events?token=pfd_the-right-token-0123456789"))
+            await gate.authorize(
+                outside("/projects/p/events?token=notato_device_the-right-token-0123456789")
+            )
         ).toBeNull();
         expect((await gate.authorize(outside("/projects/p/events?token=nope")))?.status).toBe(401);
         // Never for a write: a token in a URL ends up in logs.
         expect(
             (
                 await gate.authorize(
-                    outside("/projects/p/annotations?token=pfd_the-right-token-0123456789", "POST")
+                    outside(
+                        "/projects/p/annotations?token=notato_device_the-right-token-0123456789",
+                        "POST"
+                    )
                 )
             )?.status
         ).toBe(401);
     });
 
     it("cannot make a page believe an agent is there when the gate turns them away", async () => {
-        const gate = createTunnelGate("pfd_the-right-token-0123456789");
+        const gate = createTunnelGate("notato_device_the-right-token-0123456789");
         const ctx = makeApp({ authorize: gate.authorize, allowedHosts: "any" });
         try {
             const res = await ctx.call("/projects", {
@@ -192,7 +202,7 @@ describe("device access", () => {
     it("keeps its token from run to run, and follows the port", () => {
         const dir = tmp();
         const first = loadDeviceAccess(dir, 4748);
-        expect(first.token).toMatch(/^pfd_[\w-]{40,}$/);
+        expect(first.token).toMatch(/^notato_device_[\w-]{40,}$/);
         saveDeviceAccess(dir, {
             ...first,
             server: `https://${TUNNEL_HOST}`,
@@ -297,7 +307,7 @@ describe("notato dev --tunnel", () => {
                 },
             });
         expect((await through()).status).toBe(401);
-        expect((await through({ authorization: "Bearer pfd_nope" })).status).toBe(401);
+        expect((await through({ authorization: "Bearer notato_device_nope" })).status).toBe(401);
         expect((await through({ authorization: `Bearer ${access.token}` })).status).toBe(200);
         expect((await fetch(`http://127.0.0.1:${dev.port}/status`)).status).toBe(200);
         // Any other name is still refused, token or not.

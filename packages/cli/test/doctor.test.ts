@@ -285,7 +285,7 @@ describe("doctor against a shared server", () => {
 
     it("rejects a bad token", async () => {
         const { url } = await serve();
-        const checks = await runDoctor({ server: url, token: "pft_wrong", ...noAgents });
+        const checks = await runDoctor({ server: url, token: "notato_wrong", ...noAgents });
         expect(by(checks, "Access")?.status).toBe("fail");
     });
 

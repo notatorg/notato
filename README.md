@@ -327,7 +327,7 @@ Testers annotate, then press **Package**: a zip downloads with `feedback.md` (an
 notato_import_bundle { path: "~/Downloads/notato-checkout-web-20261005-1042.zip" }
 ```
 
-Or add `server="https://notato.example.com" token="pft_…"` and the zip is uploaded as well. Input fields are masked in screenshots by default in test and agent mode, and password fields always; `data-notato-mask="false"` opts a field out. Mark anything else private with `data-notato-mask`: it is covered in screenshots and none of its text, or the text of anything inside it, is recorded. What is typed into a field is never recorded as text. The mobile SDKs follow the same rules (`Feedback.Mask` in .NET MAUI, `.notatoMask()` in SwiftUI, `Notato.mask(view)` and `Modifier.notatoMask()` on Android).
+Or add `server="https://notato.example.com" token="notato_…"` and the zip is uploaded as well. Input fields are masked in screenshots by default in test and agent mode, and password fields always; `data-notato-mask="false"` opts a field out. Mark anything else private with `data-notato-mask`: it is covered in screenshots and none of its text, or the text of anything inside it, is recorded. What is typed into a field is never recorded as text. The mobile SDKs follow the same rules (`Feedback.Mask` in .NET MAUI, `.notatoMask()` in SwiftUI, `Notato.mask(view)` and `Modifier.notatoMask()` on Android).
 
 ## Agent mode
 
@@ -361,10 +361,10 @@ NOTATO_ADMIN_PASSWORD=… npx notato serve --host 0.0.0.0 --trust-proxy
 
 Put a TLS-terminating reverse proxy in front. It serves the board UI at `/` (sign in as `admin`), the API, and **MCP over HTTP at `/mcp`**.
 
-- **Projects come first.** Create each one on the board (**New project**) or with `npx notato project create <id>`. Either way you get the project's first token (`pft_…`, shown once) and, on the board, what to paste into each kind of app. Apps can only send to projects that exist: anything else is answered `404` with how to create it.
+- **Projects come first.** Create each one on the board (**New project**) or with `npx notato project create <id>`. Either way you get the project's first token (`notato_…`, shown once) and, on the board, what to paste into each kind of app. Apps can only send to projects that exist: anything else is answered `404` with how to create it.
 - **More tokens** are made in the board (the project's settings, or Tokens) or with `npx notato token create <project>`. A token for one project reads and writes only that project; a token for `*` is for your agent. Deleting a project stops its tokens working.
-- Give the SDK `server` and `token`. Connect an agent to `https://notato.example.com/mcp` with the header `Authorization: Bearer pft_…` (Settings › Agents on the board has the line for each agent). Turning agents off (`--no-mcp`, or Settings) closes `/mcp` and refuses agent tokens, while apps keep sending. Claude Code:
-  `claude mcp add --transport http notato https://notato.example.com/mcp --header "Authorization: Bearer pft_…"`. Codex: `url = "https://notato.example.com/mcp"` and `bearer_token_env_var = "NOTATO_TOKEN"` under `[mcp_servers.notato]` in `~/.codex/config.toml`.
+- Give the SDK `server` and `token`. Connect an agent to `https://notato.example.com/mcp` with the header `Authorization: Bearer notato_…` (Settings › Agents on the board has the line for each agent). Turning agents off (`--no-mcp`, or Settings) closes `/mcp` and refuses agent tokens, while apps keep sending. Claude Code:
+  `claude mcp add --transport http notato https://notato.example.com/mcp --header "Authorization: Bearer notato_…"`. Codex: `url = "https://notato.example.com/mcp"` and `bearer_token_env_var = "NOTATO_TOKEN"` under `[mcp_servers.notato]` in `~/.codex/config.toml`.
 - `NOTATO_CORS_ORIGINS` allows browser origins beyond loopback and private networks. CORS is not authentication: every request needs a token or a login.
 
 Docker (data in a volume):

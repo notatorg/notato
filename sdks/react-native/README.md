@@ -43,38 +43,38 @@ A phone on Wi-Fi needs the server's [dev tunnel](../../README.md#phones-a-dev-tu
 
 ## Props
 
-| Prop                             | Default                                     |                                                                                                                                    |
-| -------------------------------- | ------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
-| `project`                        | (required)                                  | Project id on the server. Letters, digits and `. _ - @`, not only dots                                                             |
-| `mode`                           | `dev`                                       | `dev`, `test` or `agent` (see below)                                                                                               |
-| `server`                         | `http://localhost:4747` (none in test mode) | `null` for no server: notes stay on the device                                                                                     |
-| `token`                          |                                             | A project token (`pft_…`) for a shared `notato serve`                                                                              |
-| `storage`                        | in memory                                   | `expoStorage`, or your own `StorageProvider`                                                                                       |
-| `route`                          | `/`                                         | The screen, or a function that says it: notes are filed under it, and its pins shown on it                                         |
-| `enabled`                        | development builds (`__DEV__`)              | Whether Notato is on at launch. The app can switch it at runtime. Picking a view needs a development build either way              |
-| `showToolbar`, `toolbarPosition` | `true`, `bottom-right`                      | The toolbar and the corner it starts in (`bottom-left`, `top-right`, `top-left`). Where people drag it is remembered               |
-| `author`                         |                                             | The name on this person's notes. They can change it in the settings                                                                |
-| `screenshots`                    | `true`                                      | A server that has screenshots off wins either way                                                                                  |
+| Prop                             | Default                                     |                                                                                                                                                          |
+| -------------------------------- | ------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `project`                        | (required)                                  | Project id on the server. Letters, digits and `. _ - @`, not only dots                                                                                   |
+| `mode`                           | `dev`                                       | `dev`, `test` or `agent` (see below)                                                                                                                     |
+| `server`                         | `http://localhost:4747` (none in test mode) | `null` for no server: notes stay on the device                                                                                                           |
+| `token`                          |                                             | A project token (`notato_…`) for a shared `notato serve`                                                                                                 |
+| `storage`                        | in memory                                   | `expoStorage`, or your own `StorageProvider`                                                                                                             |
+| `route`                          | `/`                                         | The screen, or a function that says it: notes are filed under it, and its pins shown on it                                                               |
+| `enabled`                        | development builds (`__DEV__`)              | Whether Notato is on at launch. The app can switch it at runtime. Picking a view needs a development build either way                                    |
+| `showToolbar`, `toolbarPosition` | `true`, `bottom-right`                      | The toolbar and the corner it starts in (`bottom-left`, `top-right`, `top-left`). Where people drag it is remembered                                     |
+| `author`                         |                                             | The name on this person's notes. They can change it in the settings                                                                                      |
+| `screenshots`                    | `true`                                      | A server that has screenshots off wins either way                                                                                                        |
 | `maskInputs`                     | on in test and agent mode                   | Cover text fields in screenshots and leave their values out of notes (password fields always are). See [What is never recorded](#what-is-never-recorded) |
-| `rememberRuntimeState`           | `true`                                      | Keep runtime choices (on or off, toolbar, name, a server typed in, the toolbar's place) across launches, with `storage`            |
-| `captureLogs`, `logLimit`        | `true`, `50`                                | Attach the app's recent `console.warn` and `console.error` messages                                                                |
-| `appName`, `appVersion`          | `React Native app`                          | Recorded on every note                                                                                                             |
-| `maxScreenshotScale`             | `2`                                         | Pixels per point screenshots are kept at. Phones are 2x to 3.5x; 2x is plenty                                                      |
+| `rememberRuntimeState`           | `true`                                      | Keep runtime choices (on or off, toolbar, name, a server typed in, the toolbar's place) across launches, with `storage`                                  |
+| `captureLogs`, `logLimit`        | `true`, `50`                                | Attach the app's recent `console.warn` and `console.error` messages                                                                                      |
+| `appName`, `appVersion`          | `React Native app`                          | Recorded on every note                                                                                                                                   |
+| `maxScreenshotScale`             | `2`                                         | Pixels per point screenshots are kept at. Phones are 2x to 3.5x; 2x is plenty                                                                            |
 
 In a release build `<Notato>` is your app and nothing else, unless `enabled` is `true` when it mounts (that is decided once, so the app is never mounted again because Notato came or went). Mounting `<Notato>` again with the same props, as React's StrictMode does, leaves Notato running, with the notes it had.
 
 ## At runtime: `notato`
 
-|                                          |                                                                                                                     |
-| ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
-| `useNotato()`                            | A hook with Notato's state: on or off, toolbar, annotating, connection, the notes, how many are not sent yet         |
-| `enable()`, `disable()`, `setEnabled(on)` | On and off. A choice made here wins over `enabled` until `resetRuntimeState()`                                      |
-| `showToolbar()`, `hideToolbar()`         | The toolbar. Off still lets the app drive Notato from code                                                          |
-| `startAnnotating()`, `stopAnnotating()`  | The next tap selects what is under it                                                                               |
-| `select(ref)`, `select("#save")`         | Select a view (a ref, or a selector) as if it had been tapped, and open the note for it                             |
-| `annotate("#save", comment, options)`    | Make a note with no UI, as a person or (with `agentName`) an agent. `peopleOnly: true` keeps a person's note from the agent |
-| `packageNotes({ upload })`               | Test mode: the device's notes as a bundle zip                                                                       |
-| `recordRequest(entry)`                   | Add an HTTP request (`method`, `url`, `status`, `durationMs`) to the `network` context of later notes               |
+|                                           |                                                                                                                             |
+| ----------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| `useNotato()`                             | A hook with Notato's state: on or off, toolbar, annotating, connection, the notes, how many are not sent yet                |
+| `enable()`, `disable()`, `setEnabled(on)` | On and off. A choice made here wins over `enabled` until `resetRuntimeState()`                                              |
+| `showToolbar()`, `hideToolbar()`          | The toolbar. Off still lets the app drive Notato from code                                                                  |
+| `startAnnotating()`, `stopAnnotating()`   | The next tap selects what is under it                                                                                       |
+| `select(ref)`, `select("#save")`          | Select a view (a ref, or a selector) as if it had been tapped, and open the note for it                                     |
+| `annotate("#save", comment, options)`     | Make a note with no UI, as a person or (with `agentName`) an agent. `peopleOnly: true` keeps a person's note from the agent |
+| `packageNotes({ upload })`                | Test mode: the device's notes as a bundle zip                                                                               |
+| `recordRequest(entry)`                    | Add an HTTP request (`method`, `url`, `status`, `durationMs`) to the `network` context of later notes                       |
 
 ```tsx
 import { notato, useNotato } from "@notato/react-native"
@@ -114,14 +114,14 @@ Password fields stay masked whatever the mark, and a private mark around a `priv
 
 What a note's selector looks like, and what an agent passes to `notato_annotate` or `notato.annotate`:
 
-|                        |                                                                                                 |
-| ---------------------- | ----------------------------------------------------------------------------------------------- |
-| `#save`                | The view's `testID`                                                                             |
+|                        |                                                                                                         |
+| ---------------------- | ------------------------------------------------------------------------------------------------------- |
+| `#save`                | The view's `testID`                                                                                     |
 | `Text`, `button`       | The view's kind (`Text`, `View`, `TextInput`), its role, or the component that rendered it; `*` for any |
-| `[label="Pay now"]`    | The accessibility label, exactly                                                                |
-| `:text("Add to cart")` | The text or label contains this, ignoring case                                                  |
-| `:nth(2)`              | The second match, in drawing order                                                              |
-| `ProductCard > …`      | Leading names are the components around it; one the app does not have (a screen's name) is ignored |
+| `[label="Pay now"]`    | The accessibility label, exactly                                                                        |
+| `:text("Add to cart")` | The text or label contains this, ignoring case                                                          |
+| `:nth(2)`              | The second match, in drawing order                                                                      |
+| `ProductCard > …`      | Leading names are the components around it; one the app does not have (a screen's name) is ignored      |
 
 ## Modes
 

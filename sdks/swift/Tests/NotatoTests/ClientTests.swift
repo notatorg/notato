@@ -191,7 +191,7 @@ extension ClientTests {
 
     @Test @MainActor func theTokenGoesOnlyToTheServerItWasConfiguredFor() {
         var configuration = NotatoConfiguration(project: "shop-ios", server: URL(string: "http://notato.example:4747"))
-        configuration.token = "pft_secret"
+        configuration.token = "notato_secret"
         for (server, gets) in [("http://notato.example:4747", true), ("http://NOTATO.example:4747/", true),
                                ("https://notato.example:4747", false), ("http://notato.example", false),
                                ("http://notato.example:4748", false), ("http://evil.example:4747", false),
@@ -199,14 +199,14 @@ extension ClientTests {
             #expect((Notato.token(for: URL(string: server)!, configuration: configuration) != nil) == gets, "\(server)")
         }
         var https = NotatoConfiguration(project: "shop-ios", server: URL(string: "https://notato.example"))
-        https.token = "pft_secret"
-        #expect(Notato.token(for: URL(string: "https://notato.example:443/")!, configuration: https) == "pft_secret", "the scheme's own port")
+        https.token = "notato_secret"
+        #expect(Notato.token(for: URL(string: "https://notato.example:443/")!, configuration: https) == "notato_secret", "the scheme's own port")
         let local = NotatoConfiguration(project: "shop-ios")
         #expect(Notato.token(for: NotatoConfiguration.defaultServer, configuration: local) == nil, "no token, none sent")
 
         // The clients Notato makes: the configured server's has the token, one typed into Settings has none.
         let notato = Notato(configuration: configuration)
-        #expect(notato.client(for: URL(string: "http://notato.example:4747")!).token == "pft_secret")
+        #expect(notato.client(for: URL(string: "http://notato.example:4747")!).token == "notato_secret")
         #expect(notato.client(for: URL(string: "http://typed.example:4747")!).token == nil)
     }
 

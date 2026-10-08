@@ -12,7 +12,7 @@ class ConfigTest {
     fun readsLooseValuesWhateverTheirCase() {
         val config = NotatoConfig.from(
             mapOf(
-                "project" to "shop", "MODE" to "Test", "server" to "https://notato.example.com/", "token" to "pft_abc",
+                "project" to "shop", "MODE" to "Test", "server" to "https://notato.example.com/", "token" to "notato_abc",
                 "Show_Toolbar" to "false", "toolbar-position" to "top_start", "maskInputs" to true, "logLimit" to "20",
                 "screenshots" to "off", "shakeToToggle" to "no",
             ),
@@ -20,7 +20,7 @@ class ConfigTest {
         assertEquals("shop", config.project)
         assertEquals(NotatoMode.TEST, config.mode)
         assertEquals("https://notato.example.com", config.resolvedServer)
-        assertEquals("pft_abc", config.token)
+        assertEquals("notato_abc", config.token)
         assertFalse(config.showToolbar)
         assertEquals(ToolbarCorner.TOP_START, config.toolbarPosition)
         assertEquals(true, config.maskInputs)
@@ -80,10 +80,10 @@ class ConfigTest {
 
     @Test
     fun theTokenGoesOnlyToTheConfiguredServer() {
-        val config = NotatoConfig("shop", server = "https://notato.example.com/team", token = " pft_abc ")
+        val config = NotatoConfig("shop", server = "https://notato.example.com/team", token = " notato_abc ")
         // The same scheme, host and port, whatever the path, the host's case or a trailing slash.
         for (same in listOf("https://notato.example.com/team", "https://NOTATO.example.com/", "https://notato.example.com:443", "https://notato.example.com/other")) {
-            assertEquals(same, "pft_abc", config.tokenFor(same))
+            assertEquals(same, "notato_abc", config.tokenFor(same))
         }
         // A server typed into the Settings sheet: another host, scheme or port never gets it.
         for (other in listOf("https://evil.example.com", "http://notato.example.com", "https://notato.example.com:8443", "https://notato.example.com.evil.net", "not a url")) {
@@ -91,7 +91,7 @@ class ConfigTest {
         }
         assertNull(NotatoConfig("shop", server = "https://notato.example.com").tokenFor("https://notato.example.com"))
         // The default server, with no port written, is the same as one with it.
-        assertEquals("pft_abc", NotatoConfig("shop", token = "pft_abc").tokenFor("http://LOCALHOST:4747/"))
+        assertEquals("notato_abc", NotatoConfig("shop", token = "notato_abc").tokenFor("http://LOCALHOST:4747/"))
         assertTrue(NotatoConfig.sameServer("http://example.com", "http://example.com:80"))
         assertFalse(NotatoConfig.sameServer("http://example.com", "https://example.com:80"))
     }

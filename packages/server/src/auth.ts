@@ -13,7 +13,10 @@ export type Principal =
 /** Who a request is on a server without logins (`notato dev` on loopback): the person at this machine. */
 export const LOCAL_PRINCIPAL: Principal = { kind: "admin", username: "local" };
 
-export const TOKEN_PREFIX = "pft_";
+/** How every project token starts, so a leaked one is easy to search for. */
+export const TOKEN_PREFIX = "notato_";
+/** How project tokens made by earlier versions start. They still work: a token is checked by its hash, not its prefix. */
+const OLD_TOKEN_PREFIX = "pft_";
 
 /** A token, note or bundle for a project this server does not have. */
 export class UnknownProjectError extends Error {
@@ -143,7 +146,7 @@ export class Authenticator {
     }
 
     private async identifyToken(token: string): Promise<Principal | null> {
-        if (!token.startsWith(TOKEN_PREFIX)) return null;
+        if (!token.startsWith(TOKEN_PREFIX) && !token.startsWith(OLD_TOKEN_PREFIX)) return null;
         const record = await this.store.findToken(await sha256Hex(new TextEncoder().encode(token)));
         if (!record || record.revokedAt) return null;
         // Recording use is for the admin's benefit; a failure to record must never fail the request. Once a minute is

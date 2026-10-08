@@ -212,10 +212,10 @@ describe("a page's requests, carried by the extension to a real Notato server", 
 
     it("the page is told its settings, when the site is on, but never the token", async () => {
         const server = await realServer();
-        const { bus } = connect(ORIGIN, siteFor(server, { author: "Dom", token: "pft_x" }));
+        const { bus } = connect(ORIGIN, siteFor(server, { author: "Dom", token: "notato_x" }));
         const config = await requestConfig(bus);
         expect(config).toEqual({ enabled: true, server, project: "shop", author: "Dom" });
-        expect(JSON.stringify(config)).not.toContain("pft_x");
+        expect(JSON.stringify(config)).not.toContain("notato_x");
     });
 
     it("the token goes on each request in the extension, and no script on the page sees it", async () => {
@@ -223,7 +223,7 @@ describe("a page's requests, carried by the extension to a real Notato server", 
         const seen: Array<{ url: string; authorization: string | null }> = [];
         const { bus, transport } = connect(
             ORIGIN,
-            siteFor("http://localhost:4747", { token: "pft_site" }),
+            siteFor("http://localhost:4747", { token: "notato_site" }),
             async (url, init) => {
                 seen.push({ url, authorization: new Headers(init?.headers).get("authorization") });
                 return Response.json({ items: [] });
@@ -234,19 +234,19 @@ describe("a page's requests, carried by the extension to a real Notato server", 
         // What the SDK sends with no token of its own, and what a script on the page might try.
         await transport.fetch("http://localhost:4747/projects/shop/annotations?limit=500");
         await transport.fetch("http://localhost:4747/projects/shop/annotations", {
-            headers: { Authorization: "Bearer pft_other" },
+            headers: { Authorization: "Bearer notato_other" },
         });
         expect(seen).toEqual([
             {
                 url: "http://localhost:4747/projects/shop/annotations?limit=500",
-                authorization: "Bearer pft_site",
+                authorization: "Bearer notato_site",
             },
             {
                 url: "http://localhost:4747/projects/shop/annotations",
-                authorization: "Bearer pft_site",
+                authorization: "Bearer notato_site",
             },
         ]);
-        expect(JSON.stringify(said)).not.toContain("pft_site");
+        expect(JSON.stringify(said)).not.toContain("notato_site");
     });
 
     it("a redirect fails the request with a message, rather than leaving it waiting", async () => {

@@ -24,11 +24,11 @@ describe("createPolicy", () => {
     it("asks the server, with the token, and does what it says", async () => {
         const fetchMock = answer({ screenshots: false });
         vi.stubGlobal("fetch", fetchMock);
-        const policy = createPolicy({ baseUrl: "http://localhost:4747", token: "pft_x" });
+        const policy = createPolicy({ baseUrl: "http://localhost:4747", token: "notato_x" });
         expect(await policy.screenshots()).toBe(false);
         expect(policy.screenshotsNow()).toBe(false);
         expect(fetchMock).toHaveBeenCalledWith("http://localhost:4747/config", {
-            headers: { Authorization: "Bearer pft_x" },
+            headers: { Authorization: "Bearer notato_x" },
         });
     });
 

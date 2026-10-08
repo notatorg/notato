@@ -22,7 +22,7 @@ export interface DeviceAccess {
 
 export const DEVICE_FILE = "device.json";
 
-const newToken = () => `pfd_${randomBytes(32).toString("base64url")}`;
+const newToken = () => `notato_device_${randomBytes(32).toString("base64url")}`;
 
 /** The device access in `dir`, made (with a fresh token) when there is none. The token stays the same from run to run. */
 export function loadDeviceAccess(dir: string, port: number): DeviceAccess {

@@ -34,7 +34,7 @@ public data class NotatoConfig(
     /** Leave the server out entirely, even in dev mode: notes stay on the device. */
     val noServer: Boolean = false,
     /**
-     * A project token (`pft_…`) for a shared `notato serve`. It is sent only to [server] (its scheme, host and port),
+     * A project token (`notato_…`) for a shared `notato serve`. It is sent only to [server] (its scheme, host and port),
      * never to a server typed into the toolbar's settings.
      */
     val token: String? = null,

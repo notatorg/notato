@@ -282,12 +282,12 @@ class ClientTest {
             heard["typed"] = request.headers["authorization"]
             out.reply(200, "{\"screenshots\":true}")
         }.use { other ->
-            val config = NotatoConfig("android-sample", server = configured, token = "pft_secret")
+            val config = NotatoConfig("android-sample", server = configured, token = "notato_secret")
             // As the controller makes its clients: the token for the server it is going to, if it is that one.
             NotatoClient(configured, config.tokenFor(configured)).config()
             NotatoClient(other.base, config.tokenFor(other.base)).config()
         }
-        assertEquals("Bearer pft_secret", heard["configured"])
+        assertEquals("Bearer notato_secret", heard["configured"])
         assertTrue("typed" in heard)
         assertEquals(null, heard["typed"])
     }

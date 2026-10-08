@@ -9,7 +9,7 @@ namespace Notato.Maui.Tests;
 public class DeviceAccessTests
 {
     private const string Tunnel = "https://abc123xy-4748.uks1.devtunnels.ms";
-    private static readonly DeviceAccess Recorded = new(Tunnel, "pfd_device-token-0123456789", "http://localhost:4748");
+    private static readonly DeviceAccess Recorded = new(Tunnel, "notato_device_device-token-0123456789", "http://localhost:4748");
 
     [Fact]
     public void Reads_what_the_build_recorded()
@@ -18,7 +18,7 @@ public class DeviceAccessTests
         [
             new AssemblyMetadataAttribute("Notato.ProjectPath", "src/App"),
             new AssemblyMetadataAttribute(DeviceAccess.TunnelKey, Tunnel + "/"),
-            new AssemblyMetadataAttribute(DeviceAccess.TokenKey, "pfd_device-token-0123456789"),
+            new AssemblyMetadataAttribute(DeviceAccess.TokenKey, "notato_device_device-token-0123456789"),
             new AssemblyMetadataAttribute(DeviceAccess.LocalKey, "http://localhost:4748"),
         ]);
         Assert.Equal(Recorded, found);
@@ -48,20 +48,20 @@ public class DeviceAccessTests
     public void The_device_token_goes_to_its_own_tunnel_only()
     {
         NotatoOptions options = new();
-        Assert.Equal("pfd_device-token-0123456789", options.TokenFor(Tunnel, Recorded, reachesLoopback: false));
-        Assert.Equal("pfd_device-token-0123456789", options.TokenFor(Tunnel + "/", Recorded, reachesLoopback: false));
+        Assert.Equal("notato_device_device-token-0123456789", options.TokenFor(Tunnel, Recorded, reachesLoopback: false));
+        Assert.Equal("notato_device_device-token-0123456789", options.TokenFor(Tunnel + "/", Recorded, reachesLoopback: false));
         Assert.Null(options.TokenFor("http://localhost:4748", Recorded, reachesLoopback: false));
         Assert.Null(options.TokenFor("https://someone-else.uks1.devtunnels.ms", Recorded, reachesLoopback: false));
         // A phone with no server configured uses the tunnel: a configured token goes there, and wins.
-        Assert.Equal("pft_shared", new NotatoOptions { Token = "pft_shared" }.TokenFor(Tunnel, Recorded, reachesLoopback: false));
+        Assert.Equal("notato_shared", new NotatoOptions { Token = "notato_shared" }.TokenFor(Tunnel, Recorded, reachesLoopback: false));
     }
 
     [Fact]
     public void The_configured_token_goes_only_to_the_configured_servers_origin()
     {
-        NotatoOptions options = new() { Server = "https://notato.example.com/team", Token = "pft_shared" };
-        Assert.Equal("pft_shared", options.TokenFor("https://notato.example.com", null, reachesLoopback: false));
-        Assert.Equal("pft_shared", options.TokenFor("https://NOTATO.example.com:443/", null, reachesLoopback: false));
+        NotatoOptions options = new() { Server = "https://notato.example.com/team", Token = "notato_shared" };
+        Assert.Equal("notato_shared", options.TokenFor("https://notato.example.com", null, reachesLoopback: false));
+        Assert.Equal("notato_shared", options.TokenFor("https://NOTATO.example.com:443/", null, reachesLoopback: false));
         // Typed into the settings sheet: another host, another port or plain http gets nothing.
         Assert.Null(options.TokenFor("https://notato.example.com.evil.test", null, reachesLoopback: false));
         Assert.Null(options.TokenFor("https://notato.example.com:8443", null, reachesLoopback: false));
@@ -69,9 +69,9 @@ public class DeviceAccessTests
         Assert.Null(options.TokenFor("http://localhost:4747", null, reachesLoopback: false));
         Assert.Null(options.TokenFor(null, null, reachesLoopback: false));
         // No server configured in dev mode: the default one is the configured one.
-        Assert.Equal("pft_shared", new NotatoOptions { Token = "pft_shared" }.TokenFor(NotatoOptions.DefaultServer, null, reachesLoopback: true));
+        Assert.Equal("notato_shared", new NotatoOptions { Token = "notato_shared" }.TokenFor(NotatoOptions.DefaultServer, null, reachesLoopback: true));
         // Test mode without a server: there is no configured server for it to go to.
-        Assert.Null(new NotatoOptions { Mode = NotatoMode.Test, Token = "pft_shared" }.TokenFor("https://notato.example.com", null, reachesLoopback: false));
+        Assert.Null(new NotatoOptions { Mode = NotatoMode.Test, Token = "notato_shared" }.TokenFor("https://notato.example.com", null, reachesLoopback: false));
     }
 
     [Fact]
@@ -79,14 +79,14 @@ public class DeviceAccessTests
     {
         HttpRequestMessage? seen = null;
         HttpClient http = new(new Capture(r => seen = r));
-        NotatoOptions options = new() { Server = "https://notato.example.com", Token = "pft_shared" };
+        NotatoOptions options = new() { Server = "https://notato.example.com", Token = "notato_shared" };
 
         const string typed = "https://elsewhere.example.org";
         await new NotatoClient(http, typed, options.TokenFor(typed, null, reachesLoopback: false)).GetConfigAsync(CancellationToken.None);
         Assert.Null(seen!.Headers.Authorization);
 
         await new NotatoClient(http, "https://notato.example.com", options.TokenFor("https://notato.example.com", null, reachesLoopback: false)).GetConfigAsync(CancellationToken.None);
-        Assert.Equal("Bearer pft_shared", seen.Headers.Authorization!.ToString());
+        Assert.Equal("Bearer notato_shared", seen.Headers.Authorization!.ToString());
     }
 
     [Fact]
@@ -94,9 +94,9 @@ public class DeviceAccessTests
     {
         HttpRequestMessage? seen = null;
         HttpClient http = new(new Capture(r => seen = r));
-        await new NotatoClient(http, Tunnel, "pfd_device-token-0123456789").GetConfigAsync(CancellationToken.None);
+        await new NotatoClient(http, Tunnel, "notato_device_device-token-0123456789").GetConfigAsync(CancellationToken.None);
         Assert.Equal("true", seen!.Headers.GetValues("X-Tunnel-Skip-AntiPhishing-Page").Single());
-        Assert.Equal("Bearer pfd_device-token-0123456789", seen.Headers.Authorization!.ToString());
+        Assert.Equal("Bearer notato_device_device-token-0123456789", seen.Headers.Authorization!.ToString());
 
         await new NotatoClient(http, "http://localhost:4748", null).GetConfigAsync(CancellationToken.None);
         Assert.False(seen.Headers.Contains("X-Tunnel-Skip-AntiPhishing-Page"));

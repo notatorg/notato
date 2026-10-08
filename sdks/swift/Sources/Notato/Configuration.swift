@@ -32,7 +32,7 @@ public struct NotatoConfiguration: Sendable, Equatable {
     public var server: URL?
     /// Leave the server out entirely, even in dev mode: notes stay on the device.
     public var noServer: Bool = false
-    /// A project token (`pft_…`) for a shared `notato serve`. Sent only to `server` (the same scheme, host and port),
+    /// A project token (`notato_…`) for a shared `notato serve`. Sent only to `server` (the same scheme, host and port),
     /// never to a server typed into the toolbar's settings.
     public var token: String?
     /// The app's name and version, recorded on every note. They default to the bundle's display name and version.

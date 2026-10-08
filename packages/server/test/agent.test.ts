@@ -69,10 +69,10 @@ describe("agent presence", () => {
             watching: false,
             names: [],
         });
-        presence.touch("pfa_one");
+        presence.touch("agent_one");
         expect(presence.state.connected).toBe(true);
         now += 9_000;
-        presence.touch("pfa_one");
+        presence.touch("agent_one");
         now += 9_000;
         expect(presence.state.connected).toBe(true);
         now += 2_000;
@@ -83,7 +83,7 @@ describe("agent presence", () => {
     it("counts an MCP held open in this process, and one watching", () => {
         const presence = new AgentPresence();
         defer(() => presence.stop());
-        const release = presence.hold("pfa_here");
+        const release = presence.hold("agent_here");
         expect(presence.state).toMatchObject({ connected: true, sessions: 1, watching: false });
         const done = presence.waitStarted();
         expect(presence.state.watching).toBe(true);
@@ -98,13 +98,13 @@ describe("agent presence", () => {
         defer(() => presence.stop());
         const states: string[][] = [];
         presence.subscribe((s) => states.push(s.names));
-        const release = presence.hold("pfa_here");
-        presence.rename("pfa_here", "Codex");
-        presence.touch("pfa_there", "Claude");
-        presence.touch("pfa_again", "Codex");
+        const release = presence.hold("agent_here");
+        presence.rename("agent_here", "Codex");
+        presence.touch("agent_there", "Claude");
+        presence.touch("agent_again", "Codex");
         expect(presence.state).toMatchObject({ sessions: 3, names: ["Claude", "Codex"] });
         // A heartbeat without a name keeps the one it gave before.
-        presence.touch("pfa_there");
+        presence.touch("agent_there");
         expect(presence.state.names).toEqual(["Claude", "Codex"]);
         release();
         expect(states.at(-1)).toEqual(["Claude", "Codex"]);
@@ -131,7 +131,7 @@ describe("agent presence", () => {
         expect(await (await ctx.call("/config")).json()).toMatchObject({
             agent: { connected: false },
         });
-        await ctx.call("/health", { headers: { [AGENT_HEADER]: "pfa_test" } });
+        await ctx.call("/health", { headers: { [AGENT_HEADER]: "agent_test" } });
         expect(await (await ctx.call("/config")).json()).toMatchObject({
             agent: { connected: true, sessions: 1 },
         });
@@ -139,7 +139,7 @@ describe("agent presence", () => {
             agents: { connected: true },
         });
         await ctx.call("/health", {
-            headers: { [AGENT_HEADER]: "pfa_codex", [AGENT_NAME_HEADER]: "Codex" },
+            headers: { [AGENT_HEADER]: "agent_codex", [AGENT_NAME_HEADER]: "Codex" },
         });
         expect(await (await ctx.call("/config")).json()).toMatchObject({
             agent: { connected: true, sessions: 2, names: ["Codex"] },
@@ -161,7 +161,7 @@ describe("agent presence", () => {
         };
         await until("event: hello");
         expect(received).toContain('"agent":{"connected":false');
-        const release = ctx.backend.agents.hold("pfa_test");
+        const release = ctx.backend.agents.hold("agent_test");
         await until("event: agent");
         expect(received).toContain(
             'event: agent\ndata: {"connected":true,"sessions":1,"watching":false,"names":[]}'

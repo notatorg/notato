@@ -9,7 +9,7 @@ import "./styles.css";
 //   /?mode=test               testers: annotations stay in the page until packaged into a zip
 //   /?mode=test&server=URL    ...and the zip is also uploaded to a shared server
 //   /?download=0              replace the zip sink with a no-op (handy in automated runs)
-//   /?server=URL&token=pft_…  talk to a shared server (`notato serve`) with a project token
+//   /?server=URL&token=notato_…  talk to a shared server (`notato serve`) with a project token
 const params = new URLSearchParams(window.location.search);
 const mode = (["dev", "test", "agent"] as const).find((m) => m === params.get("mode")) ?? "dev";
 const defaultServer = import.meta.env.VITE_NOTATO_SERVER ?? "http://localhost:4747";

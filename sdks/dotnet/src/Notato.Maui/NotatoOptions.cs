@@ -59,7 +59,7 @@ public sealed class NotatoOptions
     public string? Server { get; set; }
 
     /// <summary>
-    /// A project token (<c>pft_…</c>) for a shared server (<c>notato serve</c>). Not needed for <c>notato dev</c>. It is
+    /// A project token (<c>notato_…</c>) for a shared server (<c>notato serve</c>). Not needed for <c>notato dev</c>. It is
     /// only ever sent to the server configured here (its scheme, host and port), never to one typed into the settings
     /// sheet.
     /// </summary>
