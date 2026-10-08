@@ -1,5 +1,5 @@
-using System.Reflection;
 using Notato.Maui.Model;
+using System.Reflection;
 
 namespace Notato.Maui.Runtime;
 

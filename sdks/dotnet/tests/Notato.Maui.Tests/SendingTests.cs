@@ -32,14 +32,14 @@ public class SendingTests
         Assert.True(await NotatoController.SendInOrderAsync([NotatoController.Sending.Sent, NotatoController.Sending.Refused], Task.FromResult));
     }
 
-    private static NotatoController.Record Record(string id, bool pending = false) => new(Fixtures.Annotation() with { Id = id }) { Pending = pending };
+    private static NoteRecord Record(string id, bool pending = false) => new(Fixtures.Annotation() with { Id = id }) { Pending = pending };
 
     private static StoredAnnotation Stored(string id) => new() { Annotation = Fixtures.Annotation() with { Id = id } };
 
     [Fact]
     public void Only_notes_the_server_had_when_the_list_was_asked_for_are_dropped_when_it_no_longer_has_them()
     {
-        List<NotatoController.Record> records =
+        List<NoteRecord> records =
         [
             Record("kept"),
             Record("deleted-on-the-board"),
@@ -60,7 +60,7 @@ public class SendingTests
     public void Notes_past_the_first_page_are_not_dropped()
     {
         List<StoredAnnotation> everyPage = [.. Enumerable.Range(0, 1200).Select(i => Stored($"N{i:0000}"))];
-        List<NotatoController.Record> records = [.. everyPage.Select(s => Record(s.Annotation.Id))];
+        List<NoteRecord> records = [.. everyPage.Select(s => Record(s.Annotation.Id))];
         HashSet<string> settledAtStart = [.. records.Select(r => r.Annotation.Id)];
 
         records.RemoveAll(NotatoController.Gone(everyPage, settledAtStart));

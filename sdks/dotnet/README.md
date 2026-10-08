@@ -33,7 +33,7 @@ The iOS simulator shares the Mac's network, so `localhost` works there as it is.
 
 ### On a phone
 
-A phone cannot reach your machine's `localhost` (and iOS has no `adb reverse`). Start the server with a dev tunnel, `notato dev --tunnel` (see [Phones: a dev tunnel](../../README.md#phones-a-dev-tunnel); one `devtunnel user login` first), and there is nothing else to do: it writes the tunnel's https URL and a device token to `.notato/device.json` at the repository root, and this package's build targets record them in **debug** builds. When `Server` is not set, an iPhone, an Android phone and the Android emulator then use the tunnel, sending the device token, and the iOS simulator and Mac Catalyst the server's local address (its port included). Build again after the tunnel's URL changes; Visual Studio's up-to-date check knows the file.
+A phone cannot reach your machine's `localhost` (and iOS has no `adb reverse`). Start the server with a dev tunnel, `notato dev --tunnel` (see [Phones: a dev tunnel](https://github.com/notatorg/notato#phones-a-dev-tunnel); one `devtunnel user login` first), and there is nothing else to do: it writes the tunnel's https URL and a device token to `.notato/device.json` at the repository root, and this package's build targets record them in **debug** builds. When `Server` is not set, an iPhone, an Android phone and the Android emulator then use the tunnel, sending the device token, and the iOS simulator and Mac Catalyst the server's local address (its port included). Build again after the tunnel's URL changes; Visual Studio's up-to-date check knows the file.
 
 - `<NotatoDataDirectory>` points the build at another data folder; `<NotatoDeviceAccess>false</NotatoDeviceAccess>` turns it off, `true` turns it on in other configurations too (the token then ships in that build).
 - A `Server` from configuration, or one typed in the toolbar's settings, wins over the tunnel.
@@ -122,12 +122,12 @@ Everything the web SDK sends, in the same schema (`environment.platform` is `mau
 
 Mark things up in XAML with `xmlns:notato="clr-namespace:Notato.Maui;assembly=Notato.Maui"`: `notato:Feedback.Mask="True"` makes an element private, and `notato:Feedback.Ignore="True"` makes the picker look through it.
 
-**Everything you write reaches the agent**, notes and replies alike, unless you keep it between people (see [what the agent gets](../../README.md#what-you-can-say-and-what-the-agent-gets)):
+**Everything you write reaches the agent**, notes and replies alike, unless you keep it between people (see [what the agent gets](https://github.com/notatorg/notato#what-you-can-say-and-what-the-agent-gets)):
 
 - **People only**, on a note. The composer has a **People only** switch, off by default ("Keep this between people: the agent won't see it."). A People only note and its whole thread never reach the agent. Its card shows a **People only** badge, and the same switch there turns it on or off for an existing note: anyone on the thread can, and the server records each change in the thread ("Made this people only: the agent won't see it." or "Shared this with the agent."). Without a server, or before the note has been sent, the change is made on the device with the same thread entry: the note is sent that way, and a test-mode package carries the history. From code, `AnnotateOptions.PeopleOnly` makes a person's note People only.
 - **Aside**, on a reply. The reply box has an **Aside** switch ("Just for people: the agent won't see this reply."), off again after each reply. An aside is for the people on the thread, is marked **Aside** in it, and is never sent to the agent.
 
-`@name` calls one of the server's [mention plugins](../../README.md#-mentions-plugins-on-the-server). None is built in and none is needed to reach the agent, so the composer and the reply box show no chips unless the server adds a plugin.
+`@name` calls one of the server's [mention plugins](https://github.com/notatorg/notato#-mentions-plugins-on-the-server). None is built in and none is needed to reach the agent, so the composer and the reply box show no chips unless the server adds a plugin.
 
 What a note never carries:
 
@@ -190,10 +190,19 @@ The picker hit-tests the visual tree with the native views' real positions (scro
 ```bash
 cd sdks/dotnet
 dotnet test tests/Notato.Maui.Tests                     # includes a contract test against packages/schema/schema.json
+dotnet build src/Notato.Maui -p:EnforceCodeStyleInBuild=true   # every target, with .editorconfig's rules
 dotnet build samples/Notato.Maui.Sample -t:Run -f net10.0-ios
 dotnet build samples/Notato.Maui.Sample -t:Run -f net10.0-android
 dotnet pack src/Notato.Maui -c Release -o artifacts
 ```
+
+The code, in `src/Notato.Maui`:
+
+- `INotato.cs`, `NotatoOptions.cs`, `Feedback.cs`, `NotatoAppBuilderExtensions.cs`: the public API. `Model/` is the schema's shapes, which `INotato.Annotations` returns.
+- `NotatoController.cs` and its `NotatoController.*.cs` parts: the running Notato, one file per job (windows, toolbar, pins, selection, making notes, sending them, the server connection, merging the server's copies, acting on a note, test mode's package). `RecordSet` holds the notes.
+- `Overlay/`: what Notato draws, from MAUI controls (`NotatoOverlay` and its parts, the sheets and cards, `Ui` for the look). The rules that need no drawing (`ToolbarFold`, `PinLayout`, `MenuText`) are apart from it, so they are tested on plain `net10.0`.
+- `Native/`: the overlay's host on each platform (a window of its own on iOS and Mac Catalyst, a view in the top window on Android), and the screenshot.
+- `Inspection/`: reading the app's visual tree (hit-testing, selectors, text, privacy, XAML source info). `Capture/` draws the screenshots, `Net/` is the HTTP API, `Runtime/` what is kept on the device and recorded from the app.
 
 The sample is a small Shell shop with a modal checkout and a **Feedback** tab that drives `INotato`. Point it at another server with an environment variable (`Notato__Server=http://localhost:4790`; on the simulator, `SIMCTL_CHILD_Notato__Server` with `xcrun simctl launch`). Build it with `-p:NotatoSampleDevFlow=true` to include the MAUI DevFlow agent, for driving it from a terminal.
 

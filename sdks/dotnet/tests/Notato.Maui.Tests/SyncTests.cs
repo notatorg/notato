@@ -27,7 +27,7 @@ public class SyncTests(ITestOutputHelper output)
         // 10,000 notes here, the server's list of 10,000: half of them the same, half new; 2,500 here gone from it.
         for (int i = 0; i < 10_000; i++)
         {
-            controller.Records.Add(new NotatoController.Record(Note($"N{i:000000}")) { Pending = i % 4 == 0 && i < 5_000 });
+            controller.Records.Add(new NoteRecord(Note($"N{i:000000}")) { Pending = i % 4 == 0 && i < 5_000 });
         }
 
         HashSet<string> settled = controller.Records.SettledIds();
@@ -39,8 +39,8 @@ public class SyncTests(ITestOutputHelper output)
         TimeSpan merging = clock.Elapsed - sorting;
         output.WriteLine($"10,000 listed into 10,000 known: {sorting.TotalMilliseconds:0.0} ms to read the list, {merging.TotalMilliseconds:0.0} ms to merge");
 
-        // Searching the notes for each of the server's, as it was, took 185-350 ms on a desktop (and several times that on
-        // a phone); found by id it takes about 5.
+        // Searching the notes for each of the server's takes 185-350 ms on a desktop (and several times that on a phone);
+        // found by id it takes about 5.
         Assert.True(merging < TimeSpan.FromMilliseconds(100), $"merging took {merging.TotalMilliseconds:0} ms");
         // N0..N4999: kept only if still to be sent (1,250 of them); N5000..N14999: on the server.
         Assert.Equal(1_250 + 10_000, controller.Records.Count);
@@ -55,7 +55,7 @@ public class SyncTests(ITestOutputHelper output)
     public async Task On_connecting_the_waiting_notes_go_first_then_a_short_list_is_read()
     {
         NotatoController controller = Fixtures.Controller();
-        controller.Records.Add(new NotatoController.Record(Note(Id)) { Pending = true, Mine = true });
+        controller.Records.Add(new NoteRecord(Note(Id)) { Pending = true, Mine = true });
         FakeServer server = new((request, _) => request.Method == HttpMethod.Post
             ? Fixtures.Stored(HttpStatusCode.Created, Note(Id))
             : request.RequestUri!.AbsolutePath == "/config"
@@ -83,7 +83,7 @@ public class SyncTests(ITestOutputHelper output)
         NotatoController controller = Fixtures.Controller();
         // Sent once (the server took it, the answer was lost), then made People only here while it waited.
         Annotation here = PeopleOnlyToggle.Set(Note(Id), true, Author.Human("Sam"), "01M46YHK00ON00000000000001", "2026-10-07T09:00:00.000Z");
-        controller.Records.Add(new NotatoController.Record(here) { Pending = true, Mine = true });
+        controller.Records.Add(new NoteRecord(here) { Pending = true, Mine = true });
         Annotation serversFirst = Note(Id);
         Annotation changed = PeopleOnlyToggle.Set(serversFirst, true, Author.Human("Sam"), "01M46YHK00SERVERENTRY00001", "2026-10-07T09:01:00.000Z");
         FakeServer server = new((request, _) => (request.Method.Method, request.RequestUri!.AbsolutePath) switch
@@ -99,7 +99,7 @@ public class SyncTests(ITestOutputHelper output)
         (HttpMethod method, string path, string body) = Assert.Single(server.Seen, s => s.Method == HttpMethod.Patch);
         Assert.Equal($"/annotations/{Id}", path);
         Assert.Equal("""{"peopleOnly":true,"author":{"kind":"human","name":"Sam"}}""", body);
-        NotatoController.Record record = controller.Records.Single();
+        NoteRecord record = controller.Records.Single();
         Assert.False(record.Pending);
         Assert.True(record.Annotation.PeopleOnly);
     }
@@ -109,7 +109,7 @@ public class SyncTests(ITestOutputHelper output)
     {
         NotatoController controller = Fixtures.Controller();
         Annotation here = PeopleOnlyToggle.Set(Note(Id), true, Author.Human("Sam"), "01M46YHK00ON00000000000001", "2026-10-07T09:00:00.000Z");
-        controller.Records.Add(new NotatoController.Record(here) { Pending = true, Mine = true });
+        controller.Records.Add(new NoteRecord(here) { Pending = true, Mine = true });
         FakeServer server = new((request, _) => request.Method == HttpMethod.Post
             ? Fixtures.Stored(HttpStatusCode.Created, here)
             : request.RequestUri!.AbsolutePath == "/config" ? Fixtures.Json(HttpStatusCode.OK, "{}") : Fixtures.List(here));
@@ -124,7 +124,7 @@ public class SyncTests(ITestOutputHelper output)
     public async Task An_answer_that_lands_after_a_newer_copy_came_by_event_keeps_the_newer_copy()
     {
         NotatoController controller = Fixtures.Controller();
-        controller.Records.Add(new NotatoController.Record(Note(Id)) { Pending = true, Mine = true });
+        controller.Records.Add(new NoteRecord(Note(Id)) { Pending = true, Mine = true });
         Annotation acknowledged = Note(Id) with { Status = Statuses.Acknowledged };
         FakeServer server = new((request, _) =>
         {
@@ -147,7 +147,7 @@ public class SyncTests(ITestOutputHelper output)
     public async Task A_note_deleted_while_it_is_sent_is_deleted_on_the_server_too_and_stays_gone()
     {
         NotatoController controller = Fixtures.Controller();
-        controller.Records.Add(new NotatoController.Record(Note(Id)) { Pending = true, Mine = true });
+        controller.Records.Add(new NoteRecord(Note(Id)) { Pending = true, Mine = true });
         FakeServer server = new((request, _) =>
         {
             switch (request.Method.Method, request.RequestUri!.AbsolutePath)
@@ -183,7 +183,7 @@ public class SyncTests(ITestOutputHelper output)
     public async Task A_burst_of_events_is_applied_together_with_one_change()
     {
         NotatoController controller = Fixtures.Controller();
-        controller.Records.Add(new NotatoController.Record(Note("GONE")));
+        controller.Records.Add(new NoteRecord(Note("GONE")));
         int changes = 0;
         TaskCompletionSource applied = new(TaskCreationOptions.RunContinuationsAsynchronously);
         controller.Changed += (_, _) =>
@@ -217,7 +217,7 @@ public class SyncTests(ITestOutputHelper output)
     public async Task Annotations_is_a_copy_made_at_each_change_that_nothing_can_alter()
     {
         NotatoController controller = Fixtures.Controller(NotatoMode.Test, server: null);
-        controller.Records.Add(new NotatoController.Record(Note(Id)) { Pending = true, Mine = true });
+        controller.Records.Add(new NoteRecord(Note(Id)) { Pending = true, Mine = true });
         // Not published until the change is raised.
         Assert.Empty(controller.Annotations);
 

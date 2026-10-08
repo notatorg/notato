@@ -13,6 +13,7 @@
     <IsAotCompatible Condition="'$(TargetFramework)' == 'net10.0'">true</IsAotCompatible>
     <EnableConfigurationBindingGenerator>true</EnableConfigurationBindingGenerator>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <!-- The schema's records in Model/ carry the same fields as packages/schema, which documents each of them. -->
     <NoWarn>$(NoWarn);CS1591</NoWarn>
 
     <SupportedOSPlatformVersion Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'ios'">15.0</SupportedOSPlatformVersion>

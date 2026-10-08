@@ -84,7 +84,9 @@ internal sealed class LogRecorder : ILoggerProvider
     /// <summary>A category from Notato itself, not from an app that happens to share the prefix.</summary>
     internal static bool IsNotatos(string category) => OwnCategories.Any(c => category.StartsWith(c, StringComparison.Ordinal));
 
-    public void Dispose() { }
+    public void Dispose()
+    {
+    }
 
     private sealed class Logger(LogRecorder recorder, string category) : ILogger
     {
@@ -128,10 +130,17 @@ public sealed class NotatoNetworkHandler : DelegatingHandler
 {
     internal static readonly Ring<NetworkEntry> Entries = new(50);
 
-    public NotatoNetworkHandler() { }
+    /// <summary>A handler for an <c>IHttpClientFactory</c> pipeline, which sets what it hands requests on to.</summary>
+    public NotatoNetworkHandler()
+    {
+    }
 
-    public NotatoNetworkHandler(HttpMessageHandler inner) : base(inner) { }
+    /// <summary>A handler that hands requests on to <paramref name="inner"/>.</summary>
+    public NotatoNetworkHandler(HttpMessageHandler inner) : base(inner)
+    {
+    }
 
+    /// <summary>Sends the request on, and records it whatever the outcome.</summary>
     protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
     {
         long started = Stopwatch.GetTimestamp();

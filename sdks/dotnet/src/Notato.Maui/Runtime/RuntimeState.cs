@@ -1,5 +1,6 @@
 using Microsoft.Maui.Graphics;
 using Microsoft.Maui.Storage;
+using System.Globalization;
 
 namespace Notato.Maui.Runtime;
 
@@ -86,8 +87,8 @@ internal sealed class RuntimeState(bool remember)
 
             string[] parts = raw.Split(',');
             return parts.Length == 2
-                && double.TryParse(parts[0], System.Globalization.CultureInfo.InvariantCulture, out double x)
-                && double.TryParse(parts[1], System.Globalization.CultureInfo.InvariantCulture, out double y)
+                && double.TryParse(parts[0], CultureInfo.InvariantCulture, out double x)
+                && double.TryParse(parts[1], CultureInfo.InvariantCulture, out double y)
                 ? new Point(Math.Clamp(x, 0, 1), Math.Clamp(y, 0, 1))
                 : null;
         }
@@ -99,7 +100,7 @@ internal sealed class RuntimeState(bool remember)
 
     public void Reset()
     {
-        foreach (string? key in new[] { "enabled", "toolbar", "screenshots", "pins", "author", "server", "toolbar.position", "toolbar.collapsed" })
+        foreach (string key in new[] { "enabled", "toolbar", "screenshots", "pins", "author", "server", "toolbar.position", "toolbar.collapsed" })
         {
             Set(key, null);
         }

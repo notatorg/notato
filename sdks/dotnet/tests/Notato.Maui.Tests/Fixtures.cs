@@ -141,3 +141,13 @@ internal sealed class FakeServer(Func<HttpRequestMessage, string, HttpResponseMe
         return answer(request, body);
     }
 }
+
+/// <summary>Small helpers that keep a test to the point.</summary>
+internal static class TestExtensions
+{
+    public static T Also<T>(this T value, Action<T> action)
+    {
+        action(value);
+        return value;
+    }
+}

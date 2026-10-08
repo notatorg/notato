@@ -3,8 +3,8 @@ using System.Text.Json.Serialization;
 
 namespace Notato.Maui.Model;
 
-/// <summary>Server responses that wrap the annotation shapes.</summary>
-public sealed record AnnotationList
+/// <summary>A page of the server's list of a project's annotations.</summary>
+internal sealed record AnnotationList
 {
     public IReadOnlyList<StoredAnnotation> Items { get; init; } = [];
 
@@ -12,7 +12,7 @@ public sealed record AnnotationList
     public long? Next { get; init; }
 }
 
-public sealed record ServerConfig
+internal sealed record ServerConfig
 {
     public bool Screenshots { get; init; } = true;
 
@@ -24,7 +24,7 @@ public sealed record ServerConfig
 }
 
 /// <summary>Whether a coding agent (through Notato's MCP) is connected, and waiting in <c>notato_watch</c>.</summary>
-public sealed record AgentState
+internal sealed record AgentState
 {
     public bool Connected { get; init; }
     public int Sessions { get; init; }
@@ -32,7 +32,7 @@ public sealed record AgentState
 }
 
 /// <summary>One of the server's mention plugins, such as <c>@jira</c>. The agent needs none: it gets everything people write.</summary>
-public sealed record MentionInfo
+internal sealed record MentionInfo
 {
     public string Name { get; init; } = "";
     public string Description { get; init; } = "";
@@ -40,20 +40,12 @@ public sealed record MentionInfo
     public bool Available { get; init; }
 }
 
-public sealed record ErrorBody
+internal sealed record ErrorBody
 {
     public string? Error { get; init; }
 }
 
-public sealed record AuthMe
-{
-    public string? Mode { get; init; }
-    public bool AuthRequired { get; init; }
-    public bool Authenticated { get; init; }
-    public string? ProjectId { get; init; }
-}
-
-public sealed record ServerEventData
+internal sealed record ServerEventData
 {
     public string? Id { get; init; }
     public string? ProjectId { get; init; }
@@ -62,13 +54,13 @@ public sealed record ServerEventData
 }
 
 /// <summary>What an agent asks this app to annotate, relayed from <c>notato_annotate</c>.</summary>
-public sealed record AnnotateRequest
+internal sealed record AnnotateRequest
 {
     public required string RequestId { get; init; }
     public required AnnotateRequestArgs Args { get; init; }
 }
 
-public sealed record AnnotateRequestArgs
+internal sealed record AnnotateRequestArgs
 {
     public required string Target { get; init; }
     public required string Comment { get; init; }
@@ -78,21 +70,21 @@ public sealed record AnnotateRequestArgs
     public string? Author { get; init; }
 }
 
-public sealed record RelayResult
+internal sealed record RelayResult
 {
     public required bool Ok { get; init; }
     public string? AnnotationId { get; init; }
     public string? Error { get; init; }
 }
 
-public sealed record StatusChange
+internal sealed record StatusChange
 {
     public required string Status { get; init; }
     public string? Note { get; init; }
     public Author? Author { get; init; }
 }
 
-public sealed record ReplyBody
+internal sealed record ReplyBody
 {
     public required string Body { get; init; }
     public Author? Author { get; init; }
@@ -101,7 +93,7 @@ public sealed record ReplyBody
 }
 
 /// <summary>Turns People only on or off for a note (<c>PATCH /annotations/{id}</c>): only a person can.</summary>
-public sealed record PeopleOnlyChange
+internal sealed record PeopleOnlyChange
 {
     /// <summary>Always written, <c>false</c> included: it is the change.</summary>
     public required bool PeopleOnly { get; init; }
@@ -109,7 +101,7 @@ public sealed record PeopleOnlyChange
 }
 
 /// <summary>A message the SDK's log capture keeps, in the shape of the web SDK's <c>console</c> context.</summary>
-public sealed record LogEntry
+internal sealed record LogEntry
 {
     public required string Level { get; init; }
     public required string Message { get; init; }
@@ -117,7 +109,7 @@ public sealed record LogEntry
 }
 
 /// <summary>One HTTP request, in the shape of the web SDK's <c>network</c> context.</summary>
-public sealed record NetworkEntry
+internal sealed record NetworkEntry
 {
     public required string Method { get; init; }
     public required string Url { get; init; }
@@ -138,7 +130,6 @@ public sealed record NetworkEntry
 [JsonSerializable(typeof(AgentState))]
 [JsonSerializable(typeof(List<MentionInfo>))]
 [JsonSerializable(typeof(ErrorBody))]
-[JsonSerializable(typeof(AuthMe))]
 [JsonSerializable(typeof(ServerEventData))]
 [JsonSerializable(typeof(AnnotateRequest))]
 [JsonSerializable(typeof(RelayResult))]
@@ -156,10 +147,3 @@ public sealed record NetworkEntry
 [JsonSerializable(typeof(int))]
 [JsonSerializable(typeof(bool))]
 internal sealed partial class NotatoJsonContext : JsonSerializerContext;
-
-internal static class NotatoJson
-{
-    /// <summary>Wraps a value as the JsonElement that <see cref="Annotation.Context"/> holds.</summary>
-    public static JsonElement Element<T>(T value, System.Text.Json.Serialization.Metadata.JsonTypeInfo<T> info) =>
-        JsonSerializer.SerializeToElement(value, info);
-}

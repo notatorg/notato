@@ -1,4 +1,5 @@
 using Microsoft.Maui.Controls;
+using Microsoft.Maui.Controls.Shapes;
 using Microsoft.Maui.Graphics;
 using Microsoft.Maui.Layouts;
 
@@ -199,7 +200,7 @@ internal sealed partial class NotatoOverlay
         }
 
         _shownCorner = corner;
-        _toolbar.StrokeShape = new Microsoft.Maui.Controls.Shapes.RoundRectangle { CornerRadius = corner };
+        _toolbar.StrokeShape = new RoundRectangle { CornerRadius = corner };
     }
 
     /// <summary>Called from <see cref="Render"/>: folds or opens when the controller says so, whatever asked.</summary>
@@ -340,18 +341,20 @@ internal sealed partial class NotatoOverlay
 
     private void FinishMorph()
     {
-        if (_morph is { } m && Width > 0)
+        // Gone first, so the width below is the settled bar's.
+        Morph? morph = _morph;
+        _morph = null;
+        if (morph is not null && Width > 0)
         {
-            _morph = null;
             // Store the fraction that leaves the bar where it arrived at its new width: its held edge where it was,
             // or the place it went back to. A bar in its corner (0 or 1) gets the same fraction, so stays undragged.
             Point current = _controller.ToolbarFraction;
-            if (m.Trip.Arrival(Room(), BarWidth()) is { } x && Math.Abs(x - current.X) > 1e-6)
+            if (morph.Trip.Arrival(Room(), BarWidth()) is { } x && Math.Abs(x - current.X) > 1e-6)
             {
                 _controller.ToolbarArrived(new Point(x, current.Y));
             }
         }
-        _morph = null;
+
         ApplySettled();
         PlaceToolbar();
     }
@@ -429,7 +432,7 @@ internal sealed partial class NotatoOverlay
         {
             double total = _steps.Max(s => s.Delay + s.Duration);
             Animation animation = [];
-            foreach ((double delay, double duration, Easing? easing, Action<double>? step) in _steps)
+            foreach ((double delay, double duration, Easing easing, Action<double> step) in _steps)
             {
                 animation.Add(delay / total, Math.Min(1, (delay + duration) / total), new Animation(step, 0, 1, easing));
             }

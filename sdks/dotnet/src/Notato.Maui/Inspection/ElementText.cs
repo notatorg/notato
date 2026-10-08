@@ -143,11 +143,7 @@ internal static class ElementText
                 return Clip(name, 120);
             }
         }
-        return element switch
-        {
-            Button or Label or RadioButton or Page => Of(element, mask: false) is { } text ? Clip(text, 120) : null,
-            ImageButton or Image => null,
-            _ => null,
-        };
+        // What a screen reader would read out anyway; an image says nothing without a description.
+        return element is Button or Label or RadioButton or Page ? Clip(Of(element, mask: false), 120) : null;
     }
 }

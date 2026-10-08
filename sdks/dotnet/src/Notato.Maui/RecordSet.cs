@@ -1,7 +1,6 @@
 using Notato.Maui.Model;
 using System.Collections;
 using System.Collections.ObjectModel;
-using Record = Notato.Maui.NotatoController.Record;
 
 namespace Notato.Maui;
 
@@ -10,7 +9,7 @@ namespace Notato.Maui;
 /// (numbered as their pins are) are worked out once after a change rather than at every look. Only ever used on the
 /// main thread.
 /// </summary>
-internal sealed class RecordSet : IEnumerable<Record>
+internal sealed class RecordSet : IEnumerable<NoteRecord>
 {
     /// <summary>The most pins drawn on one screen: the newest. The Notes list has every one. The React Native and Flutter SDKs draw as many.</summary>
     public const int MaxPins = 150;
@@ -18,27 +17,27 @@ internal sealed class RecordSet : IEnumerable<Record>
     /// <summary>What this SDK writes as a note's <c>environment.platform</c>. Only these notes are pinned: a web page's selector means nothing here.</summary>
     public const string Platform = "maui";
 
-    private readonly List<Record> _list = [];
-    private readonly Dictionary<string, Record> _byId = new(StringComparer.Ordinal);
+    private readonly List<NoteRecord> _list = [];
+    private readonly Dictionary<string, NoteRecord> _byId = new(StringComparer.Ordinal);
     private readonly HashSet<string> _deleted = new(StringComparer.Ordinal);
     private Dictionary<string, Screen>? _screens;
     private int _screensVersion = -1;
 
     /// <summary>A screen's notes, oldest first and numbered, and those of them that get a pin.</summary>
-    private sealed record Screen(IReadOnlyList<(int Number, Record Record)> All, IReadOnlyList<(int Number, Record Record)> Pinned);
+    private sealed record Screen(IReadOnlyList<(int Number, NoteRecord Record)> All, IReadOnlyList<(int Number, NoteRecord Record)> Pinned);
 
     /// <summary>Goes up with every change to the set or to a note in it.</summary>
     public int Version { get; private set; }
 
     public int Count => _list.Count;
 
-    public Record? Find(string id) => _byId.GetValueOrDefault(id);
+    public NoteRecord? Find(string id) => _byId.GetValueOrDefault(id);
 
     /// <summary>Adds a note; one with the same id is replaced where it stands.</summary>
-    public void Add(Record record)
+    public void Add(NoteRecord record)
     {
         string id = record.Annotation.Id;
-        if (_byId.TryGetValue(id, out Record? existing))
+        if (_byId.TryGetValue(id, out NoteRecord? existing))
         {
             _list[_list.IndexOf(existing)] = record;
             existing.Owner = null;
@@ -55,7 +54,7 @@ internal sealed class RecordSet : IEnumerable<Record>
 
     public bool Remove(string id) => RemoveAll(r => r.Annotation.Id == id) > 0;
 
-    public int RemoveAll(Predicate<Record> match)
+    public int RemoveAll(Predicate<NoteRecord> match)
     {
         int removed = _list.RemoveAll(r =>
         {
@@ -78,7 +77,7 @@ internal sealed class RecordSet : IEnumerable<Record>
 
     public void Clear()
     {
-        foreach (Record r in _list)
+        foreach (NoteRecord r in _list)
         {
             r.Owner = null;
         }
@@ -100,7 +99,7 @@ internal sealed class RecordSet : IEnumerable<Record>
     public HashSet<string> SettledIds()
     {
         HashSet<string> ids = new(StringComparer.Ordinal);
-        foreach (Record r in _list)
+        foreach (NoteRecord r in _list)
         {
             if (!r.Pending)
             {
@@ -112,14 +111,14 @@ internal sealed class RecordSet : IEnumerable<Record>
     }
 
     /// <summary>The notes on a screen, oldest first, numbered as their pins are.</summary>
-    public IReadOnlyList<(int Number, Record Record)> On(string route) =>
+    public IReadOnlyList<(int Number, NoteRecord Record)> On(string route) =>
         Screens().TryGetValue(route, out Screen? screen) ? screen.All : [];
 
     /// <summary>
     /// The notes on a screen that get a pin: the ones made by this SDK (<see cref="Platform"/>), the newest
     /// <see cref="MaxPins"/> of them. Each keeps the number it has among all the screen's notes.
     /// </summary>
-    public IReadOnlyList<(int Number, Record Record)> PinnedOn(string route) =>
+    public IReadOnlyList<(int Number, NoteRecord Record)> PinnedOn(string route) =>
         Screens().TryGetValue(route, out Screen? screen) ? screen.Pinned : [];
 
     private Dictionary<string, Screen> Screens()
@@ -129,11 +128,11 @@ internal sealed class RecordSet : IEnumerable<Record>
             return _screens;
         }
 
-        Dictionary<string, List<Record>> groups = new(StringComparer.Ordinal);
-        foreach (Record r in _list)
+        Dictionary<string, List<NoteRecord>> groups = new(StringComparer.Ordinal);
+        foreach (NoteRecord r in _list)
         {
             string route = r.Annotation.Route;
-            if (!groups.TryGetValue(route, out List<Record>? group))
+            if (!groups.TryGetValue(route, out List<NoteRecord>? group))
             {
                 groups[route] = group = [];
             }
@@ -142,15 +141,15 @@ internal sealed class RecordSet : IEnumerable<Record>
         }
 
         Dictionary<string, Screen> screens = new(groups.Count, StringComparer.Ordinal);
-        foreach ((string route, List<Record> group) in groups)
+        foreach ((string route, List<NoteRecord> group) in groups)
         {
             group.Sort(static (a, b) =>
             {
                 int byTime = string.CompareOrdinal(a.Annotation.CreatedAt, b.Annotation.CreatedAt);
                 return byTime != 0 ? byTime : string.CompareOrdinal(a.Annotation.Id, b.Annotation.Id);
             });
-            List<(int Number, Record Record)> all = new(group.Count);
-            List<(int Number, Record Record)> pinned = [];
+            List<(int Number, NoteRecord Record)> all = new(group.Count);
+            List<(int Number, NoteRecord Record)> pinned = [];
             for (int i = 0; i < group.Count; i++)
             {
                 all.Add((i + 1, group[i]));
@@ -187,9 +186,9 @@ internal sealed class RecordSet : IEnumerable<Record>
         return (new ReadOnlyCollection<Annotation>(annotations), pending);
     }
 
-    public List<Record>.Enumerator GetEnumerator() => _list.GetEnumerator();
+    public List<NoteRecord>.Enumerator GetEnumerator() => _list.GetEnumerator();
 
-    IEnumerator<Record> IEnumerable<Record>.GetEnumerator() => _list.GetEnumerator();
+    IEnumerator<NoteRecord> IEnumerable<NoteRecord>.GetEnumerator() => _list.GetEnumerator();
 
     IEnumerator IEnumerable.GetEnumerator() => _list.GetEnumerator();
 }

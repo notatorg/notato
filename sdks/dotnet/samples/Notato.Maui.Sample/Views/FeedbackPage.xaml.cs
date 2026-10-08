@@ -12,15 +12,23 @@ public partial class FeedbackPage : ContentPage
     {
         InitializeComponent();
         _notato = notato;
-        notato.Changed += (_, _) => Update();
-        Update();
     }
 
+    // Notato lives as long as the app; following it only while the page shows lets the page go when it closes.
     protected override void OnAppearing()
     {
         base.OnAppearing();
+        _notato.Changed += OnNotatoChanged;
         Update();
     }
+
+    protected override void OnDisappearing()
+    {
+        _notato.Changed -= OnNotatoChanged;
+        base.OnDisappearing();
+    }
+
+    private void OnNotatoChanged(object? sender, EventArgs e) => Update();
 
     private void Update()
     {

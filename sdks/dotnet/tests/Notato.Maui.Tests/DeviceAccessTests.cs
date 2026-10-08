@@ -1,6 +1,7 @@
 using Notato.Maui.Net;
 using Notato.Maui.Runtime;
 using System.Reflection;
+using System.Text;
 
 namespace Notato.Maui.Tests;
 
@@ -108,7 +109,7 @@ public class DeviceAccessTests
             onRequest(request);
             return Task.FromResult(new HttpResponseMessage(System.Net.HttpStatusCode.OK)
             {
-                Content = new StringContent("{\"screenshots\":true}", System.Text.Encoding.UTF8, "application/json"),
+                Content = new StringContent("{\"screenshots\":true}", Encoding.UTF8, "application/json"),
             });
         }
     }

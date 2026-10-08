@@ -1,5 +1,6 @@
 using Notato.Maui.Model;
 using Notato.Maui.Util;
+using System.Globalization;
 using System.IO.Compression;
 using System.Text;
 using System.Text.Json;
@@ -21,9 +22,9 @@ internal static class BundleWriter
     public static Task<string> WriteAsync(IReadOnlyList<LocalAnnotation> items, string project, string? author,
         string? appName, string? appVersion, string folder, CancellationToken ct) => Task.Run(() =>
     {
-        Bundle bundle = Build(items, project, author, appName, appVersion, out Dictionary<string, string>? files);
+        Bundle bundle = Build(items, project, author, appName, appVersion, out Dictionary<string, string> files);
         Directory.CreateDirectory(folder);
-        string path = System.IO.Path.Combine(folder, $"notato-{project}-{DateTime.Now:yyyyMMdd-HHmm}.zip");
+        string path = Path.Combine(folder, string.Create(CultureInfo.InvariantCulture, $"notato-{project}-{DateTime.Now:yyyyMMdd-HHmm}.zip"));
         string temporary = path + ".tmp";
         try
         {
@@ -51,8 +52,8 @@ internal static class BundleWriter
         List<Annotation> annotations = [];
         for (int i = 0; i < items.Count; i++)
         {
-            (Annotation? a, IReadOnlyDictionary<string, string>? assets) = (items[i].Annotation, items[i].Assets);
-            string n = (i + 1).ToString("00", System.Globalization.CultureInfo.InvariantCulture);
+            (Annotation a, IReadOnlyDictionary<string, string> assets, _) = items[i];
+            string n = (i + 1).ToString("00", CultureInfo.InvariantCulture);
             Screenshots? shots = null;
             if (a.Screenshots is { } s && Kept(assets, s.Full.Id) is { } fullFile)
             {
@@ -72,7 +73,7 @@ internal static class BundleWriter
         {
             Id = id,
             ProjectId = project,
-            CreatedAt = DateTimeOffset.UtcNow.ToString("yyyy-MM-dd'T'HH:mm:ss.fff'Z'", System.Globalization.CultureInfo.InvariantCulture),
+            CreatedAt = Timestamps.Now(),
             Author = new BundleAuthor { Name = author },
             AppName = appName,
             AppVersion = appVersion,
@@ -98,7 +99,7 @@ internal static class BundleWriter
         Add("feedback.md", Encoding.UTF8.GetBytes(Markdown(bundle)), CompressionLevel.Optimal);
         Add("annotations.json", JsonSerializer.SerializeToUtf8Bytes(bundle, NotatoJsonContext.Default.Bundle), CompressionLevel.Optimal);
         // Screenshots are compressed already.
-        foreach ((string? name, string? file) in files)
+        foreach ((string name, string file) in files)
         {
             ct.ThrowIfCancellationRequested();
             ZipArchiveEntry entry = archive.CreateEntry(name, CompressionLevel.NoCompression);

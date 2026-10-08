@@ -1,7 +1,9 @@
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Maui.Devices.Sensors;
+using Microsoft.Maui.Graphics;
 using Notato.Maui.Native;
 using Notato.Maui.Runtime;
+using IImage = Microsoft.Maui.Graphics.IImage;
 
 namespace Notato.Maui.Tests;
 
@@ -34,19 +36,19 @@ public class CaptureAndShakeTests
     }
 
     /// <summary>A screen's bitmap that counts how often it is let go.</summary>
-    private sealed class FakeImage : Microsoft.Maui.Graphics.IImage
+    private sealed class FakeImage : IImage
     {
         public int Disposed { get; private set; }
         public float Width => 1206;
         public float Height => 2622;
         public void Dispose() => Disposed++;
-        public Microsoft.Maui.Graphics.IImage Downsize(float maxWidthOrHeight, bool disposeOriginal = false) => throw new NotSupportedException();
-        public Microsoft.Maui.Graphics.IImage Downsize(float maxWidth, float maxHeight, bool disposeOriginal = false) => throw new NotSupportedException();
-        public Microsoft.Maui.Graphics.IImage Resize(float width, float height, Microsoft.Maui.Graphics.ResizeMode resizeMode = Microsoft.Maui.Graphics.ResizeMode.Fit, bool disposeOriginal = false) => throw new NotSupportedException();
-        public void Save(Stream stream, Microsoft.Maui.Graphics.ImageFormat format = Microsoft.Maui.Graphics.ImageFormat.Png, float quality = 1) => throw new NotSupportedException();
-        public Task SaveAsync(Stream stream, Microsoft.Maui.Graphics.ImageFormat format = Microsoft.Maui.Graphics.ImageFormat.Png, float quality = 1) => throw new NotSupportedException();
-        public Microsoft.Maui.Graphics.IImage ToPlatformImage() => this;
-        public void Draw(Microsoft.Maui.Graphics.ICanvas canvas, Microsoft.Maui.Graphics.RectF dirtyRect) => throw new NotSupportedException();
+        public IImage Downsize(float maxWidthOrHeight, bool disposeOriginal = false) => throw new NotSupportedException();
+        public IImage Downsize(float maxWidth, float maxHeight, bool disposeOriginal = false) => throw new NotSupportedException();
+        public IImage Resize(float width, float height, ResizeMode resizeMode = ResizeMode.Fit, bool disposeOriginal = false) => throw new NotSupportedException();
+        public void Save(Stream stream, ImageFormat format = ImageFormat.Png, float quality = 1) => throw new NotSupportedException();
+        public Task SaveAsync(Stream stream, ImageFormat format = ImageFormat.Png, float quality = 1) => throw new NotSupportedException();
+        public IImage ToPlatformImage() => this;
+        public void Draw(ICanvas canvas, RectF dirtyRect) => throw new NotSupportedException();
     }
 
     private static CapturedScreen Screen(FakeImage image) => new(image, 1206, 2622, 3, []);

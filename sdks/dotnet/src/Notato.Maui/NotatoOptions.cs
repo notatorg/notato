@@ -11,11 +11,16 @@ public enum NotatoMode
     Agent,
 }
 
+/// <summary>The corner of the window the toolbar starts in, until someone drags it.</summary>
 public enum ToolbarCorner
 {
+    /// <summary>Bottom right, a little up so it is clear of a tab bar.</summary>
     BottomRight,
+    /// <summary>Bottom left, a little up so it is clear of a tab bar.</summary>
     BottomLeft,
+    /// <summary>Top right, below the status bar.</summary>
     TopRight,
+    /// <summary>Top left, below the status bar.</summary>
     TopLeft,
 }
 
@@ -39,6 +44,7 @@ public sealed class NotatoOptions
     /// </summary>
     public bool Enabled { get; set; } = true;
 
+    /// <summary>Who annotates, and where the notes go: <see cref="NotatoMode.Dev"/> unless set.</summary>
     public NotatoMode Mode { get; set; } = NotatoMode.Dev;
 
     /// <summary>Project id on the server, e.g. <c>checkout-app</c>. Letters, digits and <c>. _ - @</c>. Required.</summary>

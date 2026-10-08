@@ -10,7 +10,9 @@ public enum NotatoConnection
     Disabled,
     /// <summary>No server is configured: notes stay on the device (test mode) until packaged.</summary>
     Local,
+    /// <summary>Opening the connection to the server, or opening it again after it was lost.</summary>
     Connecting,
+    /// <summary>Connected: notes are sent as they are made, and the server's changes arrive as they happen.</summary>
     Connected,
     /// <summary>The server cannot be reached. Notes are kept and sent when it can.</summary>
     Offline,
@@ -59,8 +61,13 @@ public interface INotato
     /// <summary>Whether the floating toolbar is showing. Shaking the device toggles it too.</summary>
     bool IsToolbarVisible { get; }
 
+    /// <summary>Shows the floating toolbar. Remembered across launches like <see cref="Enable"/>.</summary>
     void ShowToolbar();
 
+    /// <summary>
+    /// Hides the floating toolbar; the app can still drive Notato from code. Remembered across launches like
+    /// <see cref="Enable"/>.
+    /// </summary>
     void HideToolbar();
 
     /// <summary>Whether the next tap picks an element to annotate.</summary>
@@ -69,9 +76,11 @@ public interface INotato
     /// <summary>Enters annotate mode: the next tap selects what is under it.</summary>
     void StartAnnotating();
 
+    /// <summary>Leaves annotate mode, and drops a selection and the note being written for it.</summary>
     void StopAnnotating();
 
     /// <summary>Selects an element as if it had been tapped, and opens the note for it.</summary>
+    /// <exception cref="InvalidOperationException">Notato is off, or the element is not in a window Notato is in.</exception>
     Task SelectAsync(VisualElement element);
 
     /// <summary>Makes an annotation on an element without any UI, as a person or (with <see cref="AnnotateOptions.AgentName"/>) an agent.</summary>
@@ -79,12 +88,16 @@ public interface INotato
     /// <paramref name="cancellationToken"/> cancels it until the note is made. After that it only cuts short the wait
     /// for the upload: the note is kept, and sent with the others that are waiting.
     /// </remarks>
+    /// <exception cref="ArgumentException">The comment is empty, or an agent's note asks to be People only.</exception>
+    /// <exception cref="InvalidOperationException">Notato is off, or the element is not in a window Notato is in.</exception>
     Task<Annotation> AnnotateAsync(VisualElement element, string comment, AnnotateOptions? options = null, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Makes an annotation on the element a selector finds in the visible page, e.g. <c>#SignIn</c>,
     /// <c>Button:text("Sign in")</c> or <c>LoginPage Entry[x:Name=Email]</c>.
     /// </summary>
+    /// <exception cref="FormatException">The selector cannot be read.</exception>
+    /// <exception cref="InvalidOperationException">No element on the screen matches it.</exception>
     Task<Annotation> AnnotateAsync(string selector, string comment, AnnotateOptions? options = null, CancellationToken cancellationToken = default);
 
     /// <summary>
@@ -96,6 +109,7 @@ public interface INotato
     /// <summary>Notes made on this device that have not reached the server yet, as of the last change. Safe from any thread.</summary>
     int PendingCount { get; }
 
+    /// <summary>How Notato stands with its server now.</summary>
     NotatoConnection Connection { get; }
 
     /// <summary>The last connection problem, fit to show to a person.</summary>
@@ -105,6 +119,8 @@ public interface INotato
     /// Packages this device's notes as a bundle zip (<c>feedback.md</c>, <c>annotations.json</c>, <c>shots/</c>), the
     /// format <c>notato_import_bundle</c> reads. Uploads it when a server is set. Returns the zip's path.
     /// </summary>
+    /// <exception cref="InvalidOperationException">There are no notes to package.</exception>
+    /// <exception cref="Net.NotatoServerException">The upload failed; the zip is written all the same.</exception>
     Task<string> PackageAsync(bool upload = true, CancellationToken cancellationToken = default);
 
     /// <summary>Raised on the main thread when any of the above changes.</summary>

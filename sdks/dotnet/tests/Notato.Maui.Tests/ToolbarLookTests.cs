@@ -179,7 +179,7 @@ public class ToolbarLookTests
             ShakeToToggle = false,
         }), NullLogger<NotatoController>.Instance);
         controller.Start();
-        NotatoController.Record record = new(Fixtures.Annotation()) { Pending = true, Mine = true };
+        NoteRecord record = new(Fixtures.Annotation()) { Pending = true, Mine = true };
 
         List<IVisualTreeElement> fromList = [.. Descendants(new PinCard(controller, new OverlaySession(null!, null!), record, 2, () => { }, () => { }))];
         List<IVisualTreeElement> fromPin = [.. Descendants(new PinCard(controller, new OverlaySession(null!, null!), record, 2, () => { }))];

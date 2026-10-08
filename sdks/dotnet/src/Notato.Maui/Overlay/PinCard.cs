@@ -1,163 +1,10 @@
 using Microsoft.Maui.Controls;
 using Microsoft.Maui.Graphics;
+using Notato.Maui.Inspection;
 using Notato.Maui.Model;
+using System.Globalization;
 
 namespace Notato.Maui.Overlay;
-
-/// <summary>The note being written about the selected element: what, what is wanted, how bad, and whether the agent gets it.</summary>
-internal sealed class ComposerCard : ContentView
-{
-    private readonly Label _title;
-    private readonly Label _subtitle;
-    private readonly Editor _editor;
-    private readonly Ui.ChipRow _intents;
-    private readonly Ui.ChipRow _severities;
-    private readonly Ui.MentionRow _mentions;
-    private readonly Switch _peopleOnly;
-    private readonly Func<string, string?, string?, bool, Task<string?>> _onSend;
-    private readonly Border _send;
-    private readonly Label _error;
-    private bool _busy;
-
-    // onSend sends the note (comment, intent, severity, People only) and returns what went wrong, or null.
-    public ComposerCard(string target, string? detail, bool screenshotsOff,
-        Action onParent, Action onCancel, Func<string, string?, string?, bool, Task<string?>> onSend)
-    {
-        Ui.Plain(this);
-        _onSend = onSend;
-        _title = Ui.Text(target, 15, Ui.CardText, bold: true, maxLines: 1);
-        _subtitle = Ui.Text(detail, 12, Ui.CardMuted, maxLines: 2);
-        _subtitle.IsVisible = !string.IsNullOrEmpty(detail);
-
-        View parentIcon = Ui.Icon(Ui.IconUp, Ui.CardText, 14);
-        Label parentText = Ui.Text("Parent", 13.5, Ui.CardText, maxLines: 1, semibold: true);
-        parentText.VerticalOptions = LayoutOptions.Center;
-        Border parent = Ui.Box(Ui.Plain(new HorizontalStackLayout { Spacing = 4, VerticalOptions = LayoutOptions.Center, Children = { parentIcon, parentText } }), Ui.Soft, 15, new Thickness(11, 0));
-        parent.HeightRequest = 30;
-        Ui.OnTap(parent, onParent);
-        SemanticProperties.SetDescription(parent, "Select the element around this one");
-        Border close = Ui.HeaderButton(back: false, onCancel, "NotatoCancel");
-        SemanticProperties.SetDescription(close, "Cancel");
-
-        Grid header = Ui.Plain(new Grid
-        {
-            ColumnDefinitions = { new ColumnDefinition(GridLength.Star), new ColumnDefinition(GridLength.Auto), new ColumnDefinition(GridLength.Auto) },
-            ColumnSpacing = 6,
-        });
-        VerticalStackLayout titles = Ui.Plain(new VerticalStackLayout { Spacing = 1, VerticalOptions = LayoutOptions.Center, Children = { _title, _subtitle } });
-        header.Children.Add(titles);
-        header.Children.Add(parent);
-        header.Children.Add(close);
-        Grid.SetColumn(parent, 1);
-        Grid.SetColumn(close, 2);
-        parent.VerticalOptions = LayoutOptions.Center;
-        close.VerticalOptions = LayoutOptions.Center;
-
-        _editor = Ui.Plain<Editor>(new NotatoEditor
-        {
-            Placeholder = "What should change?",
-            PlaceholderColor = Ui.CardMuted,
-            TextColor = Ui.CardText,
-            BackgroundColor = Colors.Transparent,
-            FontSize = 15,
-            FontFamily = null,
-            HeightRequest = 84,
-            AutoSize = EditorAutoSizeOption.Disabled,
-            AutomationId = "NotatoComment",
-        });
-        _editor.TextChanged += (_, _) => Update();
-
-        _intents = new Ui.ChipRow([(AnnotationIntents.Fix, "Fix"), (AnnotationIntents.Change, "Change"), (AnnotationIntents.Question, "Question"), (AnnotationIntents.Approve, "Approve")]);
-        _severities = new Ui.ChipRow([(Severities.Blocker, "Blocker"), (Severities.Major, "Major"), (Severities.Minor, "Minor"), (Severities.Nit, "Nit")]);
-        _mentions = new Ui.MentionRow(_editor);
-        // Everything people write reaches the agent, unless they keep it between themselves.
-        (Grid peopleOnlyRow, _peopleOnly) = Ui.SwitchRow(PeopleOnlyToggle.Label, PeopleOnlyToggle.Hint, false, "NotatoPeopleOnly");
-
-        _error = Ui.Text(null, 12, Ui.Danger);
-        _error.IsVisible = false;
-        Label note = Ui.Text(screenshotsOff ? "No screenshot: they are turned off." : "Tap another element to change what this note is about.", 12, Ui.CardMuted);
-        _send = Ui.PrimaryButton("Send", () => _ = SendAsync());
-        _send.AutomationId = "NotatoSend";
-        Grid footer = Ui.Plain(new Grid { ColumnDefinitions = { new ColumnDefinition(GridLength.Star), new ColumnDefinition(GridLength.Auto) }, ColumnSpacing = 10 });
-        footer.Children.Add(note);
-        footer.Children.Add(_send);
-        Grid.SetColumn(_send, 1);
-        note.VerticalOptions = LayoutOptions.Center;
-
-        Content = Ui.Card(Ui.Plain(new VerticalStackLayout
-        {
-            Spacing = 12,
-            Children =
-            {
-                header,
-                OverlayFields.Box(_editor),
-                Scroll(_mentions),
-                Scroll(_intents),
-                Scroll(_severities),
-                peopleOnlyRow,
-                _error,
-                footer,
-            },
-        }));
-        Update();
-    }
-
-    private static ScrollView Scroll(View row) => new() { Orientation = ScrollOrientation.Horizontal, HorizontalScrollBarVisibility = ScrollBarVisibility.Never, Content = row };
-
-    /// <summary>What <c>@</c> can call right now: the server's mention plugins, if it has any.</summary>
-    public void SetMentions(IReadOnlyList<MentionInfo> available) => _mentions.SetMentions(available);
-
-    public void SetTarget(string target, string? detail)
-    {
-        _title.Text = target;
-        _subtitle.Text = detail;
-        _subtitle.IsVisible = !string.IsNullOrEmpty(detail);
-    }
-
-    private void Update()
-    {
-        bool ready = !_busy && !string.IsNullOrWhiteSpace(_editor.Text);
-        _send.Opacity = ready ? 1 : 0.45;
-    }
-
-    /// <summary>What Send does: sends the note as written, unless it is empty or already going.</summary>
-    internal async Task SendAsync()
-    {
-        if (_busy || string.IsNullOrWhiteSpace(_editor.Text))
-        {
-            return;
-        }
-
-        _busy = true;
-        Update();
-        ((Label)_send.Content!).Text = "Sending…";
-        try
-        {
-            string? problem = await _onSend(_editor.Text.Trim(), _intents.Selected, _severities.Selected, _peopleOnly.IsToggled);
-            if (problem is not null)
-            {
-                _error.Text = problem;
-                _error.IsVisible = true;
-            }
-        }
-        finally
-        {
-            _busy = false;
-            ((Label)_send.Content!).Text = "Send";
-            Update();
-        }
-    }
-}
-
-/// <summary>Notato's own text fields, told apart from the app's so only they lose Android's underline.</summary>
-internal sealed class NotatoEditor : Editor;
-
-internal sealed class NotatoEntry : Entry;
-
-internal static class OverlayFields
-{
-    public static Border Box(View field) => Ui.Box(field, Ui.Soft, 12, new Thickness(8, 2));
-}
 
 /// <summary>One annotation: what was said, where it stands, the thread, and what the person can do now.</summary>
 internal sealed class PinCard : ContentView
@@ -172,8 +19,13 @@ internal sealed class PinCard : ContentView
     public static string? EarlierLine(int threadLength) =>
         threadLength > ThreadShown ? $"{threadLength - ThreadShown} earlier on the board." : null;
 
-    // back: to the list of notes it was opened from; none when its pin was tapped.
-    public PinCard(NotatoController controller, OverlaySession session, NotatoController.Record record, int number, Action close, Action? back = null)
+    /// <param name="controller">What the card's buttons ask for.</param>
+    /// <param name="session">The window it shows in.</param>
+    /// <param name="record">The note.</param>
+    /// <param name="number">Its pin's number on this screen; 0 for a note from another screen.</param>
+    /// <param name="close">Closes the card.</param>
+    /// <param name="back">Back to the list of notes it was opened from; none when its pin was tapped.</param>
+    public PinCard(NotatoController controller, OverlaySession session, NoteRecord record, int number, Action close, Action? back = null)
     {
         Ui.Plain(this);
         Annotation a = record.Annotation;
@@ -182,7 +34,7 @@ internal sealed class PinCard : ContentView
         string byline = string.Join(" · ", new[] { a.Author.Name ?? (a.Author.Kind == "agent" ? "An agent" : null), Ui.Ago(a.CreatedAt) }
             .Where(s => !string.IsNullOrEmpty(s)));
         View leading = back is null ? Ui.PinTile(number, a.Status, record.Pending, 38) : Ui.HeaderButton(back: true, back);
-        Grid header = Ui.SheetHeader(leading, number > 0 ? $"Note {number.ToString(System.Globalization.CultureInfo.InvariantCulture)}" : "Note",
+        Grid header = Ui.SheetHeader(leading, number > 0 ? $"Note {number.ToString(CultureInfo.InvariantCulture)}" : "Note",
             byline.Length > 0 ? Ui.SheetSubtitle(byline) : null, Ui.HeaderButton(back: false, close));
 
         // ---- what scrolls: badges, the note, what it is about, People only, the thread, the reply ------------------------
@@ -215,7 +67,7 @@ internal sealed class PinCard : ContentView
         ElementIdentity? target = a.Target.Identity.FirstOrDefault();
         if (target is not null)
         {
-            string what = target.Tag + (target.TestId is { } id ? "#" + id : "") + (target.Text is { } text ? $" “{(text.Length > 30 ? text[..29] + "…" : text)}”" : "");
+            string what = target.Tag + (target.TestId is { } id ? "#" + id : "") + (ElementText.Clip(target.Text, 30) is { } text ? $" “{text}”" : "");
             rows.Children.Add(Ui.Text(what, 12.5, Ui.CardMuted, maxLines: 2));
         }
 
@@ -232,7 +84,7 @@ internal sealed class PinCard : ContentView
                 { Held: { } held } => $"Not sent yet. The server said: {held}",
                 _ => "Not sent yet: it goes when the server can be reached.",
             };
-            rows.Children.Add(Ui.Text(state, 12.5, Color.FromArgb("#b45309")));
+            rows.Children.Add(Ui.Text(state, 12.5, Ui.NotSent));
         }
 
         Label status = Ui.Text(null, 12.5, Ui.Danger);
@@ -272,7 +124,7 @@ internal sealed class PinCard : ContentView
         };
         rows.Children.Add(peopleOnlyRow);
 
-        foreach (Reply? reply in a.Thread.TakeLast(ThreadShown))
+        foreach (Reply reply in a.Thread.TakeLast(ThreadShown))
         {
             rows.Children.Add(ReplyView(reply));
         }
@@ -306,11 +158,11 @@ internal sealed class PinCard : ContentView
         List<Border> actions = [];
         if (controller.HasServer && !record.Pending)
         {
-            Entry reply = NotatoOverlay.Field(null, a.Status == Statuses.Resolved ? "Reply, or say what was wrong" : "Reply");
+            Entry reply = Fields.Text(null, a.Status == Statuses.Resolved ? "Reply, or say what was wrong" : "Reply");
             reply.AutomationId = "NotatoReply";
-            rows.Children.Add(NotatoOverlay.FieldBox(reply));
+            rows.Children.Add(Fields.Box(reply));
             // The server's mention plugins, if it has any. The agent needs none: it gets every reply that is not an aside.
-            Ui.MentionRow replyMentions = new(reply);
+            MentionRow replyMentions = new(reply);
             replyMentions.SetMentions(controller.AvailableMentions);
             rows.Children.Add(replyMentions);
             (Grid asideRow, Switch aside) = Ui.SwitchRow(PeopleOnlyToggle.AsideLabel, PeopleOnlyToggle.AsideHint, false, "NotatoAside");

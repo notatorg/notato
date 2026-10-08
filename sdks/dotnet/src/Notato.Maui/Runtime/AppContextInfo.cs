@@ -109,7 +109,7 @@ internal static class AppContextInfo
                 raw = raw[..q];
             }
             path = "/" + string.Join('/', raw.TrimStart('/').Split('/').Select(CleanShellSegment));
-            if (shell.CurrentPage is { } current)
+            if (shell.CurrentPage is not null)
             {
                 stack = [.. shell.Navigation.NavigationStack.Where(p => p is not null).Select(p => VisualTree.TypeName(p.GetType()))];
             }
@@ -141,7 +141,7 @@ internal static class AppContextInfo
         }
         else
         {
-            foreach (string? name in modals)
+            foreach (string name in modals)
             {
                 path += "/" + name;
             }

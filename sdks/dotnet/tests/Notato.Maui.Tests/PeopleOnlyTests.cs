@@ -103,7 +103,7 @@ public class PeopleOnlyTests
     public async Task In_test_mode_the_note_on_the_device_changes_with_the_person_as_its_author()
     {
         NotatoController controller = Controller(NotatoMode.Test);
-        Records(controller).Add(new NotatoController.Record(Fixtures.Annotation()) { Pending = true, Mine = true });
+        Records(controller).Add(new NoteRecord(Fixtures.Annotation()) { Pending = true, Mine = true });
 
         await controller.SetPeopleOnlyAsync(Id, true);
 
@@ -126,7 +126,7 @@ public class PeopleOnlyTests
     {
         // Never contacted: the note has not gone yet, so the change goes with it.
         NotatoController controller = Controller(NotatoMode.Dev, "http://127.0.0.1:9");
-        Records(controller).Add(new NotatoController.Record(Fixtures.Annotation()) { Pending = true, Mine = true });
+        Records(controller).Add(new NoteRecord(Fixtures.Annotation()) { Pending = true, Mine = true });
 
         await controller.SetPeopleOnlyAsync(Id, true);
 
@@ -264,7 +264,7 @@ public class PeopleOnlyTests
     {
         // A server is set (never contacted) and the note is on it: the card has the reply box.
         NotatoController controller = Controller(NotatoMode.Dev, "http://127.0.0.1:9");
-        NotatoController.Record record = new(Fixtures.PeopleOnlyAnnotation());
+        NoteRecord record = new(Fixtures.PeopleOnlyAnnotation());
         PinCard card = new(controller, new OverlaySession(null!, null!), record, 1, () => { });
 
         Border badge = Find<Border>(card, "NotatoPeopleOnlyBadge");
@@ -286,7 +286,7 @@ public class PeopleOnlyTests
     public void A_note_that_is_not_people_only_has_no_badge_and_its_switch_is_off()
     {
         NotatoController controller = Controller(NotatoMode.Test);
-        NotatoController.Record record = new(Fixtures.Annotation()) { Pending = true, Mine = true };
+        NoteRecord record = new(Fixtures.Annotation()) { Pending = true, Mine = true };
         PinCard card = new(controller, new OverlaySession(null!, null!), record, 1, () => { });
 
         Assert.DoesNotContain(All(card), e => e is VisualElement { AutomationId: "NotatoPeopleOnlyBadge" });
@@ -305,12 +305,12 @@ public class PeopleOnlyTests
         NotatoController controller = Controller(NotatoMode.Dev, "http://127.0.0.1:9");
         Annotation note = Fixtures.PeopleOnlyAnnotation();
         note = note with { Thread = [.. note.Thread, .. note.Thread.Take(2).Select(r => r with { Id = r.Id + "X" })] };
-        PinCard card = new(controller, new OverlaySession(null!, null!), new NotatoController.Record(note), 1, () => { });
+        PinCard card = new(controller, new OverlaySession(null!, null!), new NoteRecord(note), 1, () => { });
 
         Assert.Equal("2 earlier on the board.", Find<Label>(card, "NotatoEarlierReplies").Text);
         Assert.Null(PinCard.EarlierLine(4));
         Assert.Equal("1 earlier on the board.", PinCard.EarlierLine(5));
-        PinCard shortOne = new(controller, new OverlaySession(null!, null!), new NotatoController.Record(Fixtures.PeopleOnlyAnnotation()), 1, () => { });
+        PinCard shortOne = new(controller, new OverlaySession(null!, null!), new NoteRecord(Fixtures.PeopleOnlyAnnotation()), 1, () => { });
         Assert.DoesNotContain(All(shortOne), e => e is VisualElement { AutomationId: "NotatoEarlierReplies" });
     }
 

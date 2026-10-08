@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Logging;
 using Notato.Maui.Model;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
@@ -68,7 +69,7 @@ internal sealed partial class LocalStore
         }
 
         byte[] utf8 = Encoding.UTF8.GetBytes(project);
-        return "p-" + Convert.ToHexStringLower(utf8.Length <= 100 ? utf8 : System.Security.Cryptography.SHA256.HashData(utf8));
+        return "p-" + Convert.ToHexStringLower(utf8.Length <= 100 ? utf8 : SHA256.HashData(utf8));
     }
 
     /// <summary>Whether <paramref name="path"/> is strictly inside <paramref name="folder"/>, after resolving any <c>..</c>.</summary>

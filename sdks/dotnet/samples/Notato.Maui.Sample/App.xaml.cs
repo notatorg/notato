@@ -1,5 +1,3 @@
-using Microsoft.Extensions.DependencyInjection;
-
 namespace Notato.Maui.Sample;
 
 public partial class App : Application

@@ -88,7 +88,7 @@ internal static class MenuText
 
     /// <summary>A size as people read it: <c>100 MB</c>, <c>104.9 MB</c>.</summary>
     public static string Megabytes(long bytes) =>
-        (bytes / (1024.0 * 1024)).ToString("0.#", System.Globalization.CultureInfo.InvariantCulture) + " MB";
+        (bytes / (1024.0 * 1024)).ToString("0.#", CultureInfo.InvariantCulture) + " MB";
 
     /// <summary>
     /// The sheet's rows, in their groups: what to do, then (in test mode, with notes to send) the package, then settings,

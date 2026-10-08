@@ -9,7 +9,7 @@ namespace Notato.Maui.Tests;
 /// <summary>Which notes get a pin, and how pins find their elements again without walking the tree for each one.</summary>
 public class PinTests
 {
-    private static NotatoController.Record Note(int n, string route = "/shop", string platform = "maui") =>
+    private static NoteRecord Note(int n, string route = "/shop", string platform = "maui") =>
         new(Fixtures.Annotation() with
         {
             Id = $"N{n:000000}",
@@ -39,7 +39,7 @@ public class PinTests
             records.Add(Note(n));
         }
 
-        IReadOnlyList<(int Number, NotatoController.Record Record)> pinned = records.PinnedOn("/shop");
+        IReadOnlyList<(int Number, NoteRecord Record)> pinned = records.PinnedOn("/shop");
 
         Assert.Equal(RecordSet.MaxPins, pinned.Count);
         Assert.Equal(150, RecordSet.MaxPins);
@@ -52,10 +52,10 @@ public class PinTests
     public void A_screens_notes_are_worked_out_once_and_again_after_any_change()
     {
         RecordSet records = [];
-        NotatoController.Record first = Note(1);
+        NoteRecord first = Note(1);
         records.Add(first);
         records.Add(Note(2));
-        IReadOnlyList<(int, NotatoController.Record)> once = records.On("/shop");
+        IReadOnlyList<(int, NoteRecord)> once = records.On("/shop");
         Assert.Same(once, records.On("/shop"));
 
         // A new copy of a note (from the server) can move it.

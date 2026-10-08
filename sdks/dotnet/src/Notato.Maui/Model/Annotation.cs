@@ -16,6 +16,7 @@ public static class AnnotationIntents
     public const string Variants = "variants";
 }
 
+/// <summary>How bad an annotation says the problem is.</summary>
 public static class Severities
 {
     public const string Blocker = "blocker";
@@ -36,6 +37,7 @@ public static class Statuses
     public const string Dismissed = "dismissed";
 }
 
+/// <summary>The mode an annotation was made in (see <see cref="NotatoMode"/>).</summary>
 public static class Modes
 {
     public const string Dev = "dev";
@@ -43,6 +45,7 @@ public static class Modes
     public const string Agent = "agent";
 }
 
+/// <summary>What an annotation is about: one element, some selected text, an area, or several elements.</summary>
 public static class TargetKinds
 {
     public const string Element = "element";
@@ -51,6 +54,7 @@ public static class TargetKinds
     public const string Multi = "multi";
 }
 
+/// <summary>Who wrote an annotation or a reply: a person or an agent, and their name when it is known.</summary>
 public sealed record Author
 {
     /// <summary><c>human</c> or <c>agent</c>.</summary>
@@ -64,6 +68,7 @@ public sealed record Author
 /// <summary>A rectangle in device-independent units, from the top left of the window.</summary>
 public sealed record PageRect(double X, double Y, double W, double H);
 
+/// <summary>A screenshot: its id (a SHA-256 of the image), type and size, and its path inside a bundle.</summary>
 public sealed record AssetRef
 {
     public required string Id { get; init; }
@@ -84,6 +89,7 @@ public sealed record SourceLocation
     public bool? Nearest { get; init; }
 }
 
+/// <summary>The app's own component (page or view) an element is in, and where it is written.</summary>
 public sealed record ComponentInfo
 {
     public required string Name { get; init; }
@@ -93,6 +99,7 @@ public sealed record ComponentInfo
     public IReadOnlyList<string>? Path { get; init; }
 }
 
+/// <summary>A frame or shadow root a web element is inside. MAUI notes have none.</summary>
 public sealed record WithinStep
 {
     /// <summary><c>frame</c> or <c>shadow</c> on the web.</summary>
@@ -100,6 +107,7 @@ public sealed record WithinStep
     public required string Selector { get; init; }
 }
 
+/// <summary>Which element a note is about, described so the agent can find it in the code.</summary>
 public sealed record ElementIdentity
 {
     /// <summary>On MAUI, a path through the visual tree, e.g. <c>LoginPage &gt; Grid &gt; Button#SignIn</c>.</summary>
@@ -122,6 +130,7 @@ public sealed record ElementIdentity
     public string? PlatformId { get; init; }
 }
 
+/// <summary>One thing an agent did on its way to making a note (agent mode).</summary>
 public sealed record AgentStep
 {
     public required string Action { get; init; }
@@ -130,6 +139,7 @@ public sealed record AgentStep
     public required string At { get; init; }
 }
 
+/// <summary>One entry of a note's thread.</summary>
 public sealed record Reply
 {
     public required string Id { get; init; }
@@ -150,8 +160,10 @@ public sealed record Reply
     public bool? PeopleOnly { get; init; }
 }
 
+/// <summary>The window's size, in device-independent units.</summary>
 public sealed record Viewport(double W, double H);
 
+/// <summary>Where the note was made: the app, the device and the SDK.</summary>
 public sealed record EnvironmentInfo
 {
     public required string UserAgent { get; init; }
@@ -163,8 +175,10 @@ public sealed record EnvironmentInfo
     public SdkInfo? Sdk { get; init; }
 }
 
+/// <summary>The Notato package that made a note, and its version.</summary>
 public sealed record SdkInfo(string Name, string Version);
 
+/// <summary>What a note is about: the element (or elements) and where it was on screen.</summary>
 public sealed record Target
 {
     public required string Kind { get; init; }
@@ -173,12 +187,14 @@ public sealed record Target
     public string? SelectedText { get; init; }
 }
 
+/// <summary>One of the versions an agent offered (web only).</summary>
 public sealed record VariantOption
 {
     public required string Name { get; init; }
     public string? Summary { get; init; }
 }
 
+/// <summary>Versions an agent offered to choose between in the page (web only).</summary>
 public sealed record Variants
 {
     public required string Group { get; init; }
@@ -188,6 +204,7 @@ public sealed record Variants
     public string? ChosenAt { get; init; }
 }
 
+/// <summary>A note's pictures.</summary>
 public sealed record Screenshots
 {
     /// <summary>The whole window, with the target outlined.</summary>
@@ -195,6 +212,10 @@ public sealed record Screenshots
     public AssetRef? Crop { get; init; }
 }
 
+/// <summary>
+/// A note: what someone said about an element of the app, with what the agent needs to find and change it, its status
+/// and its thread. The shape every Notato SDK and the server share.
+/// </summary>
 public sealed record Annotation
 {
     /// <summary>A ULID.</summary>
@@ -235,7 +256,7 @@ public sealed record Annotation
     public bool? PeopleOnly { get; init; }
 }
 
-public sealed record Bundle
+internal sealed record Bundle
 {
     public required string Id { get; init; }
     public required string ProjectId { get; init; }
@@ -247,13 +268,13 @@ public sealed record Bundle
     public int SchemaVersion { get; init; } = 1;
 }
 
-public sealed record BundleAuthor
+internal sealed record BundleAuthor
 {
     public string? Name { get; init; }
 }
 
 /// <summary>An annotation as the server stores it: with the order it arrived in.</summary>
-public sealed record StoredAnnotation
+internal sealed record StoredAnnotation
 {
     public required Annotation Annotation { get; init; }
     public long Seq { get; init; }

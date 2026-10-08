@@ -1,5 +1,6 @@
 using Microsoft.Maui.Controls;
 using System.Collections.Concurrent;
+using System.Globalization;
 using System.Text;
 
 namespace Notato.Maui.Inspection;
@@ -133,7 +134,8 @@ internal static class Selectors
             chain.Add(e);
         }
 
-        chain.Reverse(); // outermost first, the element last
+        // Outermost first, the element last.
+        chain.Reverse();
 
         string pageName = VisualTree.TypeName(page.GetType());
         List<string> segments = [.. chain.Select(e => Segment(e, withPosition: true))];
@@ -373,7 +375,12 @@ internal static class Selectors
         bool child = false;
         while (i < s.Length)
         {
-            if (char.IsWhiteSpace(s[i])) { i++; continue; }
+            if (char.IsWhiteSpace(s[i]))
+            {
+                i++;
+                continue;
+            }
+
             if (s[i] == '>')
             {
                 if (steps.Count == 0)
@@ -433,50 +440,59 @@ internal static class Selectors
                     classes.Add(ReadIdent(s, ref i, selector));
                     break;
                 case '[':
-                {
                     i++;
-                        string attr = ReadUntil(s, ref i, '=', selector).Trim();
-                    i++; // '='
-                        string value = ReadValue(s, ref i, ']', selector);
+                    string attr = ReadUntil(s, ref i, '=', selector).Trim();
+                    // Past the '='.
+                    i++;
+                    string value = ReadValue(s, ref i, ']', selector);
                     if (i >= s.Length || s[i] != ']')
-                        {
-                            throw new FormatException($"selector \"{selector}\": missing ]");
-                        }
+                    {
+                        throw new FormatException($"selector \"{selector}\": missing ]");
+                    }
 
-                        i++;
+                    i++;
                     switch (attr)
                     {
-                        case "x:Name" or "StyleId" or "Name": name = value; break;
-                        case "AutomationId": id = value; break;
-                        default: throw new FormatException($"selector \"{selector}\": [{attr}=…] is not supported; use AutomationId or x:Name");
+                        case "x:Name" or "StyleId" or "Name":
+                            name = value;
+                            break;
+                        case "AutomationId":
+                            id = value;
+                            break;
+                        default:
+                            throw new FormatException($"selector \"{selector}\": [{attr}=…] is not supported; use AutomationId or x:Name");
                     }
+
                     break;
-                }
                 case ':':
-                {
                     i++;
-                        string pseudo = ReadIdent(s, ref i, selector);
+                    string pseudo = ReadIdent(s, ref i, selector);
                     if (i >= s.Length || s[i] != '(')
-                        {
-                            throw new FormatException($"selector \"{selector}\": :{pseudo} needs (…)");
-                        }
+                    {
+                        throw new FormatException($"selector \"{selector}\": :{pseudo} needs (…)");
+                    }
 
-                        i++;
-                        string arg = ReadValue(s, ref i, ')', selector);
+                    i++;
+                    string arg = ReadValue(s, ref i, ')', selector);
                     if (i >= s.Length || s[i] != ')')
-                        {
-                            throw new FormatException($"selector \"{selector}\": missing )");
-                        }
+                    {
+                        throw new FormatException($"selector \"{selector}\": missing )");
+                    }
 
-                        i++;
+                    i++;
                     switch (pseudo)
                     {
-                        case "nth-of-type" when int.TryParse(arg, out int n) && n > 0: nth = n; break;
-                        case "text" or "has-text": text = arg; break;
-                        default: throw new FormatException($"selector \"{selector}\": :{pseudo}({arg}) is not supported");
+                        case "nth-of-type" when int.TryParse(arg, NumberStyles.Integer, CultureInfo.InvariantCulture, out int n) && n > 0:
+                            nth = n;
+                            break;
+                        case "text" or "has-text":
+                            text = arg;
+                            break;
+                        default:
+                            throw new FormatException($"selector \"{selector}\": :{pseudo}({arg}) is not supported");
                     }
+
                     break;
-                }
                 default:
                     throw new FormatException($"selector \"{selector}\": unexpected '{s[i]}' at {i + 1}");
             }

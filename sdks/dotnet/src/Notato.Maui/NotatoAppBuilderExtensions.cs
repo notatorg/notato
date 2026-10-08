@@ -15,6 +15,7 @@ namespace Notato.Maui;
 /// <summary>Adds Notato to a MAUI app in <c>MauiProgram</c>.</summary>
 public static class NotatoAppBuilderExtensions
 {
+    /// <summary>The handler mappings are the app's, shared by every builder: they are added once, however often UseNotato runs.</summary>
     private static bool windowsHooked;
 
     /// <summary>

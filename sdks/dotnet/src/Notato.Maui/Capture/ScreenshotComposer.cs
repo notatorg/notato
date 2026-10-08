@@ -2,6 +2,7 @@ using Microsoft.Maui.Graphics;
 using Microsoft.Maui.Graphics.Platform;
 using Notato.Maui.Model;
 using Notato.Maui.Native;
+using System.Globalization;
 using System.Security.Cryptography;
 
 namespace Notato.Maui.Capture;
@@ -12,8 +13,13 @@ internal sealed record ComposedScreenshots(Screenshots Refs, IReadOnlyDictionary
 /// <summary>Draws the outline, the pin number and the masks onto a captured window, and cuts the crop.</summary>
 internal static class ScreenshotComposer
 {
+    /// <summary>The selection's red, as the overlay draws it.</summary>
     private static readonly Color Outline = Color.FromArgb("#e5484d");
+    /// <summary>The grey a private part of the screen is covered with.</summary>
     private static readonly Color Mask = Color.FromArgb("#9ca3af");
+    /// <summary>An open pin's teal.</summary>
+    private static readonly Color PinFill = Color.FromArgb("#1f8a78");
+    /// <summary>How much of the screen around the target the crop takes in, in device-independent units.</summary>
     private const double CropPadding = 24;
 
     public static string AssetId(byte[] bytes) => Convert.ToHexStringLower(SHA256.HashData(bytes));
@@ -107,7 +113,7 @@ internal static class ScreenshotComposer
         float r = (float)(12 * scale);
         float cx = (float)Math.Min(target.Right, target.Right - 2 * scale);
         float cy = (float)Math.Max(r, target.Top);
-        canvas.FillColor = Color.FromArgb("#1f8a78");
+        canvas.FillColor = PinFill;
         canvas.FillCircle(cx, cy, r);
         canvas.StrokeColor = Colors.White;
         canvas.StrokeSize = (float)(2 * scale);
@@ -115,7 +121,7 @@ internal static class ScreenshotComposer
         canvas.FontColor = Colors.White;
         canvas.FontSize = (float)(12 * scale);
         canvas.Font = Microsoft.Maui.Graphics.Font.DefaultBold;
-        canvas.DrawString(number.ToString(System.Globalization.CultureInfo.InvariantCulture), cx - r, cy - r, 2 * r, 2 * r, HorizontalAlignment.Center, VerticalAlignment.Center);
+        canvas.DrawString(number.ToString(CultureInfo.InvariantCulture), cx - r, cy - r, 2 * r, 2 * r, HorizontalAlignment.Center, VerticalAlignment.Center);
     }
 
     private static byte[] Png(BitmapExportContext context)

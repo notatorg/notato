@@ -15,8 +15,9 @@ internal sealed partial class NotatoOverlay
     private sealed class PillOutline : Android.Views.ViewOutlineProvider
     {
         /// <summary>The width showing, in device-independent units; null for the whole bar.</summary>
-        public double? Shown;
-        public bool HeldRight;
+        public double? Shown { get; set; }
+
+        public bool HeldRight { get; set; }
 
         public override void GetOutline(Android.Views.View? view, Android.Graphics.Outline? outline)
         {

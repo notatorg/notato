@@ -26,12 +26,16 @@ public static class Feedback
     public static readonly BindableProperty IgnoreProperty =
         BindableProperty.CreateAttached("Ignore", typeof(bool), typeof(Feedback), false);
 
+    /// <summary>Whether <paramref name="view"/> is marked private (true), opted out of input masking (false), or neither (null).</summary>
     public static bool? GetMask(BindableObject view) => (bool?)view.GetValue(MaskProperty);
 
+    /// <summary>Marks <paramref name="view"/> private (true), opts an input out of masking (false), or clears it (null).</summary>
     public static void SetMask(BindableObject view, bool? value) => view.SetValue(MaskProperty, value);
 
+    /// <summary>Whether the picker looks through <paramref name="view"/>.</summary>
     public static bool GetIgnore(BindableObject view) => (bool)view.GetValue(IgnoreProperty);
 
+    /// <summary>Makes the picker look through <paramref name="view"/> and everything in it.</summary>
     public static void SetIgnore(BindableObject view, bool value) => view.SetValue(IgnoreProperty, value);
 
     /// <summary>The running Notato, once the app has started with <c>UseNotato</c>; null before that or without it.</summary>

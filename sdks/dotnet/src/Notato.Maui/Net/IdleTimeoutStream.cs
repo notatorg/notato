@@ -7,6 +7,8 @@ namespace Notato.Maui.Net;
 /// </summary>
 internal sealed class IdleTimeoutStream(Stream inner, TimeSpan limit) : Stream
 {
+    private readonly string _stalled = $"The server sent nothing more for {limit.TotalSeconds:0} s.";
+
     public override bool CanRead => true;
 
     public override bool CanSeek => false;
@@ -21,24 +23,8 @@ internal sealed class IdleTimeoutStream(Stream inner, TimeSpan limit) : Stream
         set => throw new NotSupportedException();
     }
 
-    public override async ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
-    {
-        using CancellationTokenSource quiet = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        Task<int> read = inner.ReadAsync(buffer, quiet.Token).AsTask();
-        Task idle = Task.Delay(limit, quiet.Token);
-        // Not every platform's network stream stops a read when asked to, so the wait is raced rather than cancelled.
-        if (await Task.WhenAny(read, idle).ConfigureAwait(false) == read)
-        {
-            await quiet.CancelAsync().ConfigureAwait(false);
-            return await read.ConfigureAwait(false);
-        }
-
-        await quiet.CancelAsync().ConfigureAwait(false);
-        cancellationToken.ThrowIfCancellationRequested();
-        // The read ends when the caller closes the response; what it ends with no longer matters.
-        _ = read.ContinueWith(static t => _ = t.Exception, CancellationToken.None, TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
-        throw new TimeoutException($"The server sent nothing more for {limit.TotalSeconds:0} s.");
-    }
+    public override ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default) =>
+        new(IdleTimeout.ReadAsync(token => inner.ReadAsync(buffer, token), limit, _stalled, cancellationToken));
 
     public override Task<int> ReadAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken) =>
         ReadAsync(buffer.AsMemory(offset, count), cancellationToken).AsTask();
@@ -69,5 +55,32 @@ internal sealed class IdleTimeoutStream(Stream inner, TimeSpan limit) : Stream
     {
         await inner.DisposeAsync().ConfigureAwait(false);
         await base.DisposeAsync().ConfigureAwait(false);
+    }
+}
+
+/// <summary>Reads from the network that give up when nothing at all arrives for a while.</summary>
+internal static class IdleTimeout
+{
+    /// <summary>
+    /// Waits for <paramref name="read"/>, but for <paramref name="limit"/> at most: then throws
+    /// <see cref="TimeoutException"/> with <paramref name="message"/>. Not every platform's network stream stops a read
+    /// when asked to, so the wait is raced rather than cancelled; the read that lost ends when the caller closes the
+    /// stream, and what it ends with no longer matters.
+    /// </summary>
+    public static async Task<T> ReadAsync<T>(Func<CancellationToken, ValueTask<T>> read, TimeSpan limit, string message, CancellationToken ct)
+    {
+        using CancellationTokenSource quiet = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        Task<T> reading = read(quiet.Token).AsTask();
+        Task idle = Task.Delay(limit, quiet.Token);
+        if (await Task.WhenAny(reading, idle).ConfigureAwait(false) == reading)
+        {
+            await quiet.CancelAsync().ConfigureAwait(false);
+            return await reading.ConfigureAwait(false);
+        }
+
+        await quiet.CancelAsync().ConfigureAwait(false);
+        ct.ThrowIfCancellationRequested();
+        _ = reading.ContinueWith(static t => _ = t.Exception, CancellationToken.None, TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
+        throw new TimeoutException(message);
     }
 }
