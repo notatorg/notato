@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { followEvents, listAnnotations } from "../src/client.ts";
+import { followEvents, listAnnotations, multipart, NotatoError } from "../src/client.ts";
 import type { ServerEvent } from "../src/events.ts";
 import { annotation } from "./fixtures.ts";
 import { FakeXHR } from "./xhr.ts";
@@ -13,6 +13,30 @@ beforeEach(() => {
 afterEach(() => {
     uninstall();
     vi.useRealTimers();
+});
+
+describe("a note on its way", () => {
+    it("is sent as the multipart body every SDK sends", () => {
+        const a = annotation();
+        const body = new TextDecoder().decode(
+            multipart(a, [{ id: "s1", bytes: new Uint8Array([1, 2, 3]) }], "B")
+        );
+        expect(body).toContain(
+            '--B\r\nContent-Disposition: form-data; name="annotation"\r\nContent-Type: application/json\r\n\r\n{'
+        );
+        expect(body).toContain(
+            'name="asset:s1"; filename="s1.png"\r\nContent-Type: image/png\r\n\r\n\u0001\u0002\u0003\r\n--B--\r\n'
+        );
+    });
+
+    it("tells a note the server will never take from a server that will not take it now", () => {
+        expect(new NotatoError("x", 422).refusesNote).toBe(true);
+        expect(new NotatoError("x", 409).refusesNote).toBe(true);
+        expect(new NotatoError("x", 404).refusesNote).toBe(false);
+        expect(new NotatoError("x", 401).permanent).toBe(true);
+        expect(new NotatoError("x", 429).permanent).toBe(false);
+        expect(new NotatoError("x").permanent).toBe(false);
+    });
 });
 
 describe("listAnnotations", () => {

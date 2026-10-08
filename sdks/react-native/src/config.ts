@@ -3,6 +3,7 @@ import type { StorageProvider } from "./storage.ts";
 /** Who annotates, and where the notes go: the same three modes as every Notato SDK. */
 export type NotatoMode = "dev" | "test" | "agent";
 
+/** The corner the toolbar starts in. */
 export type ToolbarCorner = "bottom-right" | "bottom-left" | "top-right" | "top-left";
 
 /** How `<Notato>` is set up. Everything but `project` has a default. */
@@ -20,8 +21,9 @@ export interface NotatoConfig {
      * server set here gets the packages. `null` for none in any mode: notes stay on the device.
      */
     server?: string | null;
-    /** A project token (`pft_…`), for a shared server (`notato serve`). */
+    /** A project token (`pft_…`), for a shared server (`notato serve`). It is only ever sent to `server`. */
     token?: string;
+    /** The app's name and version, recorded on every note. Default "React Native app". */
     appName?: string;
     appVersion?: string;
     /** The name on this person's notes. They can change it in the toolbar's settings. */
@@ -33,6 +35,7 @@ export interface NotatoConfig {
     route?: string | (() => string | undefined);
     /** Whether Notato is on at launch (default: development builds). The app can switch it at runtime. */
     enabled?: boolean;
+    /** Show the toolbar at launch (default true). Without it the app can still drive Notato from code. */
     showToolbar?: boolean;
     /** The corner the toolbar starts in. People can drag it; where they leave it is remembered. */
     toolbarPosition?: ToolbarCorner;
@@ -47,6 +50,7 @@ export interface NotatoConfig {
     rememberRuntimeState?: boolean;
     /** Attach the app's recent `console.warn` and `console.error` messages to each note. */
     captureLogs?: boolean;
+    /** How many of those messages are kept: the newest, 50 by default, at most 1000. */
     logLimit?: number;
     /** Pixels per point screenshots are kept at, at most. Phones are 2x to 3.5x; 2x is plenty. */
     maxScreenshotScale?: number;
@@ -57,7 +61,8 @@ export interface NotatoConfig {
     storage?: StorageProvider;
 }
 
-export const DEFAULT_SERVER = "http://localhost:4747";
+/** Where `notato dev` listens: the server in dev and agent mode unless one is given. */
+const DEFAULT_SERVER = "http://localhost:4747";
 
 /** The configuration with its defaults filled in. */
 export interface Resolved {
@@ -80,9 +85,15 @@ export interface Resolved {
 }
 
 declare const __DEV__: boolean | undefined;
-const isDev = () => typeof __DEV__ !== "undefined" && __DEV__ === true;
 
-const trimSlash = (s: string) => s.replace(/\/+$/, "");
+/** Whether this is a development build (React Native's `__DEV__`). */
+export const isDev = () => typeof __DEV__ !== "undefined" && __DEV__ === true;
+
+/** A server address as Notato keeps it: trimmed, without a trailing slash. */
+export const normalizeServer = (server: string) => server.trim().replace(/\/+$/, "");
+
+/** Whether a server address is one Notato can talk to: http or https, with a host. */
+export const isHttpUrl = (server: string) => /^https?:\/\/[^/\s]+/i.test(server);
 
 export function resolveConfig(config: NotatoConfig): Resolved {
     const mode = config.mode ?? "dev";
@@ -90,7 +101,7 @@ export function resolveConfig(config: NotatoConfig): Resolved {
         config.server === null
             ? undefined
             : config.server
-              ? trimSlash(config.server.trim())
+              ? normalizeServer(config.server)
               : mode === "test"
                 ? undefined
                 : DEFAULT_SERVER;
@@ -114,12 +125,15 @@ export function resolveConfig(config: NotatoConfig): Resolved {
     };
 }
 
-/** Why the configuration cannot be used, or undefined. As the server checks a project id, so it is always a safe folder name. */
+/**
+ * Why the configuration cannot be used, or undefined. The project id is checked as the server checks it, which also
+ * makes it a safe folder name.
+ */
 export function configProblem(config: Resolved): string | undefined {
     if (!config.project) return 'Notato needs a project: <Notato project="shop">.';
     if (!/^(?!\.+$)[A-Za-z0-9_.@-]{1,128}$/.test(config.project))
         return `Notato's project "${config.project}" may only use letters, digits and . _ - @ (at most 128), and not only dots.`;
-    if (config.server && !/^https?:\/\/[^/\s]+/i.test(config.server))
+    if (config.server && !isHttpUrl(config.server))
         return `Notato's server "${config.server}" is not an http(s) address.`;
     if (!(config.maxScreenshotScale >= 1 && config.maxScreenshotScale <= 4))
         return "Notato's maxScreenshotScale must be between 1 and 4.";

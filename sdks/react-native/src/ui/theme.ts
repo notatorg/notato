@@ -19,10 +19,15 @@ export const BRAND = {
     accent: "#1f8a78",
     accentPressed: "#187465",
     danger: "#d6453d",
+    /** The outline and number of the element being annotated. */
     selection: "#e5484d",
     connected: "#2e9a5b",
     connecting: "#e9b44c",
     offline: "#ef6b5e",
+    /** The ring around a pin whose note is not on the server yet. */
+    pending: "#e9b44c",
+    /** What covers a private view in a screenshot. */
+    cover: "#8b8f97",
     scrim: "rgba(18,20,24,0.32)",
 } as const;
 
@@ -45,11 +50,22 @@ const DARK: typeof LIGHT = {
 
 export type Palette = typeof LIGHT & typeof BRAND;
 
+const LIGHT_PALETTE: Palette = { ...LIGHT, ...BRAND };
+const DARK_PALETTE: Palette = { ...DARK, ...BRAND };
+
+/** The colours for the app's light or dark appearance. */
 export function usePalette(): Palette {
-    return { ...(useColorScheme() === "dark" ? DARK : LIGHT), ...BRAND };
+    return useColorScheme() === "dark" ? DARK_PALETTE : LIGHT_PALETTE;
 }
 
-/** A pin's colour for its note's status. */
+/** The dot on the toolbar while the connection is not right. */
+export const PROBLEM_DOT = {
+    connecting: BRAND.connecting,
+    offline: BRAND.offline,
+    refused: BRAND.offline,
+} as const;
+
+/** A pin's colour for its note's status, as the board shows it. */
 export function statusColor(status: string): string {
     switch (status) {
         case "acknowledged":

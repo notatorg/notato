@@ -1,14 +1,12 @@
 import { type ReactNode, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { DevSettings, StyleSheet, View } from "react-native";
-import type { NotatoConfig } from "./config.ts";
+import { isDev, type NotatoConfig } from "./config.ts";
 import { NotatoController, type NotatoState } from "./controller.ts";
 import { Overlay } from "./ui/Overlay.tsx";
 
 export interface NotatoProps extends NotatoConfig {
     children?: ReactNode;
 }
-
-declare const __DEV__: boolean | undefined;
 
 /** Notato at runtime, for the app to switch on and off, show, and annotate from code. */
 export const notato = new NotatoController();
@@ -46,21 +44,20 @@ function addDevMenu() {
 export function Notato(props: NotatoProps) {
     // Decided once: a release build that changed its mind later would put the app in another place in the tree, and
     // React would mount it again from scratch.
-    const [available] = useState(
-        () => (typeof __DEV__ !== "undefined" && __DEV__) || props.enabled === true
-    );
+    const [available] = useState(() => isDev() || props.enabled === true);
     if (!available) return <>{props.children}</>;
-    return <NotatoHost {...props} />;
+    return <NotatoRoot {...props} />;
 }
 
-function NotatoHost(props: NotatoProps) {
+function NotatoRoot(props: NotatoProps) {
     const outer = useRef<View>(null);
     const app = useRef<View>(null);
     const state = useNotato();
     const route = useRef(props.route);
     route.current = props.route;
 
-    // Every option but the screen, which the overlay reads as it goes.
+    // Every option but the screen, which the overlay reads as it goes. The storage provider is compared by identity:
+    // as JSON it is only `{}`.
     const { children: _, route: __, ...config } = props;
     const key = JSON.stringify(config);
     const storage = props.storage;
@@ -70,9 +67,9 @@ function NotatoHost(props: NotatoProps) {
         const owner = notato.attach();
         return () => notato.detach(owner);
     }, []);
-    // biome-ignore lint/correctness/useExhaustiveDependencies: `key` stands for the options
+    // biome-ignore lint/correctness/useExhaustiveDependencies: `key` and `storage` stand for the options
     useEffect(() => {
-        notato.configure({ ...config, ...(storage ? { storage } : {}) });
+        notato.configure(config);
         addDevMenu();
     }, [key, storage]);
 

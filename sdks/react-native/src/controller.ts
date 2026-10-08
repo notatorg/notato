@@ -1,17 +1,27 @@
 import type { AgentStep, Annotation, Author, Intent, Severity } from "@notato/schema";
-import { buildAnnotation, type NetworkEntry, routeName, settingPeopleOnly } from "./annotation.ts";
+import {
+    buildAnnotation,
+    type DeviceInfo,
+    type NetworkEntry,
+    settingPeopleOnly,
+} from "./annotation.ts";
 import { writeBundle } from "./bundle.ts";
 import type { Shot } from "./capture.ts";
-import * as client from "./client.ts";
 import {
+    type Connection,
+    httpTransport,
     NotatoError,
-    type Connection as ServerConnection,
+    type RelayResult,
     type StoredAnnotation,
+    type Transport,
 } from "./client.ts";
 import {
     configProblem,
     hostOf,
+    isHttpUrl,
     type NotatoConfig,
+    type NotatoMode,
+    normalizeServer,
     type Resolved,
     resolveConfig,
 } from "./config.ts";
@@ -20,8 +30,14 @@ import { identityOf } from "./identity.ts";
 import { ulid } from "./ids.ts";
 import type { Picked } from "./inspect.ts";
 import { captureConsole, type LogEntry } from "./logs.ts";
+import { type NoteEdit, type NoteRecord, NoteStore, type NumberedNote } from "./notes.ts";
 import { parseComponentStack, symbolicate } from "./stack.ts";
-import { type LocalNote, memoryStorage, type Storage, type StorageProvider } from "./storage.ts";
+import {
+    type LocalNote,
+    memoryStorage,
+    type NotatoStorage,
+    type StorageProvider,
+} from "./storage.ts";
 
 /** How Notato stands with its server. */
 export type ConnectionState =
@@ -36,22 +52,12 @@ export type ConnectionState =
     /** The server refused this app (a missing or wrong token, a project the token cannot use). */
     | "refused";
 
-/** A note Notato knows of: from the server, or made here and not sent yet. */
-export interface NoteRecord {
-    readonly annotation: Annotation;
-    /** Made here and not yet taken by the server (or, in test mode, not yet packaged). */
-    readonly pending: boolean;
-    /** Why the server refused it for good: it stays on the device, marked failed, and is not sent again. */
-    readonly failed?: string;
-    /** Why it has not been sent yet, when the server said (a project it does not know, a token it does not take). */
-    readonly waiting?: string;
-    /** Made on this device. */
-    readonly mine: boolean;
-}
-
+/** Notato's state, as `useNotato()` gives it. A new object on every change. */
 export interface NotatoState {
+    /** Whether Notato is on: the overlay is drawn and the connection open. */
     enabled: boolean;
     toolbarVisible: boolean;
+    /** The next tap selects what is under it. */
     annotating: boolean;
     pinsVisible: boolean;
     connection: ConnectionState;
@@ -59,7 +65,7 @@ export interface NotatoState {
     connectionDetail?: string;
     /** Why Notato cannot start (a bad project id, say). */
     problem?: string;
-    /** The project's notes, from the server and from this device, oldest first. */
+    /** The project's notes, from the server and from this device, in the order Notato came to know them. */
     notes: readonly NoteRecord[];
     /** Notes made here that have not reached the server yet. */
     pendingCount: number;
@@ -67,10 +73,11 @@ export interface NotatoState {
     agents: readonly string[];
     /** False when the server has screenshots turned off. */
     serverScreenshots: boolean;
-    mode: Resolved["mode"];
+    mode: NotatoMode;
     project?: string;
     /** The server notes go to, or none. */
     server?: string;
+    /** The name on this person's notes. */
     author?: string;
     /** Whether this person wants screenshots (the server can still say no). */
     screenshots: boolean;
@@ -91,6 +98,9 @@ export interface AnnotateOptions {
     peopleOnly?: boolean;
 }
 
+/** What a note says, as the composer or `annotate` hands it over. */
+type NoteDraft = Omit<AnnotateOptions, "screenshot"> & { comment: string };
+
 /** What the overlay does for the runtime: it knows the app's views and draws over them. */
 export interface Host {
     /** The element a selector (`ProductCard > Text#price`) or a view's instance names, inspected. Throws when none. */
@@ -101,42 +111,9 @@ export interface Host {
     select(picked: Picked): void;
     /** The screen the person is on. */
     route(): string;
-    device(): {
-        os: string;
-        osVersion: string;
-        reactNative?: string;
-        viewport: { w: number; h: number };
-        dpr: number;
-    };
+    device(): DeviceInfo;
     toast(message: string): void;
 }
-
-/** The calls Notato makes to its server: the real ones, or a test's. */
-export interface Transport {
-    send: typeof client.sendAnnotation;
-    list: typeof client.listAnnotations;
-    reply: typeof client.reply;
-    setStatus: typeof client.setStatus;
-    setPeopleOnly: typeof client.setPeopleOnly;
-    remove: typeof client.deleteAnnotation;
-    relayResult: typeof client.relayResult;
-    uploadBundle: typeof client.uploadBundle;
-    config: typeof client.getConfig;
-    follow: typeof client.followEvents;
-}
-
-export const httpTransport: Transport = {
-    send: client.sendAnnotation,
-    list: client.listAnnotations,
-    reply: client.reply,
-    setStatus: client.setStatus,
-    setPeopleOnly: client.setPeopleOnly,
-    remove: client.deleteAnnotation,
-    relayResult: client.relayResult,
-    uploadBundle: client.uploadBundle,
-    config: client.getConfig,
-    follow: client.followEvents,
-};
 
 /** What a person chose at runtime, kept across launches unless `rememberRuntimeState` is off. */
 interface Settings {
@@ -164,7 +141,8 @@ interface AnnotateRequest {
     };
 }
 
-export type SendOutcome =
+/** What came of sending a note. */
+type SendOutcome =
     | { kind: "sent" }
     /** The server will never take it as it is: marked failed, kept, and the notes after it still go. */
     | { kind: "refused"; reason: string }
@@ -174,7 +152,7 @@ export type SendOutcome =
     | { kind: "skipped" };
 
 /** What to tell the person who just made the note, or undefined when it went. */
-export function problemOf(outcome: SendOutcome): string | undefined {
+function problemOf(outcome: SendOutcome): string | undefined {
     switch (outcome.kind) {
         case "refused":
             return `The server refused it: ${outcome.reason}`;
@@ -187,91 +165,43 @@ export function problemOf(outcome: SendOutcome): string | undefined {
     }
 }
 
-const NETWORK_LIMIT = 50;
+/** A change the server's events bring: a note as it is now, or one it deleted. */
+type Change = { annotation: Annotation } | { deleted: string };
 
-/** The platform this SDK's notes say they were made on, and the notes it pins. */
-export const PLATFORM = "react-native";
+/** How many of the app's recorded requests later notes carry: the newest. */
+const NETWORK_LIMIT = 50;
 
 /** How long the server's changes are gathered before they are applied together: about a frame. */
 const BATCH_MS = 16;
 
-/** No notes on a screen: always the same empty list, so what depends on it does not run again for nothing. */
-const NONE: ReadonlyArray<{ number: number; record: NoteRecord }> = Object.freeze([]);
-
-/** A change the server's events bring: a note as it is now, or one it deleted. */
-type Change = { annotation: Annotation } | { deleted: string };
-
-/** What a change of the notes can do to them. */
-interface Notes {
-    get(id: string): NoteRecord | undefined;
-    /** Replaces the note with its id, or adds it at the end. */
-    put(record: NoteRecord): void;
-    remove(id: string): void;
-}
-
-/** A pin's notes in the order they were made: oldest first, then by id. */
-const madeOrder = (a: NoteRecord, b: NoteRecord) => {
-    const x = a.annotation;
-    const y = b.annotation;
-    if (x.createdAt !== y.createdAt) return x.createdAt < y.createdAt ? -1 : 1;
-    return x.id < y.id ? -1 : x.id > y.id ? 1 : 0;
-};
-
 /** A reason as the end of a sentence. */
 const sentence = (reason: string) => reason.replace(/\.?$/, ".");
 
+const messageOf = (e: unknown) => (e instanceof Error ? e.message : String(e));
+
+/** The ids of a note's screenshots. */
+const screenshotIds = (annotation: Annotation) =>
+    [annotation.screenshots?.full.id, annotation.screenshots?.crop?.id].filter(
+        (id): id is string => !!id
+    );
+
 /**
  * Notato at runtime: one per app, `notato`. `<Notato>` configures it; the app can switch it on and off, show the
- * toolbar, select an element or annotate one from code, and read its state with `useNotato()`.
+ * toolbar, select an element or annotate one from code, and read its state with `useNotato()`. The overlay drives the
+ * rest through the methods it alone calls (`configure`, `attachHost`, `createNote` and the like).
  */
 export class NotatoController {
     private config?: Resolved;
     private provider?: StorageProvider;
-    private storage: Storage = memoryStorage();
+    private storage: NotatoStorage = memoryStorage();
     private settings: Settings = {};
-    /**
-     * Every note, in the order Notato came to know them. Replaced whole on each change (the state hands it out), never
-     * changed in place.
-     */
-    private records: NoteRecord[] = [];
-    /** Where each note is in `records`, by id. */
-    private at = new Map<string, number>();
-    /** How many notes are pending, kept as they change. */
-    private pendingNotes = 0;
-    /** Each screen's notes, numbered as their pins are: worked out when asked, and again only when one of them changed. */
-    private screens = new Map<string, ReadonlyArray<{ number: number; record: NoteRecord }>>();
-    private assets = new Map<string, Uint8Array>();
-    /** Notes on their way to the server now, and what will come of it. */
-    private inflight = new Map<string, Promise<SendOutcome>>();
-    /** Deleted here while a copy was on its way: the server's word of them is not taken back in. */
-    private deletedHere = new Set<string>();
-    /** The server's changes not applied yet: those that come within a frame are applied together. */
-    private incoming: Change[] = [];
-    private applyTimer?: ReturnType<typeof setTimeout>;
-    /** While the server's list is being read: the changes that came meanwhile, applied again over it. */
-    private listing?: Change[];
-    /** The agent's annotate requests, answered one at a time: two at once would photograph each other's outlines. */
-    private relays: Promise<void> = Promise.resolve();
-    /** The `<Notato>` mounted last: only it stops Notato when it goes. */
-    private owner?: object;
-    /** `<Notato>` went away: the next `configure` starts Notato again, even with the same options. */
-    private detached = false;
-    private stream?: { stop(): void; retry(): void };
-    private host?: Host;
-    private listeners = new Set<() => void>();
-    private logs: LogEntry[] = [];
-    private network: NetworkEntry[] = [];
-    private releaseConsole?: () => void;
+    /** The project whose notes kept on the device have been read in. */
     private loadedFor?: string;
-    private generation = 0;
-    private snapshot: NotatoState;
+    private readonly store = new NoteStore();
+    /** The screenshots of notes not on the server yet, by id: read from here first, from storage after a restart. */
+    private readonly assets = new Map<string, Uint8Array>();
 
-    constructor(private readonly transport: Transport = httpTransport) {
-        this.snapshot = this.build();
-    }
-
-    // ---- state, for useSyncExternalStore ------------------------------------------------------------------------
-
+    // What the state says.
     private enabled = false;
     private toolbarVisible = true;
     private annotating = false;
@@ -280,6 +210,45 @@ export class NotatoController {
     private problem?: string;
     private agents: string[] = [];
     private serverScreenshots = true;
+    private snapshot: NotatoState;
+    private readonly listeners = new Set<() => void>();
+
+    /** The `<Notato>` mounted last: only it stops Notato when it goes. */
+    private owner?: object;
+    /** `<Notato>` went away: the next `configure` starts Notato again, even with the same options. */
+    private detached = false;
+    /** The overlay, while it is mounted. */
+    private host?: Host;
+
+    /**
+     * Counts the connections Notato has opened. An answer that comes back after its connection was closed or replaced
+     * (Notato switched off, another server) sees the count has moved on, and is dropped.
+     */
+    private generation = 0;
+    private stream?: { stop(): void; retry(): void };
+    /** Notes on their way to the server now, and what will come of it. */
+    private readonly inflight = new Map<string, Promise<SendOutcome>>();
+    /** Deleted here while a copy was on its way: the server's word of them is not taken back in. */
+    private readonly deletedHere = new Set<string>();
+    /** The server's changes not applied yet: those that come within a frame are applied together. */
+    private incoming: Change[] = [];
+    private applyTimer?: ReturnType<typeof setTimeout>;
+    /** While the server's list is being read: the changes that came meanwhile, applied again over it. */
+    private listing?: Change[];
+    /** The agent's annotate requests, answered one at a time: two at once would photograph each other's outlines. */
+    private relays: Promise<void> = Promise.resolve();
+
+    /** The app's recent warnings and errors, while `captureLogs` has the console wrapped. */
+    private readonly logs: LogEntry[] = [];
+    private releaseConsole?: () => void;
+    /** The requests the app recorded with `recordRequest`, the newest last. */
+    private readonly network: NetworkEntry[] = [];
+
+    constructor(private readonly transport: Transport = httpTransport) {
+        this.snapshot = this.build();
+    }
+
+    // ---- state, for useSyncExternalStore ------------------------------------------------------------------------
 
     subscribe = (listener: () => void): (() => void) => {
         this.listeners.add(listener);
@@ -298,11 +267,11 @@ export class NotatoController {
             connection: this.connection,
             ...(this.connectionDetail ? { connectionDetail: this.connectionDetail } : {}),
             ...(this.problem ? { problem: this.problem } : {}),
-            notes: this.records,
-            pendingCount: this.pendingNotes,
+            notes: this.store.all,
+            pendingCount: this.store.pendingCount,
             agents: this.agents,
             serverScreenshots: this.serverScreenshots,
-            mode: c?.mode ?? "dev",
+            mode: this.mode,
             ...(c ? { project: c.project } : {}),
             ...(this.server ? { server: this.server } : {}),
             ...(this.authorName ? { author: this.authorName } : {}),
@@ -326,7 +295,7 @@ export class NotatoController {
         return this.config;
     }
 
-    get mode() {
+    get mode(): NotatoMode {
         return this.config?.mode ?? "dev";
     }
 
@@ -340,14 +309,7 @@ export class NotatoController {
         return !!this.server && this.mode !== "test";
     }
 
-    get authorName(): string | undefined {
-        return this.settings.author ?? this.config?.author;
-    }
-
-    get screenshotsWanted(): boolean {
-        return this.settings.screenshots ?? this.config?.screenshots ?? true;
-    }
-
+    /** Whether notes get screenshots: the person wants them and the server takes them. */
     get screenshotsOn(): boolean {
         return this.screenshotsWanted && this.serverScreenshots;
     }
@@ -356,27 +318,35 @@ export class NotatoController {
         return this.config?.maskInputs ?? false;
     }
 
-    get persistent(): boolean {
-        return this.storage.persistent;
-    }
-
+    /** The server as people know it: `localhost:4747`. */
     get serverHost(): string | undefined {
         return this.server ? hostOf(this.server) : undefined;
     }
 
-    private get connectionInfo(): ServerConnection | undefined {
+    private get authorName(): string | undefined {
+        return this.settings.author ?? this.config?.author;
+    }
+
+    private get screenshotsWanted(): boolean {
+        return this.settings.screenshots ?? this.config?.screenshots ?? true;
+    }
+
+    private get connectionInfo(): Connection | undefined {
         const c = this.config;
-        return c && this.server ? this.connectionTo(this.server) : undefined;
+        return c && this.server ? this.connectionTo(c, this.server) : undefined;
     }
 
     /**
      * A connection to a server. The token goes only to the server the app was configured with: one typed into the
      * settings (a typo, someone else's) never gets it.
      */
-    private connectionTo(server: string): ServerConnection {
-        const c = this.config as Resolved;
-        const own = c.server !== undefined && server === c.server;
-        return { server, project: c.project, ...(own && c.token ? { token: c.token } : {}) };
+    private connectionTo(config: Resolved, server: string): Connection {
+        const own = config.server !== undefined && server === config.server;
+        return {
+            server,
+            project: config.project,
+            ...(own && config.token ? { token: config.token } : {}),
+        };
     }
 
     private get me(): Author {
@@ -390,7 +360,7 @@ export class NotatoController {
         const next = resolveConfig(config);
         const before = this.config;
         const same =
-            before &&
+            before !== undefined &&
             before.project === next.project &&
             before.mode === next.mode &&
             before.server === next.server &&
@@ -402,10 +372,12 @@ export class NotatoController {
         if (resumed && !this.problem) {
             // Mounted again with the same options (React's StrictMode runs effects twice; a parent remounted it):
             // Notato starts again where it was, with the notes it had.
-            this.setEnabled(this.settings.enabled ?? next.enabled, false);
+            this.changeEnabled(this.settings.enabled ?? next.enabled, false);
             return;
         }
         if (same) {
+            // Only options that need no restart changed (the app's name, masking, logs).
+            this.syncConsole();
             this.emit();
             return;
         }
@@ -417,13 +389,13 @@ export class NotatoController {
             this.emit();
             return;
         }
-        this.storage = (config.storage?.open(next.project) ?? undefined) || memoryStorage();
-        this.settings = next.rememberRuntimeState ? (this.storage.loadSettings() as Settings) : {};
-        this.setRecords([]);
+        this.storage = this.openStorage(next.project);
+        this.settings = next.rememberRuntimeState ? this.loadSettings() : {};
+        this.store.replace([]);
         this.assets.clear();
         this.loadedFor = undefined;
         this.toolbarVisible = this.settings.toolbarVisible ?? next.showToolbar;
-        this.setEnabled(this.settings.enabled ?? next.enabled, false);
+        this.changeEnabled(this.settings.enabled ?? next.enabled, false);
     }
 
     /**
@@ -455,35 +427,50 @@ export class NotatoController {
         if (this.host === host) this.host = undefined;
     }
 
+    /** The app's storage for a project, or memory when it has none (or opening it failed). */
+    private openStorage(project: string): NotatoStorage {
+        try {
+            return this.provider?.open(project) ?? memoryStorage();
+        } catch {
+            return memoryStorage();
+        }
+    }
+
+    private loadSettings(): Settings {
+        try {
+            return this.storage.loadSettings() as Settings;
+        } catch {
+            return {};
+        }
+    }
+
+    /** Keeps the person's choices, when the app wants them kept. */
+    private rememberSettings() {
+        if (!this.config?.rememberRuntimeState) return;
+        try {
+            this.storage.saveSettings(this.settings as Record<string, unknown>);
+        } catch {
+            // a full disk: the choice holds for this run
+        }
+    }
+
     private stop() {
-        this.generation++;
-        this.stream?.stop();
-        this.stream = undefined;
-        this.dropIncoming();
-        this.releaseConsole?.();
-        this.releaseConsole = undefined;
+        this.closeStream();
         this.enabled = false;
         this.annotating = false;
         this.connection = "disabled";
         this.connectionDetail = undefined;
-        this.agents = [];
+        this.syncConsole();
     }
 
-    /** Forgets the server's changes not applied yet: they belong to a connection that is gone. */
-    private dropIncoming() {
-        if (this.applyTimer) clearTimeout(this.applyTimer);
-        this.applyTimer = undefined;
-        this.incoming = [];
-        this.listing = undefined;
-    }
-
-    private saveSettings_() {
-        if (this.config?.rememberRuntimeState) {
-            try {
-                this.storage.saveSettings(this.settings as Record<string, unknown>);
-            } catch {
-                // a full disk: the choice holds for this run
-            }
+    /** Wraps the console while Notato is on and `captureLogs` asks for it, and unwraps it otherwise. */
+    private syncConsole() {
+        const wanted = this.enabled && this.config?.captureLogs === true;
+        if (wanted && !this.releaseConsole) {
+            this.releaseConsole = captureConsole(() => this.config?.logLimit ?? 0, this.logs);
+        } else if (!wanted && this.releaseConsole) {
+            this.releaseConsole();
+            this.releaseConsole = undefined;
         }
     }
 
@@ -491,20 +478,25 @@ export class NotatoController {
 
     /** Switches Notato on. Remembered across launches unless `rememberRuntimeState` is off. */
     enable(): void {
-        this.setEnabled(true, true);
+        this.changeEnabled(true, true);
     }
 
     /** Switches Notato off: removes the overlay and closes the connection. Remembered like `enable()`. */
     disable(): void {
-        this.setEnabled(false, true);
+        this.changeEnabled(false, true);
     }
 
-    setEnabled(on: boolean, remember = true): void {
+    /** `enable()` or `disable()`. */
+    setEnabled(on: boolean): void {
+        this.changeEnabled(on, true);
+    }
+
+    private changeEnabled(on: boolean, remember: boolean) {
         if (!this.config) return;
         if (on && this.problem) return;
         if (remember) {
             this.settings.enabled = on;
-            this.saveSettings_();
+            this.rememberSettings();
         }
         if (on === this.enabled) {
             this.emit();
@@ -516,9 +508,7 @@ export class NotatoController {
             return;
         }
         this.enabled = true;
-        if (this.config.captureLogs && !this.releaseConsole) {
-            this.releaseConsole = captureConsole(() => this.config?.logLimit ?? 50, this.logs);
-        }
+        this.syncConsole();
         this.loadLocal();
         this.restartSync();
         this.emit();
@@ -530,10 +520,10 @@ export class NotatoController {
         if (!c) return;
         const serverChanged = this.settings.server !== undefined;
         this.settings = {};
-        this.saveSettings_();
+        this.rememberSettings();
         this.toolbarVisible = c.showToolbar;
-        if (serverChanged) this.setRecords(this.records.filter((r) => r.pending));
-        if (c.enabled !== this.enabled) this.setEnabled(c.enabled, false);
+        if (serverChanged) this.store.replace(this.store.all.filter((r) => r.pending));
+        if (c.enabled !== this.enabled) this.changeEnabled(c.enabled, false);
         else if (this.enabled && serverChanged) this.restartSync();
         this.emit();
     }
@@ -550,7 +540,7 @@ export class NotatoController {
         this.toolbarVisible = visible;
         this.settings.toolbarVisible = visible;
         if (!visible) this.annotating = false;
-        this.saveSettings_();
+        this.rememberSettings();
         this.emit();
     }
 
@@ -569,7 +559,7 @@ export class NotatoController {
 
     togglePins(): void {
         this.settings.pinsVisible = !(this.settings.pinsVisible ?? true);
-        this.saveSettings_();
+        this.rememberSettings();
         this.emit();
     }
 
@@ -577,29 +567,90 @@ export class NotatoController {
     placeToolbar(x: number, y: number): void {
         this.settings.toolbarX = Math.min(1, Math.max(0, x));
         this.settings.toolbarY = Math.min(1, Math.max(0, y));
-        this.saveSettings_();
+        this.rememberSettings();
         this.emit();
     }
 
     setFolded(folded: boolean): void {
         this.settings.folded = folded;
-        this.saveSettings_();
+        this.rememberSettings();
         this.emit();
+    }
+
+    /**
+     * The settings sheet's Save. A server that is not http(s) is not taken. Returns what to tell the person, if
+     * anything.
+     */
+    saveSettings(input: {
+        name: string;
+        screenshots: boolean;
+        server: string;
+    }): string | undefined {
+        const name = input.name.trim();
+        if (name) this.settings.author = name;
+        else delete this.settings.author;
+        if (input.screenshots === (this.config?.screenshots ?? true))
+            delete this.settings.screenshots;
+        else this.settings.screenshots = input.screenshots;
+        const typed = normalizeServer(input.server);
+        let message: string | undefined;
+        let changed = false;
+        if (!typed || typed === this.config?.server) {
+            changed = this.settings.server !== undefined;
+            delete this.settings.server;
+        } else if (isHttpUrl(typed)) {
+            changed = this.settings.server !== typed;
+            this.settings.server = typed;
+        } else {
+            message = `"${typed}" is not an http(s) address; the server was not changed.`;
+        }
+        this.rememberSettings();
+        if (changed) {
+            // The old server's notes are not this one's; the notes not sent yet go to the new one.
+            this.store.replace(this.store.all.filter((r) => r.pending));
+            if (this.enabled) this.restartSync();
+        }
+        this.emit();
+        return message;
+    }
+
+    /** The connection, in a few words for the menu and the settings sheet. */
+    describeConnection(): string {
+        const host = this.serverHost;
+        switch (this.connection) {
+            case "connected":
+                return `Connected to ${host ?? "the server"}`;
+            case "connecting":
+                return `Connecting to ${host ?? "the server"}…`;
+            case "offline":
+                return this.connectionDetail ?? `Cannot reach ${host ?? "the server"}`;
+            case "refused":
+                return this.connectionDetail ?? `${host ?? "The server"} refused this app`;
+            case "local":
+                if (this.mode === "test")
+                    return host
+                        ? `Notes stay on this device; a package is uploaded to ${host}`
+                        : "Notes stay on this device until packaged";
+                return this.connectionDetail ?? "No server";
+            default:
+                return this.problem ?? "Off";
+        }
     }
 
     // ---- notes on the device -------------------------------------------------------------------------------------
 
+    /** Reads back the notes this device made and had not sent when the app last stopped. */
     private loadLocal() {
         const c = this.config;
         if (!c || this.loadedFor === c.project) return;
         this.loadedFor = c.project;
-        let saved: LocalNote[] = [];
+        let saved: LocalNote[];
         try {
             saved = this.storage.loadNotes();
         } catch {
             saved = [];
         }
-        const known = new Set(this.records.map((r) => r.annotation.id));
+        const known = new Set(this.store.all.map((r) => r.annotation.id));
         const loaded = saved
             .filter((n) => n?.annotation?.id && !known.has(n.annotation.id))
             .map<NoteRecord>((n) => ({
@@ -609,14 +660,14 @@ export class NotatoController {
                 ...(n.failed ? { failed: n.failed } : {}),
                 ...(n.waiting ? { waiting: n.waiting } : {}),
             }));
-        this.setRecords([...this.records, ...loaded]);
+        this.store.replace([...this.store.all, ...loaded]);
     }
 
     /** Writes the notes not on the server yet, so they survive a restart. */
     private persist() {
         try {
             this.storage.saveNotes(
-                this.records
+                this.store.all
                     .filter((r) => r.pending)
                     .map((r) => ({
                         annotation: r.annotation,
@@ -630,21 +681,36 @@ export class NotatoController {
         }
     }
 
-    private assetsOf(annotation: Annotation): Array<{ id: string; bytes: Uint8Array }> {
-        const ids = [annotation.screenshots?.full.id, annotation.screenshots?.crop?.id].filter(
-            (id): id is string => !!id
-        );
-        const out: Array<{ id: string; bytes: Uint8Array }> = [];
-        for (const id of ids) {
-            const bytes = this.assets.get(id) ?? this.storage.loadAsset(id);
-            if (bytes) out.push({ id, bytes });
+    /** Keeps a screenshot until its note is on the server: in memory, and in storage to outlive a restart. */
+    private keepAsset({ ref, bytes }: Shot) {
+        this.assets.set(ref.id, bytes);
+        try {
+            this.storage.saveAsset(ref.id, bytes);
+        } catch {
+            // a full disk: kept in memory for this run
         }
-        return out;
+    }
+
+    /** A screenshot kept for a note, or undefined when there is none (or its file cannot be read). */
+    private loadAsset(id: string): Uint8Array | undefined {
+        const kept = this.assets.get(id);
+        if (kept) return kept;
+        try {
+            return this.storage.loadAsset(id);
+        } catch {
+            return undefined;
+        }
+    }
+
+    private assetsOf(annotation: Annotation): Array<{ id: string; bytes: Uint8Array }> {
+        return screenshotIds(annotation).flatMap((id) => {
+            const bytes = this.loadAsset(id);
+            return bytes ? [{ id, bytes }] : [];
+        });
     }
 
     private dropAssets(annotation: Annotation) {
-        for (const id of [annotation.screenshots?.full.id, annotation.screenshots?.crop?.id]) {
-            if (!id) continue;
+        for (const id of screenshotIds(annotation)) {
             this.assets.delete(id);
             try {
                 this.storage.deleteAsset(id);
@@ -654,93 +720,10 @@ export class NotatoController {
         }
     }
 
-    /** Replaces every note at once (a load, another server): where each is, the count and the screens start again. */
-    private setRecords(next: NoteRecord[]) {
-        this.records = next;
-        this.at = new Map(next.map((r, i) => [r.annotation.id, i]));
-        this.pendingNotes = next.reduce((n, r) => n + (r.pending ? 1 : 0), 0);
-        this.screens.clear();
-    }
-
-    /**
-     * Changes some notes in one go: one copy of the list however many change, the pending count kept as they do, and
-     * only the screens they are on worked out again. Returns whether anything changed.
-     */
-    private edit(apply: (notes: Notes) => void): boolean {
-        let next: Array<NoteRecord | undefined> | undefined;
-        let removed = false;
-        const touched = new Set<string>();
-        const write = () => {
-            next ??= this.records.slice();
-            return next;
-        };
-        apply({
-            get: (id) => {
-                const i = this.at.get(id);
-                return i === undefined ? undefined : (next ?? this.records)[i];
-            },
-            put: (record) => {
-                const list = write();
-                const id = record.annotation.id;
-                const i = this.at.get(id);
-                const old = i === undefined ? undefined : list[i];
-                if (i !== undefined && old) {
-                    touched.add(routeName(old.annotation.route));
-                    if (old.pending) this.pendingNotes--;
-                    list[i] = record;
-                } else {
-                    this.at.set(id, list.length);
-                    list.push(record);
-                }
-                touched.add(routeName(record.annotation.route));
-                if (record.pending) this.pendingNotes++;
-            },
-            remove: (id) => {
-                const i = this.at.get(id);
-                const list = i === undefined ? undefined : write();
-                const old = i === undefined ? undefined : list?.[i];
-                if (i === undefined || !list || !old) return;
-                list[i] = undefined;
-                this.at.delete(id);
-                removed = true;
-                touched.add(routeName(old.annotation.route));
-                if (old.pending) this.pendingNotes--;
-            },
-        });
-        if (!next) return false;
-        if (removed) {
-            this.records = next.filter((r): r is NoteRecord => r !== undefined);
-            this.at = new Map(this.records.map((r, i) => [r.annotation.id, i]));
-        } else {
-            this.records = next as NoteRecord[];
-        }
-        for (const route of touched) this.screens.delete(route);
-        return true;
-    }
-
-    /** Changes one note (or removes it, when `change` gives nothing back). Returns whether it was there. */
-    private update(id: string, change: (r: NoteRecord) => NoteRecord | undefined): boolean {
-        let found = false;
-        this.edit((notes) => {
-            const r = notes.get(id);
-            if (!r) return;
-            found = true;
-            const updated = change(r);
-            if (!updated) notes.remove(id);
-            else if (updated !== r) notes.put(updated);
-        });
-        return found;
-    }
-
-    private find(id: string): NoteRecord | undefined {
-        const i = this.at.get(id);
-        return i === undefined ? undefined : this.records[i];
-    }
-
     /** Test mode: forget the notes kept on this device. */
     clearLocal(): void {
-        for (const r of this.records) if (r.pending) this.dropAssets(r.annotation);
-        this.setRecords(this.records.filter((r) => !r.pending));
+        for (const r of this.store.all) if (r.pending) this.dropAssets(r.annotation);
+        this.store.replace(this.store.all.filter((r) => !r.pending));
         this.persist();
         this.emit();
     }
@@ -752,39 +735,14 @@ export class NotatoController {
         return this.notesOn(route).length + 1;
     }
 
-    /**
-     * The notes on a screen, oldest first, numbered as their pins are. Worked out the first time a screen is asked for,
-     * and again only after one of its notes changed.
-     */
-    notesOn(route: string): ReadonlyArray<{ number: number; record: NoteRecord }> {
-        const key = routeName(route);
-        let list = this.screens.get(key);
-        if (!list) {
-            const here = this.records.filter((r) => routeName(r.annotation.route) === key);
-            list = here.length
-                ? here.sort(madeOrder).map((record, i) => ({ number: i + 1, record }))
-                : NONE;
-            this.screens.set(key, list);
-        }
-        return list;
+    /** The notes on a screen, oldest first, numbered as their pins are. The same list until one of them changes. */
+    notesOn(route: string): readonly NumberedNote[] {
+        return this.store.notesOn(route);
     }
 
-    /** Each screen's pinned notes, kept with the list of the screen's notes they were picked from. */
-    private pinned = new WeakMap<object, ReadonlyArray<{ number: number; record: NoteRecord }>>();
-
-    /**
-     * The notes on a screen that get a pin here: those made in a React Native app. A note from another platform (the
-     * web's, iOS's) is in the Notes list with its number, without a pin: its selector names something else.
-     */
-    pinsOn(route: string): ReadonlyArray<{ number: number; record: NoteRecord }> {
-        const here = this.notesOn(route);
-        let pins = this.pinned.get(here);
-        if (!pins) {
-            const own = here.filter((n) => n.record.annotation.environment?.platform === PLATFORM);
-            pins = own.length === here.length ? here : own.length ? own : NONE;
-            this.pinned.set(here, pins);
-        }
-        return pins;
+    /** The notes on a screen that get a pin here: those made in a React Native app. */
+    pinsOn(route: string): readonly NumberedNote[] {
+        return this.store.pinsOn(route);
     }
 
     /**
@@ -793,70 +751,49 @@ export class NotatoController {
      */
     async createNote(
         picked: Picked,
-        draft: {
-            comment: string;
-            intent?: Intent;
-            severity?: Severity;
-            peopleOnly?: boolean;
-            agentName?: string;
-            steps?: AgentStep[];
-        },
+        draft: NoteDraft,
         shots: { id: string; pin: number; full?: Shot; crop?: Shot }
     ): Promise<{ annotation: Annotation; problem?: string }> {
         const c = this.config;
         const host = this.host;
         if (!c || !host) throw new NotatoError("Notato is not running.");
-        const sources = await symbolicate(parseComponentStack(picked.componentStack)).catch(
-            () => []
-        );
+        const sources = await symbolicate(parseComponentStack(picked.componentStack));
         const identity = identityOf(picked, sources, {
             private: picked.element.private,
             maskValue: this.maskInputs && !picked.element.shown,
         });
         const full = this.screenshotsOn ? shots.full : undefined;
         const crop = full ? shots.crop : undefined;
+        const { frame } = picked;
         const annotation = buildAnnotation({
             id: shots.id,
             project: c.project,
             mode: c.mode,
             appName: c.appName,
-            ...(c.appVersion ? { appVersion: c.appVersion } : {}),
+            appVersion: c.appVersion,
             route: host.route(),
-            ...(this.authorName ? { author: this.authorName } : {}),
-            ...(draft.agentName ? { agentName: draft.agentName } : {}),
+            author: this.authorName,
+            agentName: draft.agentName,
             identity,
-            rect: {
-                x: picked.frame.left,
-                y: picked.frame.top,
-                w: picked.frame.width,
-                h: picked.frame.height,
-            },
+            rect: { x: frame.left, y: frame.top, w: frame.width, h: frame.height },
             comment: draft.comment,
-            ...(draft.intent ? { intent: draft.intent } : {}),
-            ...(draft.severity ? { severity: draft.severity } : {}),
-            ...(draft.peopleOnly ? { peopleOnly: true } : {}),
-            ...(draft.steps ? { steps: draft.steps } : {}),
+            intent: draft.intent,
+            severity: draft.severity,
+            peopleOnly: draft.peopleOnly,
+            steps: draft.steps,
             pin: shots.pin,
-            ...(full ? { screenshots: { full, ...(crop ? { crop } : {}) } } : {}),
+            screenshots: full ? { full, crop } : undefined,
             device: host.device(),
-            ...(c.captureLogs ? { console: [...this.logs] } : {}),
+            console: c.captureLogs ? [...this.logs] : undefined,
             network: [...this.network],
         });
-        for (const shot of [full, crop]) {
-            if (!shot) continue;
-            this.assets.set(shot.ref.id, shot.bytes);
-            try {
-                this.storage.saveAsset(shot.ref.id, shot.bytes);
-            } catch {
-                // kept in memory
-            }
-        }
-        this.edit((notes) => notes.put({ annotation, pending: true, mine: true }));
+        for (const shot of [full, crop]) if (shot) this.keepAsset(shot);
+        this.store.edit((notes) => notes.put({ annotation, pending: true, mine: true }));
         this.persist();
         this.emit();
         const outcome = await this.send(annotation.id);
         return {
-            annotation: this.find(annotation.id)?.annotation ?? annotation,
+            annotation: this.store.get(annotation.id)?.annotation ?? annotation,
             problem: problemOf(outcome),
         };
     }
@@ -879,23 +816,13 @@ export class NotatoController {
         const host = this.requireHost();
         if (!comment.trim()) throw new NotatoError("A note needs a comment.");
         const picked = await host.resolve(target);
-        const route = host.route();
-        const pin = this.nextPin(route);
+        const pin = this.nextPin(host.route());
         const id = ulid();
-        const shots =
-            options.screenshot === false || !this.screenshotsOn
-                ? {}
-                : await host.capture(picked, pin, id);
+        const { screenshot = true, ...draft } = options;
+        const shots = screenshot && this.screenshotsOn ? await host.capture(picked, pin, id) : {};
         const { annotation } = await this.createNote(
             picked,
-            {
-                comment,
-                ...(options.intent ? { intent: options.intent } : {}),
-                ...(options.severity ? { severity: options.severity } : {}),
-                ...(options.peopleOnly ? { peopleOnly: true } : {}),
-                ...(options.agentName ? { agentName: options.agentName } : {}),
-                ...(options.steps ? { steps: options.steps } : {}),
-            },
+            { ...draft, comment },
             { id, pin, ...shots }
         );
         return annotation;
@@ -907,18 +834,11 @@ export class NotatoController {
         return this.host;
     }
 
-    /** Adds an HTTP request to the `network` context of later notes (the last 50 are kept). */
-    recordRequest(entry: {
-        method: string;
-        url: string;
-        status: number;
-        durationMs: number;
-        at?: string;
-    }): void {
-        const url = entry.url.replace(/[?#].*$/, "");
+    /** Adds an HTTP request to the `network` context of later notes (the last 50 are kept, without query strings). */
+    recordRequest(entry: Omit<NetworkEntry, "at"> & { at?: string }): void {
         this.network.push({
             method: entry.method.toUpperCase(),
-            url,
+            url: entry.url.replace(/[?#].*$/, ""),
             status: entry.status,
             durationMs: Math.round(entry.durationMs),
             at: entry.at ?? new Date().toISOString(),
@@ -930,11 +850,11 @@ export class NotatoController {
     // ---- sending -------------------------------------------------------------------------------------------------
 
     /** Sends one note now, unless it has gone already. One on its way gives what comes of that send. */
-    send(id: string): Promise<SendOutcome> {
+    private send(id: string): Promise<SendOutcome> {
         const going = this.inflight.get(id);
         if (going) return going;
         const conn = this.connectionInfo;
-        const record = this.find(id);
+        const record = this.store.get(id);
         if (!this.hasServer || !conn || !record?.pending || record.failed)
             return Promise.resolve({ kind: "skipped" });
         const sending = this.sendNow(record, conn).finally(() => this.inflight.delete(id));
@@ -942,7 +862,7 @@ export class NotatoController {
         return sending;
     }
 
-    private async sendNow(record: NoteRecord, conn: ServerConnection): Promise<SendOutcome> {
+    private async sendNow(record: NoteRecord, conn: Connection): Promise<SendOutcome> {
         const id = record.annotation.id;
         const generation = this.generation;
         try {
@@ -960,26 +880,24 @@ export class NotatoController {
             if (generation !== this.generation) return { kind: "skipped" };
             this.dropAssets(record.annotation);
             // The server's events may have brought a newer copy while the answer was on its way: that one stays.
-            this.update(id, (r) =>
+            this.store.update(id, (r) =>
                 r.pending ? { annotation: stored.annotation, pending: false, mine: r.mine } : r
             );
             this.persist();
             this.emit();
             return { kind: "sent" };
         } catch (e) {
-            const error =
-                e instanceof NotatoError
-                    ? e
-                    : new NotatoError(e instanceof Error ? e.message : String(e));
+            const error = e instanceof NotatoError ? e : new NotatoError(messageOf(e));
             if (error.refusesNote) {
-                this.update(id, (r) => ({ ...r, failed: error.message }));
+                this.store.update(id, (r) => ({ ...r, failed: error.message }));
                 console.warn(`[notato] The server refused a note: ${error.message}`);
                 this.persist();
                 this.emit();
                 return { kind: "refused", reason: error.message };
             }
+            // The server's reason, when it answered: the note says why it waits.
             const waiting = error.status === undefined ? undefined : error.message;
-            this.update(id, (r) => {
+            this.store.update(id, (r) => {
                 const { waiting: _, ...rest } = r;
                 return waiting ? { ...rest, waiting } : rest;
             });
@@ -993,8 +911,8 @@ export class NotatoController {
      * Sends every note waiting to go, oldest first. A refused note is passed over (it is marked failed) and the rest
      * still go; anything else that stops one stops there, with it and everything after it still queued. Returns why.
      */
-    async flush(): Promise<NotatoError | undefined> {
-        for (const r of this.records) {
+    private async flush(): Promise<NotatoError | undefined> {
+        for (const r of this.store.all) {
             if (!r.pending || r.failed) continue;
             const outcome = await this.send(r.annotation.id);
             if (outcome.kind === "held") return outcome.error;
@@ -1004,12 +922,26 @@ export class NotatoController {
 
     // ---- the server: live updates over server-sent events --------------------------------------------------------
 
-    private restartSync() {
+    /** Closes the stream and forgets what came on it: answers on their way belong to a connection that is gone. */
+    private closeStream() {
         this.generation++;
         this.stream?.stop();
         this.stream = undefined;
         this.dropIncoming();
+        this.listing = undefined;
         this.agents = [];
+    }
+
+    /** Forgets the server's changes not applied yet. */
+    private dropIncoming() {
+        if (this.applyTimer) clearTimeout(this.applyTimer);
+        this.applyTimer = undefined;
+        this.incoming = [];
+    }
+
+    /** Opens a fresh connection to the server, or says there is none. */
+    private restartSync() {
+        this.closeStream();
         const conn = this.connectionInfo;
         if (!this.enabled || !conn || !this.hasServer) {
             this.connection = "local";
@@ -1043,7 +975,7 @@ export class NotatoController {
         else this.restartSync();
     }
 
-    private async handle({ event, data }: ServerEvent, conn: ServerConnection) {
+    private async handle({ event, data }: ServerEvent, conn: Connection) {
         const body = (data ?? {}) as {
             id?: string;
             annotation?: Annotation;
@@ -1107,19 +1039,17 @@ export class NotatoController {
         this.applyTimer ??= setTimeout(() => this.applyIncoming(), BATCH_MS);
     }
 
-    /** Applies the server's changes that have come since the last frame, together: one copy of the list for them all. */
+    /** Applies the server's changes that came since the last frame, together: one copy of the list for them all. */
     private applyIncoming() {
-        if (this.applyTimer) clearTimeout(this.applyTimer);
-        this.applyTimer = undefined;
         const changes = this.incoming;
-        this.incoming = [];
+        this.dropIncoming();
         if (changes.length && this.applyChanges(changes)) this.emit();
     }
 
     /** Applies the server's changes in order. Returns whether a note changed. */
     private applyChanges(changes: Change[]): boolean {
         let sent = false;
-        const changed = this.edit((notes) => {
+        const changed = this.store.edit((notes) => {
             for (const change of changes) {
                 if ("deleted" in change) {
                     // Deleted there: forgotten here, unless it is a note of this device's that has not gone yet.
@@ -1137,9 +1067,9 @@ export class NotatoController {
      * page came: a list cut short would look like deletions. The changes that come while it is read are applied again
      * over it, since the list may be older than they are.
      */
-    private async reload(conn: ServerConnection, generation: number) {
+    private async reload(conn: Connection, generation: number) {
         this.applyIncoming();
-        const known = new Set(this.records.filter((r) => !r.pending).map((r) => r.annotation.id));
+        const known = new Set(this.store.all.filter((r) => !r.pending).map((r) => r.annotation.id));
         const meanwhile: Change[] = [];
         this.listing = meanwhile;
         let items: StoredAnnotation[];
@@ -1151,7 +1081,7 @@ export class NotatoController {
             if (this.listing === meanwhile) this.listing = undefined;
         }
         if (generation !== this.generation) return;
-        const byId = new Map(this.records.map((r) => [r.annotation.id, r]));
+        const byId = new Map(this.store.all.map((r) => [r.annotation.id, r]));
         const listed = new Set<string>();
         const added: NoteRecord[] = [];
         for (const item of items) {
@@ -1165,16 +1095,14 @@ export class NotatoController {
         }
         // The server's: those it had before the load and lists no longer.
         const gone = new Set([...known].filter((id) => !listed.has(id)));
-        this.setRecords([
-            ...this.records
+        this.store.replace([
+            ...this.store.all
                 .map((r) => byId.get(r.annotation.id) ?? r)
                 .filter((r) => !gone.has(r.annotation.id) || r.pending),
             ...added,
         ]);
         // Every change not applied yet came while the list was read, so it is among these.
-        if (this.applyTimer) clearTimeout(this.applyTimer);
-        this.applyTimer = undefined;
-        this.incoming = [];
+        this.dropIncoming();
         this.applyChanges(meanwhile);
         this.persist();
         this.emit();
@@ -1184,7 +1112,7 @@ export class NotatoController {
      * A note from the server, into the notes: replaces the one Notato has, or joins them. True when it replaced one
      * that was still on the device.
      */
-    private take(notes: Notes, annotation: Annotation): boolean {
+    private take(notes: NoteEdit, annotation: Annotation): boolean {
         if (annotation.projectId !== this.config?.project || this.deletedHere.has(annotation.id))
             return false;
         const existing = notes.get(annotation.id);
@@ -1197,24 +1125,25 @@ export class NotatoController {
     private upsert(annotation: Annotation) {
         this.applyIncoming();
         let sent = false;
-        this.edit((notes) => {
+        this.store.edit((notes) => {
             sent = this.take(notes, annotation);
         });
         if (sent) this.persist();
+        this.emit();
     }
 
     /** Agent mode: an agent asked, through `notato_annotate`, for something in this app to be annotated. */
-    private async answerRelay(request: AnnotateRequest, conn: ServerConnection) {
-        let result: { ok: true; annotationId: string } | { ok: false; error: string };
+    private async answerRelay(request: AnnotateRequest, conn: Connection) {
+        let result: RelayResult;
         try {
-            const a = request.args;
-            const annotation = await this.annotate(a.target, a.comment, {
-                ...(a.severity ? { severity: a.severity } : {}),
-                ...(a.intent ? { intent: a.intent } : {}),
-                ...(a.steps ? { steps: a.steps } : {}),
-                agentName: a.author ?? "agent",
+            const { target, comment, severity, intent, steps, author } = request.args;
+            const annotation = await this.annotate(target, comment, {
+                severity,
+                intent,
+                steps,
+                agentName: author ?? "agent",
             });
-            const record = this.find(annotation.id);
+            const record = this.store.get(annotation.id);
             // Made, but not on the server: reporting it filed would send the agent looking for a note the server does
             // not have.
             result =
@@ -1222,14 +1151,12 @@ export class NotatoController {
                     ? { ok: true, annotationId: annotation.id }
                     : { ok: false, error: this.notFiled(record) };
         } catch (e) {
-            result = { ok: false, error: e instanceof Error ? e.message : String(e) };
+            result = { ok: false, error: messageOf(e) };
         }
         try {
             await this.transport.relayResult(conn, request.requestId, result);
         } catch (e) {
-            console.warn(
-                `[notato] Could not report an annotate result: ${e instanceof Error ? e.message : String(e)}`
-            );
+            console.warn(`[notato] Could not report an annotate result: ${messageOf(e)}`);
         }
     }
 
@@ -1248,23 +1175,17 @@ export class NotatoController {
 
     // ---- acting on a note, as the person -------------------------------------------------------------------------
 
-    private connected(): ServerConnection {
+    private requireConnection(): Connection {
         const conn = this.connectionInfo;
         if (!this.hasServer || !conn) throw new NotatoError("Not connected to a Notato server.");
         return conn;
     }
 
-    /** An aside is for the people on the thread: the agent never sees it. */
+    /** Replies on a note's thread. An aside is for the people on the thread: the agent never sees it. */
     async reply(id: string, text: string, aside = false): Promise<void> {
-        const stored = await this.transport.reply(
-            this.connected(),
-            id,
-            text.trim(),
-            this.me,
-            aside
-        );
+        const conn = this.requireConnection();
+        const stored = await this.transport.reply(conn, id, text.trim(), this.me, aside);
         this.upsert(stored.annotation);
-        this.emit();
     }
 
     /**
@@ -1272,19 +1193,19 @@ export class NotatoController {
      * note; a note not sent yet is changed on the device, with the same entry in its thread.
      */
     async setPeopleOnly(id: string, on: boolean): Promise<void> {
-        const record = this.find(id);
+        const record = this.store.get(id);
         if (!record) throw new NotatoError("That note is gone.");
         if (on === (record.annotation.peopleOnly === true)) return;
         if (!record.pending) {
-            const stored = await this.transport.setPeopleOnly(this.connected(), id, on, this.me);
+            const conn = this.requireConnection();
+            const stored = await this.transport.setPeopleOnly(conn, id, on, this.me);
             this.upsert(stored.annotation);
-            this.emit();
             return;
         }
         // On its way now: the server's copy, when it lands, would replace this change.
         if (this.inflight.has(id))
             throw new NotatoError("The note is being sent: try again in a moment.");
-        this.update(id, (r) => ({
+        this.store.update(id, (r) => ({
             ...r,
             annotation: settingPeopleOnly(r.annotation, on, this.me),
         }));
@@ -1292,98 +1213,40 @@ export class NotatoController {
         this.emit();
     }
 
+    /** Asks the agent to undo the change it made for a resolved note. */
     async requestRevert(id: string, reason?: string): Promise<void> {
-        const note = reason?.trim() ? reason.trim() : "Please undo this change.";
-        const stored = await this.transport.setStatus(
-            this.connected(),
-            id,
-            "revert_requested",
-            note,
-            this.me
-        );
+        const note = reason?.trim() || "Please undo this change.";
+        const conn = this.requireConnection();
+        const stored = await this.transport.setStatus(conn, id, "revert_requested", note, this.me);
         this.upsert(stored.annotation);
-        this.emit();
     }
 
+    /** Takes back a revert request: the note is resolved again. */
     async cancelRevert(id: string): Promise<void> {
+        const conn = this.requireConnection();
         const stored = await this.transport.setStatus(
-            this.connected(),
+            conn,
             id,
             "resolved",
             "Revert request taken back.",
             this.me
         );
         this.upsert(stored.annotation);
-        this.emit();
     }
 
+    /** Deletes a note: on the server when it has it, and on the device. */
     async delete(id: string): Promise<void> {
-        const record = this.find(id);
+        const record = this.store.get(id);
         if (record && !record.pending && this.hasServer)
-            await this.transport.remove(this.connected(), id);
+            await this.transport.remove(this.requireConnection(), id);
         if (record) {
             // A copy on its way now is deleted on the server when it lands; one not sent yet never goes.
             if (this.inflight.has(id)) this.deletedHere.add(id);
             this.dropAssets(record.annotation);
         }
-        this.update(id, () => undefined);
+        this.store.update(id, () => undefined);
         this.persist();
         this.emit();
-    }
-
-    /** The settings sheet's Save. A server that is not http(s) is not taken. Returns what to tell the person, if anything. */
-    saveSettings(input: {
-        name: string;
-        screenshots: boolean;
-        server: string;
-    }): string | undefined {
-        const name = input.name.trim();
-        if (name) this.settings.author = name;
-        else delete this.settings.author;
-        if (input.screenshots === (this.config?.screenshots ?? true))
-            delete this.settings.screenshots;
-        else this.settings.screenshots = input.screenshots;
-        const typed = input.server.trim().replace(/\/+$/, "");
-        let message: string | undefined;
-        let changed = false;
-        if (!typed || typed === this.config?.server) {
-            changed = this.settings.server !== undefined;
-            delete this.settings.server;
-        } else if (/^https?:\/\/[^/\s]+/i.test(typed)) {
-            changed = this.settings.server !== typed;
-            this.settings.server = typed;
-        } else {
-            message = `"${typed}" is not an http(s) address; the server was not changed.`;
-        }
-        this.saveSettings_();
-        if (changed) {
-            this.setRecords(this.records.filter((r) => r.pending));
-            this.restartSync();
-        }
-        this.emit();
-        return message;
-    }
-
-    describeConnection(): string {
-        const host = this.serverHost;
-        switch (this.connection) {
-            case "connected":
-                return `Connected to ${host ?? "the server"}`;
-            case "connecting":
-                return `Connecting to ${host ?? "the server"}…`;
-            case "offline":
-                return this.connectionDetail ?? `Cannot reach ${host ?? "the server"}`;
-            case "refused":
-                return this.connectionDetail ?? `${host ?? "The server"} refused this app`;
-            case "local":
-                if (this.mode === "test")
-                    return host
-                        ? `Notes stay on this device; a package is uploaded to ${host}`
-                        : "Notes stay on this device until packaged";
-                return this.connectionDetail ?? "No server";
-            default:
-                return this.problem ?? "Off";
-        }
     }
 
     // ---- test mode: a bundle zip ---------------------------------------------------------------------------------
@@ -1398,7 +1261,7 @@ export class NotatoController {
     ): Promise<{ zip: Uint8Array; name: string; uri?: string; uploaded: boolean }> {
         const c = this.config;
         if (!c) throw new NotatoError("Notato has not been started.");
-        const mine = this.records.filter((r) => r.pending || (this.mode === "test" && r.mine));
+        const mine = this.store.all.filter((r) => r.pending || (this.mode === "test" && r.mine));
         if (!mine.length) throw new NotatoError("Nothing to package yet: make at least one note.");
         const { zip, name } = writeBundle(
             mine.map((r) => r.annotation),
@@ -1408,12 +1271,12 @@ export class NotatoController {
                 appName: c.appName,
                 ...(c.appVersion ? { appVersion: c.appVersion } : {}),
             },
-            (id) => this.assets.get(id) ?? this.storage.loadAsset(id)
+            (id) => this.loadAsset(id)
         );
         const uri = this.storage.writeShare(name, zip);
         let uploaded = false;
         if (options.upload !== false && this.server) {
-            await this.transport.uploadBundle(this.connectionTo(this.server), zip);
+            await this.transport.uploadBundle(this.connectionTo(c, this.server), zip);
             uploaded = true;
         }
         return { zip, name, ...(uri ? { uri } : {}), uploaded };

@@ -1,4 +1,7 @@
-import { identityOf, isTextInput, nativeName } from "./identity.ts";
+// React's tree of the app, read as React Native's own Element Inspector reads it. This module and inspect.ts are the
+// only places that touch React's and React Native's internals (fibers, `__internalInstanceHandle`, Fabric's UI
+// manager), and they do it defensively: on a renderer that lacks them, there is nothing to pick, and nothing breaks.
+import { type Frame, identityOf, isTextInput } from "./identity.ts";
 import { NotatoMask } from "./mask.tsx";
 import type { Candidate } from "./selectors.ts";
 
@@ -33,7 +36,13 @@ export interface TreeElement extends Candidate {
     parent?: TreeElement;
 }
 
-export function componentName(type: unknown): string | undefined {
+/** A native view, and the one around it: a walk up from a view to the nearest that has a place of its own. */
+export interface HostLink {
+    fiber: Fiber;
+    parent?: HostLink;
+}
+
+function componentName(type: unknown): string | undefined {
     if (typeof type === "string") return type;
     if (typeof type === "function") {
         const t = type as { displayName?: string; name?: string };
@@ -86,12 +95,41 @@ function markOf(fiber: Fiber, outer: Mark): Mark {
     return fiber.memoizedProps?.private === false ? "shown" : "private";
 }
 
-/** A native view as selectors see it. `maskInputs` leaves a field's value out unless it is shown. */
-export function describe(fiber: Fiber, mark: Mark, maskInputs: boolean): TreeElement {
-    const native = fiber.type as string;
+/** What masking makes of a native view: a text field, and private (marked so, or a password field). */
+function privacyOf(native: string, props: Fiber["memoizedProps"], mark: Mark) {
     const input = isTextInput(native);
-    const secure = input && fiber.memoizedProps?.secureTextEntry === true;
-    const isPrivateHere = mark === "private" || secure;
+    const secure = input && props?.secureTextEntry === true;
+    return { input, private: mark === "private" || secure };
+}
+
+/**
+ * Visits every native view under `root`, in drawing order, with the `<NotatoMask>` marks around it. `visit` gives back
+ * what the views inside it get as their parent. Depth first without recursion, so a deep tree cannot overflow the
+ * stack; `more` can end the walk early.
+ */
+function walkHosts<P>(
+    root: Fiber,
+    visit: (fiber: Fiber, native: string, mark: Mark, parent: P | undefined) => P,
+    more: () => boolean = () => true
+): void {
+    type Entry = { fiber: Fiber; mark: Mark; parent: P | undefined };
+    const stack: Entry[] = [];
+    if (root.child) stack.push({ fiber: root.child, mark: undefined, parent: undefined });
+    while (stack.length && more()) {
+        const { fiber, mark: outer, parent } = stack.pop() as Entry;
+        if (fiber.sibling) stack.push({ fiber: fiber.sibling, mark: outer, parent });
+        const mark = markOf(fiber, outer);
+        const host =
+            fiber.tag === HOST_COMPONENT && typeof fiber.type === "string"
+                ? visit(fiber, fiber.type, mark, parent)
+                : parent;
+        if (fiber.child) stack.push({ fiber: fiber.child, mark, parent: host });
+    }
+}
+
+/** A native view as selectors see it. `maskInputs` leaves a field's value out unless it is shown. */
+function elementOf(fiber: Fiber, native: string, mark: Mark, maskInputs: boolean): TreeElement {
+    const { input, private: hidden } = privacyOf(native, fiber.memoizedProps, mark);
     const identity = identityOf(
         {
             names: [...ownerNames(fiber).slice(0, -1), native],
@@ -100,48 +138,36 @@ export function describe(fiber: Fiber, mark: Mark, maskInputs: boolean): TreeEle
             componentStack: "",
         },
         [],
-        { private: isPrivateHere, maskValue: maskInputs && mark !== "shown" }
+        { private: hidden, maskValue: maskInputs && mark !== "shown" }
     );
     return {
         fiber,
-        tag: identity.tag ?? nativeName(native),
+        tag: identity.tag,
         ...(identity.role ? { role: identity.role } : {}),
         ...(identity.testId ? { testId: identity.testId } : {}),
         ...(identity.name ? { label: identity.name } : {}),
         ...(identity.text ? { text: identity.text } : {}),
         path: identity.ancestors ?? [],
-        private: isPrivateHere,
+        private: hidden,
         input,
         shown: mark === "shown",
     };
 }
 
-/** Every native view under `root`, in drawing order, described for selectors and masking. */
+/** Every native view under `root` (at most `limit`), in drawing order, described for selectors and masking. */
 export function elementsUnder(root: Fiber, maskInputs: boolean, limit = 20_000): TreeElement[] {
     const out: TreeElement[] = [];
-    // Depth first, carrying the masks down, without recursion: a deep tree cannot overflow the stack.
-    type Entry = { fiber: Fiber; mark: Mark; parent?: TreeElement };
-    const stack: Entry[] = [];
-    if (root.child) stack.push({ fiber: root.child, mark: undefined });
-    while (stack.length && out.length < limit) {
-        const { fiber, mark: outer, parent } = stack.pop() as Entry;
-        if (fiber.sibling) stack.push({ fiber: fiber.sibling, mark: outer, parent });
-        const mark = markOf(fiber, outer);
-        let host = parent;
-        if (fiber.tag === HOST_COMPONENT && typeof fiber.type === "string") {
-            host = describe(fiber, mark, maskInputs);
-            if (parent) host.parent = parent;
-            out.push(host);
-        }
-        if (fiber.child) stack.push({ fiber: fiber.child, mark, parent: host });
-    }
+    walkHosts<TreeElement>(
+        root,
+        (fiber, native, mark, parent) => {
+            const element = elementOf(fiber, native, mark, maskInputs);
+            if (parent) element.parent = parent;
+            out.push(element);
+            return element;
+        },
+        () => out.length < limit
+    );
     return out;
-}
-
-/** A native view, and the one around it: a walk up from a view to the nearest that has a place of its own. */
-export interface HostLink {
-    fiber: Fiber;
-    parent?: HostLink;
 }
 
 /**
@@ -151,34 +177,19 @@ export interface HostLink {
  */
 export function maskedUnder(root: Fiber, maskInputs: boolean): HostLink[] {
     const out: HostLink[] = [];
-    type Entry = { fiber: Fiber; mark: Mark; parent?: HostLink };
-    const stack: Entry[] = [];
-    if (root.child) stack.push({ fiber: root.child, mark: undefined });
-    while (stack.length) {
-        const { fiber, mark: outer, parent } = stack.pop() as Entry;
-        if (fiber.sibling) stack.push({ fiber: fiber.sibling, mark: outer, parent });
-        const mark = markOf(fiber, outer);
-        let host = parent;
-        if (fiber.tag === HOST_COMPONENT && typeof fiber.type === "string") {
-            host = parent ? { fiber, parent } : { fiber };
-            const input = isTextInput(fiber.type);
-            const secure = input && fiber.memoizedProps?.secureTextEntry === true;
-            if (mark === "private" || secure || (input && maskInputs && mark !== "shown"))
-                out.push(host);
-        }
-        if (fiber.child) stack.push({ fiber: fiber.child, mark, parent: host });
-    }
+    walkHosts<HostLink>(root, (fiber, native, mark, parent) => {
+        const link: HostLink = parent ? { fiber, parent } : { fiber };
+        const { input, private: hidden } = privacyOf(native, fiber.memoizedProps, mark);
+        if (hidden || (input && maskInputs && mark !== "shown")) out.push(link);
+        return link;
+    });
     return out;
 }
 
-export interface Frame {
-    left: number;
-    top: number;
-    width: number;
-    height: number;
-}
+type FabricUIManager = { measure(node: unknown, callback: (...n: number[]) => void): void };
 
-type FabricUIManager = { measure(node: unknown, cb: (...n: number[]) => void): void };
+/** How long Fabric gets to say where a view is before it is taken to be off screen. */
+const MEASURE_TIMEOUT_MS = 500;
 
 /** Where a native view is on the page, from Fabric's own layout. Null when it is not on screen. */
 export function measure(fiber: Fiber): Promise<Frame | null> {
@@ -187,7 +198,7 @@ export function measure(fiber: Fiber): Promise<Frame | null> {
             .nativeFabricUIManager;
         const node = fiber.stateNode?.node;
         if (!ui || !node) return resolve(null);
-        const timer = setTimeout(() => resolve(null), 500);
+        const timer = setTimeout(() => resolve(null), MEASURE_TIMEOUT_MS);
         try {
             ui.measure(node, (_x, _y, width = 0, height = 0, pageX = 0, pageY = 0) => {
                 clearTimeout(timer);

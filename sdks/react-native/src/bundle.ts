@@ -1,5 +1,6 @@
 import type { Annotation, Bundle } from "@notato/schema";
 import { strToU8, type Zippable, zipSync } from "fflate";
+import { pinOf } from "./annotation.ts";
 import { ulid } from "./ids.ts";
 
 /**
@@ -51,9 +52,8 @@ export function writeBundle(
             `# Feedback on ${meta.appName ?? meta.project}`,
             "",
             ...annotations.map((a) => {
-                const pin = (a.context?.screenshot as { pin?: number } | undefined)?.pin;
                 const target = a.target.identity[0]?.selector ?? "";
-                return `- **#${pin ?? "?"}** ${a.comment} (\`${target}\` on ${a.route})`;
+                return `- **#${pinOf(a) ?? "?"}** ${a.comment} (\`${target}\` on ${a.route})`;
             }),
             "",
         ].join("\n")

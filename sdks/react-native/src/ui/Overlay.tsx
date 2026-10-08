@@ -13,48 +13,42 @@ import {
     PixelRatio,
     Platform,
     Pressable,
-    StatusBar,
     StyleSheet,
     Text,
     View,
 } from "react-native";
 import { routeName } from "../annotation.ts";
-import { type Shot, shoot } from "../capture.ts";
+import type { Shot } from "../capture.ts";
 import { NotatoError } from "../client.ts";
-import type { Host, NotatoController, NotatoState, NoteRecord } from "../controller.ts";
+import type { Host, NotatoController, NotatoState } from "../controller.ts";
 import { ulid } from "../ids.ts";
 import {
     appElements,
     canInspect,
-    commitCount,
-    currentContainer,
     elementFor,
     inspect,
     instanceAt,
     type Picked,
 } from "../inspect.ts";
-import { indexOf, query, SelectorError, selectorToFind } from "../selectors.ts";
-import { serial } from "../serial.ts";
-import { type Frame, fiberOf, maskedUnder, measure, type TreeElement } from "../tree.ts";
+import { query, SelectorError } from "../selectors.ts";
+import { fiberOf, measure, type TreeElement } from "../tree.ts";
 import { Composer, type Draft } from "./Composer.tsx";
+import { INSETS, onScreen, type Point, type Rect, toRect } from "./geometry.ts";
 import { BottomSheet, PinDot } from "./parts.tsx";
 import { placePins } from "./pinLayout.ts";
-import {
-    ClearSheet,
-    MenuSheet,
-    NoteCard,
-    NotesSheet,
-    SettingsSheet,
-    type Sheet,
-} from "./sheets.tsx";
-import { HintBar, PROBLEM_DOT, Toolbar } from "./Toolbar.tsx";
-import { BAR, BRAND } from "./theme.ts";
+import { backFrom, type Sheet, SheetView } from "./sheets.tsx";
+import { HintBar, Toolbar } from "./Toolbar.tsx";
+import { BAR, BRAND, PROBLEM_DOT } from "./theme.ts";
+import { usePlacedPins } from "./usePins.ts";
+import { useScreenshots } from "./useScreenshots.ts";
 
-/** The most pins drawn on one screen: the newest. The Notes list has every one. */
-export const MAX_PINS = 150;
+/** How long a toast stays. */
+const TOAST_MS = 3200;
 
-type Rect = { x: number; y: number; w: number; h: number };
+/** How often the screen is looked at, so a move to one that redraws nothing of Notato's is noticed. */
+const ROUTE_CHECK_MS = 500;
 
+/** The element a note is being written about, with its pin, its screenshots and what the composer calls it. */
 interface Selection {
     picked: Picked;
     rect: Rect;
@@ -64,48 +58,6 @@ interface Selection {
     title: string;
     subtitle?: string;
 }
-
-const nextFrames = () =>
-    new Promise<void>((resolve) =>
-        requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
-    );
-
-const insets = Platform.select({
-    ios: { top: 59, bottom: 34 },
-    default: { top: (StatusBar.currentHeight ?? 24) + 8, bottom: 48 },
-});
-
-/** A frame on the page as a rect on the overlay, which starts at `at`. */
-const toRect = (frame: Frame, at: { x: number; y: number }): Rect => ({
-    x: frame.left - at.x,
-    y: frame.top - at.y,
-    w: frame.width,
-    h: frame.height,
-});
-
-type PinAt = { record: NoteRecord; number: number; rect: Rect; detached: boolean };
-
-const samePins = (a: PinAt[], b: PinAt[]) =>
-    a.length === b.length &&
-    a.every((x, i) => {
-        const y = b[i] as PinAt;
-        return (
-            x.record === y.record &&
-            x.number === y.number &&
-            x.detached === y.detached &&
-            x.rect.x === y.rect.x &&
-            x.rect.y === y.rect.y &&
-            x.rect.w === y.rect.w &&
-            x.rect.h === y.rect.h
-        );
-    });
-
-/** Whether any of a rect is on the overlay. */
-const onScreen = (r: Rect, size: { width: number; height: number }) =>
-    r.x + r.w > 0 && r.y + r.h > 0 && r.x < size.width && r.y < size.height;
-
-const overlaps = (a: Rect, b: Rect) =>
-    a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
 
 /** What a selection is called in the composer: the component and the view, then where it is and what it says. */
 function titleOf(element: TreeElement): { title: string; subtitle?: string } {
@@ -121,11 +73,15 @@ function titleOf(element: TreeElement): { title: string; subtitle?: string } {
     return subtitle ? { title, subtitle } : { title };
 }
 
+const messageOf = (e: unknown) => (e instanceof Error ? e.message : String(e));
+
 /** Everything Notato draws over the app, and the host the runtime picks and photographs through. */
 export function Overlay(props: {
     notato: NotatoController;
     state: NotatoState;
+    /** The view the overlay and the app share. */
     outer: RefObject<View | null>;
+    /** The app's own view. */
     app: RefObject<View | null>;
     route: () => string;
 }) {
@@ -133,117 +89,17 @@ export function Overlay(props: {
     const [size, setSize] = useState({ width: 0, height: 0 });
     const [sheet, setSheet] = useState<Sheet | null>(null);
     const [selection, setSelection] = useState<Selection | null>(null);
-    /** While a screenshot is taken: the outline, the masks, and nothing else of Notato's. */
-    const [capturing, setCapturing] = useState<{ rect: Rect; pin: number; covers: Rect[] } | null>(
-        null
-    );
-    const [toast, setToast] = useState<string | null>(null);
-    const [pins, setPins] = useState<PinAt[]>([]);
-    const toastTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-    const route = routeName(props.route());
-
-    // The screen is read as the overlay draws. A move to another screen that redraws nothing of Notato's (one with no
-    // pins, say) is noticed by looking twice a second, and drawn then.
-    const readRoute = useRef(props.route);
-    readRoute.current = props.route;
-    const drawnRoute = useRef(route);
-    drawnRoute.current = route;
-    const [, redraw] = useReducer((n: number) => n + 1, 0);
-    useEffect(() => {
-        const timer = setInterval(() => {
-            if (routeName(readRoute.current()) !== drawnRoute.current) redraw();
-        }, 500);
-        return () => clearInterval(timer);
-    }, []);
-
-    const flash = useCallback((message: string) => {
-        setToast(message);
-        if (toastTimer.current) clearTimeout(toastTimer.current);
-        toastTimer.current = setTimeout(() => setToast(null), 3200);
-    }, []);
-    useEffect(
-        () => () => {
-            if (toastTimer.current) clearTimeout(toastTimer.current);
-        },
-        []
-    );
+    const [toast, flash] = useToast();
+    const route = useRoute(props.route);
 
     /** Where the overlay is on the page, so the page's frames can be drawn on it. */
-    const origin = useCallback(async () => {
+    const origin = useCallback(async (): Promise<Point> => {
         const fiber = fiberOf(outer.current);
         const frame = fiber ? await measure(fiber) : null;
         return { x: frame?.left ?? 0, y: frame?.top ?? 0 };
     }, [outer]);
 
-    /**
-     * What screenshots cover: private views, password fields, and text fields when `maskInputs` is on. A private view
-     * with no place of its own (a Text inside a Text) is painted by the view around it, which is covered instead; and
-     * then the crop, which would show it, is left out.
-     */
-    const coversFor = useCallback(
-        async (at: { x: number; y: number }) => {
-            const container = currentContainer(app.current);
-            const masked = container ? maskedUnder(container, notato.maskInputs) : [];
-            let around = false;
-            const frames = await Promise.all(
-                masked.map(async (view) => {
-                    let frame = await measure(view.fiber);
-                    for (let up = view.parent; !frame && up; up = up.parent) {
-                        frame = await measure(up.fiber);
-                        if (frame) around = true;
-                    }
-                    return frame;
-                })
-            );
-            const covers = new Map<string, Rect>();
-            for (const frame of frames) {
-                if (!frame) continue;
-                const rect = toRect(frame, at);
-                covers.set(`${rect.x},${rect.y},${rect.w},${rect.h}`, rect);
-            }
-            return { covers: [...covers.values()], around };
-        },
-        [notato, app]
-    );
-
-    /**
-     * Screenshots are taken one at a time (two notes at once: a relayed request and a tap), and the covers come off only
-     * after the last: one finishing first must not uncover what the other is photographing.
-     */
-    const [oneAtATime] = useState(() => serial(() => setCapturing(null)));
-
-    /** The screenshots for a note: the screen with the element outlined and numbered, masked, and a crop of it. */
-    const photograph = useCallback(
-        async (picked: Picked, pin: number, id: string): Promise<{ full?: Shot; crop?: Shot }> => {
-            if (!notato.screenshotsOn) return {};
-            const at = await origin();
-            const rect = toRect(picked.frame, at);
-            const { covers, around } = await coversFor(at);
-            setCapturing({ rect, pin, covers });
-            await nextFrames();
-            const max = notato.configuration?.maxScreenshotScale ?? 2;
-            const full = await shoot(
-                outer.current,
-                `${id}-full`,
-                { width: size.width, height: size.height },
-                max
-            );
-            // The crop is the view on its own, without the masks: left out when something private is in it.
-            const coveredHere =
-                around || picked.element.private || covers.some((c) => overlaps(c, rect));
-            const crop =
-                full && !coveredHere
-                    ? await shoot(picked.view, `${id}-crop`, picked.frame, max)
-                    : undefined;
-            return { ...(full ? { full } : {}), ...(crop ? { crop } : {}) };
-        },
-        [notato, origin, coversFor, outer, size]
-    );
-
-    const capture = useCallback(
-        (picked: Picked, pin: number, id: string) => oneAtATime(() => photograph(picked, pin, id)),
-        [oneAtATime, photograph]
-    );
+    const { capturing, capture } = useScreenshots({ notato, outer, app, origin, size });
 
     /** Finds an element by selector or view instance, now. */
     const resolve = useCallback(
@@ -286,7 +142,10 @@ export function Overlay(props: {
         [app, notato, origin, size]
     );
 
-    /** Makes an element the selection: outlined, photographed, and the composer opened on it. */
+    /**
+     * Makes an element the selection: outlined, photographed, and the composer opened on it. Picking another element
+     * while writing keeps the note's pin and id, and what is written.
+     */
     const choose = useCallback(
         async (picked: Picked, keep?: Selection | null) => {
             const pin = keep?.pin ?? notato.nextPin(route);
@@ -306,7 +165,8 @@ export function Overlay(props: {
         [notato, route, origin, capture]
     );
 
-    // The runtime picks and photographs through this overlay while it is mounted.
+    // The runtime picks and photographs through this overlay while it is mounted: through a host that stays the same,
+    // and calls what this render made.
     const hostRef = useRef<Host | undefined>(undefined);
     hostRef.current = {
         resolve,
@@ -331,13 +191,14 @@ export function Overlay(props: {
         toast: flash,
     };
     useEffect(() => {
+        const current = () => hostRef.current as Host;
         const host: Host = {
-            resolve: (t) => (hostRef.current as Host).resolve(t),
-            capture: (p, n, i) => (hostRef.current as Host).capture(p, n, i),
-            select: (p) => (hostRef.current as Host).select(p),
-            route: () => (hostRef.current as Host).route(),
-            device: () => (hostRef.current as Host).device(),
-            toast: (m) => (hostRef.current as Host).toast(m),
+            resolve: (target) => current().resolve(target),
+            capture: (picked, pin, id) => current().capture(picked, pin, id),
+            select: (picked) => current().select(picked),
+            route: () => current().route(),
+            device: () => current().device(),
+            toast: (message) => current().toast(message),
         };
         notato.attachHost(host);
         return () => notato.detachHost(host);
@@ -354,17 +215,19 @@ export function Overlay(props: {
             }
             await choose(picked, selection);
         } catch (e) {
-            flash(`Could not select that: ${e instanceof Error ? e.message : String(e)}`);
+            flash(`Could not select that: ${messageOf(e)}`);
         }
     };
 
-    const parent = async () => {
+    /**
+     * The composer's Parent: selects the nearest view around the selection that is bigger (a wrapper the same size
+     * says nothing new).
+     */
+    const selectParent = async () => {
         if (!selection) return;
-        // The nearest view around it that is bigger: a wrapper the same size says nothing new.
-        let element = selection.picked.element.parent;
-        while (element) {
+        const f = selection.picked.frame;
+        for (let element = selection.picked.element.parent; element; element = element.parent) {
             const picked = await inspect(element);
-            const f = selection.picked.frame;
             if (
                 picked &&
                 (picked.frame.width > f.width + 0.5 || picked.frame.height > f.height + 0.5)
@@ -372,7 +235,6 @@ export function Overlay(props: {
                 await choose(picked, selection);
                 return;
             }
-            element = element.parent;
         }
         flash("Nothing around this one to select.");
     };
@@ -398,7 +260,7 @@ export function Overlay(props: {
                     (notato.hasServer ? "Sent" : "Saved on this device. Package it from the menu.")
             );
         } catch (e) {
-            flash(`Not saved: ${e instanceof Error ? e.message : String(e)}`);
+            flash(`Not saved: ${messageOf(e)}`);
         }
     };
 
@@ -420,107 +282,30 @@ export function Overlay(props: {
     const busy = sheet !== null || selection !== null || state.annotating;
     useEffect(() => {
         if (!busy) return;
-        const sub = BackHandler.addEventListener("hardwareBackPress", () => {
-            if (sheet)
-                setSheet(
-                    sheet.kind === "pin" && sheet.fromList
-                        ? { kind: "list" }
-                        : sheet.kind === "list" ||
-                            sheet.kind === "settings" ||
-                            sheet.kind === "clear"
-                          ? { kind: "menu" }
-                          : null
-                );
+        const subscription = BackHandler.addEventListener("hardwareBackPress", () => {
+            if (sheet) setSheet(backFrom(sheet));
             else cancel();
             return true;
         });
-        return () => sub.remove();
+        return () => subscription.remove();
     }, [busy, sheet, cancel]);
-
-    // ---- pins: where their elements are now, found again by their selectors twice a second --------------------------
 
     const here = notato.notesOn(route);
     const pinnable = notato.pinsOn(route);
-    const shownHere = useMemo(() => pinnable.slice(-MAX_PINS), [pinnable]);
-    // Read as the pins are placed, so the server's changes do not start the placing over.
-    const shownRef = useRef(shownHere);
-    shownRef.current = shownHere;
-    const pinsWanted = state.pinsVisible && !selection && !state.annotating && shownHere.length > 0;
-    useEffect(() => {
-        if (!pinsWanted) {
-            setPins((current) => (current.length ? [] : current));
-            return;
-        }
-        let live = true;
-        // The views each pin's selector found the last time the app's tree was read. When React has committed nothing
-        // since and the notes are the same, they are the same views, and only where they are now is asked (a scroll
-        // moves them without a commit).
-        const found: {
-            commits?: number;
-            of?: typeof shownHere;
-            views: Map<string, TreeElement[]>;
-        } = { views: new Map() };
-        const place = async () => {
-            const shown = shownRef.current;
-            const commits = commitCount();
-            if (commits === undefined || commits !== found.commits || found.of !== shown) {
-                const elements = appElements(app.current, notato.maskInputs);
-                const index = indexOf(elements);
-                found.views = new Map();
-                for (const { record } of shown) {
-                    const identity = record.annotation.target.identity[0];
-                    let views: TreeElement[] = [];
-                    if (identity) {
-                        try {
-                            views = query(elements, selectorToFind(identity), index).slice(0, 12);
-                        } catch {
-                            views = [];
-                        }
-                    }
-                    found.views.set(record.annotation.id, views);
-                }
-                found.commits = commits;
-                found.of = shown;
-            }
-            const at = await origin();
-            const placed = await Promise.all(
-                shown.map(async ({ record, number }) => {
-                    const stored = record.annotation.target.rect;
-                    // Of several alike (a list's rows), the one nearest where the note was made.
-                    let best: { rect: Rect; d: number } | undefined;
-                    for (const e of found.views.get(record.annotation.id) ?? []) {
-                        const f = await measure(e.fiber);
-                        if (!f) continue;
-                        const r = toRect(f, at);
-                        const d =
-                            Math.hypot(r.x - stored.x, r.y - stored.y) +
-                            Math.abs(r.w - stored.w) +
-                            Math.abs(r.h - stored.h);
-                        if (!best || d < best.d) best = { rect: r, d };
-                    }
-                    const rect = best?.rect;
-                    return { record, number, rect: rect ?? stored, detached: !rect };
-                })
-            );
-            // An element scrolled out of sight takes its pin with it. The same pins again are not set again: that would
-            // draw the overlay for nothing.
-            const next = placed.filter((p) => p.detached || onScreen(p.rect, size));
-            if (live) setPins((current) => (samePins(current, next) ? current : next));
-        };
-        void place();
-        const timer = setInterval(() => void place(), 600);
-        return () => {
-            live = false;
-            clearInterval(timer);
-        };
-    }, [pinsWanted, origin, app, notato, size]);
-
+    const pins = usePlacedPins({
+        notato,
+        app,
+        pinnable,
+        wanted: state.pinsVisible && !selection && !state.annotating,
+        origin,
+        size,
+    });
     const spots = useMemo(
         () =>
             placePins(
                 pins.map((p) => p.rect),
                 size.width,
-                insets.top - 9
+                INSETS.top - 9
             ),
         [pins, size.width]
     );
@@ -531,15 +316,11 @@ export function Overlay(props: {
         state.connection === "refused"
             ? PROBLEM_DOT[state.connection]
             : undefined;
-    const sheetRecord =
-        sheet?.kind === "pin" ? state.notes.find((r) => r.annotation.id === sheet.id) : undefined;
-    const sheetNumber =
-        sheet?.kind === "pin"
-            ? (here.find((n) => n.record.annotation.id === sheet.id)?.number ?? 0)
-            : 0;
+    // While a screenshot is taken, nothing of Notato's shows but the outline and the covers.
     const hide = capturing !== null;
     const outline =
         capturing ?? (selection ? { rect: selection.rect, pin: selection.pin, covers: [] } : null);
+    // The composer goes where it hides nothing of the selection: above it when it is in the lower half.
     const composerAtTop = selection
         ? selection.rect.y + selection.rect.h / 2 > size.height / 2
         : false;
@@ -592,7 +373,7 @@ export function Overlay(props: {
             ) : null}
 
             <View
-                style={[StyleSheet.absoluteFill, hide && { opacity: 0 }]}
+                style={[StyleSheet.absoluteFill, hide && styles.hidden]}
                 pointerEvents={hide ? "none" : "box-none"}
             >
                 {pins.map((pin, i) => {
@@ -605,12 +386,11 @@ export function Overlay(props: {
                             accessibilityLabel={`Note ${pin.number}, ${a.status.replace(/_/g, " ")}`}
                             onPress={() => setSheet({ kind: "pin", id: a.id, fromList: false })}
                             hitSlop={6}
-                            style={{
-                                position: "absolute",
-                                left: spot.x,
-                                top: spot.y,
-                                opacity: pin.detached ? 0.55 : 1,
-                            }}
+                            style={[
+                                styles.pin,
+                                { left: spot.x, top: spot.y },
+                                pin.detached && styles.detached,
+                            ]}
                         >
                             <PinDot
                                 number={pin.number}
@@ -622,7 +402,7 @@ export function Overlay(props: {
                 })}
 
                 {state.annotating && !selection && !sheet ? (
-                    <View style={[styles.hint, { top: insets.top - 4 }]} pointerEvents="box-none">
+                    <View style={[styles.hint, { top: INSETS.top - 4 }]} pointerEvents="box-none">
                         <HintBar done={cancel} />
                     </View>
                 ) : null}
@@ -632,8 +412,8 @@ export function Overlay(props: {
                         room={{
                             width: size.width,
                             height: size.height,
-                            top: insets.top,
-                            bottom: insets.bottom,
+                            top: INSETS.top,
+                            bottom: INSETS.bottom,
                         }}
                         place={state.toolbar}
                         corner={notato.configuration?.toolbarPosition ?? "bottom-right"}
@@ -654,12 +434,10 @@ export function Overlay(props: {
                         behavior="padding"
                         style={[
                             StyleSheet.absoluteFill,
-                            {
-                                justifyContent: composerAtTop ? "flex-start" : "flex-end",
-                                paddingHorizontal: 10,
-                                paddingTop: composerAtTop ? insets.top : 10,
-                                paddingBottom: composerAtTop ? 10 : insets.bottom,
-                            },
+                            styles.composer,
+                            composerAtTop
+                                ? { justifyContent: "flex-start", paddingTop: INSETS.top }
+                                : { justifyContent: "flex-end", paddingBottom: INSETS.bottom },
                         ]}
                         pointerEvents="box-none"
                     >
@@ -668,9 +446,8 @@ export function Overlay(props: {
                             title={selection.title}
                             subtitle={selection.subtitle}
                             screenshotsOff={!notato.screenshotsOn}
-                            sending={false}
                             canParent={!!selection.picked.element.parent}
-                            onParent={() => void parent()}
+                            onParent={() => void selectParent()}
                             onCancel={cancel}
                             onSend={(draft) => void send(draft)}
                         />
@@ -685,68 +462,29 @@ export function Overlay(props: {
                     >
                         <BottomSheet
                             close={() => setSheet(null)}
-                            maxHeight={Math.max(240, size.height - insets.top - 16)}
-                            top={insets.top - 8}
+                            maxHeight={Math.max(240, size.height - INSETS.top - 16)}
+                            top={INSETS.top - 8}
                         >
-                            {sheet.kind === "menu" ? (
-                                <MenuSheet
-                                    notato={notato}
-                                    state={state}
-                                    here={here.length}
-                                    pins={pinnable.length}
-                                    open={setSheet}
-                                    annotate={startAnnotating}
-                                    packageAndShare={() => {
-                                        notato
-                                            .packageAndShare()
-                                            .then(flash)
-                                            .catch((e: unknown) =>
-                                                flash(e instanceof Error ? e.message : String(e))
-                                            );
-                                    }}
-                                />
-                            ) : sheet.kind === "list" ? (
-                                <NotesSheet
-                                    state={state}
-                                    list={here}
-                                    open={setSheet}
-                                    annotate={startAnnotating}
-                                />
-                            ) : sheet.kind === "settings" ? (
-                                <SettingsSheet
-                                    notato={notato}
-                                    state={state}
-                                    open={setSheet}
-                                    toast={flash}
-                                />
-                            ) : sheet.kind === "clear" ? (
-                                <ClearSheet
-                                    notato={notato}
-                                    state={state}
-                                    open={setSheet}
-                                    toast={flash}
-                                />
-                            ) : sheetRecord ? (
-                                <NoteCard
-                                    key={sheetRecord.annotation.id}
-                                    notato={notato}
-                                    record={sheetRecord}
-                                    number={sheetNumber}
-                                    fromList={sheet.fromList}
-                                    open={setSheet}
-                                    toast={flash}
-                                />
-                            ) : (
-                                <Text style={{ padding: 20, color: BRAND.danger }}>
-                                    That note is gone.
-                                </Text>
-                            )}
+                            <SheetView
+                                sheet={sheet}
+                                notato={notato}
+                                state={state}
+                                here={here}
+                                pins={pinnable.length}
+                                open={setSheet}
+                                annotate={startAnnotating}
+                                toast={flash}
+                            />
                         </BottomSheet>
                     </KeyboardAvoidingView>
                 ) : null}
 
                 {toast ? (
-                    <View style={[styles.toastWrap, { top: insets.top - 5 }]} pointerEvents="none">
+                    <View
+                        style={[styles.toastWrap, { top: INSETS.top - 5 }]}
+                        pointerEvents="none"
+                        accessibilityLiveRegion="polite"
+                    >
                         <Text style={styles.toast}>{toast}</Text>
                     </View>
                 ) : null}
@@ -755,8 +493,46 @@ export function Overlay(props: {
     );
 }
 
+/** A message shown for a few seconds at the top: the newest replaces the one showing. */
+function useToast(): [string | null, (message: string) => void] {
+    const [toast, setToast] = useState<string | null>(null);
+    const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+    const flash = useCallback((message: string) => {
+        setToast(message);
+        if (timer.current) clearTimeout(timer.current);
+        timer.current = setTimeout(() => setToast(null), TOAST_MS);
+    }, []);
+    useEffect(
+        () => () => {
+            if (timer.current) clearTimeout(timer.current);
+        },
+        []
+    );
+    return [toast, flash];
+}
+
+/**
+ * The screen the person is on, as the app names it. It is read as the overlay draws; a move to another screen that
+ * redraws nothing of Notato's (one with no pins, say) is noticed by looking twice a second, and drawn then.
+ */
+function useRoute(read: () => string): string {
+    const route = routeName(read());
+    const readRef = useRef(read);
+    readRef.current = read;
+    const drawn = useRef(route);
+    drawn.current = route;
+    const [, redraw] = useReducer((n: number) => n + 1, 0);
+    useEffect(() => {
+        const timer = setInterval(() => {
+            if (routeName(readRef.current()) !== drawn.current) redraw();
+        }, ROUTE_CHECK_MS);
+        return () => clearInterval(timer);
+    }, []);
+    return route;
+}
+
 const styles = StyleSheet.create({
-    cover: { position: "absolute", backgroundColor: "#8b8f97", borderRadius: 4 },
+    cover: { position: "absolute", backgroundColor: BRAND.cover, borderRadius: 4 },
     outline: {
         position: "absolute",
         borderWidth: 2,
@@ -778,7 +554,11 @@ const styles = StyleSheet.create({
         borderColor: "#fff",
     },
     pinText: { color: "#fff", fontSize: 12, fontWeight: "800" },
+    hidden: { opacity: 0 },
+    pin: { position: "absolute" },
+    detached: { opacity: 0.55 },
     hint: { position: "absolute", left: 0, right: 0, alignItems: "center" },
+    composer: { paddingHorizontal: 10, paddingTop: 10, paddingBottom: 10 },
     toastWrap: { position: "absolute", left: 16, right: 16, alignItems: "center" },
     toast: {
         overflow: "hidden",

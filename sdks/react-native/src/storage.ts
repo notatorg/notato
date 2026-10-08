@@ -1,6 +1,6 @@
 import type { Annotation } from "@notato/schema";
 
-/** A note this device knows: made here and not sent yet, or as the server has it. */
+/** A note kept on the device between launches: made here, and not on the server yet. */
 export interface LocalNote {
     annotation: Annotation;
     /** Made here and not on the server yet (test mode keeps every note this way). */
@@ -11,27 +11,39 @@ export interface LocalNote {
     waiting?: string;
 }
 
-/** What a device keeps between launches: its notes, their screenshots, and the person's choices. */
-export interface Storage {
-    readonly persistent: boolean;
+/**
+ * What a device keeps between launches: its notes, their screenshots, and the person's choices. A `StorageProvider`
+ * opens one per project.
+ */
+export interface NotatoStorage {
+    /** The notes not on the server yet. */
     loadNotes(): LocalNote[];
     saveNotes(notes: LocalNote[]): void;
+    /** A screenshot's PNG bytes, by its id. */
     loadAsset(id: string): Uint8Array | undefined;
     saveAsset(id: string, bytes: Uint8Array): void;
     deleteAsset(id: string): void;
+    /** The choices a person made at runtime (on or off, the toolbar's place, a name). */
     loadSettings(): Record<string, unknown>;
     saveSettings(settings: Record<string, unknown>): void;
-    /** Writes a file to share (a test-mode package), returning where it is. */
+    /** Writes a file to share (a test-mode package), returning where it is, or undefined when it cannot write files. */
     writeShare(name: string, bytes: Uint8Array): string | undefined;
 }
 
+/** Where notes are kept between launches, and how a package is shared: `@notato/react-native/expo` is one. */
+export interface StorageProvider {
+    /** The storage for a project, or undefined when there can be none (Notato then keeps everything in memory). */
+    open(project: string): NotatoStorage | undefined;
+    /** Offers a written package to the share sheet. Resolves false when it could not. */
+    share?(uri: string): Promise<boolean>;
+}
+
 /** Keeps everything in memory: what a bare app without expo-file-system gets. Gone when the app restarts. */
-export function memoryStorage(): Storage {
+export function memoryStorage(): NotatoStorage {
     let notes: LocalNote[] = [];
     let settings: Record<string, unknown> = {};
     const assets = new Map<string, Uint8Array>();
     return {
-        persistent: false,
         loadNotes: () => notes,
         saveNotes: (next) => {
             notes = next;
@@ -50,7 +62,7 @@ export function memoryStorage(): Storage {
 /** Ids that may name a file: the schema's SafeId, so one from the server (`../..`) can never leave the folder. */
 const SAFE = /^[A-Za-z0-9_-]{1,128}$/;
 /** A project's folder: its id when that is a safe name (every id the server takes is), else one made from its bytes. */
-export function projectFolder(project: string): string {
+function projectFolder(project: string): string {
     if (/^[A-Za-z0-9_.@-]+$/.test(project) && project !== "." && project !== "..") return project;
     return `p-${[...project].map((c) => c.charCodeAt(0).toString(16)).join("")}`;
 }
@@ -79,17 +91,11 @@ export interface ExpoFs {
 /** How long notes wait to be written after a change: a burst of changes is one write. */
 export const WRITE_DELAY_MS = 300;
 
-/** Where notes are kept between launches, and how a package is shared: `@notato/react-native/expo` is one. */
-export interface StorageProvider {
-    open(project: string): Storage | undefined;
-    share?(uri: string): Promise<boolean>;
-}
-
 /**
  * Keeps notes, screenshots and choices under the app's documents folder with expo-file-system, so test-mode notes and
  * unsent ones survive a restart. Undefined when the folder cannot be made.
  */
-export function fileStorage(project: string, fs: ExpoFs): Storage | undefined {
+export function fileStorage(project: string, fs: ExpoFs): NotatoStorage | undefined {
     try {
         const root = new fs.Directory(fs.Paths.document, "notato", projectFolder(project));
         const shots = new fs.Directory(root, "shots");
@@ -133,7 +139,6 @@ export function fileStorage(project: string, fs: ExpoFs): Storage | undefined {
             }
         };
         return {
-            persistent: true,
             loadNotes: () => unwritten ?? readJson<LocalNote[]>("notes.json", []),
             saveNotes: (notes) => {
                 unwritten = notes;

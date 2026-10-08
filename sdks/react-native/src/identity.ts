@@ -1,14 +1,21 @@
 import type { ElementIdentity } from "@notato/schema";
 import { isLibraryFile, type SourceFrame } from "./stack.ts";
 
+/** Where a view is on screen, in points. */
+export interface Frame {
+    left: number;
+    top: number;
+    width: number;
+    height: number;
+}
+
 /** What React Native's inspector reports for the view under a point (see inspect.ts). */
 export interface Inspected {
     /** The components that rendered the view, outermost first, ending with the native view itself (`RCTText`). */
     names: string[];
     /** The native view's props: `testID`, `accessibilityLabel`, `children` (a Text's own text)… */
     props: Record<string, unknown>;
-    /** Where the view is on screen, in points. */
-    frame: { left: number; top: number; width: number; height: number };
+    frame: Frame;
     /** React's component stack for the view, innermost first, with bundle locations. */
     componentStack: string;
 }
@@ -36,14 +43,15 @@ const NATIVE: Record<string, string> = {
 
 /**
  * Components React Native, React, Expo and React Navigation put around yours, and wrappers named after what they wrap
- * (`withDevTools(App)`, `ForwardRef(Button)`): real, but never what anyone means by "the component". (A component's stack frame cannot say this instead: it names the file that created the element,
- * and a screen of yours is created by the navigation library.)
+ * (`withDevTools(App)`, `ForwardRef(Button)`): real, but never what anyone means by "the component". A component's
+ * stack frame cannot tell them apart instead: it names the file that created the element, and a screen of yours is
+ * created by the navigation library.
  */
 const BUILT_IN =
     /^(?:View|Text|Image|ImageBackground|ScrollView|FlatList|SectionList|VirtualizedList|VirtualizedSectionList|CellRenderer|Pressable|TouchableOpacity|TouchableHighlight|TouchableWithoutFeedback|TouchableNativeFeedback|TextInput|Switch|Button|SafeAreaView|KeyboardAvoidingView|Modal|StatusBar|ActivityIndicator|RefreshControl|AppContainer|RootComponent|LogBoxStateSubscription|LogBox|DebuggingOverlay|ReactDevToolsOverlay|Inspector|Fragment|Suspense|StrictMode|Profiler|ErrorBoundary|ExpoRoot|Unknown|Anonymous|withDevTools|Notato|NotatoRoot|NavigationContainer|BaseNavigationContainer|SceneView|Screen|ScreenContainer|ScreenStack|NativeStackView|NativeStackNavigator|StackView|Header|HeaderContainer|Background|Freeze|DelayedFreeze|Suspender|GestureHandlerRootView|SafeAreaProvider|SafeAreaFrameContext|Slot|Stack|Tabs|Navigator)$|^(?:RCT|Android|Animated|Virtualized|RNS|RNC|RNGestureHandler)|(?:Provider|Consumer|Context|Wrapper|Container|Boundary)$|\(/;
 
 /** What people call a native view: `RCTText` is a `Text`. */
-export const nativeName = (name: string) => NATIVE[name] ?? name;
+const nativeName = (name: string) => NATIVE[name] ?? name;
 
 /** Whether a native view is a text field. */
 export const isTextInput = (native: string) => /TextInput/.test(native);
@@ -67,7 +75,7 @@ const str = (value: unknown) =>
  * A test id a selector can name (`#pay`): at most 100 of the characters `#` reads. Anything else (a sentence, a long
  * value) is not taken as one: it would make a selector nothing can read.
  */
-export const testIdOf = (value: unknown) => {
+const testIdOf = (value: unknown) => {
     const id = str(value);
     return id && id.length <= 100 && /^[\w.@/-]+$/.test(id) ? id : undefined;
 };
@@ -104,8 +112,8 @@ export function identityOf(
     const source = sourceOf(sources);
     const name = path[path.length - 1];
 
-    // Something private says nothing of what it shows: not its text, not its label, not its ids (an app may make them of
-    // what it shows: `testID={email}`). A field says its hint either way.
+    // Something private says nothing of what it shows: not its text, not its label, not its ids (an app may make them
+    // of what it shows: `testID={email}`). A field says its hint either way.
     const testId = privacy.private ? undefined : testIdOf(props.testID);
     const nativeId = privacy.private ? undefined : str(props.nativeID);
     const input = isTextInput(native);

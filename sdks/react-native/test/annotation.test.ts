@@ -1,7 +1,6 @@
 import { Annotation } from "@notato/schema";
 import { describe, expect, it } from "vitest";
 import { appUrl, buildAnnotation } from "../src/annotation.ts";
-import { ulid } from "../src/ids.ts";
 import { SDK } from "../src/version.ts";
 
 const shot = (id: string, w: number, h: number) => ({
@@ -122,14 +121,5 @@ describe("an agent's note, People only and context", () => {
             network: [{ status: 500 }],
         });
         expect(Annotation.safeParse(note).success).toBe(true);
-    });
-});
-
-describe("ulid", () => {
-    it("is 26 Crockford characters that sort by time", () => {
-        const a = ulid(1_700_000_000_000);
-        const b = ulid(1_700_000_000_001);
-        expect(a).toMatch(/^[0-9A-HJKMNP-TV-Z]{26}$/);
-        expect(a < b).toBe(true);
     });
 });

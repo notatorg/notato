@@ -13,7 +13,7 @@ import {
     View,
 } from "react-native";
 import { ICONS, type IconName, POTATO } from "./icons.ts";
-import { type Palette, statusColor, usePalette } from "./theme.ts";
+import { BRAND, type Palette, statusColor, usePalette } from "./theme.ts";
 
 /** One of Notato's icons, tinted. */
 export function Icon({ name, size = 20, color }: { name: IconName; size?: number; color: string }) {
@@ -39,6 +39,10 @@ export function Potato({ size }: { size: number }) {
     );
 }
 
+/** How far, or how fast, the grabber is pulled down to close a sheet. */
+const CLOSE_DISTANCE = 90;
+const CLOSE_VELOCITY = 1.2;
+
 /**
  * A floating bottom sheet, 8 points off the screen's edges, with a grabber, over a scrim. Pulled down far enough by
  * its grabber, or with the scrim tapped, it closes.
@@ -57,12 +61,15 @@ export function BottomSheet({
 }) {
     const p = usePalette();
     const pull = useRef(new Animated.Value(0)).current;
+    // The pan responder is made once: it closes through the latest `close`.
+    const closing = useRef(close);
+    closing.current = close;
     const pan = useRef(
         PanResponder.create({
             onMoveShouldSetPanResponder: (_, g) => g.dy > 8 && Math.abs(g.dy) > Math.abs(g.dx),
             onPanResponderMove: (_, g) => pull.setValue(Math.max(0, g.dy)),
             onPanResponderRelease: (_, g) => {
-                if (g.dy > 90 || g.vy > 1.2) close();
+                if (g.dy > CLOSE_DISTANCE || g.vy > CLOSE_VELOCITY) closing.current();
                 else Animated.spring(pull, { toValue: 0, useNativeDriver: true }).start();
             },
             onPanResponderTerminate: () =>
@@ -98,7 +105,10 @@ export function BottomSheet({
     );
 }
 
-/** A sheet's first line: the potato, a back button or the note's pin; the title and a line under it; then a pill or close. */
+/**
+ * A sheet's first line: the potato, a back button or the note's pin; the title and a line under it; then a pill or
+ * close.
+ */
 export function SheetHeader(props: {
     title: string;
     subtitle?: string;
@@ -109,7 +119,7 @@ export function SheetHeader(props: {
     return (
         <View style={styles.header}>
             {props.leading}
-            <View style={{ flex: 1, gap: 2 }}>
+            <View style={styles.grow}>
                 <Text
                     style={[styles.title, { color: p.text }]}
                     numberOfLines={1}
@@ -118,7 +128,7 @@ export function SheetHeader(props: {
                     {props.title}
                 </Text>
                 {props.subtitle ? (
-                    <Text style={{ fontSize: 12, color: p.muted }} numberOfLines={1}>
+                    <Text style={[styles.subtitle, { color: p.muted }]} numberOfLines={1}>
                         {props.subtitle}
                     </Text>
                 ) : null}
@@ -160,6 +170,7 @@ export function HeaderButton({
     );
 }
 
+/** `danger` is red words on a plain button (Delete); `destructive` is a red button (a confirmation). */
 export type ButtonKind = "plain" | "primary" | "danger" | "destructive";
 
 /** A sheet's buttons: as wide as they can be, side by side. */
@@ -198,11 +209,13 @@ export function SheetButton(props: {
         >
             <Text
                 numberOfLines={1}
-                style={{
-                    fontSize: 15,
-                    fontWeight: kind === "plain" || kind === "danger" ? "600" : "700",
-                    color: kind === "plain" ? p.text : kind === "danger" ? p.danger : "#fff",
-                }}
+                style={[
+                    styles.buttonText,
+                    {
+                        fontWeight: kind === "plain" || kind === "danger" ? "600" : "700",
+                        color: kind === "plain" ? p.text : kind === "danger" ? p.danger : "#fff",
+                    },
+                ]}
             >
                 {props.title}
             </Text>
@@ -270,7 +283,7 @@ export function PinDot({
                     height: size,
                     borderRadius: size / 2,
                     backgroundColor: statusColor(status),
-                    borderColor: pending ? "#e9b44c" : "#fff",
+                    borderColor: pending ? BRAND.pending : "#fff",
                 },
             ]}
         >
@@ -293,7 +306,7 @@ export function MenuRow(props: {
 }) {
     const p = usePalette();
     return (
-        <View style={props.separated ? { paddingTop: 9 } : undefined}>
+        <View style={props.separated ? styles.separated : undefined}>
             {props.separated ? <View style={[styles.rule, { backgroundColor: p.line }]} /> : null}
             <Pressable
                 onPress={props.onPress}
@@ -303,22 +316,21 @@ export function MenuRow(props: {
                 style={({ pressed }) => [styles.row, pressed && { backgroundColor: p.soft }]}
             >
                 <SheetTile tile={props.tile} style={props.style} />
-                <View style={{ flex: 1, gap: 2 }}>
+                <View style={styles.grow}>
                     <Text
                         numberOfLines={props.titleLines ?? 1}
-                        style={{
-                            fontSize: 15.5,
-                            fontWeight: "600",
-                            color: props.style === "danger" ? p.danger : p.text,
-                        }}
+                        style={[
+                            styles.rowTitle,
+                            { color: props.style === "danger" ? p.danger : p.text },
+                        ]}
                     >
                         {props.title}
                     </Text>
-                    <Text numberOfLines={1} style={{ fontSize: 12.5, color: p.muted }}>
+                    <Text numberOfLines={1} style={[styles.detail, { color: p.muted }]}>
                         {props.detail}
                     </Text>
                 </View>
-                {props.opens ? <Text style={{ fontSize: 18, color: p.muted }}>›</Text> : null}
+                {props.opens ? <Text style={[styles.chevron, { color: p.muted }]}>›</Text> : null}
             </Pressable>
         </View>
     );
@@ -346,13 +358,11 @@ export function FlagToggle(props: {
             style={[styles.flag, props.tile ? styles.flagRow : null]}
         >
             {props.tile ? <SheetTile tile={props.tile} /> : null}
-            <View style={{ flex: 1, gap: 2 }}>
-                <Text
-                    style={{ fontSize: props.tile ? 15.5 : 15, fontWeight: "600", color: p.text }}
-                >
+            <View style={styles.grow}>
+                <Text style={[props.tile ? styles.rowTitle : styles.flagTitle, { color: p.text }]}>
                     {props.title}
                 </Text>
-                <Text style={{ fontSize: 12.5, color: p.muted }}>{props.hint}</Text>
+                <Text style={[styles.detail, { color: p.muted }]}>{props.hint}</Text>
             </View>
             {/* The row takes the tap: a switch that took it too would flip it back. */}
             <View pointerEvents="none">
@@ -371,11 +381,7 @@ export function FlagToggle(props: {
 /** A label over a text field. */
 export function FieldLabel({ text }: { text: string }) {
     const p = usePalette();
-    return (
-        <Text style={{ fontSize: 12.5, fontWeight: "600", color: p.muted, paddingHorizontal: 4 }}>
-            {text}
-        </Text>
-    );
+    return <Text style={[styles.fieldLabel, { color: p.muted }]}>{text}</Text>;
 }
 
 /** A text field's look in a sheet or card. */
@@ -394,11 +400,7 @@ export const Field = forwardRef<TextInput, TextInputProps>(function Field(props,
 /** What does not fit scrolls; what fits is as tall as it is. */
 export function SheetScroll({ children }: { children: ReactNode }) {
     return (
-        <ScrollView
-            style={{ flexGrow: 0, flexShrink: 1 }}
-            keyboardShouldPersistTaps="handled"
-            bounces={false}
-        >
+        <ScrollView style={styles.scroll} keyboardShouldPersistTaps="handled" bounces={false}>
             {children}
         </ScrollView>
     );
@@ -417,7 +419,7 @@ export function Chips<T extends string>(props: {
             showsHorizontalScrollIndicator={false}
             keyboardShouldPersistTaps="handled"
         >
-            <View style={{ flexDirection: "row", gap: 6 }}>
+            <View style={styles.chips}>
                 {props.options.map(([value, label]) => {
                     const on = props.value === value;
                     return (
@@ -434,13 +436,7 @@ export function Chips<T extends string>(props: {
                                 },
                             ]}
                         >
-                            <Text
-                                style={{
-                                    fontSize: 14,
-                                    fontWeight: "600",
-                                    color: on ? "#fff" : p.text,
-                                }}
-                            >
+                            <Text style={[styles.chipText, { color: on ? "#fff" : p.text }]}>
                                 {label}
                             </Text>
                         </Pressable>
@@ -455,9 +451,7 @@ export function Chips<T extends string>(props: {
 export function Badge({ text, color }: { text: string; color: string }) {
     return (
         <View style={[styles.badge, { backgroundColor: `${color}24` }]}>
-            <Text style={{ fontSize: 11, fontWeight: "700", color }}>
-                {text.replace(/_/g, " ")}
-            </Text>
+            <Text style={[styles.badgeText, { color }]}>{text.replace(/_/g, " ")}</Text>
         </View>
     );
 }
@@ -466,24 +460,16 @@ export function Badge({ text, color }: { text: string; color: string }) {
 export function PeopleOnlyBadge({ palette }: { palette: Palette }) {
     return (
         <View
-            style={[styles.badge, { borderWidth: 1, borderColor: palette.line }]}
+            style={[styles.badge, styles.outlined, { borderColor: palette.line }]}
             testID="NotatoPeopleOnlyBadge"
         >
-            <Text
-                style={{
-                    fontSize: 10.5,
-                    fontWeight: "700",
-                    letterSpacing: 0.4,
-                    color: palette.muted,
-                }}
-            >
-                PEOPLE ONLY
-            </Text>
+            <Text style={[styles.peopleOnly, { color: palette.muted }]}>PEOPLE ONLY</Text>
         </View>
     );
 }
 
-export const styles = StyleSheet.create({
+const styles = StyleSheet.create({
+    grow: { flex: 1, gap: 2 },
     sheetRoot: { flex: 1 },
     sheetWrap: {
         flex: 1,
@@ -518,6 +504,7 @@ export const styles = StyleSheet.create({
         paddingBottom: 6,
     },
     title: { fontSize: 20, fontWeight: "700", letterSpacing: -0.4 },
+    subtitle: { fontSize: 12 },
     round: { borderRadius: 999, alignItems: "center", justifyContent: "center" },
     button: {
         flex: 1,
@@ -527,6 +514,7 @@ export const styles = StyleSheet.create({
         justifyContent: "center",
         paddingHorizontal: 14,
     },
+    buttonText: { fontSize: 15 },
     tile: { borderRadius: 12, alignItems: "center", justifyContent: "center" },
     pin: { alignItems: "center", justifyContent: "center", borderWidth: 2 },
     pinText: { color: "#fff", fontSize: 12, fontWeight: "800" },
@@ -539,10 +527,22 @@ export const styles = StyleSheet.create({
         paddingHorizontal: 4,
         borderRadius: 14,
     },
+    rowTitle: { fontSize: 15.5, fontWeight: "600" },
+    detail: { fontSize: 12.5 },
+    chevron: { fontSize: 18 },
+    separated: { paddingTop: 9 },
     rule: { position: "absolute", top: 4, left: 0, right: 0, height: StyleSheet.hairlineWidth * 2 },
     flag: { flexDirection: "row", alignItems: "center", gap: 12 },
     flagRow: { gap: 14, minHeight: 58, paddingVertical: 7, paddingHorizontal: 4 },
+    flagTitle: { fontSize: 15, fontWeight: "600" },
+    fieldLabel: { fontSize: 12.5, fontWeight: "600", paddingHorizontal: 4 },
     field: { fontSize: 15, paddingHorizontal: 12, paddingVertical: 11, borderRadius: 12 },
+    scroll: { flexGrow: 0, flexShrink: 1 },
+    chips: { flexDirection: "row", gap: 6 },
     chip: { borderWidth: 1, borderRadius: 999, paddingHorizontal: 11, paddingVertical: 6 },
+    chipText: { fontSize: 14, fontWeight: "600" },
     badge: { borderRadius: 999, paddingHorizontal: 7, paddingVertical: 2 },
+    badgeText: { fontSize: 11, fontWeight: "700" },
+    outlined: { borderWidth: 1 },
+    peopleOnly: { fontSize: 10.5, fontWeight: "700", letterSpacing: 0.4 },
 });

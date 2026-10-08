@@ -47,19 +47,21 @@ const auth = (c: Connection): Record<string, string> =>
     c.token ? { Authorization: `Bearer ${c.token}` } : {};
 const segment = encodeURIComponent;
 
+/** How long a request may take before it is given up on: a note with two screenshots on a slow network. */
+const REQUEST_TIMEOUT_MS = 60_000;
+
 /** A request through React Native's own XMLHttpRequest, which sends bytes as they are, in every app. */
 function request(
     method: string,
     url: string,
     headers: Record<string, string>,
-    body?: string | Uint8Array,
-    timeoutMs = 60_000
+    body?: string | Uint8Array
 ): Promise<{ status: number; text: string }> {
     return new Promise((resolve, reject) => {
         const xhr = new XMLHttpRequest();
         xhr.open(method, url);
         for (const [name, value] of Object.entries(headers)) xhr.setRequestHeader(name, value);
-        xhr.timeout = timeoutMs;
+        xhr.timeout = REQUEST_TIMEOUT_MS;
         xhr.onload = () => resolve({ status: xhr.status, text: xhr.responseText });
         xhr.onerror = () =>
             reject(
@@ -69,7 +71,7 @@ function request(
             );
         xhr.ontimeout = () => reject(new NotatoError("the Notato server did not answer in time"));
         // A Uint8Array is sent as its bytes; React Native's networking takes an ArrayBuffer view.
-        xhr.send((body ?? null) as never);
+        xhr.send(body ?? null);
     });
 }
 
@@ -155,13 +157,16 @@ export function sendAnnotation(
     );
 }
 
+/** How many notes a page of the list has. */
+const PAGE_SIZE = 500;
+
 /** The most pages a list reads: 50,000 notes. */
 const MAX_PAGES = 100;
 
 /**
  * Every note in the project, oldest first, page by page, without what the app never shows (a note's context and an
- * agent's steps: `fields=summary`, which older servers ignore). Throws when the list cannot be read to its end (too many
- * pages, or a server whose pages do not move on): a list cut short would look like deletions.
+ * agent's steps: `fields=summary`, which older servers ignore). Throws when the list cannot be read to its end (too
+ * many pages, or a server whose pages do not move on): a list cut short would look like deletions.
  */
 export async function listAnnotations(c: Connection): Promise<StoredAnnotation[]> {
     const all: StoredAnnotation[] = [];
@@ -170,7 +175,7 @@ export async function listAnnotations(c: Connection): Promise<StoredAnnotation[]
         const body = await call<{ items: StoredAnnotation[]; next?: number }>(
             c,
             "GET",
-            `/projects/${segment(c.project)}/annotations?limit=500&fields=summary${after === undefined ? "" : `&afterSeq=${after}`}`
+            `/projects/${segment(c.project)}/annotations?limit=${PAGE_SIZE}&fields=summary${after === undefined ? "" : `&afterSeq=${after}`}`
         );
         all.push(...(Array.isArray(body?.items) ? body.items : []));
         const next = body?.next;
@@ -205,11 +210,11 @@ export const setPeopleOnly = (c: Connection, id: string, peopleOnly: boolean, au
 export const deleteAnnotation = (c: Connection, id: string) =>
     call<void>(c, "DELETE", `/annotations/${segment(id)}`);
 
-export const relayResult = (
-    c: Connection,
-    requestId: string,
-    result: { ok: true; annotationId: string } | { ok: false; error: string }
-) => call<void>(c, "POST", `/relay/${segment(requestId)}/result`, result);
+/** What the app answers an agent's annotate request with: the note it filed, or why it did not. */
+export type RelayResult = { ok: true; annotationId: string } | { ok: false; error: string };
+
+export const relayResult = (c: Connection, requestId: string, result: RelayResult) =>
+    call<void>(c, "POST", `/relay/${segment(requestId)}/result`, result);
 
 /** What the server says before anything is captured: whether it takes screenshots. */
 export const getConfig = (c: Connection) =>
@@ -239,6 +244,13 @@ const reasonOf = (text: string, status: number) => {
 /** The server says something at least every 15 seconds: a stream silent for this long has gone without saying so. */
 const IDLE_MS = 45_000;
 
+/** The pause before the first attempt to open the stream again: doubled after each failure, up to the longest. */
+const FIRST_RETRY_MS = 1_000;
+const LONGEST_RETRY_MS = 15_000;
+
+/** The pause after the server refuses the app: a token or project fixed on the server is picked up this soon. */
+const REFUSED_RETRY_MS = 10_000;
+
 /** A stream that has run for hours: past this much text, a fresh one is opened rather than keep it all. */
 const ROTATE_AT = 2_000_000;
 
@@ -258,7 +270,7 @@ export function followEvents(
     let xhr: XMLHttpRequest | undefined;
     let timer: ReturnType<typeof setTimeout> | undefined;
     let idle: ReturnType<typeof setTimeout> | undefined;
-    let wait = 1000;
+    let wait = FIRST_RETRY_MS;
 
     const open = (quietly = false) => {
         if (stopped) return;
@@ -286,7 +298,7 @@ export function followEvents(
         req.onprogress = () => {
             if (xhr !== req || !req.status || req.status < 200 || req.status >= 300) return;
             watch();
-            wait = 1000;
+            wait = FIRST_RETRY_MS;
             for (const event of parse(req.responseText)) onEvent(event);
             if (req.responseText.length > ROTATE_AT) {
                 ended = "rotated";
@@ -308,7 +320,7 @@ export function followEvents(
             );
             if (!ok && req.status && error.permanent) {
                 onState("refused", error.message);
-                wait = 10_000;
+                wait = REFUSED_RETRY_MS;
                 timer = setTimeout(open, wait);
                 return;
             }
@@ -323,7 +335,7 @@ export function followEvents(
                         : `cannot reach the Notato server at ${c.server}`
             );
             timer = setTimeout(open, wait);
-            wait = Math.min(wait * 2, 15_000);
+            wait = Math.min(wait * 2, LONGEST_RETRY_MS);
         };
         req.onerror = again;
         req.onload = again;
@@ -344,7 +356,7 @@ export function followEvents(
         },
         retry() {
             if (stopped) return;
-            wait = 1000;
+            wait = FIRST_RETRY_MS;
             const old = xhr;
             xhr = undefined;
             old?.abort();
@@ -352,3 +364,31 @@ export function followEvents(
         },
     };
 }
+
+/** The calls Notato makes to its server: these, or a test's. */
+export interface Transport {
+    send: typeof sendAnnotation;
+    list: typeof listAnnotations;
+    reply: typeof reply;
+    setStatus: typeof setStatus;
+    setPeopleOnly: typeof setPeopleOnly;
+    remove: typeof deleteAnnotation;
+    relayResult: typeof relayResult;
+    uploadBundle: typeof uploadBundle;
+    config: typeof getConfig;
+    follow: typeof followEvents;
+}
+
+/** The real calls, over HTTP. */
+export const httpTransport: Transport = {
+    send: sendAnnotation,
+    list: listAnnotations,
+    reply,
+    setStatus,
+    setPeopleOnly,
+    remove: deleteAnnotation,
+    relayResult,
+    uploadBundle,
+    config: getConfig,
+    follow: followEvents,
+};

@@ -5,10 +5,11 @@
 //     <Notato project="shop" storage={expoStorage}>…</Notato>
 import { Directory, File, Paths } from "expo-file-system";
 import * as Sharing from "expo-sharing";
-import { fileStorage, type StorageProvider } from "./storage.ts";
+import { type ExpoFs, fileStorage, type StorageProvider } from "./storage.ts";
 
+/** Notato's storage and sharing with expo-file-system and expo-sharing: pass it to `<Notato storage={…}>`. */
 export const expoStorage: StorageProvider = {
-    open: (project) => fileStorage(project, { File, Directory, Paths } as never),
+    open: (project) => fileStorage(project, { File, Directory, Paths } as ExpoFs),
     async share(uri) {
         try {
             if (!(await Sharing.isAvailableAsync())) return false;

@@ -1,22 +1,31 @@
 import { useEffect, useRef, useState } from "react";
-import { Animated, PanResponder, Pressable, Text, View } from "react-native";
+import { Animated, PanResponder, Pressable, StyleSheet, Text, View } from "react-native";
+import type { ToolbarCorner } from "../config.ts";
 import { Icon, Potato } from "./parts.tsx";
-import { BAR, BRAND } from "./theme.ts";
+import { BAR } from "./theme.ts";
 
+/** The bar's height, and the folded button's size. */
 const HEIGHT = 54;
+/** How far it keeps from the screen's sides. */
 const MARGIN = 12;
+/** The open bar's width until it has been laid out and measured. */
+const OPEN_WIDTH = 252;
+/** How far a finger moves before a touch is a drag rather than a tap. */
+const DRAG_SLOP = 6;
 
 export interface ToolbarProps {
     /** The room the toolbar moves in, and how far from each edge it keeps. */
     room: { width: number; height: number; top: number; bottom: number };
     /** Where it was left, as fractions of that room; the configured corner until then. */
     place: { x?: number; y?: number };
-    corner: "bottom-right" | "bottom-left" | "top-right" | "top-left";
+    corner: ToolbarCorner;
     folded: boolean;
     annotating: boolean;
+    /** The notes on this screen. */
     count: number;
-    /** A dot on ⋯ (or the folded button) while connecting, or when the server cannot be reached. */
+    /** The colour of a dot on ⋯ (or the folded button) while connecting, or when the server cannot be reached. */
     problem?: string;
+    /** What the dot means, for screen readers. */
     problemLabel?: string;
     onAnnotate(): void;
     onMenu(): void;
@@ -31,7 +40,7 @@ const countText = (n: number) => (n > 99 ? "99+" : String(n));
  * button with the potato. The whole bar drags; where it is left is kept.
  */
 export function Toolbar(props: ToolbarProps) {
-    const [openWidth, setOpenWidth] = useState(252);
+    const [openWidth, setOpenWidth] = useState(OPEN_WIDTH);
     const width = props.folded ? HEIGHT : openWidth;
     const { room } = props;
     const spanX = Math.max(0, room.width - width - MARGIN * 2);
@@ -43,15 +52,17 @@ export function Toolbar(props: ToolbarProps) {
     // Held to the side it is nearest, so it folds and opens towards the middle.
     const heldRight = fx > 0.5;
 
+    // The pan responder is made once: it reads where the bar is, and who to tell, through these.
     const drag = useRef(new Animated.ValueXY()).current;
-    const latest = useRef({ left, top, spanX, spanY, width, room });
-    latest.current = { left, top, spanX, spanY, width, room };
+    const latest = useRef({ left, top, spanX, spanY, room });
+    latest.current = { left, top, spanX, spanY, room };
     const moved = useRef(props.onMoved);
     moved.current = props.onMoved;
     const pan = useRef(
         PanResponder.create({
-            onMoveShouldSetPanResponder: (_, g) => Math.abs(g.dx) + Math.abs(g.dy) > 6,
-            onMoveShouldSetPanResponderCapture: (_, g) => Math.abs(g.dx) + Math.abs(g.dy) > 6,
+            onMoveShouldSetPanResponder: (_, g) => Math.abs(g.dx) + Math.abs(g.dy) > DRAG_SLOP,
+            onMoveShouldSetPanResponderCapture: (_, g) =>
+                Math.abs(g.dx) + Math.abs(g.dy) > DRAG_SLOP,
             onPanResponderMove: Animated.event([null, { dx: drag.x, dy: drag.y }], {
                 useNativeDriver: false,
             }),
@@ -79,26 +90,15 @@ export function Toolbar(props: ToolbarProps) {
     }, [props.folded, fade]);
 
     const dot = props.problem;
+    const tint = props.annotating ? BAR.onAccent : BAR.text;
     return (
         <Animated.View
             {...pan.panHandlers}
-            style={{
-                position: "absolute",
-                left,
-                top,
-                height: HEIGHT,
-                width: props.folded ? HEIGHT : undefined,
-                borderRadius: props.folded ? HEIGHT / 2 : 16,
-                backgroundColor: BAR.bar,
-                borderWidth: 1,
-                borderColor: BAR.line,
-                shadowColor: "#0f1114",
-                shadowOpacity: 0.45,
-                shadowRadius: 14,
-                shadowOffset: { width: 0, height: 10 },
-                elevation: 12,
-                transform: drag.getTranslateTransform(),
-            }}
+            style={[
+                styles.bar,
+                props.folded ? styles.barFolded : null,
+                { left, top, transform: drag.getTranslateTransform() },
+            ]}
         >
             {props.folded ? (
                 <Pressable
@@ -108,65 +108,19 @@ export function Toolbar(props: ToolbarProps) {
                     accessibilityValue={
                         props.count ? { text: `${props.count} on this screen` } : undefined
                     }
-                    style={{
-                        width: HEIGHT - 2,
-                        height: HEIGHT - 2,
-                        alignItems: "center",
-                        justifyContent: "center",
-                    }}
+                    style={styles.folded}
                 >
                     <Animated.View style={{ opacity: fade }}>
                         <Potato size={40} />
                     </Animated.View>
                     {props.count > 0 ? (
-                        <View
-                            style={{
-                                position: "absolute",
-                                top: -8,
-                                right: -8,
-                                padding: 2,
-                                borderRadius: 999,
-                                backgroundColor: BAR.bar,
-                            }}
-                        >
-                            <Text
-                                style={{
-                                    minWidth: 18,
-                                    height: 18,
-                                    lineHeight: 18,
-                                    paddingHorizontal: 5,
-                                    borderRadius: 9,
-                                    overflow: "hidden",
-                                    textAlign: "center",
-                                    fontSize: 11,
-                                    fontWeight: "800",
-                                    color: BAR.onAccent,
-                                    backgroundColor: BAR.accent,
-                                }}
-                            >
-                                {countText(props.count)}
-                            </Text>
+                        <View style={styles.badgeRing}>
+                            <Text style={styles.badge}>{countText(props.count)}</Text>
                         </View>
                     ) : null}
                     {dot ? (
-                        <View
-                            style={{
-                                position: "absolute",
-                                left: -2,
-                                bottom: -2,
-                                padding: 2,
-                                borderRadius: 999,
-                                backgroundColor: BAR.bar,
-                            }}
-                        >
-                            <View
-                                style={{
-                                    width: 10,
-                                    height: 10,
-                                    borderRadius: 5,
-                                    backgroundColor: dot,
-                                }}
-                            />
+                        <View style={styles.foldedDotRing}>
+                            <View style={[styles.foldedDot, { backgroundColor: dot }]} />
                         </View>
                     ) : null}
                 </Pressable>
@@ -176,22 +130,9 @@ export function Toolbar(props: ToolbarProps) {
                         const w = Math.round(e.nativeEvent.layout.width) + 2;
                         if (Math.abs(w - openWidth) > 1) setOpenWidth(w);
                     }}
-                    style={{
-                        flexDirection: "row",
-                        alignItems: "center",
-                        padding: 4,
-                        gap: 2,
-                        opacity: fade,
-                    }}
+                    style={[styles.open, { opacity: fade }]}
                 >
-                    <View
-                        style={{
-                            width: 20,
-                            height: 44,
-                            alignItems: "center",
-                            justifyContent: "center",
-                        }}
-                    >
+                    <View style={styles.grip}>
                         <Icon name="grip" size={14} color={BAR.muted} />
                     </View>
                     <Pressable
@@ -201,51 +142,29 @@ export function Toolbar(props: ToolbarProps) {
                         accessibilityState={{ selected: props.annotating }}
                         accessibilityValue={{ text: `${props.count} on this screen` }}
                         testID="NotatoAnnotate"
-                        style={({ pressed }) => ({
-                            flexDirection: "row",
-                            alignItems: "center",
-                            gap: 8,
-                            height: 44,
-                            paddingLeft: 12,
-                            paddingRight: 10,
-                            borderRadius: 12,
-                            backgroundColor: props.annotating
-                                ? BAR.accent
-                                : pressed
-                                  ? BAR.pressed
-                                  : "transparent",
-                        })}
-                    >
-                        <Icon
-                            name="crosshair"
-                            size={18}
-                            color={props.annotating ? BAR.onAccent : BAR.text}
-                        />
-                        <Text
-                            style={{
-                                fontSize: 15,
-                                fontWeight: "700",
-                                color: props.annotating ? BAR.onAccent : BAR.text,
-                            }}
-                        >
-                            Annotate
-                        </Text>
-                        <Text
-                            style={{
-                                minWidth: 22,
-                                paddingHorizontal: 7,
-                                paddingVertical: 1,
-                                borderRadius: 999,
-                                overflow: "hidden",
-                                textAlign: "center",
-                                fontSize: 12.5,
-                                fontWeight: "700",
-                                fontVariant: ["tabular-nums"],
-                                color: props.annotating ? BAR.onAccent : BAR.text,
+                        style={({ pressed }) => [
+                            styles.annotate,
+                            {
                                 backgroundColor: props.annotating
-                                    ? "rgba(11,31,27,0.16)"
-                                    : BAR.pressed,
-                            }}
+                                    ? BAR.accent
+                                    : pressed
+                                      ? BAR.pressed
+                                      : "transparent",
+                            },
+                        ]}
+                    >
+                        <Icon name="crosshair" size={18} color={tint} />
+                        <Text style={[styles.annotateText, { color: tint }]}>Annotate</Text>
+                        <Text
+                            style={[
+                                styles.count,
+                                {
+                                    color: tint,
+                                    backgroundColor: props.annotating
+                                        ? "rgba(11,31,27,0.16)"
+                                        : BAR.pressed,
+                                },
+                            ]}
                         >
                             {countText(props.count)}
                         </Text>
@@ -256,44 +175,16 @@ export function Toolbar(props: ToolbarProps) {
                         accessibilityLabel="Notato menu"
                         accessibilityValue={dot ? { text: props.problemLabel ?? "" } : undefined}
                         testID="NotatoMenu"
-                        style={({ pressed }) => ({
-                            width: 44,
-                            height: 44,
-                            borderRadius: 12,
-                            alignItems: "center",
-                            justifyContent: "center",
-                            backgroundColor: pressed ? BAR.pressed : "transparent",
-                        })}
+                        style={({ pressed }) => [styles.menu, pressed ? styles.pressed : null]}
                     >
                         <Icon name="more" size={18} color={BAR.text} />
-                        {dot ? (
-                            <View
-                                style={{
-                                    position: "absolute",
-                                    top: 9,
-                                    right: 9,
-                                    width: 8,
-                                    height: 8,
-                                    borderRadius: 4,
-                                    borderWidth: 1.5,
-                                    borderColor: BAR.bar,
-                                    backgroundColor: dot,
-                                }}
-                            />
-                        ) : null}
+                        {dot ? <View style={[styles.menuDot, { backgroundColor: dot }]} /> : null}
                     </Pressable>
                     <Pressable
                         onPress={() => props.onFold(true)}
                         accessibilityRole="button"
                         accessibilityLabel="Collapse the toolbar"
-                        style={({ pressed }) => ({
-                            width: 28,
-                            height: 44,
-                            borderRadius: 12,
-                            alignItems: "center",
-                            justifyContent: "center",
-                            backgroundColor: pressed ? BAR.pressed : "transparent",
-                        })}
+                        style={({ pressed }) => [styles.fold, pressed ? styles.pressed : null]}
                     >
                         <Icon
                             name={heldRight ? "chevronRight" : "chevronLeft"}
@@ -310,47 +201,137 @@ export function Toolbar(props: ToolbarProps) {
 /** The hint at the top while annotating. */
 export function HintBar({ done }: { done(): void }) {
     return (
-        <View
-            style={{
-                flexDirection: "row",
-                alignItems: "center",
-                gap: 12,
-                paddingLeft: 16,
-                paddingRight: 6,
-                paddingVertical: 6,
-                borderRadius: 999,
-                backgroundColor: BAR.bar,
-                borderWidth: 1,
-                borderColor: BAR.line,
-                shadowColor: "#000",
-                shadowOpacity: 0.28,
-                shadowRadius: 12,
-                shadowOffset: { width: 0, height: 4 },
-                elevation: 10,
-            }}
-        >
-            <Text style={{ fontSize: 14, fontWeight: "600", color: BAR.text }}>
-                Tap what you want to comment on
-            </Text>
-            <Pressable
-                onPress={done}
-                accessibilityRole="button"
-                hitSlop={8}
-                style={{
-                    paddingHorizontal: 12,
-                    paddingVertical: 6,
-                    borderRadius: 999,
-                    backgroundColor: BAR.accent,
-                }}
-            >
-                <Text style={{ fontSize: 14, fontWeight: "700", color: BAR.onAccent }}>Done</Text>
+        <View style={styles.hint}>
+            <Text style={styles.hintText}>Tap what you want to comment on</Text>
+            <Pressable onPress={done} accessibilityRole="button" hitSlop={8} style={styles.done}>
+                <Text style={styles.doneText}>Done</Text>
             </Pressable>
         </View>
     );
 }
 
-export const PROBLEM_DOT = {
-    connecting: BRAND.connecting,
-    offline: BRAND.offline,
-    refused: BRAND.offline,
-} as const;
+const styles = StyleSheet.create({
+    bar: {
+        position: "absolute",
+        height: HEIGHT,
+        borderRadius: 16,
+        backgroundColor: BAR.bar,
+        borderWidth: 1,
+        borderColor: BAR.line,
+        shadowColor: "#0f1114",
+        shadowOpacity: 0.45,
+        shadowRadius: 14,
+        shadowOffset: { width: 0, height: 10 },
+        elevation: 12,
+    },
+    barFolded: { width: HEIGHT, borderRadius: HEIGHT / 2 },
+    pressed: { backgroundColor: BAR.pressed },
+    folded: {
+        width: HEIGHT - 2,
+        height: HEIGHT - 2,
+        alignItems: "center",
+        justifyContent: "center",
+    },
+    badgeRing: {
+        position: "absolute",
+        top: -8,
+        right: -8,
+        padding: 2,
+        borderRadius: 999,
+        backgroundColor: BAR.bar,
+    },
+    badge: {
+        minWidth: 18,
+        height: 18,
+        lineHeight: 18,
+        paddingHorizontal: 5,
+        borderRadius: 9,
+        overflow: "hidden",
+        textAlign: "center",
+        fontSize: 11,
+        fontWeight: "800",
+        color: BAR.onAccent,
+        backgroundColor: BAR.accent,
+    },
+    foldedDotRing: {
+        position: "absolute",
+        left: -2,
+        bottom: -2,
+        padding: 2,
+        borderRadius: 999,
+        backgroundColor: BAR.bar,
+    },
+    foldedDot: { width: 10, height: 10, borderRadius: 5 },
+    open: { flexDirection: "row", alignItems: "center", padding: 4, gap: 2 },
+    grip: { width: 20, height: 44, alignItems: "center", justifyContent: "center" },
+    annotate: {
+        flexDirection: "row",
+        alignItems: "center",
+        gap: 8,
+        height: 44,
+        paddingLeft: 12,
+        paddingRight: 10,
+        borderRadius: 12,
+    },
+    annotateText: { fontSize: 15, fontWeight: "700" },
+    count: {
+        minWidth: 22,
+        paddingHorizontal: 7,
+        paddingVertical: 1,
+        borderRadius: 999,
+        overflow: "hidden",
+        textAlign: "center",
+        fontSize: 12.5,
+        fontWeight: "700",
+        fontVariant: ["tabular-nums"],
+    },
+    menu: {
+        width: 44,
+        height: 44,
+        borderRadius: 12,
+        alignItems: "center",
+        justifyContent: "center",
+    },
+    menuDot: {
+        position: "absolute",
+        top: 9,
+        right: 9,
+        width: 8,
+        height: 8,
+        borderRadius: 4,
+        borderWidth: 1.5,
+        borderColor: BAR.bar,
+    },
+    fold: {
+        width: 28,
+        height: 44,
+        borderRadius: 12,
+        alignItems: "center",
+        justifyContent: "center",
+    },
+    hint: {
+        flexDirection: "row",
+        alignItems: "center",
+        gap: 12,
+        paddingLeft: 16,
+        paddingRight: 6,
+        paddingVertical: 6,
+        borderRadius: 999,
+        backgroundColor: BAR.bar,
+        borderWidth: 1,
+        borderColor: BAR.line,
+        shadowColor: "#000",
+        shadowOpacity: 0.28,
+        shadowRadius: 12,
+        shadowOffset: { width: 0, height: 4 },
+        elevation: 10,
+    },
+    hintText: { fontSize: 14, fontWeight: "600", color: BAR.text },
+    done: {
+        paddingHorizontal: 12,
+        paddingVertical: 6,
+        borderRadius: 999,
+        backgroundColor: BAR.accent,
+    },
+    doneText: { fontSize: 14, fontWeight: "700", color: BAR.onAccent },
+});

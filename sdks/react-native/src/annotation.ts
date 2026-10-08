@@ -13,6 +13,20 @@ import { ulid } from "./ids.ts";
 import type { LogEntry } from "./logs.ts";
 import { SDK } from "./version.ts";
 
+/** The platform this SDK's notes say they were made on (`environment.platform`), and the notes it pins. */
+export const PLATFORM = "react-native";
+
+/** The device a note is made on, as the overlay reads it. */
+export interface DeviceInfo {
+    os: string;
+    osVersion: string;
+    /** React Native's version, when it says. */
+    reactNative?: string;
+    /** The window, in points. */
+    viewport: { w: number; h: number };
+    dpr: number;
+}
+
 /** An HTTP request the app made, for `context.network` (`notato.recordRequest`). */
 export interface NetworkEntry {
     method: string;
@@ -22,6 +36,7 @@ export interface NetworkEntry {
     at: string;
 }
 
+/** Everything a note is made of, as the runtime gathers it. */
 export interface NoteInput {
     project: string;
     mode?: NotatoMode;
@@ -42,13 +57,7 @@ export interface NoteInput {
     /** The number on the pin, also drawn on the screenshot. */
     pin: number;
     screenshots?: { full: Shot; crop?: Shot };
-    device: {
-        os: string;
-        osVersion: string;
-        reactNative?: string;
-        viewport: { w: number; h: number };
-        dpr: number;
-    };
+    device: DeviceInfo;
     console?: LogEntry[];
     network?: NetworkEntry[];
     now?: Date;
@@ -72,7 +81,7 @@ export const PEOPLE_ONLY = {
 } as const;
 
 /** The thread's record of People only being turned on or off, as the server writes it. */
-export function peopleOnlyChange(on: boolean, author: Author, now = new Date()): Reply {
+function peopleOnlyChange(on: boolean, author: Author, now = new Date()): Reply {
     return {
         id: ulid(now.getTime()),
         author,
@@ -121,7 +130,7 @@ export function buildAnnotation(input: NoteInput): Annotation {
             userAgent: `${input.appName}${input.appVersion ? `/${input.appVersion}` : ""} (${device.os} ${device.osVersion}) React Native${device.reactNative ? `/${device.reactNative}` : ""}`,
             viewport: { w: round2(device.viewport.w), h: round2(device.viewport.h) },
             dpr: device.dpr,
-            platform: "react-native",
+            platform: PLATFORM,
             sdk: { ...SDK },
         },
         target: {

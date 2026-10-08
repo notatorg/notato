@@ -1,8 +1,10 @@
-import type { Inspected } from "./identity.ts";
+// What React Native's development builds expose for their own Element Inspector, through React's DevTools hook: the
+// view under a point, and a view's component stack. With tree.ts, the only place that touches React Native's internals;
+// a release build has none of it, and `canInspect()` then says so.
+import type { Frame, Inspected } from "./identity.ts";
 import {
     elementsUnder,
     type Fiber,
-    type Frame,
     fiberOf,
     instanceOf,
     measure,

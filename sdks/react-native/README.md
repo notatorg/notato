@@ -2,7 +2,7 @@
 
 People tap a view in your running React Native app and write what should change, and the note reaches your coding agent (Claude Code, Codex, Cursor and others) over MCP through a Notato server. Each note has a screenshot with the view outlined and numbered, a crop of the view, its text, test id and label, the app's recent warnings, and its component: the one you wrote, the components around it, and the file and line it is in (`ProductCard` in `App › Shop › ProductList › ProductCard`, at `src/App.tsx:18:1`).
 
-It is the same client as the Swift, Android and .NET MAUI SDKs: the toolbar and its **⋯** menu, the three modes, threads and replies, People only and asides, revert, an offline queue, masking, and a runtime API. Variants are web-only.
+It is the same client as the Swift, Android, Flutter and .NET MAUI SDKs: the toolbar and its **⋯** menu, the three modes, threads and replies, People only and asides, revert, an offline queue, masking, and a runtime API. Variants are web-only.
 
 React Native 0.76 and later, with the New Architecture, in Expo (Expo Go included) or a bare app.
 
@@ -31,7 +31,7 @@ export default function App() {
 
 A small dark toolbar appears in the corner. Drag it anywhere; it stays where you leave it, and its chevron folds it into a round button. Tap **Annotate**, tap a view, write the note, and press **Send**. A numbered pin marks it, and turns amber when the agent is on it and green when it is resolved; tap a pin for the note's card. Then ask your agent to _"watch Notato and fix what comes in"_. Everything else is in the toolbar's **⋯** sheet: pins, the notes list, settings, hiding the toolbar or turning Notato off, and the server's state, with **Retry** when it cannot be reached. React Native's developer menu has **Notato: annotate** and **Notato: show or hide the toolbar**.
 
-**Storage.** `storage={expoStorage}` keeps notes not sent yet, test-mode notes, their screenshots and people's choices (on or off, the toolbar's place, a name) in the app's documents folder, and shares a test-mode package through the share sheet. It needs `expo-file-system` and `expo-sharing`, which work in Expo Go and in any app with Expo modules. Without it, all of that lasts until the app restarts. A bare app without Expo modules can pass its own `StorageProvider`.
+**Storage.** `storage={expoStorage}` keeps notes not sent yet, test-mode notes, their screenshots and people's choices (on or off, the toolbar's place, a name) in the app's documents folder, and shares a test-mode package through the share sheet. It needs `expo-file-system` and `expo-sharing`, which work in Expo Go and in any app with Expo modules. Without it, all of that lasts until the app restarts. A bare app without Expo modules can pass its own `StorageProvider`: its `open(project)` returns a `NotatoStorage`, and both types are exported.
 
 **Reaching the server.** The default is `http://localhost:4747`. The iOS simulator reaches it as it is. The Android emulator, and a phone plugged in over USB, reach it once the port is forwarded:
 
@@ -68,7 +68,7 @@ In a release build `<Notato>` is your app and nothing else, unless `enabled` is 
 |                                          |                                                                                                                     |
 | ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
 | `useNotato()`                            | A hook with Notato's state: on or off, toolbar, annotating, connection, the notes, how many are not sent yet         |
-| `enable()`, `disable()`, `setEnabled(…)` | On and off. A choice made here wins over `enabled` until `resetRuntimeState()`                                      |
+| `enable()`, `disable()`, `setEnabled(on)` | On and off. A choice made here wins over `enabled` until `resetRuntimeState()`                                      |
 | `showToolbar()`, `hideToolbar()`         | The toolbar. Off still lets the app drive Notato from code                                                          |
 | `startAnnotating()`, `stopAnnotating()`  | The next tap selects what is under it                                                                               |
 | `select(ref)`, `select("#save")`         | Select a view (a ref, or a selector) as if it had been tapped, and open the note for it                             |
@@ -83,7 +83,7 @@ const state = useNotato()
 <Switch value={state.enabled} onValueChange={(on) => (on ? notato.enable() : notato.disable())} />
 ```
 
-The example's **Feedback** card does each of these.
+The example's **Feedback** card switches Notato and its toolbar, and annotates a price from code.
 
 ## What the agent gets
 
@@ -141,14 +141,14 @@ Everything people write reaches the agent: new notes and every reply. Two switch
 - Picking needs a development build: release builds do not have React Native's inspector. In one, the toolbar says so.
 - The file and line are where the component is declared, not the line of the view inside it: React Native's component stacks give one place per component. They need the Metro server that served the bundle.
 - A view is what the inspector finds under the finger, so a tap on a button's label picks the label. **Parent** selects the button; the note's component and selector say which button either way.
-- Pins are placed again twice a second by finding their views with their selectors; of several alike (a list's rows), the one nearest where the note was made. The app's tree is read again only after React has committed something; in between, only where the views are now is asked (a scroll moves them without a commit). A view scrolled out of sight takes its pin with it; one that cannot be found keeps its pin where it was, dimmed. At most 150 pins are drawn on one screen (the newest); the Notes list has every note on the screen, newest first.
+- Pins are placed again every 0.6 seconds by finding their views with their selectors; of several alike (a list's rows), the one nearest where the note was made. The app's tree is read again only after React has committed something; in between, only where the views are now is asked (a scroll moves them without a commit). A view scrolled out of sight takes its pin with it; one that cannot be found keeps its pin where it was, dimmed. At most 150 pins are drawn on one screen (the newest); the Notes list has every note on the screen, newest first.
 - Only notes made in a React Native app get pins. A note from another platform filed under the same screen (the web's, iOS's) is in the Notes list, with its number, and no pin: its selector names something this app does not have.
 - The screen is read as Notato draws, and checked twice a second besides, so moving to a screen with no pins is noticed too.
 - The connection to the server is watched: the server says something at least every 15 seconds, and a stream silent for 45 is closed and opened again. A stream that has run for hours is replaced by a fresh one without a change in the connection's state.
 - Notes not sent yet are written to `storage` once a burst of changes is over (after 0.3 seconds), whole, then moved over the old file, so a crash part way never leaves half a file.
 - The safe areas are estimated (React Native has no API for them without react-native-safe-area-context), so on an unusual device the toolbar may start a little close to an edge. Drag it.
 - There is no shake to bring the toolbar back: in a development build a shake opens React Native's developer menu, which has **Notato: show or hide the toolbar**.
-- Verified in Expo Go 57 with React Native 0.86 on the iOS simulator (iPhone 17 Pro, iOS 26.5): picking, masking, both screenshots, the component and its file, the composer, the ⋯ menu, live status, replies and asides, People only, revert, annotating from code, the agent relay through `notato_annotate`, and test mode's package uploaded and shared. The first version was also run on the Android emulator; this one has not been yet. Not yet run on a physical device or in a bare app.
+- Verified in Expo Go 57 with React Native 0.86 on the iOS simulator (iPhone 17 Pro, iOS 26.5): picking, masking, both screenshots, the component and its file, the composer, the ⋯ menu, live status, replies and asides, People only, revert, annotating from code, the agent relay through `notato_annotate`, and test mode's package uploaded and shared. Not yet verified at this version on the Android emulator, on a physical device, or in a bare app.
 
 ## Development
 

@@ -1,7 +1,7 @@
 import type { AssetRef } from "@notato/schema";
 import { PixelRatio, Platform } from "react-native";
 import { captureRef } from "react-native-view-shot";
-import { fromBase64, pngSize, captureSize as sizeFor } from "./png.ts";
+import { captureSize, fromBase64, pngSize } from "./png.ts";
 
 /** A screenshot as it is sent and kept: its PNG bytes, and the reference the note carries. */
 export interface Shot {
@@ -18,11 +18,12 @@ export async function shoot(
 ): Promise<Shot | undefined> {
     if (!view || size.width < 1 || size.height < 1) return undefined;
     try {
-        const data = await captureRef(view as never, {
+        // A view's instance, or its native tag: view-shot takes either.
+        const data = await captureRef(view as Parameters<typeof captureRef>[0], {
             format: "png",
             quality: 1,
             result: "base64",
-            ...sizeFor(size.width, size.height, maxScale, PixelRatio.get(), Platform.OS),
+            ...captureSize(size.width, size.height, maxScale, PixelRatio.get(), Platform.OS),
         });
         const bytes = fromBase64(data);
         const dims = pngSize(bytes);
