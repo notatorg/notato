@@ -26,7 +26,7 @@ Repository variables (Settings › Secrets and variables › Actions › Variabl
 | `PUBLISH_MAVEN`  | `dev.notato:notato-android` and `dev.notato:notato-compose`   | secrets `MAVEN_CENTRAL_USERNAME`, `MAVEN_CENTRAL_PASSWORD`, `SIGNING_KEY`, `SIGNING_KEY_PASSWORD` |
 | `PUBLISH_NUGET`  | `Notato.Maui`                                                 | variable `NUGET_USER` and a Trusted Publishing policy on nuget.org (below); no key                |
 | `PUBLISH_PUB`    | `notato` on pub.dev (Flutter)                                 | automated publishing turned on for the package on pub.dev (below)                                 |
-| `PUBLISH_SITE`   | the website and docs, on GitHub Pages                         | Pages' source set to GitHub Actions                                                               |
+| `PUBLISH_SITE`   | the website and docs, on GitHub Pages                         | Pages' source set to GitHub Actions, and tags allowed to deploy (below)                           |
 | `PUBLISH_GITHUB` | a GitHub release with the binaries and the extension zip      | nothing more                                                                                      |
 
 SwiftPM has no switch: it reads `Package.swift` at the tag, so pushing the tag is the Swift release.
@@ -39,6 +39,7 @@ SwiftPM has no switch: it reads `Package.swift` at the tag, so pushing the tag i
 - **NuGet.** No API key: nuget.org trusts the release workflow itself. On nuget.org, under your account's **Trusted Publishing**, add a policy owned by the Notato organisation for repository owner `notatorg`, repository `notato` and workflow file `release.yml`, and set the repository variable `NUGET_USER` to your nuget.org username (the profile name, not the email). Reserving the `Notato.` prefix is worth asking for.
 - **pub.dev.** The first version goes up by hand (`flutter pub publish` in `sdks/flutter`, signed in as the account that should own it; a verified publisher is better). Then, on the package's admin page, turn on automated publishing from GitHub Actions for `notatorg/notato` with the tag pattern `v{{version}}`: the release job publishes with the workflow's own identity, and no secret is needed. `notato` was free on pub.dev in October 2026.
 - **Swift.** Nothing; adding the repository to the Swift Package Index is optional.
+- **GitHub Pages.** Set Settings › Pages › Source to GitHub Actions. That creates a `github-pages` environment that only `main` may deploy to, and a release runs from its tag, so add a tag rule for `v*` under Settings › Environments › github-pages › Deployment branches and tags (`gh api -X POST repos/notatorg/notato/environments/github-pages/deployment-branch-policies -f name='v*' -f type=tag`).
 - **GitHub.** Turn on private vulnerability reporting (Settings › Code security), which [SECURITY.md](SECURITY.md) sends reports to, and reported content (Settings › Moderation options), which the [code of conduct](CODE_OF_CONDUCT.md) relies on. Once the first release is on the registries, take the "Not released yet" note out of the README.
 
 ## Where the metadata lives
