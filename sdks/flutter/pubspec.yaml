@@ -1,6 +1,6 @@
 name: notato
 description: "Notato for Flutter: people pin notes to the widgets of your running app, with a screenshot and the file and line, for your coding agent."
-version: 0.2.0
+version: 0.1.0
 homepage: https://github.com/notatorg/notato
 repository: https://github.com/notatorg/notato/tree/main/sdks/flutter
 issue_tracker: https://github.com/notatorg/notato/issues

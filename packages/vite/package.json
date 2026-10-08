@@ -1,6 +1,6 @@
 {
     "name": "@notato/vite",
-    "version": "0.2.0",
+    "version": "0.1.0",
     "description": "Vite plugin for Notato: records where each element is written in your source, so feedback on a built app still points at the right line.",
     "keywords": [
         "vite",

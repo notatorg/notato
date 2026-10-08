@@ -1,6 +1,6 @@
 {
     "name": "@notato/angular",
-    "version": "0.2.0",
+    "version": "0.1.0",
     "description": "Notato for Angular: provideNotato() in your app config, and people can pin notes to your running app for your coding agent.",
     "keywords": [
         "notato",

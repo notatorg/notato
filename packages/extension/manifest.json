@@ -1,7 +1,7 @@
 {
     "manifest_version": 3,
     "name": "Notato",
-    "version": "0.2.0",
+    "version": "0.1.0",
     "description": "Pin notes to any web page and send them to your coding agent, with screenshots, the element, and where it is in your code. Works on any site you turn it on for.",
     "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAre1qnpCVypO5IFStgJESGphkmEeHZupwMyncT3ykuLOghXSGytrD/F8qqmV6+caR8W9UCsh7so+OS1sopGObVDEeVsdKtNO684sJmjj0cQahchT4J8/joa9zP4QuV8WDXmIOmphseknd1Z0fZ2XsLlQgPzoHDSYzgGSc/yHiDnrAYwwWkf8LJrhq3VjoJDn36GZoV+A0Oo0RoJu9ewkGJP1mIIz5/6bvtFSk1ukSL9f2GwXKZE6AtJhii6S1fFjfkGykkEi/nXWIYB9fQA/np9+YDu0EamupQC6OzRdgzxS5z2WQ2pJuUUG311wS06lawmAsuPSkHOmwC96MfoVfjQIDAQAB",
     "minimum_chrome_version": "111",

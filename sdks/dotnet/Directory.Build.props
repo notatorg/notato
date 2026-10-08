@@ -10,7 +10,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
     <!-- Every Notato package carries the same version; `bun scripts/version.ts` at the repository root stamps it. -->
-    <Version>0.2.0</Version>
+    <Version>0.1.0</Version>
     <Authors>Notato contributors</Authors>
     <Copyright>Copyright (c) Notato contributors</Copyright>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>

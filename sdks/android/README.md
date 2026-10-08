@@ -18,7 +18,7 @@ Add the artifacts to debug builds only, so release builds ship nothing of Notato
 
 ```kotlin
 dependencies {
-    debugImplementation("dev.notato:notato-compose:0.2.0")   // or notato-android for a Views-only app
+    debugImplementation("dev.notato:notato-compose:0.1.0")   // or notato-android for a Views-only app
 }
 ```
 
