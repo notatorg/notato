@@ -4,8 +4,10 @@ import dev.notato.android.inspect.Box
 import dev.notato.android.inspect.ScreenElement
 import dev.notato.android.inspect.Selectors
 import dev.notato.android.internal.MAX_PINS
+import dev.notato.android.internal.NoteBook
 import dev.notato.android.internal.NoteRecord
 import dev.notato.android.internal.ScanIndex
+import dev.notato.android.internal.ScreenNotes
 import dev.notato.android.internal.pinned
 import dev.notato.android.overlay.PinSpread
 import org.junit.Assert.assertEquals
@@ -37,6 +39,26 @@ class PinsTest {
         assertEquals(400, pins.last().first)
     }
 
+    @Test
+    fun eachScreensNotesAreNumberedOldestFirst() {
+        val notes = NoteBook()
+        val screens = ScreenNotes(notes)
+        fun note(id: String, route: String, at: String, pending: Boolean = false) =
+            NoteRecord(Fixture.annotation().copy(id = id, route = route, createdAt = at), pending = pending)
+        notes.add(note("LATER", "/Main/Shop", "2026-10-06T10:00:00.000Z"))
+        notes.add(note("EARLIER", "/Main/Shop", "2026-10-06T09:00:00.000Z", pending = true))
+        notes.add(note("ELSEWHERE", "/Main/Account", "2026-10-06T08:00:00.000Z"))
+        assertEquals(listOf(1 to "EARLIER", 2 to "LATER"), screens.on("/Main/Shop").map { (n, r) -> n to r.annotation.id })
+        assertEquals(listOf(1 to "ELSEWHERE"), screens.on("/Main/Account").map { (n, r) -> n to r.annotation.id })
+        assertEquals(emptyList<Pair<Int, NoteRecord>>(), screens.on("/Main/Feedback"))
+        assertEquals(1, screens.pending)
+
+        // Worked out again once the notes change.
+        notes.remove("EARLIER")
+        assertEquals(listOf(1 to "LATER"), screens.on("/Main/Shop").map { (n, r) -> n to r.annotation.id })
+        assertEquals(0, screens.pending)
+    }
+
     private fun element(role: String?, text: String?, id: String? = null, control: String = "Text", top: Float = 0f) =
         ScreenElement("compose", role, text, text, id, control, Box(0f, top, 100f, top + 40f))
 
@@ -65,7 +87,7 @@ class PinsTest {
     // In dp, at a density of 1: a 28dp pin, overlapping within 20dp, moved 22dp at a time.
     private fun spread(wanted: List<Pair<Float, Float>>) = PinSpread.place(wanted, near = 20f, step = 22f, minX = 2f, maxX = 370f, minY = 24f, maxY = 772f)
 
-    /** The spread as it was before the grid: every spot checked against every pin placed. */
+    /** The spread worked out the plain way, every spot checked against every pin placed: what the grid must agree with. */
     private fun spreadByHand(wanted: List<Pair<Float, Float>>): List<Pair<Float, Float>> {
         val placed = ArrayList<Pair<Float, Float>>()
         val offsets = listOf(0, -1, -2, -3, 1, 2, 3)
@@ -105,8 +127,7 @@ class PinsTest {
         val started = System.nanoTime()
         repeat(100) { spread(wanted) }
         val each = (System.nanoTime() - started) / 100 / 1_000
-        println("Spread $MAX_PINS pins on one element in $each µs")
         assertEquals(MAX_PINS, spread(wanted).size)
-        assertTrue(each < 50_000)
+        assertTrue("$each µs for each spread of $MAX_PINS pins", each < 50_000)
     }
 }

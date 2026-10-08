@@ -9,8 +9,11 @@ import kotlinx.serialization.json.JsonElement
 // The wire shapes of @notato/schema (packages/schema/src/index.ts), the contract with the server. Enumerations travel
 // as strings, so a value added to the schema later does not break reading what the server sends.
 
-/** What a note asks for. `question` wants an answer, not an edit. */
-public object Intent {
+/**
+ * What a note asks for ([Annotation.intent], [dev.notato.android.AnnotateOptions.intent]). `question` wants an answer,
+ * not an edit. Named so as not to clash with `android.content.Intent`.
+ */
+public object NoteIntent {
     public const val FIX: String = "fix"
     public const val CHANGE: String = "change"
     public const val QUESTION: String = "question"
@@ -18,6 +21,7 @@ public object Intent {
     public const val VARIANTS: String = "variants"
 }
 
+/** How much a note matters ([Annotation.severity]). */
 public object Severity {
     public const val BLOCKER: String = "blocker"
     public const val MAJOR: String = "major"
@@ -36,6 +40,7 @@ public object Status {
     public const val DISMISSED: String = "dismissed"
 }
 
+/** Who wrote a note or a reply: a person, or an agent. */
 @Serializable
 public data class Author(
     /** `human` or `agent`. */
@@ -52,6 +57,7 @@ public data class Author(
 @Serializable
 public data class PageRect(val x: Double, val y: Double, val w: Double, val h: Double)
 
+/** A screenshot: its content hash as its id, its type and size, and (in a bundle) its path in the zip. */
 @Serializable
 public data class AssetRef(
     val id: String,
@@ -72,6 +78,7 @@ public data class SourceLocation(
     val nearest: Boolean? = null,
 )
 
+/** The component an element is in: a composable written in the app, or a Fragment or Activity, and where it is written. */
 @Serializable
 public data class ComponentInfo(
     val name: String,
@@ -80,6 +87,7 @@ public data class ComponentInfo(
     val path: List<String>? = null,
 )
 
+/** Everything a note records about the element it is on, for the agent to find it in the code. */
 @Serializable
 public data class ElementIdentity(
     /** On Android, the screen and the element: `LoginFragment #sign_in` or `ProductList button:text("Add to cart")`. */
@@ -101,6 +109,7 @@ public data class ElementIdentity(
     val platformId: String? = null,
 )
 
+/** One thing an agent did before it made a note (`notato_annotate`'s `steps`). */
 @Serializable
 public data class AgentStep(
     val action: String,
@@ -109,6 +118,7 @@ public data class AgentStep(
     val at: String,
 )
 
+/** One entry in a note's thread: a reply, or an automatic entry recording a change. */
 @Serializable
 public data class Reply(
     val id: String,
@@ -125,9 +135,11 @@ public data class Reply(
     val peopleOnly: Boolean? = null,
 )
 
+/** The window's size in dp. */
 @Serializable
 public data class Viewport(val w: Double, val h: Double)
 
+/** What a note was made on: the app and device, the window's size and density, and the SDK. */
 @Serializable
 public data class EnvironmentInfo(
     val userAgent: String,
@@ -139,9 +151,11 @@ public data class EnvironmentInfo(
     val sdk: SdkInfo? = null,
 )
 
+/** The package that made a note, and its version. */
 @Serializable
 public data class SdkInfo(val name: String, val version: String)
 
+/** What a note is about: the element (or an area), what is known of it, and where it was. */
 @Serializable
 public data class Target(
     /** `element`, `text`, `area` or `multi`. */
@@ -151,6 +165,7 @@ public data class Target(
     val selectedText: String? = null,
 )
 
+/** A note's screenshots. */
 @Serializable
 public data class Screenshots(
     /** The whole window with the target outlined. */
@@ -158,6 +173,7 @@ public data class Screenshots(
     val crop: AssetRef? = null,
 )
 
+/** A note: what was said, about what, where and by whom, with its screenshots, context, status and thread. */
 @OptIn(ExperimentalSerializationApi::class)
 @Serializable
 public data class Annotation(
@@ -194,7 +210,7 @@ public data class Annotation(
 
 /** A tester's notes packaged together (the zip's `annotations.json`). */
 @Serializable
-public data class FeedbackBundle(
+internal data class FeedbackBundle(
     val id: String,
     val projectId: String,
     val createdAt: String,
@@ -206,11 +222,11 @@ public data class FeedbackBundle(
 )
 
 @Serializable
-public data class BundleAuthor(val name: String? = null)
+internal data class BundleAuthor(val name: String? = null)
 
 /** An annotation as the server stores it, with the order it arrived in. */
 @Serializable
-public data class StoredAnnotation(val seq: Long = 0, val annotation: Annotation)
+internal data class StoredAnnotation(val seq: Long = 0, val annotation: Annotation)
 
 // ---- server bodies ------------------------------------------------------------------------------------------------
 
@@ -259,12 +275,22 @@ internal data class PeopleOnlyChange(val peopleOnly: Boolean, val author: Author
 @Serializable
 internal data class LogEntry(val level: String, val message: String, val at: String)
 
-/** One HTTP request, in the shape of the web SDK's `network` context. */
+/** One HTTP request the app made, for [dev.notato.android.Notato.recordRequest]: the web SDK's `network` context. */
 @Serializable
-public data class NetworkEntry(val method: String, val url: String, val status: Int, val durationMs: Long, val at: String)
+public data class NetworkEntry(
+    /** `GET`, `POST`, … */
+    val method: String,
+    /** The address. Its query string and fragment are left out when it is recorded: they routinely carry tokens. */
+    val url: String,
+    /** The response's status code, or 0 when there was none. */
+    val status: Int,
+    val durationMs: Long,
+    /** When it was made, as an ISO 8601 time in UTC (`2026-10-06T09:00:00.000Z`). */
+    val at: String,
+)
 
 /** How Notato writes and reads JSON: nulls left out (the schema rejects them), unknown fields ignored. */
-public val NotatoJson: Json = Json {
+internal val NotatoJson: Json = Json {
     explicitNulls = false
     ignoreUnknownKeys = true
     encodeDefaults = true

@@ -12,6 +12,7 @@ import dev.notato.android.model.NotatoJson
 import dev.notato.android.model.ServerEventData
 import dev.notato.android.net.NotatoServerException
 import dev.notato.android.net.ServerSentEvent
+import dev.notato.android.net.ServerSentEventParser
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.yield
 import org.junit.Assert.assertEquals
@@ -19,7 +20,7 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertSame
 import org.junit.Test
 
-/** Sending the queue, and matching the notes here to the server's list. */
+/** Sending the queue, reading the server's event stream, and matching the notes here to its list. */
 class SyncTest {
     private fun note(id: String) = Fixture.annotation().copy(id = id)
 
@@ -73,6 +74,14 @@ class SyncTest {
     fun aNoteDeletedWhileTheListWasReadIsNotBroughtBack() {
         val merge = mergeList(emptyList(), listOf(note("DELETED"), note("OTHER")), since = 5, deletedSince = setOf("DELETED"))
         assertEquals(listOf("OTHER"), merge.upserts.map { it.id })
+    }
+
+    @Test
+    fun theStreamIsReadIntoEvents() {
+        val parser = ServerSentEventParser()
+        val events = listOf(": ping", "event: created", "data: {\"a\":", "data: 1}", "", "", "data:plain", "").mapNotNull { parser.feed(it) }
+        // The ping is a comment, a blank line ends an event, its data lines are joined, and an event with no name is a message.
+        assertEquals(listOf(ServerSentEvent("created", "{\"a\":\n1}"), ServerSentEvent("message", "plain")), events)
     }
 
     @Test

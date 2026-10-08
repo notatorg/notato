@@ -1,6 +1,6 @@
 # Notato for Android
 
-Figma-style comments for a running Android app. Tap an element, write a note, and it reaches your coding agent (Claude Code, Codex, Cursor, Gemini CLI, Copilot and others) over MCP with a screenshot, the file and line it was written at, what TalkBack would call it, and the app's recent warnings from logcat. It is the native Android client of the same Notato server the web, .NET MAUI and SwiftUI SDKs use: the notes, the board, the MCP tools and the status loop (open, acknowledged, resolved, revert) are the same.
+Figma-style comments for a running Android app. Tap an element, write a note, and it reaches your coding agent (Claude Code, Codex, Cursor, Gemini CLI, Copilot and others) over MCP with a screenshot, the file and line it was written at, what TalkBack would call it, and the app's recent warnings from logcat. It is the native Android client of the same Notato server the web, iOS, .NET MAUI, React Native and Flutter SDKs use: the notes, the board, the MCP tools and the status loop (open, acknowledged, resolved, revert) are the same.
 
 Android 7 (API 24) and later, for apps built with Views, Jetpack Compose, or both. Two artifacts:
 
@@ -18,7 +18,7 @@ Add the artifacts to debug builds only, so release builds ship nothing of Notato
 
 ```kotlin
 dependencies {
-    debugImplementation("dev.notato:notato-compose:0.1.0")   // or notato-android for a Views-only app
+    debugImplementation("dev.notato:notato-compose:0.2.0")   // or notato-android for a Views-only app
 }
 ```
 
@@ -57,7 +57,7 @@ Code in `src/main` that marks what is private (`Notato.mask`, `Modifier.notatoMa
 
 Run the debug build: a small dark toolbar appears in the corner (drag it anywhere; it stays where you leave it, and its chevron folds it into one round button that remembers being folded). Tap **Annotate**, tap what you want to comment on, write a note, press **Send**. Ask your agent to _"watch Notato and fix what comes in"_: everything people write reaches it, unless they keep it between themselves (see [People only and asides](#people-only-and-asides)). Everything else is in the toolbar's **⋯** sheet: pins, the notes list, settings, hiding the toolbar or turning Notato off, and the server's state, with **Retry** when it cannot be reached.
 
-The app has to be allowed plain `http` to the server. A debug `network_security_config` that permits cleartext to `localhost` is enough (see `sample/src/main/res/xml/network_security_config.xml`).
+The app has to be allowed plain `http` to the server. A `network_security_config` in the debug build that permits cleartext to `localhost` is enough, and leaves the release build with none (see `sample/src/debug/res/xml/network_security_config.xml` and the sample's `src/debug/AndroidManifest.xml`).
 
 ### Where it is in the code
 
@@ -100,7 +100,7 @@ In code (`NotatoConfig`), or as `<meta-data android:name="notato.<key>">` in the
 | `annotate("#save", comment, options)`    | Make a note with no UI (a suspend function), as a person or (with `agentName`) an agent. `peopleOnly = true` keeps a person's note from the agent                                                             |
 | `packageNotes(upload)`                   | Test mode: the device's notes as a bundle zip                                                                                                                                                                 |
 | `mask(view, true / false / null)`        | Mark a view private (covered in screenshots, none of its text recorded), not private (a field recorded even with `maskInputs`), or back to the default. See [What is never recorded](#what-is-never-recorded) |
-| `recordRequest(entry)`                   | Add an HTTP request to the `network` context of later notes                                                                                                                                                   |
+| `recordRequest(entry)`                   | Add an HTTP request to the `network` context of later notes, from any thread. Its address is kept without the query string, which routinely carries tokens                                                    |
 
 ```kotlin
 val state by Notato.state.collectAsState()
@@ -186,13 +186,14 @@ Notato's UI is plain Views in a layer added to the top window of the resumed Act
 - Compose source information is in debug builds; R8 removes it from release builds, where notes still have the element but not its file and line.
 - Android's reflection limits: reading the window list and system properties uses non-SDK interfaces that Android allows today (Espresso relies on the same). If a future version blocks them, dialogs stop being covered and `debug.notato.*` stops being read; nothing else changes.
 - WebViews are one element: what is inside them is not inspected.
-- Verified on a Pixel 7 emulator (Android 16, API 36) against `notato dev`, with real taps through `adb shell input`: Compose and View screens, a full-screen Compose dialog, a second Activity with a Fragment, live status over SSE, reply and revert, agent relay, test-mode packaging and sharing, on and off at runtime, and the toolbar dragged and remembered. Not yet run: a physical device, API levels below 34, a `notato serve` server with a token. The changes for large projects (pins, the summary list, screenshots kept as files) are covered by the unit tests and have not been run on a device yet.
+- Verified on a Pixel 7 emulator (Android 16, API 36) against `notato dev`, with real taps through `adb shell input`: Compose and View screens, a full-screen Compose dialog, a second Activity with a Fragment, live status over SSE, reply and revert, agent relay, test-mode packaging and sharing, on and off at runtime, and the toolbar dragged and remembered. Not yet run: a physical device, API levels below 34, a `notato serve` server with a token. How it copes with large projects (pins, the summary list, screenshots kept as files) is covered by the unit tests, not yet on a device.
 
 ## Development
 
 ```bash
 cd sdks/android
 ./gradlew test                       # selectors, pins, masking, config, the token rule, SSE, the store, the zip, People only, and the schema contract (needs bun)
+./gradlew :notato:lintDebug :notato-compose:lintDebug   # Android lint, as CI runs it
 ./gradlew :sample:installDebug       # the sample: a Compose shop, a View/Fragment account screen, a Feedback tab
 adb reverse tcp:4747 tcp:4747
 ```

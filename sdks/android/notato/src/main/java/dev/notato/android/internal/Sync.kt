@@ -78,13 +78,3 @@ private fun data(event: ServerSentEvent): ServerEventData? = try {
 } catch (_: IllegalArgumentException) {
     null
 }
-
-/**
- * Takes the picture first and reads the screen after it, so what the reading says to cover (private elements, secure
- * and masked fields) is where it was in the picture. Read the other way round, a field that moved or appeared between
- * the two would be in the picture uncovered.
- */
-internal suspend fun <P, S> captureThenScan(capture: suspend () -> P?, scan: () -> S): Pair<P?, S> {
-    val picture = capture()
-    return picture to scan()
-}

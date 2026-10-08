@@ -2,6 +2,7 @@ package dev.notato.android
 
 import dev.notato.android.internal.RuntimeState
 import dev.notato.android.internal.ToolbarFold
+import dev.notato.android.internal.cornerFraction
 import dev.notato.android.internal.toolbarHeldRight
 import dev.notato.android.overlay.barCount
 import dev.notato.android.overlay.connectionDotColor
@@ -13,6 +14,7 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
+/** The toolbar: where it is, folding and opening, and what its counts and dot say. */
 class ToolbarTest {
     /** A device's SharedPreferences, kept across "launches" of the app. */
     private val device = RuntimeState.Memory()
@@ -227,6 +229,16 @@ class ToolbarTest {
         assertTrue(toolbarHeldRight(1f to 1f, ToolbarCorner.TOP_START))
         assertFalse(toolbarHeldRight(0.49f to 0.86f, ToolbarCorner.BOTTOM_END))
         assertFalse(toolbarHeldRight(0f to 0f, ToolbarCorner.TOP_END))
+    }
+
+    @Test
+    fun anUndraggedToolbarStartsInItsCornerClearOfTheBars() {
+        assertEquals(1f to 0.86f, cornerFraction(ToolbarCorner.BOTTOM_END))
+        assertEquals(0f to 0.86f, cornerFraction(ToolbarCorner.BOTTOM_START))
+        assertEquals(1f to 0.06f, cornerFraction(ToolbarCorner.TOP_END))
+        assertEquals(0f to 0.06f, cornerFraction(ToolbarCorner.TOP_START))
+        // Held to the side of its corner.
+        for (corner in ToolbarCorner.entries) assertEquals("$corner", cornerFraction(corner).first == 1f, toolbarHeldRight(null, corner))
     }
 
     @Test

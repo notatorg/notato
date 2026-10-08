@@ -89,6 +89,16 @@ class SheetsTest {
     }
 
     @Test
+    fun howLongAgoANoteWasMade() {
+        val now = 1_791_277_200_000L // 2026-10-06T09:00:00Z
+        assertEquals("just now", SheetCopy.ago("2026-10-06T08:59:30.000Z", now))
+        assertEquals("5m ago", SheetCopy.ago("2026-10-06T08:55:00.000Z", now))
+        assertEquals("2h ago", SheetCopy.ago("2026-10-06T07:00:00Z", now))
+        assertEquals("3d ago", SheetCopy.ago("2026-10-03T09:00:00.000Z", now))
+        assertNull(SheetCopy.ago("yesterday", now))
+    }
+
+    @Test
     fun aLongThreadSaysHowManyRepliesAreOnlyOnTheBoard() {
         // The card shows the last four, as the React Native and Flutter cards do, in the same words.
         assertEquals(4, SheetCopy.THREAD_SHOWN)

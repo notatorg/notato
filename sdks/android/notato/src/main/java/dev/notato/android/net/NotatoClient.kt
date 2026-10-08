@@ -37,7 +37,12 @@ import java.net.URLEncoder
 import java.util.UUID
 
 /** A refusal from the server, or no answer at all (status 0): every way a request to the server can fail. */
-public class NotatoServerException(message: String, public val status: Int, cause: Throwable? = null) : IOException(message, cause) {
+public class NotatoServerException internal constructor(
+    message: String,
+    /** The HTTP status the server answered with, or 0 when it could not be reached or its answer could not be read. */
+    public val status: Int,
+    cause: Throwable? = null,
+) : IOException(message, cause) {
     /** The server understood and said no: sending the same thing again would fail the same way. */
     public val permanent: Boolean get() = status in 400..499 && status != 408 && status != 429
 
@@ -53,7 +58,7 @@ public class NotatoServerException(message: String, public val status: Int, caus
 }
 
 /** One server-sent event. */
-public data class ServerSentEvent(val event: String, val data: String)
+internal data class ServerSentEvent(val event: String, val data: String)
 
 /** Writes an annotation as the server expects it: nulls left out, except `bundleId`, which the schema requires. */
 internal fun encodeAnnotation(annotation: Annotation): String {
@@ -339,12 +344,12 @@ internal class NotatoClient(baseUrl: String, token: String?) {
 }
 
 /** The text/event-stream format, one line at a time: `event:` and `data:` lines, a blank line ending each event. */
-public class ServerSentEventParser {
+internal class ServerSentEventParser {
     private var type = "message"
     private val data = mutableListOf<String>()
 
     /** Returns an event when [line] (without its newline) completes one. */
-    public fun feed(line: String): ServerSentEvent? {
+    fun feed(line: String): ServerSentEvent? {
         if (line.isEmpty()) {
             val event = if (data.isEmpty()) null else ServerSentEvent(type, data.joinToString("\n"))
             type = "message"

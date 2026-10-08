@@ -3,6 +3,7 @@ package dev.notato.android
 import android.annotation.SuppressLint
 import android.app.Application
 import android.content.Context
+import android.content.pm.PackageManager
 import android.os.Looper
 import android.util.Log
 import android.view.View
@@ -13,8 +14,12 @@ import dev.notato.android.internal.TAG
 import dev.notato.android.model.AgentStep
 import dev.notato.android.model.Annotation
 import dev.notato.android.model.NetworkEntry
+import dev.notato.android.net.NotatoServerException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.withContext
 import java.io.File
 
 /** How Notato is talking to its server. */
@@ -24,7 +29,11 @@ public enum class NotatoConnection {
 
     /** No server: notes stay on the device (test mode, or `noServer`). */
     LOCAL,
+
+    /** Trying to reach the server. */
     CONNECTING,
+
+    /** Following the server's notes live; notes made here are sent at once. */
     CONNECTED,
 
     /** The server cannot be reached; Notato keeps trying, and notes wait on the device. */
@@ -36,10 +45,13 @@ public enum class NotatoConnection {
 
 /** A snapshot of Notato for the app to show: collect [Notato.state]. */
 public data class NotatoState(
+    /** Notato is on: its overlay shows, and it talks to its server. */
     val isEnabled: Boolean = false,
     val isToolbarVisible: Boolean = false,
+    /** The next tap selects what is under it, or a note is being written. */
     val isAnnotating: Boolean = false,
     val connection: NotatoConnection = NotatoConnection.DISABLED,
+    /** Why it is not connected, or what is wrong with the configuration, in words for a person. */
     val connectionDetail: String? = null,
     /**
      * Every note Notato knows of in this project: from the server, and made here and not sent yet. Those read from the
@@ -58,7 +70,9 @@ public data class AnnotateOptions(
     val intent: String? = null,
     /** Set to make the note as an agent of this name rather than as the person. */
     val agentName: String? = null,
+    /** What the agent did before it made the note. */
     val steps: List<AgentStep>? = null,
+    /** Take a screenshot (when screenshots are on at all). */
     val screenshot: Boolean = true,
     /** People only: the note and its thread stay between people and never reach the agent. A person's note only. */
     val peopleOnly: Boolean = false,
@@ -69,18 +83,21 @@ public data class AnnotateOptions(
  * element's identity, where it is written and a screenshot.
  *
  * Start it from `Application.onCreate` with [start], or with no code at all through the manifest (see the README). Call
- * everything else on the main thread.
+ * everything else on the main thread, except [state], [recordRequest] and the suspend functions, which can be called
+ * from anywhere.
  */
 public object Notato {
+    @Volatile
     private var controller: Controller? = null
-    private val idle = MutableStateFlow(NotatoState())
+    private val published = MutableStateFlow(NotatoState())
 
-    /** Notato now; collect it to show its state in the app. */
-    public val state: StateFlow<NotatoState> get() = controller?.stateFlow ?: idle
+    /** Notato now; collect it to show its state in the app. It is there before [start], and stays the same flow after. */
+    public val state: StateFlow<NotatoState> = published.asStateFlow()
 
     /** The configuration Notato was started with, or null before [start]. */
     public val config: NotatoConfig? get() = controller?.config
 
+    /** Whether [start] has been called (and [shutdown] has not since). */
     public val isStarted: Boolean get() = controller != null
 
     /**
@@ -98,7 +115,7 @@ public object Notato {
             existing.reconfigure(merged)
             return
         }
-        controller = Controller(application, merged).also { it.start() }
+        controller = Controller(application, merged, published).also { it.start() }
     }
 
     /** Starts Notato from the manifest's `notato.*` meta-data. False when there is no `notato.project`. */
@@ -117,6 +134,7 @@ public object Notato {
     @JvmStatic
     public fun disable(): Unit = withController { it.setEnabled(false, remember = true) }
 
+    /** [enable] or [disable]. */
     @JvmStatic
     public fun setEnabled(enabled: Boolean): Unit = if (enabled) enable() else disable()
 
@@ -124,6 +142,7 @@ public object Notato {
     @JvmStatic
     public fun resetRuntimeState(): Unit = withController { it.resetRuntimeState() }
 
+    /** Shows the toolbar, and remembers that across launches (when [NotatoConfig.rememberRuntimeState]). */
     @JvmStatic
     public fun showToolbar(): Unit = withController { it.setToolbar(true) }
 
@@ -135,41 +154,56 @@ public object Notato {
     @JvmStatic
     public fun startAnnotating(): Unit = withController { it.startAnnotating() }
 
+    /** Leaves picking mode, and drops what is selected and the note being written about it. */
     @JvmStatic
     public fun stopAnnotating(): Unit = withController { it.stopAnnotating() }
 
-    /** Selects a view and opens the note composer on it, as tapping it in picking mode would. */
+    /**
+     * Selects a view and opens the note composer on it, as tapping it in picking mode would. Throws
+     * [IllegalStateException] when Notato is off.
+     */
     @JvmStatic
     public fun select(view: View): Unit = withController { it.select(view) }
 
-    /** Selects what a selector finds on the screen (`#sign_in`, `button:text("Pay")`) and opens the composer on it. */
+    /**
+     * Selects what a selector finds on the screen (`#sign_in`, `button:text("Pay")`) and opens the composer on it.
+     * Throws [IllegalArgumentException] when the selector cannot be read or finds nothing, and [IllegalStateException]
+     * when Notato is off.
+     */
     @JvmStatic
     public fun select(selector: String): Unit = withController { it.select(selector) }
 
     /**
      * Makes a note from code about what [selector] finds on the screen, sends it (or keeps it, in test mode) and returns
-     * it. Throws [IllegalArgumentException] when nothing matches.
+     * it. Throws [IllegalArgumentException] when nothing matches, and [IllegalStateException] when Notato is off.
      */
     public suspend fun annotate(selector: String, comment: String, options: AnnotateOptions = AnnotateOptions()): Annotation =
-        running().annotate(selector, comment, options)
+        withContext(Dispatchers.Main.immediate) { running().annotate(selector, comment, options) }
 
-    /** Makes a note from code about [view]. */
+    /** Makes a note from code about [view], as [annotate] with a selector does. */
     public suspend fun annotate(view: View, comment: String, options: AnnotateOptions = AnnotateOptions()): Annotation =
-        running().annotate(view, comment, options)
+        withContext(Dispatchers.Main.immediate) { running().annotate(view, comment, options) }
 
     /**
      * Test mode: packages the notes on this device as a zip (`annotations.json`, `feedback.md` and the screenshots), and
-     * uploads it when a server is set and [upload] is true. Returns the zip, in the app's cache folder.
+     * uploads it when a server is set and [upload] is true. Returns the zip, in the app's cache folder. Throws
+     * [IllegalStateException] when there is nothing to package, and [NotatoServerException] when the upload fails.
      */
-    public suspend fun packageNotes(upload: Boolean = true): File = running().packageNotes(upload)
+    public suspend fun packageNotes(upload: Boolean = true): File = withContext(Dispatchers.Main.immediate) { running().packageNotes(upload) }
 
-    /** Records a request for the `network` context of later notes. The last 50 are kept. */
+    /**
+     * Records a request for the `network` context of later notes, from any thread (an OkHttp interceptor, say). The last
+     * 50 are kept, and the query string and fragment of each address are left out.
+     */
     @JvmStatic
     public fun recordRequest(entry: NetworkEntry) {
         controller?.recordRequest(entry)
     }
 
-    /** Adds a source of elements the View tree cannot see into (the `notato-compose` artifact registers its own). */
+    /**
+     * Adds a source of elements the View tree cannot see into. The `notato-compose` artifact registers its own; an app
+     * needs this only for a UI toolkit of its own.
+     */
     @JvmStatic
     public fun register(provider: ElementProvider) {
         if (ViewInspector.providers.none { it.javaClass == provider.javaClass }) ViewInspector.providers += provider
@@ -196,8 +230,10 @@ public object Notato {
     /** Stops Notato completely; [start] can start it again. Mostly for tests. */
     @JvmStatic
     public fun shutdown() {
+        checkMain()
         controller?.close()
         controller = null
+        published.value = NotatoState()
     }
 
     // ---- start-up details --------------------------------------------------------------------------------------------
@@ -218,14 +254,14 @@ public object Notato {
 
     private fun running(): Controller {
         checkMain()
-        return controller ?: throw IllegalStateException("Notato has not been started: call Notato.start in Application.onCreate.")
+        return checkNotNull(controller) { NOT_STARTED }
     }
 
     private inline fun withController(block: (Controller) -> Unit) {
         checkMain()
         val c = controller
         if (c == null) {
-            Log.w(TAG, "Notato has not been started: call Notato.start in Application.onCreate.")
+            Log.w(TAG, NOT_STARTED)
             return
         }
         block(c)
@@ -235,10 +271,12 @@ public object Notato {
         check(Looper.myLooper() == Looper.getMainLooper()) { "Call Notato on the main thread." }
     }
 
+    private const val NOT_STARTED = "Notato has not been started: call Notato.start in Application.onCreate."
+
     internal fun manifestConfig(context: Context): NotatoConfig? {
         val meta = runCatching {
             @Suppress("DEPRECATION")
-            context.packageManager.getApplicationInfo(context.packageName, android.content.pm.PackageManager.GET_META_DATA).metaData
+            context.packageManager.getApplicationInfo(context.packageName, PackageManager.GET_META_DATA).metaData
         }.getOrNull()
         val values = mutableMapOf<String, Any?>()
         meta?.keySet()?.filter { it.startsWith("notato.") }?.forEach { key ->

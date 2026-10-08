@@ -15,6 +15,7 @@ public enum class NotatoMode {
     AGENT,
 }
 
+/** The corner the toolbar starts in, until it is dragged: start is the left edge, end the right. */
 public enum class ToolbarCorner { BOTTOM_END, BOTTOM_START, TOP_END, TOP_START }
 
 /**
@@ -26,17 +27,22 @@ public enum class ToolbarCorner { BOTTOM_END, BOTTOM_START, TOP_END, TOP_START }
 public data class NotatoConfig(
     /** Project id on the server. Letters, digits and `. _ - @`, but not only dots. */
     val project: String,
+    /** Who annotates, and where the notes go. */
     val mode: NotatoMode = NotatoMode.DEV,
     /** The server. Null means `notato dev` (localhost:4747) in dev and agent mode, and none in test mode. */
     val server: String? = null,
     /** Leave the server out entirely, even in dev mode: notes stay on the device. */
     val noServer: Boolean = false,
-    /** A project token (`pft_…`) for a shared `notato serve`. */
+    /**
+     * A project token (`pft_…`) for a shared `notato serve`. It is sent only to [server] (its scheme, host and port),
+     * never to a server typed into the toolbar's settings.
+     */
     val token: String? = null,
     /** Whether Notato is on when the app starts. `Notato.enable()` and `disable()` change it at runtime. */
     val enabled: Boolean = true,
-    /** Recorded on every note. Default to the app's label and version. */
+    /** The app's name, recorded on every note. The app's label when null. */
     val appName: String? = null,
+    /** The app's version, recorded on every note. Its version name and code when null. */
     val appVersion: String? = null,
     /** The name on this person's notes. They can change it in the toolbar's settings. */
     val author: String? = null,
@@ -44,7 +50,9 @@ public data class NotatoConfig(
     val screenshots: Boolean = true,
     /** Cover text fields in screenshots. Null means on in test and agent mode. Password fields always are. */
     val maskInputs: Boolean? = null,
+    /** Show the floating toolbar. Without it, the app can still drive Notato from code. */
     val showToolbar: Boolean = true,
+    /** The corner the toolbar starts in. People can drag it; where they leave it is remembered. */
     val toolbarPosition: ToolbarCorner = ToolbarCorner.BOTTOM_END,
     /** Shaking the device shows or hides the toolbar. */
     val shakeToToggle: Boolean = true,
@@ -52,6 +60,7 @@ public data class NotatoConfig(
     val rememberRuntimeState: Boolean = true,
     /** Attach the app's recent warnings and errors from logcat to each note. */
     val captureLogs: Boolean = true,
+    /** The most log lines a note carries: the latest. */
     val logLimit: Int = 50,
     /**
      * Turn on Compose's inspection data (with the `notato-compose` artifact) so notes say which file, line and
@@ -160,7 +169,7 @@ public data class NotatoConfig(
         }
     }
 
-    /** The server notes go to, or null. */
+    /** The server notes go to, or null for none: [server], else `notato dev`'s outside test mode. */
     public val resolvedServer: String?
         get() = when {
             noServer -> null
@@ -179,6 +188,7 @@ public data class NotatoConfig(
         return token.takeIf { sameServer(url, configured) }
     }
 
+    /** Whether text fields are covered: [maskInputs], else on outside dev mode. */
     public val resolvedMaskInputs: Boolean get() = maskInputs ?: (mode != NotatoMode.DEV)
 
     /** Why this configuration cannot be used, or null. */

@@ -1,30 +1,31 @@
 package dev.notato.android.overlay
 
+import android.animation.TimeInterpolator
 import android.content.Context
 import android.content.res.ColorStateList
 import android.content.res.Configuration
-import android.graphics.Canvas
 import android.graphics.Color
-import android.graphics.ColorFilter
-import android.graphics.Paint
-import android.graphics.Path
-import android.graphics.PixelFormat
 import android.graphics.Typeface
 import android.graphics.drawable.Drawable
 import android.graphics.drawable.GradientDrawable
+import android.graphics.drawable.InsetDrawable
 import android.graphics.drawable.StateListDrawable
 import android.os.Build
 import android.text.TextUtils
 import android.util.TypedValue
 import android.view.Gravity
 import android.view.View
+import android.view.animation.PathInterpolator
 import android.widget.FrameLayout
 import android.widget.HorizontalScrollView
 import android.widget.ImageView
 import android.widget.LinearLayout
+import android.widget.Switch
 import android.widget.TextView
 import androidx.core.graphics.ColorUtils
-import androidx.core.graphics.PathParser
+import androidx.core.graphics.drawable.toDrawable
+import androidx.core.graphics.toColorInt
+import androidx.core.view.ViewCompat
 import dev.notato.android.R
 import dev.notato.android.inspect.ViewInspector
 import dev.notato.android.model.Status
@@ -42,27 +43,27 @@ internal class Ui(val context: Context) {
 
     companion object {
         // The bar, the hint and the toast: always dark.
-        val BAR = Color.parseColor("#17181b")
-        val BAR_TEXT = Color.parseColor("#eceded")
-        val BAR_MUTED = Color.parseColor("#8b8f97")
-        val BAR_PRESSED = Color.parseColor("#2a2c31")
-        val BAR_LINE = Color.parseColor("#33353a")
-        val BAR_ACCENT = Color.parseColor("#45bfa8")
-        val ON_BAR_ACCENT = Color.parseColor("#0b1f1b")
+        val BAR = "#17181b".toColorInt()
+        val BAR_TEXT = "#eceded".toColorInt()
+        val BAR_MUTED = "#8b8f97".toColorInt()
+        val BAR_PRESSED = "#2a2c31".toColorInt()
+        val BAR_LINE = "#33353a".toColorInt()
+        val BAR_ACCENT = "#45bfa8".toColorInt()
+        val ON_BAR_ACCENT = "#0b1f1b".toColorInt()
 
         /** The brand: buttons, the primary tile, selected chips, open pins. */
-        val ACCENT = Color.parseColor("#1f8a78")
-        val ACCENT_PRESSED = Color.parseColor("#187465")
-        val DANGER = Color.parseColor("#d6453d")
-        val SELECTION = Color.parseColor("#ef4444")
+        val ACCENT = "#1f8a78".toColorInt()
+        val ACCENT_PRESSED = "#187465".toColorInt()
+        val DANGER = "#d6453d".toColorInt()
+        val SELECTION = "#ef4444".toColorInt()
 
         /** The ring of a pin whose note is not sent yet (white otherwise): on the screen and in the sheets alike. */
-        val PENDING_RING = Color.parseColor("#e9b44c")
+        val PENDING_RING = "#e9b44c".toColorInt()
 
         // The server, as the menu's pill shows it (the bar's dot: connectionDotColor).
-        val CONNECTED = Color.parseColor("#2e9a5b")
-        val CONNECTING = Color.parseColor("#d99a1e")
-        val OFFLINE = Color.parseColor("#ef6b5e")
+        val CONNECTED = "#2e9a5b".toColorInt()
+        val CONNECTING = "#d99a1e".toColorInt()
+        val OFFLINE = "#ef6b5e".toColorInt()
 
         /** Each status's colour, read once: pins ask for it every time they are drawn. */
         private val STATUS_COLORS = mapOf(
@@ -72,23 +73,22 @@ internal class Ui(val context: Context) {
             Status.VARIANT_CHOSEN to "#0891b2",
             Status.REVERTED to "#64748b",
             Status.DISMISSED to "#9a9a9a",
-        ).mapValues { Color.parseColor(it.value) }
-        private val OPEN_COLOR = Color.parseColor("#1f8a78")
+        ).mapValues { it.value.toColorInt() }
 
-        /** A pin's colour: the same for each status as on the web and the board. */
-        fun statusColor(status: String): Int = STATUS_COLORS[status] ?: OPEN_COLOR
+        /** A pin's colour: the same for each status as on the web and the board (an open note's is the brand's). */
+        fun statusColor(status: String): Int = STATUS_COLORS[status] ?: ACCENT
 
         /** [color] at [fraction] opacity laid over [base], as CSS's color-mix does it. */
         fun over(base: Int, color: Int, fraction: Float): Int = ColorUtils.blendARGB(base, color, fraction)
     }
 
     // Sheets and cards: the system's light or dark.
-    val cardBackground = Color.parseColor(if (dark) "#1d1e21" else "#ffffff")
-    val cardText = Color.parseColor(if (dark) "#e6e7ea" else "#1d1f22")
-    val cardMuted = Color.parseColor(if (dark) "#8f939b" else "#686c72")
-    val cardLine = Color.parseColor(if (dark) "#2f3136" else "#e4e4df")
+    val cardBackground = (if (dark) "#1d1e21" else "#ffffff").toColorInt()
+    val cardText = (if (dark) "#e6e7ea" else "#1d1f22").toColorInt()
+    val cardMuted = (if (dark) "#8f939b" else "#686c72").toColorInt()
+    val cardLine = (if (dark) "#2f3136" else "#e4e4df").toColorInt()
     /** Icon tiles, fields, a reply's bubble, a row being pressed. */
-    val soft = Color.parseColor(if (dark) "#26272b" else "#f2f2ef")
+    val soft = (if (dark) "#26272b" else "#f2f2ef").toColorInt()
     val fieldBackground = soft
 
     fun rounded(color: Int, radiusDp: Number, strokeColor: Int? = null, strokeDp: Number = 1): GradientDrawable = GradientDrawable().apply {
@@ -216,7 +216,7 @@ internal class Ui(val context: Context) {
     fun sheetHeader(title: String, subtitle: String?, leading: View, trailing: View?): LinearLayout {
         val heading = text(title, 20f, maxLines = 1, weight = 700).apply {
             letterSpacing = -0.02f // −0.4 at 20
-            androidx.core.view.ViewCompat.setAccessibilityHeading(this, true)
+            ViewCompat.setAccessibilityHeading(this, true)
         }
         val titles = column(2, heading, *listOfNotNull(subtitle?.let { text(it, 12f, cardMuted, maxLines = 1) }).toTypedArray())
         return own(LinearLayout(context)).apply {
@@ -291,7 +291,7 @@ internal class Ui(val context: Context) {
 
     /** Where a group of rows starts: 9 of room with a 1 rule 4 into it. */
     fun groupRule(): View = own(View(context)).apply {
-        background = android.graphics.drawable.InsetDrawable(android.graphics.drawable.ColorDrawable(cardLine), 0, dp(4), 0, dp(4))
+        background = InsetDrawable(cardLine.toDrawable(), 0, dp(4), 0, dp(4))
         layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(9))
         importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
     }
@@ -325,7 +325,7 @@ internal class Ui(val context: Context) {
     }
 
     fun icon(shape: Icon, color: Int, sizeDp: Int = 20, strokeWidth: Float = 2f): View = own(View(context)).apply {
-        background = IconDrawable(shape, color, density, strokeWidth)
+        background = IconDrawable(shape, color, strokeWidth)
         layoutParams = LinearLayout.LayoutParams(dp(sizeDp), dp(sizeDp))
         importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
     }
@@ -340,10 +340,10 @@ internal class Ui(val context: Context) {
     }
 
     /** A switch in the brand's colours rather than the app theme's. */
-    fun tint(switch: android.widget.Switch) {
+    fun tint(switch: Switch) {
         val states = arrayOf(intArrayOf(android.R.attr.state_checked), intArrayOf())
-        switch.thumbTintList = ColorStateList(states, intArrayOf(ACCENT, if (dark) Color.parseColor("#b9bbc0") else Color.WHITE))
-        switch.trackTintList = ColorStateList(states, intArrayOf(over(cardBackground, ACCENT, 0.5f), if (dark) Color.parseColor("#4a4c52") else Color.parseColor("#c9cac6")))
+        switch.thumbTintList = ColorStateList(states, intArrayOf(ACCENT, if (dark) "#b9bbc0".toColorInt() else Color.WHITE))
+        switch.trackTintList = ColorStateList(states, intArrayOf(over(cardBackground, ACCENT, 0.5f), if (dark) "#4a4c52".toColorInt() else "#c9cac6".toColorInt()))
     }
 
     /** A row of choices of which at most one is on; tapping the one that is on turns it off. */
@@ -386,133 +386,11 @@ internal class Ui(val context: Context) {
     }
 }
 
-/**
- * Whether buttons whose own widths are [widths] can sit side by side in equal shares of [room], [gap] apart: each
- * share must hold the widest of them.
- */
-internal fun buttonsFit(widths: List<Int>, room: Int, gap: Int): Boolean {
-    if (widths.size <= 1) return true
-    return widths.max() * widths.size + gap * (widths.size - 1) <= room
-}
+/** The overlay's easing curves: the same in the toolbar and the sheets. */
+internal object Motion {
+    /** Quick off the mark and settling gently: things arriving. */
+    val SETTLE: TimeInterpolator = PathInterpolator(0.32f, 0.72f, 0f, 1f)
 
-/**
- * A sheet's buttons: as wide as they can be, side by side in equal widths 10 apart; one above the other, full width,
- * when they do not fit.
- */
-@android.annotation.SuppressLint("ViewConstructor")
-internal class ButtonRow(ui: Ui, buttons: List<View>) : android.view.ViewGroup(ui.context) {
-    private val gap = ui.dp(10)
-    private var stacked = false
-
-    init {
-        ui.own(this)
-        for (button in buttons) addView(button)
-    }
-
-    private fun shown() = (0 until childCount).map { getChildAt(it) }.filter { it.visibility != GONE }
-
-    override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
-        val room = MeasureSpec.getSize(widthMeasureSpec) - paddingLeft - paddingRight
-        val views = shown()
-        val natural = MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED)
-        for (view in views) view.measure(natural, natural)
-        stacked = !buttonsFit(views.map { it.measuredWidth }, room, gap)
-        fun exactly(size: Int) = MeasureSpec.makeMeasureSpec(size.coerceAtLeast(0), MeasureSpec.EXACTLY)
-        var height = 0
-        if (stacked) {
-            views.forEachIndexed { index, view ->
-                view.measure(exactly(room), exactly(view.measuredHeight))
-                height += view.measuredHeight + if (index > 0) gap else 0
-            }
-        } else if (views.isNotEmpty()) {
-            val each = (room - gap * (views.size - 1)) / views.size
-            height = views.maxOf { it.measuredHeight }
-            for (view in views) view.measure(exactly(each), exactly(height))
-        }
-        setMeasuredDimension(MeasureSpec.getSize(widthMeasureSpec), height + paddingTop + paddingBottom)
-    }
-
-    override fun onLayout(changed: Boolean, l: Int, t: Int, r: Int, b: Int) {
-        val views = shown().let { if (!stacked && layoutDirection == LAYOUT_DIRECTION_RTL) it.reversed() else it }
-        var x = paddingLeft
-        var y = paddingTop
-        for (view in views) {
-            view.layout(x, y, x + view.measuredWidth, y + view.measuredHeight)
-            if (stacked) y += view.measuredHeight + gap else x += view.measuredWidth + gap
-        }
-    }
-}
-
-/**
- * The toolbar's and sheets' small icons: SVG path data in a 24 box, stroked round, as in the design. The dots (the
- * menu's three, the grip's six) are filled circles.
- */
-internal enum class Icon(private val data: String? = null) {
-    CROSSHAIR("M4 12a8 8 0 1 0 16 0a8 8 0 1 0-16 0M12 1.5V6M12 18v4.5M1.5 12H6M18 12h4.5"),
-    MORE,
-    GRIP,
-    CLOSE("M6 6l12 12M18 6 6 18"),
-    UP("M12 19V5M5 12l7-7 7 7"),
-    EYE("M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12zM9 12a3 3 0 1 0 6 0a3 3 0 1 0-6 0"),
-    EYE_OFF("M2 2l20 20M10.7 5.1A10 10 0 0 1 12 5c6.5 0 10 7 10 7a13 13 0 0 1-1.7 2.7M6.6 6.6A13.5 13.5 0 0 0 2 12s3.5 7 10 7a9.7 9.7 0 0 0 5.4-1.6M9.9 9.9a3 3 0 1 0 4.2 4.2"),
-    LIST("M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"),
-    PACKAGE("M21 8 12 3 3 8v8l9 5 9-5zM3 8l9 5 9-5M12 13v8"),
-    TRASH("M3 6h18M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6M10 11v6M14 11v6M9 6V4h6v2"),
-    SLIDERS("M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6"),
-    MINIMIZE("M8 3v3a2 2 0 0 1-2 2H3M21 8h-3a2 2 0 0 1-2-2V3M3 16h3a2 2 0 0 1 2 2v3M16 21v-3a2 2 0 0 1 2-2h3"),
-    POWER("M12 2v10M18.4 6.6a9 9 0 1 1-12.8 0"),
-    CHEVRON_LEFT("M15 6l-6 6 6 6"),
-    CHEVRON_RIGHT("M9 6l6 6-6 6"),
-
-    /** People only, and asides: kept between people. */
-    USERS("M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M5 7a4 4 0 1 0 8 0a4 4 0 1 0-8 0M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"),
-
-    /** Settings' Screenshots. */
-    CAMERA("M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3zM9 13a3 3 0 1 0 6 0a3 3 0 1 0-6 0"),
-    ;
-
-    /** Parsed once, the first time it is drawn. */
-    val path: Path? by lazy { data?.let { PathParser.createPathFromPathData(it) } }
-}
-
-/** Draws an [Icon] in [color], [strokeWidth] in the icon's 24 box. */
-internal class IconDrawable(private val shape: Icon, color: Int, @Suppress("unused") private val density: Float, private val strokeWidth: Float = 2f) : Drawable() {
-    private val stroke = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        this.color = color
-        style = Paint.Style.STROKE
-        strokeCap = Paint.Cap.ROUND
-        strokeJoin = Paint.Join.ROUND
-    }
-    private val fill = Paint(Paint.ANTI_ALIAS_FLAG).apply { this.color = color }
-
-    override fun draw(canvas: Canvas) {
-        val b = bounds
-        val s = minOf(b.width(), b.height()) / 24f
-        canvas.save()
-        canvas.translate(b.left + (b.width() - 24 * s) / 2, b.top + (b.height() - 24 * s) / 2)
-        canvas.scale(s, s)
-        stroke.strokeWidth = strokeWidth
-        when (shape) {
-            Icon.MORE -> for (x in listOf(5f, 12f, 19f)) canvas.drawCircle(x, 12f, 1.8f, fill)
-            Icon.GRIP -> for (y in listOf(6f, 12f, 18f)) {
-                canvas.drawCircle(9f, y, 1.6f, fill)
-                canvas.drawCircle(15f, y, 1.6f, fill)
-            }
-            else -> shape.path?.let { canvas.drawPath(it, stroke) }
-        }
-        canvas.restore()
-    }
-
-    override fun setAlpha(alpha: Int) {
-        stroke.alpha = alpha
-        fill.alpha = alpha
-    }
-
-    override fun setColorFilter(colorFilter: ColorFilter?) {
-        stroke.colorFilter = colorFilter
-        fill.colorFilter = colorFilter
-    }
-
-    @Deprecated("Deprecated in Java")
-    override fun getOpacity(): Int = PixelFormat.TRANSLUCENT
+    /** Slow to start, then away: things leaving. */
+    val EASE_IN: TimeInterpolator = PathInterpolator(0.42f, 0f, 1f, 1f)
 }

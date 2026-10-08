@@ -53,3 +53,40 @@ internal class ScanIndex(val elements: List<ScreenElement>) {
         return first
     }
 }
+
+/**
+ * The notes grouped by the screen they were made on, oldest first and numbered as their pins are, and how many wait
+ * to be sent: worked out again only when [notes] has changed, not on every frame or render.
+ */
+internal class ScreenNotes(private val notes: NoteBook) {
+    private var groupedVersion = -1L
+    private var byRoute: Map<String, List<Pair<Int, NoteRecord>>> = emptyMap()
+    private var waiting = 0
+
+    /** Notes made here the server does not have yet (in test mode: not packaged yet). */
+    val pending: Int
+        get() {
+            regroup()
+            return waiting
+        }
+
+    /** The notes on a screen, oldest first, numbered as their pins are. */
+    fun on(route: String): List<Pair<Int, NoteRecord>> {
+        regroup()
+        return byRoute[route].orEmpty()
+    }
+
+    private fun regroup() {
+        if (groupedVersion == notes.version) return
+        val groups = HashMap<String, MutableList<NoteRecord>>()
+        var pending = 0
+        for (record in notes.all) {
+            groups.getOrPut(record.annotation.route) { ArrayList() } += record
+            if (record.pending) pending++
+        }
+        val order = compareBy<NoteRecord>({ it.annotation.createdAt }, { it.annotation.id })
+        byRoute = groups.mapValues { (_, list) -> list.sortedWith(order).mapIndexed { index, record -> index + 1 to record } }
+        waiting = pending
+        groupedVersion = notes.version
+    }
+}

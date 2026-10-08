@@ -14,7 +14,7 @@ import android.net.Uri
 internal class NotatoInitProvider : ContentProvider() {
     override fun onCreate(): Boolean {
         val app = context?.applicationContext as? Application ?: return false
-        if (!Notato.isStarted && Notato.manifestConfig(app) != null) Notato.start(app)
+        if (!Notato.isStarted) Notato.start(app)
         return true
     }
 

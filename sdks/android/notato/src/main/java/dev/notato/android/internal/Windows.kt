@@ -2,6 +2,7 @@ package dev.notato.android.internal
 
 import android.annotation.SuppressLint
 import android.app.Activity
+import android.content.ContextWrapper
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.os.Build
@@ -13,6 +14,8 @@ import android.view.View
 import android.view.ViewGroup
 import android.view.WindowManager
 import android.view.inspector.WindowInspector
+import androidx.core.graphics.createBitmap
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.suspendCancellableCoroutine
 import java.lang.reflect.Field
 import java.util.WeakHashMap
@@ -113,7 +116,7 @@ internal object Windows {
         val base = activity.window?.decorView as? ViewGroup ?: return null
         val candidates = roots().filter { root ->
             root !== base && root.isShown && root.isAttachedToWindow && root is ViewGroup &&
-                root.context.let { context -> generateSequence(context) { (it as? android.content.ContextWrapper)?.baseContext }.any { it === activity } } &&
+                root.context.let { context -> generateSequence(context) { (it as? ContextWrapper)?.baseContext }.any { it === activity } } &&
                 (root.layoutParams as? WindowManager.LayoutParams)?.type.let { it == WindowManager.LayoutParams.TYPE_APPLICATION || it == WindowManager.LayoutParams.TYPE_BASE_APPLICATION } &&
                 root.width >= base.width * 0.9f && root.height >= base.height * 0.6f
         }
@@ -121,8 +124,10 @@ internal object Windows {
     }
 
     /** Waits for a frame to be drawn. */
-    suspend fun nextFrame() = suspendCancellableCoroutine { continuation ->
-        Choreographer.getInstance().postFrameCallback { continuation.resume(Unit) }
+    private suspend fun nextFrame() = suspendCancellableCoroutine { continuation ->
+        val callback = Choreographer.FrameCallback { continuation.resume(Unit) }
+        Choreographer.getInstance().postFrameCallback(callback)
+        continuation.invokeOnCancellation { Choreographer.getInstance().removeFrameCallback(callback) }
     }
 
     private val overlays = Hider<View>({ it.visibility }, { view, value -> view.visibility = value })
@@ -133,7 +138,7 @@ internal object Windows {
      */
     suspend fun capture(activity: Activity, root: View, overlay: View?): CapturedScreen? {
         if (root.width == 0 || root.height == 0) return null
-        val bitmap = Bitmap.createBitmap(root.width, root.height, Bitmap.Config.ARGB_8888)
+        val bitmap = createBitmap(root.width, root.height)
         overlay?.let { overlays.hide(it) }
         try {
             nextFrame()
@@ -144,6 +149,9 @@ internal object Windows {
                 else -> false
             }
             if (!copied) root.draw(Canvas(bitmap))
+        } catch (error: CancellationException) {
+            bitmap.recycle()
+            throw error
         } catch (_: Throwable) {
             runCatching { root.draw(Canvas(bitmap)) }.getOrElse {
                 bitmap.recycle()
@@ -168,4 +176,14 @@ internal object Windows {
             PixelCopy.request(request, { it.run() }) { result -> continuation.resume(result.status == PixelCopy.SUCCESS) }
         }
     }
+}
+
+/**
+ * Takes the picture first and reads the screen after it, so what the reading says to cover (private elements, secure
+ * and masked fields) is where it was in the picture. Read the other way round, a field that moved or appeared between
+ * the two would be in the picture uncovered.
+ */
+internal suspend fun <P, S> captureThenScan(capture: suspend () -> P?, scan: () -> S): Pair<P?, S> {
+    val picture = capture()
+    return picture to scan()
 }

@@ -105,3 +105,14 @@ internal class ToolbarFold(private val state: RuntimeState, private val corner: 
  */
 internal fun toolbarHeldRight(dragged: Pair<Float, Float>?, corner: ToolbarCorner): Boolean =
     dragged?.let { it.first >= 0.5f } ?: (corner == ToolbarCorner.BOTTOM_END || corner == ToolbarCorner.TOP_END)
+
+/**
+ * Where a toolbar that has not been dragged sits, as fractions of the room it moves in. Bottom corners start a little
+ * up, clear of a navigation bar; people drag it where they like.
+ */
+internal fun cornerFraction(corner: ToolbarCorner): Pair<Float, Float> = when (corner) {
+    ToolbarCorner.BOTTOM_START -> 0f to 0.86f
+    ToolbarCorner.TOP_END -> 1f to 0.06f
+    ToolbarCorner.TOP_START -> 0f to 0.06f
+    ToolbarCorner.BOTTOM_END -> 1f to 0.86f
+}

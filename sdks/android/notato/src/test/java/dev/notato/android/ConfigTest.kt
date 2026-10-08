@@ -1,15 +1,12 @@
 package dev.notato.android
 
-import dev.notato.android.internal.Ulid
-import dev.notato.android.net.ServerSentEvent
-import dev.notato.android.net.ServerSentEventParser
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
+/** The configuration: loose values read, what cannot work explained, and the token kept to its server. */
 class ConfigTest {
     @Test
     fun readsLooseValuesWhateverTheirCase() {
@@ -97,22 +94,5 @@ class ConfigTest {
         assertEquals("pft_abc", NotatoConfig("shop", token = "pft_abc").tokenFor("http://LOCALHOST:4747/"))
         assertTrue(NotatoConfig.sameServer("http://example.com", "http://example.com:80"))
         assertFalse(NotatoConfig.sameServer("http://example.com", "https://example.com:80"))
-    }
-
-    @Test
-    fun ulidsSortByTime() {
-        val earlier = Ulid.make(1_700_000_000_000)
-        val later = Ulid.make(1_700_000_000_001)
-        assertEquals(26, earlier.length)
-        assertTrue(earlier < later)
-        assertTrue(Regex("^[0-9A-HJKMNP-TV-Z]{26}$").matches(earlier))
-    }
-
-    @Test
-    fun parsesServerSentEvents() {
-        val parser = ServerSentEventParser()
-        val events = listOf(": ping", "event: created", "data: {\"a\":", "data: 1}", "", "", "data:plain", "").mapNotNull { parser.feed(it) }
-        assertEquals(listOf(ServerSentEvent("created", "{\"a\":\n1}"), ServerSentEvent("message", "plain")), events)
-        assertNotNull(events.first().data)
     }
 }

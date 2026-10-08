@@ -6,11 +6,17 @@ import java.lang.ref.WeakReference
 
 /** A rectangle in window pixels. Plain numbers so the selector code can be tested without Android. */
 public data class Box(val left: Float, val top: Float, val right: Float, val bottom: Float) {
-    val width: Float get() = right - left
-    val height: Float get() = bottom - top
-    val area: Float get() = width.coerceAtLeast(0f) * height.coerceAtLeast(0f)
+    public val width: Float get() = right - left
+    public val height: Float get() = bottom - top
+    public val area: Float get() = width.coerceAtLeast(0f) * height.coerceAtLeast(0f)
+
+    /** Whether the point is inside it (its left and top edges included, its right and bottom not). */
     public fun contains(x: Float, y: Float): Boolean = x >= left && x < right && y >= top && y < bottom
+
+    /** Whether [other] is inside it, give or take a pixel. */
     public fun contains(other: Box): Boolean = other.left >= left - 1 && other.top >= top - 1 && other.right <= right + 1 && other.bottom <= bottom + 1
+
+    /** The smallest box around both. */
     public fun union(other: Box): Box = Box(minOf(left, other.left), minOf(top, other.top), maxOf(right, other.right), maxOf(bottom, other.bottom))
 }
 
@@ -125,10 +131,10 @@ public class ScreenElement(
  * - `:nth(2)`: the second match on screen, in drawing order.
  * - A leading capitalised word is the screen: a hint for people, ignored when matching.
  */
-public object Selectors {
-    public data class Parsed(val screen: String?, val type: String?, val id: String?, val text: String?, val nth: Int?)
+internal object Selectors {
+    data class Parsed(val screen: String?, val type: String?, val id: String?, val text: String?, val nth: Int?)
 
-    public class SelectorException(message: String) : IllegalArgumentException(message)
+    class SelectorException(message: String) : IllegalArgumentException(message)
 
     private fun quote(text: String) = "\"" + text.replace("\\", "\\\\").replace("\"", "\\\"") + "\""
     private val plain = Regex("^[A-Za-z_][\\w.-]*$")
@@ -137,14 +143,14 @@ public object Selectors {
      * Whether two descriptions are of the same thing on screen. Picking and listing describe the screen separately, so
      * the element picked is an equal description, not the same object, as the one in the list.
      */
-    public fun same(a: ScreenElement, b: ScreenElement): Boolean = a === b ||
+    fun same(a: ScreenElement, b: ScreenElement): Boolean = a === b ||
         (a.kind == b.kind && a.bounds == b.bounds && a.identifier == b.identifier && a.words == b.words && a.role == b.role)
 
     /**
      * The shortest selector that finds only this element among [all], with the screen in front when known. A private
      * element has no words, so its selector is its id, else its role and place (`text:nth(3)`), never its text.
      */
-    public fun make(element: ScreenElement, all: List<ScreenElement>, screen: String?): String {
+    fun make(element: ScreenElement, all: List<ScreenElement>, screen: String?): String {
         val prefix = screen?.let { "$it " } ?: ""
         val id = element.identifier
         if (!id.isNullOrEmpty() && all.none { !same(it, element) && it.identifier == id }) {
@@ -161,7 +167,8 @@ public object Selectors {
         return prefix + base
     }
 
-    public fun matches(element: ScreenElement, selector: Parsed): Boolean {
+    /** Whether [element] is one [selector] finds, `nth` aside. */
+    fun matches(element: ScreenElement, selector: Parsed): Boolean {
         selector.type?.let { type ->
             if (type != "*" && !type.equals(element.role, ignoreCase = true) && !type.equals(element.control, ignoreCase = true)) return false
         }
@@ -174,16 +181,17 @@ public object Selectors {
     }
 
     /** The elements a selector finds, in drawing order (`nth` applied). */
-    public fun query(selector: String, elements: List<ScreenElement>): List<ScreenElement> = query(parse(selector), elements)
+    fun query(selector: String, elements: List<ScreenElement>): List<ScreenElement> = query(parse(selector), elements)
 
     /** The elements a parsed selector finds, in drawing order (`nth` applied). */
-    public fun query(selector: Parsed, elements: List<ScreenElement>): List<ScreenElement> {
+    fun query(selector: Parsed, elements: List<ScreenElement>): List<ScreenElement> {
         val found = elements.filter { matches(it, selector) }
         val nth = selector.nth ?: return found
         return if (nth <= found.size) listOf(found[nth - 1]) else emptyList()
     }
 
-    public fun parse(raw: String): Parsed {
+    /** Reads a selector; throws [SelectorException], saying what is wrong, when it cannot. */
+    fun parse(raw: String): Parsed {
         var s = raw.trim()
         fun fail(why: String): Nothing = throw SelectorException("selector \"$raw\": $why")
         var screen: String? = null

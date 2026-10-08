@@ -7,9 +7,12 @@ import android.graphics.Paint
 import android.graphics.Rect
 import android.graphics.RectF
 import android.graphics.Typeface
+import androidx.core.graphics.createBitmap
+import androidx.core.graphics.toColorInt
 import dev.notato.android.inspect.Box
 import dev.notato.android.model.AssetRef
 import dev.notato.android.model.Screenshots
+import dev.notato.android.overlay.Ui
 import java.io.ByteArrayOutputStream
 
 /** The two pictures a note carries: the window with the target outlined, and a crop around it, as PNG bytes by asset id. */
@@ -17,8 +20,8 @@ internal class ComposedScreenshots(val refs: Screenshots, val assets: Map<String
 
 /** Draws the outline, the pin number and the masks onto a captured window, and cuts the crop. */
 internal object ScreenshotComposer {
-    private val outline = Color.parseColor("#ef4444")
-    private val mask = Color.parseColor("#9ca3af")
+    private val outline = "#ef4444".toColorInt()
+    private val mask = "#9ca3af".toColorInt()
     private const val CROP_PADDING_DP = 24f
 
     /** [targets] and [masks] are in window pixels, the capture's own space. */
@@ -41,7 +44,7 @@ internal object ScreenshotComposer {
 
         // The window with the masks and the outline: the crop is cut from it before the pin is drawn on, so one
         // picture of the window's size is made, not two.
-        val full = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+        val full = createBitmap(width, height)
         val canvas = Canvas(full).apply {
             drawBitmap(source, null, Rect(0, 0, width, height), Paint(Paint.FILTER_BITMAP_FLAG))
             for (m in masks) drawRect(m.rect(), maskPaint)
@@ -77,7 +80,7 @@ internal object ScreenshotComposer {
         val cx = target.right - 2 * dp
         val cy = maxOf(radius, target.top)
         // An open pin's colour, as the overlay and the board draw it.
-        canvas.drawCircle(cx, cy, radius, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = dev.notato.android.overlay.Ui.ACCENT })
+        canvas.drawCircle(cx, cy, radius, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Ui.ACCENT })
         canvas.drawCircle(cx, cy, radius, Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = Color.WHITE
             style = Paint.Style.STROKE

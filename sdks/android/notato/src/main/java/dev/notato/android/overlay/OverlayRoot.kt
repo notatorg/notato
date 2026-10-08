@@ -8,11 +8,14 @@ import android.graphics.Paint
 import android.graphics.RectF
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
+import android.util.TypedValue
 import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
 import android.view.ViewConfiguration
 import android.view.ViewTreeObserver
+import android.view.inputmethod.InputMethodManager
 import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.TextView
@@ -20,6 +23,7 @@ import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import dev.notato.android.NotatoConnection
 import dev.notato.android.inspect.Box
+import dev.notato.android.inspect.ViewInspector
 import kotlin.math.abs
 import kotlin.math.floor
 
@@ -145,7 +149,7 @@ internal class OverlayRoot(context: Context, private val actions: OverlayActions
         private set
     private val drawn = ViewTreeObserver.OnDrawListener {
         frames++
-        lastFrameAt = android.os.SystemClock.uptimeMillis()
+        lastFrameAt = SystemClock.uptimeMillis()
     }
 
     var safeTop = 0
@@ -165,7 +169,7 @@ internal class OverlayRoot(context: Context, private val actions: OverlayActions
     val sheetFromToolbar: Boolean get() = (sheet as? BottomSheet)?.page?.place?.let(::closesWithToolbar) == true
 
     init {
-        tag = dev.notato.android.inspect.ViewInspector.OWN_TAG
+        tag = ViewInspector.OWN_TAG
         clipChildren = false
         addView(pickSurface, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
         addView(marks, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
@@ -395,15 +399,14 @@ internal class OverlayRoot(context: Context, private val actions: OverlayActions
     fun hideKeyboard() {
         val focused = findFocus() ?: return
         focused.clearFocus()
-        (context.getSystemService(Context.INPUT_METHOD_SERVICE) as? android.view.inputmethod.InputMethodManager)
-            ?.hideSoftInputFromWindow(windowToken, 0)
+        context.getSystemService(InputMethodManager::class.java)?.hideSoftInputFromWindow(windowToken, 0)
     }
 
     fun toast(message: String) {
         toast.text = message
         toast.visibility = VISIBLE
         handler.removeCallbacksAndMessages(TOAST)
-        handler.postAtTime({ toast.visibility = GONE }, TOAST, android.os.SystemClock.uptimeMillis() + if (message.length > 70) 5000 else 2800)
+        handler.postAtTime({ toast.visibility = GONE }, TOAST, SystemClock.uptimeMillis() + if (message.length > 70) 5000 else 2800)
     }
 
     private companion object {
@@ -413,7 +416,7 @@ internal class OverlayRoot(context: Context, private val actions: OverlayActions
     /** Takes every tap while annotating: the controller picks what is underneath. */
     private inner class PickSurface(context: Context) : View(context) {
         init {
-            tag = dev.notato.android.inspect.ViewInspector.OWN_TAG
+            tag = ViewInspector.OWN_TAG
             visibility = GONE
         }
 
@@ -424,7 +427,8 @@ internal class OverlayRoot(context: Context, private val actions: OverlayActions
         override fun onTouchEvent(event: MotionEvent): Boolean {
             when (event.actionMasked) {
                 MotionEvent.ACTION_DOWN -> {
-                    downX = event.x; downY = event.y
+                    downX = event.x
+                    downY = event.y
                 }
                 MotionEvent.ACTION_UP -> if (abs(event.x - downX) + abs(event.y - downY) < ViewConfiguration.get(context).scaledTouchSlop * 2) {
                     actions.pick(event.x, event.y)
@@ -447,13 +451,13 @@ internal class OverlayRoot(context: Context, private val actions: OverlayActions
         private val labelPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Ui.SELECTION }
         private val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = Color.WHITE
-            textSize = android.util.TypedValue.applyDimension(android.util.TypedValue.COMPLEX_UNIT_SP, 12f, resources.displayMetrics)
+            textSize = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_SP, 12f, resources.displayMetrics)
         }
 
         private val rect = RectF()
 
         init {
-            tag = dev.notato.android.inspect.ViewInspector.OWN_TAG
+            tag = ViewInspector.OWN_TAG
         }
 
         fun show(selection: SelectionDrawing?) {

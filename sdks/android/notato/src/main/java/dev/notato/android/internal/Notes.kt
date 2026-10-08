@@ -1,7 +1,10 @@
 package dev.notato.android.internal
 
 import android.view.View
+import dev.notato.android.inspect.Box
+import dev.notato.android.inspect.Reading
 import dev.notato.android.inspect.Selectors
+import dev.notato.android.inspect.ViewInspector
 import dev.notato.android.model.Annotation
 import java.io.File
 import java.lang.ref.WeakReference
@@ -42,6 +45,21 @@ internal class NoteRecord(
     /** The view it was made on, followed live for its pin while it still shows what the note is about ([viewKey]). */
     var view: WeakReference<View>? = null
     var viewKey: ViewKey? = null
+
+    /**
+     * Where the view it was made on is, while that view is on screen and still shows what the note is about. A list's
+     * recycled row shows another item: the reference is dropped, and the note's selector finds it from then on.
+     */
+    fun liveBounds(maskInputs: Boolean): Box? {
+        val view = view?.get() ?: return null
+        if (!view.isAttachedToWindow || !view.isShown) return null
+        val now = ViewInspector.describe(view, maskInputs, Reading(lite = true))
+        if (viewKey != ViewKey(now.identifier, now.words)) {
+            this.view = null
+            return null
+        }
+        return now.bounds
+    }
 
     private var parsedFrom: String? = null
     private var parsed: Selectors.Parsed? = null

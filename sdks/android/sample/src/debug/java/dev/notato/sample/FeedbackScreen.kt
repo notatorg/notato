@@ -31,7 +31,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import dev.notato.android.AnnotateOptions
 import dev.notato.android.Notato
-import dev.notato.android.model.Intent
+import dev.notato.android.model.NoteIntent
 import kotlinx.coroutines.launch
 
 /** Notato's API at runtime: turning it on and off, the toolbar, notes made from code, and packaging. */
@@ -69,7 +69,7 @@ fun FeedbackScreen() {
             onClick = {
                 scope.launch {
                     message = try {
-                        val note = Notato.annotate("#feedback_title", "Made from code: this heading could say what the screen is for.", AnnotateOptions(intent = Intent.CHANGE))
+                        val note = Notato.annotate("#feedback_title", "Made from code: this heading could say what the screen is for.", AnnotateOptions(intent = NoteIntent.CHANGE))
                         "Made a note on the heading (${note.id.takeLast(6)})"
                     } catch (error: Exception) {
                         error.message

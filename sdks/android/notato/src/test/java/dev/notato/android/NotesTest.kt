@@ -157,7 +157,6 @@ class NotesTest {
         for (annotation in merge.upserts) notes.take(annotation, "android-sample", { false }, ::touch)
         notes.removeAll { it.annotation.id in merge.drops }
         val ms = (System.nanoTime() - started) / 1_000_000
-        println("Merged 10,000 listed notes into 10,000 here in $ms ms")
 
         // The waiting ones are kept though the list does not have them; the rest match the list.
         assertEquals(15_000, notes.size)

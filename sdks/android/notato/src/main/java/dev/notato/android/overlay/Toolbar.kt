@@ -18,9 +18,9 @@ import android.view.View
 import android.view.ViewConfiguration
 import android.view.ViewGroup
 import android.view.ViewOutlineProvider
-import android.view.animation.PathInterpolator
 import android.widget.FrameLayout
 import android.widget.LinearLayout
+import androidx.core.view.isVisible
 import dev.notato.android.NotatoConnection
 import kotlin.math.abs
 import kotlin.math.cos
@@ -177,7 +177,7 @@ internal class ToolbarView(
         } else {
             ui.pressable(Color.TRANSPARENT, Ui.BAR_PRESSED, 12)
         }
-        crosshair.background = IconDrawable(Icon.CROSSHAIR, ink, ui.density, 2.2f)
+        crosshair.background = IconDrawable(Icon.CROSSHAIR, ink, 2.2f)
         label.setTextColor(ink)
         count.setTextColor(ink)
         count.background = ui.rounded(if (active) Color.argb(41, 11, 31, 27) else Ui.BAR_PRESSED, 11)
@@ -228,7 +228,7 @@ internal class ToolbarView(
     private var morphPlace: FloatArray? = null
 
     init {
-        chevron.background = IconDrawable(if (heldRight) Icon.CHEVRON_RIGHT else Icon.CHEVRON_LEFT, Ui.BAR_MUTED, ui.density, 2.2f)
+        chevron.background = IconDrawable(if (heldRight) Icon.CHEVRON_RIGHT else Icon.CHEVRON_LEFT, Ui.BAR_MUTED, 2.2f)
         settleNow()
     }
 
@@ -313,7 +313,7 @@ internal class ToolbarView(
         if (right == heldRight) return
         if (morph != null) settleNow()
         heldRight = right
-        chevron.background = IconDrawable(if (right) Icon.CHEVRON_RIGHT else Icon.CHEVRON_LEFT, Ui.BAR_MUTED, ui.density, 2.2f)
+        chevron.background = IconDrawable(if (right) Icon.CHEVRON_RIGHT else Icon.CHEVRON_LEFT, Ui.BAR_MUTED, 2.2f)
         requestLayout() // the round button goes to that side
         reshape()
     }
@@ -355,11 +355,11 @@ internal class ToolbarView(
         fab.isClickable = next
         val toward = if (heldRight) 1f else -1f
         // Nearest the held side first: that is where the sweep starts.
-        val shownItems = items.filter { it.visibility == VISIBLE }.sortedBy { it.left }.let { if (heldRight) it.reversed() else it }
+        val shownItems = items.filter { it.isVisible }.sortedBy { it.left }.let { if (heldRight) it.reversed() else it }
 
         morph = ValueAnimator.ofFloat(from, to).apply {
             duration = if (next) 420 else 560
-            interpolator = if (next) SETTLE else SPRING
+            interpolator = if (next) Motion.SETTLE else SPRING
             addUpdateListener {
                 morphWidth = it.animatedValue as Float
                 reshape()
@@ -374,21 +374,21 @@ internal class ToolbarView(
             // The far buttons go first, as the edge comes in over them, then the button they fold into turns in.
             shownItems.reversed().forEachIndexed { i, item ->
                 item.animate().alpha(0f).translationX(ui.dp(8) * toward).scaleX(0.92f).scaleY(0.92f)
-                    .setDuration(160).setStartDelay(16L * i).setInterpolator(EASE_IN).start()
+                    .setDuration(160).setStartDelay(16L * i).setInterpolator(Motion.EASE_IN).start()
             }
-            if (!turning) fab.apply { alpha = 0f; scaleX = 0.5f; scaleY = 0.5f; rotation = -90f * toward }
+            if (!turning) fab.pose(alpha = 0f, scale = 0.5f, rotation = -90f * toward)
             fab.animate().alpha(1f).scaleX(1f).scaleY(1f).rotation(0f).setDuration(460).setStartDelay(170).setInterpolator(SPRING).start()
-            if (!turning && badge.visibility == VISIBLE) {
-                badge.apply { alpha = 0f; scaleX = 0.4f; scaleY = 0.4f }
+            if (!turning && badge.isVisible) {
+                badge.pose(alpha = 0f, scale = 0.4f)
                 badge.animate().alpha(1f).scaleX(1f).scaleY(1f).setDuration(380).setStartDelay(400).setInterpolator(SPRING).start()
             }
         } else {
-            fab.animate().alpha(0f).scaleX(0.5f).scaleY(0.5f).rotation(-90f * toward).setDuration(180).setStartDelay(0).setInterpolator(EASE_IN).start()
+            fab.animate().alpha(0f).scaleX(0.5f).scaleY(0.5f).rotation(-90f * toward).setDuration(180).setStartDelay(0).setInterpolator(Motion.EASE_IN).start()
             shownItems.forEachIndexed { i, item ->
-                if (!turning) item.apply { alpha = 0f; translationX = ui.dp(10) * toward; scaleX = 0.94f; scaleY = 0.94f }
+                if (!turning) item.pose(alpha = 0f, translationX = ui.dp(10) * toward, scale = 0.94f)
                 // Close behind the edge, which covers most of the way in the first 150ms.
                 item.animate().alpha(1f).translationX(0f).scaleX(1f).scaleY(1f)
-                    .setDuration(280).setStartDelay(25L + 18 * i).setInterpolator(SETTLE).start()
+                    .setDuration(280).setStartDelay(25L + 18 * i).setInterpolator(Motion.SETTLE).start()
             }
         }
         morph?.start()
@@ -433,13 +433,16 @@ internal class ToolbarView(
         reshape()
     }
 
-    private fun View.rest() {
-        alpha = 1f
-        translationX = 0f
-        scaleX = 1f
-        scaleY = 1f
-        rotation = 0f
+    /** Puts a view where an animation starts from; with nothing given, at rest. */
+    private fun View.pose(alpha: Float = 1f, translationX: Float = 0f, scale: Float = 1f, rotation: Float = 0f) {
+        this.alpha = alpha
+        this.translationX = translationX
+        scaleX = scale
+        scaleY = scale
+        this.rotation = rotation
     }
+
+    private fun View.rest() = pose()
 
     // ---- dragging: from anywhere on it, its buttons and the round button included ------------------------------------
 
@@ -580,7 +583,5 @@ internal class ToolbarView(
 
     private companion object {
         val SPRING = TimeInterpolator { spring(it) }
-        val SETTLE = PathInterpolator(0.32f, 0.72f, 0f, 1f)
-        val EASE_IN = PathInterpolator(0.42f, 0f, 1f, 1f)
     }
 }

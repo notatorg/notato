@@ -5,6 +5,11 @@
       Debug builds only: SampleApp starts Notato, and it is in src/debug with Notato itself. A release build uses the
       plain Application and has no Notato. Notato could also start with no code at all, from meta-data here:
       <meta-data android:name="notato.project" android:value="android-sample" />
+
+      The network security config lets the debug build reach `notato dev` over plain http on localhost; a release
+      build allows no cleartext at all.
     -->
-    <application android:name=".SampleApp" />
+    <application
+        android:name=".SampleApp"
+        android:networkSecurityConfig="@xml/network_security_config" />
 </manifest>

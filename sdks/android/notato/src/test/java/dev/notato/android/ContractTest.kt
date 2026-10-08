@@ -2,9 +2,10 @@ package dev.notato.android
 
 import dev.notato.android.internal.BundleWriter
 import dev.notato.android.internal.LocalAnnotation
+import dev.notato.android.internal.Ulid
+import dev.notato.android.model.Annotation
 import dev.notato.android.model.FeedbackBundle
 import dev.notato.android.model.NotatoJson
-import dev.notato.android.model.Annotation
 import dev.notato.android.net.MultipartForm
 import dev.notato.android.net.encodeAnnotation
 import kotlinx.serialization.json.JsonNull
@@ -19,7 +20,7 @@ import java.io.ByteArrayOutputStream
 import java.io.File
 import java.util.zip.ZipInputStream
 
-/** What the SDK sends must pass the server's own schema (packages/schema), run with bun. */
+/** What the SDK sends is what the server takes: its own schema (packages/schema, run with bun), the form, the bundle and the ids. */
 class ContractTest {
     @get:Rule
     val temp = TemporaryFolder()
@@ -97,6 +98,15 @@ class ContractTest {
 
         val result = Fixture.validate("bundle", NotatoJson.encodeToString(FeedbackBundle.serializer(), bundle)) ?: return
         assertTrue(result.second, result.first)
+    }
+
+    @Test
+    fun idsAreUlidsThatSortByTime() {
+        val earlier = Ulid.make(1_700_000_000_000)
+        val later = Ulid.make(1_700_000_000_001)
+        assertEquals(26, earlier.length)
+        assertTrue(earlier < later)
+        assertTrue(Regex("^[0-9A-HJKMNP-TV-Z]{26}$").matches(earlier))
     }
 
     @Test

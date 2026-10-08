@@ -9,6 +9,7 @@ import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
+/** Selectors: read, matched, and made as short as they can be while finding only their element. */
 class SelectorsTest {
     private fun element(
         role: String?,

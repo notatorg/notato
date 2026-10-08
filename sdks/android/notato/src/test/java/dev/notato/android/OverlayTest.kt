@@ -19,7 +19,7 @@ class OverlayTest {
 
     @Test(timeout = 2_000)
     fun twoNotesOnAnElementAtTheLeftEdgeSitSideBySide() {
-        // An element whose right edge is under 34dp: both pins clamp to the left margin. This used to spin forever.
+        // An element whose right edge is under 34dp: both pins clamp to the left margin, and the search must still end.
         val places = spread(listOf(2f to 100f, 2f to 100f))
         assertEquals(2f to 100f, places[0])
         assertEquals(24f to 100f, places[1])

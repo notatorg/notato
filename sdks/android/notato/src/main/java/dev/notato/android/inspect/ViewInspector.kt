@@ -36,6 +36,7 @@ public class HostInfo(
     public val components: List<String>,
     /** The views around the host, outermost first. */
     public val ancestors: List<String>,
+    /** The screen's density: pixels per dp. */
     public val density: Float,
     /** How private the host view is (`Notato.mask` on it or a view around it): what it holds is at least this private. */
     public val privacy: Privacy = Privacy.DEFAULT,
@@ -46,6 +47,7 @@ public class HostInfo(
  * same space as [View.getLocationInWindow].
  */
 public interface ElementProvider {
+    /** Whether [view] is one this provider sees into (a `ComposeView`): the View tree stops there and asks it. */
     public fun handles(view: View): Boolean
 
     /** Every element inside [view], in drawing order. */
@@ -67,11 +69,11 @@ internal class Reading(val lite: Boolean = false) {
 }
 
 /** Reads the View tree: what is at a point, and how to describe a view so the agent can find it in the code. */
-public object ViewInspector {
-    internal val providers = mutableListOf<ElementProvider>()
+internal object ViewInspector {
+    val providers = mutableListOf<ElementProvider>()
 
     /** Views Notato itself added (its overlay): never picked. */
-    internal const val OWN_TAG = "notato.own"
+    const val OWN_TAG = "notato.own"
 
     /** Views that are only framework plumbing around the app's content: looked through when describing. */
     private val plumbing = setOf(
@@ -83,10 +85,10 @@ public object ViewInspector {
     private fun isOwn(view: View) = view.tag == OWN_TAG
 
     /** The mark `Notato.mask` left on a view: true (private), false (not private) or null. */
-    internal fun markOf(view: View): Boolean? = view.getTag(R.id.notato_mask) as? Boolean
+    fun markOf(view: View): Boolean? = view.getTag(R.id.notato_mask) as? Boolean
 
     /** What `Notato.mask` says about a view, from its own mark and those of the views it sits in. */
-    internal fun privacyOf(view: View): Privacy = Privacy.of(generateSequence(view) { it.parent as? View }.map(::markOf))
+    fun privacyOf(view: View): Privacy = Privacy.of(generateSequence(view) { it.parent as? View }.map(::markOf))
 
     /** Whether a view is an element of its own: not plumbing, unless it has an id or is marked private (to be covered). */
     private fun listed(view: View) = controlName(view) !in plumbing || idName(view) != null || markOf(view) == true
@@ -98,7 +100,7 @@ public object ViewInspector {
         px / android.util.TypedValue.applyDimension(android.util.TypedValue.COMPLEX_UNIT_SP, 1f, view.resources.displayMetrics)
     }
 
-    internal fun windowBox(view: View): Box {
+    fun windowBox(view: View): Box {
         val location = IntArray(2)
         view.getLocationInWindow(location)
         return Box(location[0].toFloat(), location[1].toFloat(), (location[0] + view.width).toFloat(), (location[1] + view.height).toFloat())
@@ -123,7 +125,7 @@ public object ViewInspector {
     // ---- what is where ----------------------------------------------------------------------------------------------
 
     /** The views (and provider elements) at a point of [root]'s window, innermost first. */
-    public fun chainAt(root: View, x: Float, y: Float, maskInputs: Boolean): List<ScreenElement> {
+    fun chainAt(root: View, x: Float, y: Float, maskInputs: Boolean): List<ScreenElement> {
         val reading = Reading()
         val views = mutableListOf<View>()
         var current: View? = root
@@ -146,7 +148,7 @@ public object ViewInspector {
      * say (the Fragments after its Activity, when it has both) and its screen (its Fragment, else its Activity). Nothing
      * is described, so it is cheap enough to ask whenever the screen may have changed.
      */
-    internal fun screenAt(root: View, x: Float, y: Float): Pair<List<String>, String?> {
+    fun screenAt(root: View, x: Float, y: Float): Pair<List<String>, String?> {
         var current: View? = root
         var innermost: View? = null
         while (current != null) {
@@ -164,7 +166,7 @@ public object ViewInspector {
     }
 
     /** The screen a provider's view shows, from the largest such view on screen (a ComposeView). */
-    public fun providedScreen(root: View): String? {
+    fun providedScreen(root: View): String? {
         var best: Pair<Float, String>? = null
         fun visit(view: View) {
             if (isOwn(view)) return
@@ -181,15 +183,12 @@ public object ViewInspector {
         return best?.second
     }
 
-    /** Every element in [root]'s window, in drawing order, for selectors and pins. */
-    public fun elements(root: View, maskInputs: Boolean): List<ScreenElement> = elements(root, maskInputs, lite = false)
-
     /**
-     * Every element in [root]'s window, in drawing order. [lite] is for the pins, read twice a second: each element
-     * says only what a selector looks at (its kind, role, control, id, words and place), not its styles, layout file,
-     * ancestors or screen.
+     * Every element in [root]'s window, in drawing order, for selectors and pins. [lite] is for the pins, read twice a
+     * second: each element says only what a selector looks at (its kind, role, control, id, words and place), not its
+     * styles, layout file, ancestors or screen.
      */
-    internal fun elements(root: View, maskInputs: Boolean, lite: Boolean): List<ScreenElement> {
+    fun elements(root: View, maskInputs: Boolean, lite: Boolean = false): List<ScreenElement> {
         val reading = Reading(lite)
         val out = mutableListOf<ScreenElement>()
         fun visit(view: View) {
@@ -208,12 +207,12 @@ public object ViewInspector {
 
     // ---- describing a view ---------------------------------------------------------------------------------------
 
-    internal fun idName(view: View): String? {
+    fun idName(view: View): String? {
         if (view.id == View.NO_ID || view.id ushr 24 == 0) return null // no id, or one made at runtime
         return runCatching { view.resources.getResourceEntryName(view.id) }.getOrNull()
     }
 
-    internal fun controlName(view: View): String {
+    fun controlName(view: View): String {
         var type: Class<*> = view.javaClass
         while (type.simpleName.isEmpty() || type.isAnonymousClass) type = type.superclass ?: break
         return type.simpleName
@@ -232,7 +231,7 @@ public object ViewInspector {
      * Whether an input type is a password's. A variation means something only with its class: the number password's
      * bits are also a text field's URI and a date field's date.
      */
-    internal fun isPasswordType(inputType: Int): Boolean =
+    fun isPasswordType(inputType: Int): Boolean =
         (inputType and (InputType.TYPE_MASK_CLASS or InputType.TYPE_MASK_VARIATION)) in passwordTypes
 
     private fun isSecure(view: View): Boolean {
@@ -275,7 +274,7 @@ public object ViewInspector {
         return clip(parts.joinToString(" "))
     }
 
-    internal fun activityOf(view: View): Activity? {
+    fun activityOf(view: View): Activity? {
         var context = view.context
         while (context is ContextWrapper) {
             if (context is Activity) return context
@@ -303,7 +302,7 @@ public object ViewInspector {
      * from the view and the views around it. [cache] keeps what was found for each view on the way up, so a reading of
      * the whole screen walks each Fragment's views once.
      */
-    internal fun fragmentsOf(view: View, cache: MutableMap<View, List<String>>? = null): List<String> {
+    fun fragmentsOf(view: View, cache: MutableMap<View, List<String>>? = null): List<String> {
         val tag = fragmentTag(view)
         if (tag == 0) return emptyList()
         val path = ArrayList<View>()
@@ -325,9 +324,8 @@ public object ViewInspector {
         return names
     }
 
-    public fun hostInfo(view: View): HostInfo = hostInfo(view, null)
-
-    internal fun hostInfo(view: View, reading: Reading?): HostInfo {
+    /** What a provider is told about [view], the View it reads into; [reading] shares what is worked out once per reading. */
+    fun hostInfo(view: View, reading: Reading? = null): HostInfo {
         val density = view.resources.displayMetrics.density
         // The pins need only how private the view is: not where it is, nor what is around it.
         if (reading?.lite == true) return HostInfo(null, emptyList(), emptyList(), density, privacyOf(view))
@@ -399,9 +397,8 @@ public object ViewInspector {
         return null
     }
 
-    public fun describe(view: View, maskInputs: Boolean): ScreenElement = describe(view, maskInputs, Reading())
-
-    internal fun describe(view: View, maskInputs: Boolean, reading: Reading): ScreenElement {
+    /** Describes one view: what it is, what it says (unless it is private), where it is and what it is in. */
+    fun describe(view: View, maskInputs: Boolean, reading: Reading = Reading()): ScreenElement {
         val lite = reading.lite
         val info = hostInfo(view, reading)
         val privacy = info.privacy

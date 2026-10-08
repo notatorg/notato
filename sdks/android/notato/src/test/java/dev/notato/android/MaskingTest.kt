@@ -11,6 +11,7 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
+/** What is private: covered in screenshots, and none of its words in a note or its selector. */
 class MaskingTest {
     private fun of(vararg marks: Boolean?) = Privacy.of(marks.asSequence())
 

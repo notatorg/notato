@@ -94,13 +94,11 @@ class ClientTest {
         }
     }
 
-    private val release = CountDownLatch(1)
     private var server: TinyServer? = null
     private val seen: MutableList<String> = Collections.synchronizedList(mutableListOf())
 
     @After
     fun stop() {
-        release.countDown()
         server?.close()
     }
 
