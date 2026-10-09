@@ -166,7 +166,7 @@ A pin sits on the element its note was made on, follows it as the page scrolls, 
 Notato draws its UI with MAUI controls, in a layer of its own above the app, so it needs nothing from the app's pages and works over Shell, tabs, navigation, modal pages, popups and alerts:
 
 - **iOS and Mac Catalyst**: a transparent window above the app's window in the same scene. Touches that are not on Notato's controls go to the app. Being a separate window keeps the overlay above modal pages and alerts and out of the screenshots, which are taken of the app's window only.
-- **Android**: a view in the decor view of the window that is on top. MAUI shows a modal page in a dialog window of its own, and the overlay moves into it while it shows. The overlay is hidden for the frame in which a screenshot is copied.
+- **Android**: a view in the decor view of the window that is on top. MAUI shows a modal page in a dialog window of its own, and the overlay moves into it while it shows. A screenshot is the window drawn with the overlay left out, so the overlay never disappears; only a window it cannot be drawn from that way (a SurfaceView or TextureView, such as a camera or a map, or a hardware bitmap) is copied from the screen instead, with the overlay hidden while it is.
 
 Notato's controls carry explicit styles, so the app's implicit styles do not reach them, and its handler customisations apply only to the app's own controls.
 

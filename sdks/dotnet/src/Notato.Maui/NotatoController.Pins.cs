@@ -8,45 +8,80 @@ using Notato.Maui.Runtime;
 
 namespace Notato.Maui;
 
-// The overlay's rhythm: a few times a second each window's screen is checked, and its pins follow their elements.
+// The overlay's rhythm. While the app may be moving (a touch on it, a view scrolling) the pins and the selection follow
+// their elements frame by frame. Otherwise a look now and then catches what moved on its own: often just after a
+// change, less often once nothing moves, and not at all while nothing is selected and no pin is on screen. A page
+// appearing, a modal page, or anything the overlay shows changing (see RaiseChanged) wakes it.
 internal sealed partial class NotatoController
 {
-    /// <summary>How often the pins and the selection are put where their elements are now.</summary>
+    /// <summary>How soon the next look is, just after something moved or changed.</summary>
     private static readonly TimeSpan TickInterval = TimeSpan.FromMilliseconds(150);
+
+    /// <summary>How soon it is once <see cref="QuietTicks"/> looks in a row found nothing moved.</summary>
+    private static readonly TimeSpan IdleInterval = TimeSpan.FromMilliseconds(600);
+
+    private const int QuietTicks = 4;
 
     /// <summary>The window on top is looked for again every this many ticks (a modal page's dialog, on Android).</summary>
     private const int HostRefreshTicks = 4;
 
     /// <summary>
-    /// How long to wait before looking again for an element that was not on screen: searching for one that is not
-    /// there is the costly case.
+    /// How long to wait before looking again for an element that was not on screen, besides when the screen or the
+    /// notes change: searching for one that is not there is the costly case.
     /// </summary>
-    private const long MissedRetryMs = 900;
+    private const long MissedRetryMs = 3000;
 
-    private IDispatcherTimer? _timer;
+    /// <summary>Following frame by frame stops once nothing has moved for this long.</summary>
+    private const long FollowStillMs = 600;
 
-    private void EnsureTimer()
+    /// <summary>The look planned next: its number (a newer plan replaces it), and when it is due.</summary>
+    private int _tickPlan;
+    private long? _tickDue;
+    private int _quietTicks;
+
+    /// <summary>Plans a look soon: something changed, or may have moved.</summary>
+    private void Wake()
+    {
+        _quietTicks = 0;
+        PlanTick(TickInterval);
+    }
+
+    private void PlanTick(TimeSpan wait)
     {
         if (!_enabled || _sessions.Count == 0)
         {
             return;
         }
 
-        if (_timer is null)
+        long due = Environment.TickCount64 + (long)wait.TotalMilliseconds;
+        // One is planned already, as soon or sooner.
+        if (_tickDue is { } planned && planned <= due)
         {
-            _timer = _sessions[0].Window.Dispatcher.CreateTimer();
-            _timer.Interval = TickInterval;
-            _timer.Tick += (_, _) => Tick();
+            return;
         }
 
-        if (!_timer.IsRunning)
+        int plan = ++_tickPlan;
+        _tickDue = due;
+        _sessions[0].Window.Dispatcher.DispatchDelayed(wait, () =>
         {
-            _timer.Start();
-        }
+            if (plan == _tickPlan)
+            {
+                _tickDue = null;
+                Tick();
+            }
+        });
+    }
+
+    /// <summary>No more looks until something wakes them.</summary>
+    private void StopTicks()
+    {
+        _tickPlan++;
+        _tickDue = null;
     }
 
     private void Tick()
     {
+        bool moved = false, needed = false;
         foreach (OverlaySession session in _sessions.ToList())
         {
             session.Ticks++;
@@ -62,19 +97,98 @@ internal sealed partial class NotatoController
                 session.Resolved.Clear();
                 session.Missed.Clear();
                 session.View.Render();
+                moved = true;
             }
 
-            if (PinsVisible)
+            // New notes, or changed ones: the pins not found are looked for again now, not at their next try.
+            if (session.NotesVersion != _records.Version)
             {
-                // Drawn again only where something moved or changed (see ShowPins).
-                session.View.ShowPins(Placements(session));
+                session.NotesVersion = _records.Version;
+                session.Missed.Clear();
             }
 
-            if (session.Selection is { } selection)
+            // The tree is searched for pins not found only while the app is still.
+            if (Place(session, search: !session.Following))
             {
-                session.View.ShowSelection(Describe(session, selection));
+                moved = true;
+                // Moving on its own (an animation, a scroll the app made): followed frame by frame until it stops.
+                Follow(session);
             }
+
+            needed |= HasWork(session);
         }
+
+        if (!needed)
+        {
+            return;
+        }
+
+        _quietTicks = moved ? 0 : _quietTicks + 1;
+        PlanTick(_quietTicks >= QuietTicks ? IdleInterval : TickInterval);
+    }
+
+    /// <summary>Whether there is anything to follow in the session: a selection, or a pin on its screen.</summary>
+    private bool HasWork(OverlaySession session) =>
+        session.Selection is not null || (PinsVisible && _records.PinnedOn(RouteOf(session)).Count > 0);
+
+    /// <summary>
+    /// Puts the session's selection and pins where their elements are now. With <paramref name="search"/>, the pins
+    /// whose elements are not known are looked for in the tree (when due). Returns whether anything moved.
+    /// </summary>
+    private bool Place(OverlaySession session, bool search)
+    {
+        bool moved = false;
+        if (session.Selection is { } selection)
+        {
+            moved |= session.View.MoveSelection(SelectionRects(session, selection));
+        }
+
+        if (PinsVisible)
+        {
+            // Drawn again only where something moved or changed (see ShowPins).
+            moved |= session.View.ShowPins(Placements(session, search));
+        }
+
+        return moved;
+    }
+
+    /// <summary>
+    /// What the app shows may be moving: the pins and the selection follow it on every frame, until nothing has moved
+    /// for <see cref="FollowStillMs"/>. Then the timer takes over again.
+    /// </summary>
+    private void Follow(OverlaySession session)
+    {
+        session.MovedAt = Environment.TickCount64;
+        if (session.Following || !_enabled || !HasWork(session))
+        {
+            return;
+        }
+
+        session.Following = true;
+        session.Host.EveryFrame(() =>
+        {
+            if (!_enabled || !_sessions.Contains(session))
+            {
+                session.Following = false;
+                return false;
+            }
+
+            long now = Environment.TickCount64;
+            if (Place(session, search: false))
+            {
+                session.MovedAt = now;
+            }
+
+            if (now - session.MovedAt < FollowStillMs)
+            {
+                return true;
+            }
+
+            session.Following = false;
+            // Still again: a look now finds the pins whose elements came into view.
+            Wake();
+            return false;
+        });
     }
 
     private static string SafeRoute(Window window)
@@ -99,10 +213,10 @@ internal sealed partial class NotatoController
     /// <summary>
     /// Where each pin on the session's screen goes now. Only notes made with this SDK get one (see
     /// <see cref="RecordSet.PinnedOn"/>), the newest <see cref="RecordSet.MaxPins"/>. A pin whose element is known is
-    /// put on it where it is now (a cheap look per pin); the ones whose element is not are looked for together, in one
-    /// walk of the tree, about once a second.
+    /// put on it where it is now (a cheap look per pin); with <paramref name="search"/>, the ones whose element is not
+    /// are looked for together, in one walk of the tree (see <see cref="LookFor"/>).
     /// </summary>
-    private List<PinPlacement> Placements(OverlaySession session)
+    private List<PinPlacement> Placements(OverlaySession session, bool search)
     {
         IReadOnlyList<(int Number, NoteRecord Record)> shown = _records.PinnedOn(RouteOf(session));
         IElementGeometry geometry = session.Host.Geometry;
@@ -118,7 +232,7 @@ internal sealed partial class NotatoController
             }
         }
 
-        if (missing.Count > 0)
+        if (search && missing.Count > 0)
         {
             LookFor(session, shown, missing, rects, geometry, mask);
         }
@@ -173,8 +287,8 @@ internal sealed partial class NotatoController
 
     /// <summary>
     /// Looks for the elements of the pins in <paramref name="missing"/> whose time to look again has come, all in one
-    /// walk of what the window shows. Each is looked for about once a second at most (<see cref="MissedRetryMs"/>).
-    /// Inside a list, an element must show the note's text to be taken.
+    /// walk of what the window shows. Each is looked for again after <see cref="MissedRetryMs"/>, or as soon as the
+    /// screen or the notes change. Inside a list, an element must show the note's text to be taken.
     /// </summary>
     private static void LookFor(OverlaySession session, IReadOnlyList<(int Number, NoteRecord Record)> shown, List<int> missing, Rect?[] rects, IElementGeometry geometry, bool mask)
     {

@@ -35,6 +35,12 @@ internal sealed class AndroidOverlayHost : IOverlayHost, IElementGeometry
     private Thickness _safe;
     private double _keyboard;
     private readonly CaptureHiding _hiding = new();
+    /// <summary>The window's tree the scroll listener is on: it changes when the overlay moves into a dialog.</summary>
+    private ViewTreeObserver? _observer;
+    private ScrollListener? _scrolls;
+    private Func<bool>? _frameStep;
+    private FrameStep? _frameCallback;
+    private bool _framePosted;
 
     public AndroidOverlayHost(Activity activity, MauiWindow mauiWindow)
     {
@@ -43,6 +49,8 @@ internal sealed class AndroidOverlayHost : IOverlayHost, IElementGeometry
     }
 
     public event EventHandler? MetricsChanged;
+
+    public event EventHandler? ContentMoving;
 
     public IElementGeometry Geometry => this;
 
@@ -98,6 +106,7 @@ internal sealed class AndroidOverlayHost : IOverlayHost, IElementGeometry
             (_frame.Parent as ViewGroup)?.RemoveView(_frame);
             target.AddView(_frame, new ViewGroup.LayoutParams(ViewGroup.LayoutParams.MatchParent, ViewGroup.LayoutParams.MatchParent));
             _decor = target;
+            WatchScrolling(target.ViewTreeObserver);
             ViewCompat.RequestApplyInsets(_frame);
         }
         else if (target.IndexOfChild(_frame) != target.ChildCount - 1)
@@ -105,6 +114,50 @@ internal sealed class AndroidOverlayHost : IOverlayHost, IElementGeometry
             _frame.BringToFront();
         }
         ReadInsets(ViewCompat.GetRootWindowInsets(_frame));
+    }
+
+    /// <summary>
+    /// Listens for any view in the window scrolling (a ScrollView, a CollectionView's list): Android says so once a
+    /// frame while one does, which is when the pins follow it.
+    /// </summary>
+    private void WatchScrolling(ViewTreeObserver? observer)
+    {
+        if (_observer is { IsAlive: true } old && _scrolls is not null)
+        {
+            old.RemoveOnScrollChangedListener(_scrolls);
+        }
+
+        _observer = observer;
+        if (observer is { IsAlive: true })
+        {
+            observer.AddOnScrollChangedListener(_scrolls ??= new ScrollListener(this));
+        }
+    }
+
+    public void EveryFrame(Func<bool> frame)
+    {
+        _frameStep = frame;
+        if (_framePosted)
+        {
+            return;
+        }
+
+        _framePosted = true;
+        Choreographer.Instance!.PostFrameCallback(_frameCallback ??= new FrameStep(this));
+    }
+
+    private void OnFrame()
+    {
+        _framePosted = false;
+        if (_frame is not null && _frameStep?.Invoke() == true)
+        {
+            _framePosted = true;
+            Choreographer.Instance!.PostFrameCallback(_frameCallback!);
+        }
+        else
+        {
+            _frameStep = null;
+        }
     }
 
     public void SetVisible(bool visible)
@@ -179,6 +232,22 @@ internal sealed class AndroidOverlayHost : IOverlayHost, IElementGeometry
 
         Bitmap bitmap = Bitmap.CreateBitmap(root.Width, root.Height, Bitmap.Config.Argb8888!);
         IReadOnlyList<MauiRect> masks;
+        try
+        {
+            // Drawn here and now with the overlay left out, all in this one call on the main thread: no frame is ever
+            // shown without the overlay, so it does not flicker. What the window's own drawing cannot do (a camera's or
+            // a map's surface, a hardware bitmap) is copied from the screen instead, below.
+            if (!HasSurfaces(root) && DrawWithoutOverlay(root, bitmap, measureMasks) is { } drawn)
+            {
+                return new CapturedScreen(new PlatformImage(bitmap), bitmap.Width, bitmap.Height, Density, drawn);
+            }
+        }
+        catch
+        {
+            Free(bitmap);
+            throw;
+        }
+
         // The overlay sits in the same window as the app, so it is hidden for one frame while the window is copied.
         // Captures can overlap: it shows again when the last one ends, not when the first one does.
         _hiding.BeginCapture();
@@ -208,9 +277,7 @@ internal sealed class AndroidOverlayHost : IOverlayHost, IElementGeometry
         }
         catch
         {
-            // No picture after all: the bitmap (a whole screen's worth) goes now, not when the collector gets to it.
-            bitmap.Recycle();
-            bitmap.Dispose();
+            Free(bitmap);
             throw;
         }
         finally
@@ -220,6 +287,63 @@ internal sealed class AndroidOverlayHost : IOverlayHost, IElementGeometry
         }
         // The caller disposes it (see CapturedScreen), which frees the bitmap.
         return new CapturedScreen(new PlatformImage(bitmap), bitmap.Width, bitmap.Height, Density, masks);
+    }
+
+    /// <summary>No picture after all: the bitmap (a whole screen's worth) goes now, not when the collector gets to it.</summary>
+    private static void Free(Bitmap bitmap)
+    {
+        bitmap.Recycle();
+        bitmap.Dispose();
+    }
+
+    /// <summary>
+    /// The window drawn into <paramref name="bitmap"/> with the overlay out of it, and what to cover measured in the
+    /// same moment; null when it cannot be drawn this way (a hardware bitmap in it).
+    /// </summary>
+    private IReadOnlyList<MauiRect>? DrawWithoutOverlay(AView root, Bitmap bitmap, Func<IReadOnlyList<MauiRect>> measureMasks)
+    {
+        IReadOnlyList<MauiRect> masks = measureMasks();
+        _hiding.BeginCapture();
+        ApplyVisibility();
+        try
+        {
+            DrawInto(root, bitmap);
+            return masks;
+        }
+        catch (Java.Lang.Throwable)
+        {
+            bitmap.EraseColor(0);
+            return null;
+        }
+        finally
+        {
+            _hiding.EndCapture();
+            ApplyVisibility();
+        }
+    }
+
+    /// <summary>Whether the window shows something its own drawing leaves out: a SurfaceView or a TextureView.</summary>
+    private bool HasSurfaces(AView view)
+    {
+        if (view is SurfaceView or TextureView)
+        {
+            return true;
+        }
+
+        if (view is not ViewGroup group || ReferenceEquals(view, _frame) || view.Visibility != ViewStates.Visible)
+        {
+            return false;
+        }
+
+        for (int i = 0; i < group.ChildCount; i++)
+        {
+            if (group.GetChildAt(i) is { } child && HasSurfaces(child))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private static void DrawInto(AView root, Bitmap bitmap)
@@ -276,6 +400,8 @@ internal sealed class AndroidOverlayHost : IOverlayHost, IElementGeometry
 
     public void Dispose()
     {
+        _frameStep = null;
+        WatchScrolling(null);
         ReturnFocus();
         (_frame?.Parent as ViewGroup)?.RemoveView(_frame);
         _frame?.Dispose();
@@ -293,6 +419,7 @@ internal sealed class AndroidOverlayHost : IOverlayHost, IElementGeometry
                 OverlayHosts.ArrangeRoot(overlay, (right - left) / host.Density, (bottom - top) / host.Density);
             }
 
+            // Only a new size: a layout pass inside the overlay (its own animations) moves nothing here.
             if (changed)
             {
                 host.MetricsChanged?.Invoke(host, EventArgs.Empty);
@@ -320,6 +447,16 @@ internal sealed class AndroidOverlayHost : IOverlayHost, IElementGeometry
     private sealed class FrameCallback(TaskCompletionSource done) : Java.Lang.Object, Choreographer.IFrameCallback
     {
         public void DoFrame(long frameTimeNanos) => done.TrySetResult();
+    }
+
+    private sealed class FrameStep(AndroidOverlayHost host) : Java.Lang.Object, Choreographer.IFrameCallback
+    {
+        public void DoFrame(long frameTimeNanos) => host.OnFrame();
+    }
+
+    private sealed class ScrollListener(AndroidOverlayHost host) : Java.Lang.Object, ViewTreeObserver.IOnScrollChangedListener
+    {
+        public void OnScrollChanged() => host.ContentMoving?.Invoke(host, EventArgs.Empty);
     }
 }
 #endif

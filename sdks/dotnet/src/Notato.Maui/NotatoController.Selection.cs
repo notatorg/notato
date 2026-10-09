@@ -10,7 +10,8 @@ using Notato.Maui.Overlay;
 namespace Notato.Maui;
 
 // Selecting what a note is about: a tap while annotating, SelectAsync from the app, or Parent to widen the selection.
-// The window's picture is taken at the moment of selecting, so the note shows the screen as it was then.
+// The outline and the note being written come up at once; the window's picture is taken as soon as they have, so the
+// note shows the screen as it was then, and taking it never holds them up.
 internal sealed partial class NotatoController
 {
     /// <summary>How much of an element's text its selection's title quotes.</summary>
@@ -36,10 +37,7 @@ internal sealed partial class NotatoController
                 return;
             }
 
-            CapturedScreen? screen = await CaptureAsync(session);
-            // Another tap may have selected something while the picture was taken: this one replaces it.
-            ClearSelection(session);
-            Select(session, new SelectionState([element], screen));
+            await SelectNewAsync(session, element);
         }
         catch (Exception error)
         {
@@ -57,10 +55,50 @@ internal sealed partial class NotatoController
         {
             OverlaySession session = SessionForCode(element);
             _annotating = true;
-            CapturedScreen? screen = await CaptureAsync(session);
-            ClearSelection(session);
-            Select(session, new SelectionState([element], screen));
+            await SelectNewAsync(session, element);
         });
+    }
+
+    /// <summary>
+    /// Selects <paramref name="element"/> in place of what was selected, and takes the window's picture for it once the
+    /// note being written has come in: iOS's overlay is a window of its own, and Android draws the app without it, so
+    /// the picture never has the overlay in it. Done when the picture is taken; Send waits for it too.
+    /// </summary>
+    private async Task SelectNewAsync(OverlaySession session, VisualElement element)
+    {
+        ClearSelection(session);
+        SelectionState selection = new([element], null);
+        Select(session, selection);
+        Task arrived = session.View.SheetArrived;
+        if (!ScreenshotsOn)
+        {
+            await arrived;
+            FocusComment();
+            return;
+        }
+
+        selection.Taking = TakeAsync();
+        await selection.Taking;
+        FocusComment();
+
+        // The keyboard comes up for the note only once the picture is taken: opening it can move the app under it.
+        void FocusComment()
+        {
+            if (ReferenceEquals(session.Selection, selection))
+            {
+                session.View.Composer?.FocusComment();
+            }
+        }
+
+        async Task TakeAsync()
+        {
+            await arrived;
+            // Cancelled, or replaced, while the note came in: no picture is wanted.
+            if (ReferenceEquals(session.Selection, selection))
+            {
+                selection.Receive(await CaptureAsync(session));
+            }
+        }
     }
 
     /// <summary>The session an element the app's code names is in. Throws, with what to do, when there is none.</summary>
@@ -106,10 +144,13 @@ internal sealed partial class NotatoController
         RenderAll();
     }
 
-    /// <summary>The selection as the overlay shows it: its outlines, and a title such as <c>Button “Sign in”</c>.</summary>
+    /// <summary>
+    /// The selection as the overlay shows it: its outlines, and a title such as <c>Button “Sign in”</c>. Worked out once
+    /// per selection; after that only its outlines are looked at (<see cref="SelectionRects"/>).
+    /// </summary>
     private SelectionView Describe(OverlaySession session, SelectionState selection)
     {
-        List<Rect> rects = [.. selection.Elements.Select(e => session.Host.Geometry.BoundsOf(e)).OfType<Rect>()];
+        List<Rect> rects = SelectionRects(session, selection);
         VisualElement first = selection.Elements[0];
         string title = Selectors.Segment(first, withPosition: false);
         if (first is not Page && ElementText.Clip(ElementText.Visible(first, Options.ResolvedMaskInputs), TitleTextLength) is { } text)
@@ -126,6 +167,10 @@ internal sealed partial class NotatoController
         }.OfType<string>());
         return new SelectionView(rects, title, subtitle.Length == 0 ? null : subtitle);
     }
+
+    /// <summary>Where the selected elements are on screen now.</summary>
+    private static List<Rect> SelectionRects(OverlaySession session, SelectionState selection) =>
+        [.. selection.Elements.Select(e => session.Host.Geometry.BoundsOf(e)).OfType<Rect>()];
 
     /// <summary>Parent: the selection widens to the nearest element around it that is drawn.</summary>
     internal void SelectParent(OverlaySession session)

@@ -67,7 +67,7 @@ internal sealed partial class NotatoOverlay : Grid
         };
         _pickSurface.GestureRecognizers.Add(pick);
 
-        _marks = Ui.Plain(new AbsoluteLayout { InputTransparent = true, CascadeInputTransparent = true });
+        _marks = Ui.Plain(new AbsoluteLayout { InputTransparent = true, CascadeInputTransparent = true, IsVisible = false });
         _pins = Ui.Plain(new AbsoluteLayout { InputTransparent = true, CascadeInputTransparent = false });
 
         Label hintText = Ui.Text("Tap what you want to comment on", 14, Ui.BarText, maxLines: 1);
@@ -178,6 +178,10 @@ internal sealed partial class NotatoOverlay : Grid
         _row.SizeChanged += (_, _) => PlaceToolbar();
         // A sheet's header or buttons can change size after it opens (a line of error, a wider window): fit it again.
         _sheetHost.SizeChanged += (_, _) => Dispatcher.Dispatch(FitSheet);
+        // Hidden as built: the first time each is asked for, it comes in.
+        _reveals[_hint] = (false, 0);
+        _reveals[_toast] = (false, 0);
+        _reveals[_marks] = (false, 0);
 
         // As it was left, without animating.
         _shownCollapsed = controller.ToolbarCollapsed;
@@ -206,11 +210,13 @@ internal sealed partial class NotatoOverlay : Grid
     public void Render()
     {
         Composer?.SetMentions(_controller.AvailableMentions);
-        _toolbar.IsVisible = _controller.IsToolbarVisible;
-        _pins.IsVisible = _controller.PinsVisible;
+        // Out of the way while a note is written: it shrinks into its own middle, and grows back once the note is sent
+        // or cancelled.
+        Reveal(_toolbarLayer, _controller.IsToolbarVisible && _sheet is not ComposerCard, scale: 0.9, anchor: ToolbarMiddle());
+        Reveal(_pins, _controller.PinsVisible);
         bool annotating = _controller.IsAnnotating;
         _pickSurface.IsVisible = annotating;
-        _hint.IsVisible = annotating && _session.Selection is null && _sheetHost.Content is null;
+        Reveal(_hint, annotating && _session.Selection is null && _sheet is null, dy: -16);
         if (annotating != _shownAnnotating)
         {
             // On, Annotate turns teal with dark ink, and its count goes faint dark.
@@ -230,7 +236,7 @@ internal sealed partial class NotatoOverlay : Grid
         _annotateCount.Text = MenuText.BarCount(count);
         SyncFold(count);
         // The ⋯ looks pressed while its sheet is open.
-        bool menuOpen = _sheetHost.Content is MenuSheet;
+        bool menuOpen = _sheet is MenuSheet;
         _moreButton.Background = new SolidColorBrush(menuOpen ? Ui.BarPressed : Colors.Transparent);
         string? dot = ToolbarFold.DotColor(_controller.ShownConnection);
         _connectionDot.IsVisible = dot is not null;
@@ -239,65 +245,136 @@ internal sealed partial class NotatoOverlay : Grid
             _connectionDot.Fill = new SolidColorBrush(Color.FromArgb(dot));
         }
 
-        (_sheetHost.Content as MenuSheet)?.Refresh();
-        if (!annotating && _session.Selection is null && _marks.Children.Count > 0)
+        (_sheet as MenuSheet)?.Refresh();
+        if (!annotating && _session.Selection is null)
         {
-            _marks.Children.Clear();
+            Reveal(_marks, false);
         }
     }
 
+    /// <summary>The toolbar's middle, as a fraction of the overlay: what it shrinks into.</summary>
+    private Point ToolbarMiddle()
+    {
+        Rect bar = AbsoluteLayout.GetLayoutBounds(_toolbar);
+        return Width > 0 && Height > 0 && bar.Width > 0
+            ? new Point((bar.X + (bar.Width / 2)) / Width, (bar.Y + (bar.Height / 2)) / Height)
+            : new Point(0.5, 0.5);
+    }
 
     // ---- selection ------------------------------------------------------------------------------------------------
 
+    /// <summary>The outlines, one per selected element, kept and moved rather than built again; spares are hidden.</summary>
+    private readonly List<Border> _outlines = [];
+    private Border? _markLabel;
+    private Label? _markText;
+    /// <summary>Where the outlines were last put: a look that finds them there touches nothing.</summary>
+    private IReadOnlyList<Rect> _marksAt = [];
+
+    /// <summary>Shows a new selection (its title once, its outlines where they are now), or hides it when null.</summary>
     public void ShowSelection(SelectionView? view)
     {
-        if (_marks.Children.Count > 0)
-        {
-            _marks.Children.Clear();
-        }
-
         if (view is null)
         {
+            Reveal(_marks, false);
             return;
         }
 
-        for (int i = 0; i < view.Rects.Count; i++)
+        if (_markLabel is null)
         {
-            Rect r = view.Rects[i];
-            Border box = Ui.Box(null, Ui.Selection.WithAlpha(0.12f), 3, new Thickness(0), Ui.Selection, 2);
-            box.InputTransparent = true;
-            AbsoluteLayout.SetLayoutBounds(box, r);
-            _marks.Children.Add(box);
-        }
-        if (view.Rects.Count == 0)
-        {
-            return;
+            _markText = Ui.Text("", 12, Colors.White, maxLines: 1);
+            _markLabel = Ui.Box(_markText, Ui.Selection, 5, new Thickness(7, 2));
+            _markLabel.InputTransparent = true;
+            AbsoluteLayout.SetLayoutBounds(_markLabel, new Rect(0, 0, AbsoluteLayout.AutoSize, AbsoluteLayout.AutoSize));
+            _marks.Children.Add(_markLabel);
         }
 
-        Rect first = view.Rects[0];
-        Border label = Ui.Box(Ui.Text(view.Title, 12, Colors.White, maxLines: 1), Ui.Selection, 5, new Thickness(7, 2));
-        label.InputTransparent = true;
-        label.MaximumWidthRequest = Math.Max(120, Width - 16);
-        // Its size is known only once it is laid out: estimate to place it, and let it size itself.
-        const double height = 20;
-        double estimate = Math.Min(label.MaximumWidthRequest, 14 + view.Title.Length * 6.6);
-        double x = Math.Clamp(first.X, 8, Math.Max(8, Width - estimate - 8));
-        double y = first.Y - height - 4 < _safe.Top ? first.Bottom + 4 : first.Y - height - 4;
-        AbsoluteLayout.SetLayoutBounds(label, new Rect(x, y, AbsoluteLayout.AutoSize, AbsoluteLayout.AutoSize));
-        _marks.Children.Add(label);
+        _markText!.Text = view.Title;
+        _markLabel.MaximumWidthRequest = Math.Max(120, Width - 16);
+        _marksAt = [];
+        MoveSelection(view.Rects);
+        Reveal(_marks, true);
+    }
+
+    /// <summary>
+    /// Puts the selection's outlines (and its title) where its elements are now. Called on every look while something
+    /// is selected: when nothing moved, nothing is touched; what moved is moved, not laid out again. Returns whether
+    /// anything moved.
+    /// </summary>
+    public bool MoveSelection(IReadOnlyList<Rect> rects)
+    {
+        if (rects.SequenceEqual(_marksAt))
+        {
+            return false;
+        }
+
+        _marksAt = [.. rects];
+        for (int i = 0; i < rects.Count; i++)
+        {
+            if (i == _outlines.Count)
+            {
+                Border box = Ui.Box(null, Ui.Selection.WithAlpha(0.12f), 3, new Thickness(0), Ui.Selection, 2);
+                box.InputTransparent = true;
+                _outlines.Add(box);
+                // Under the title.
+                _marks.Children.Insert(i, box);
+            }
+
+            _outlines[i].IsVisible = true;
+            Place(_outlines[i], rects[i]);
+        }
+
+        for (int i = rects.Count; i < _outlines.Count; i++)
+        {
+            _outlines[i].IsVisible = false;
+        }
+
+        if (_markLabel is not null)
+        {
+            _markLabel.IsVisible = rects.Count > 0;
+            if (rects.Count > 0)
+            {
+                Rect first = rects[0];
+                // Its size is known only once it is laid out: estimate to place it, and let it size itself.
+                const double height = 20;
+                double estimate = Math.Min(_markLabel.MaximumWidthRequest, 14 + (_markText!.Text.Length * 6.6));
+                double x = Math.Clamp(first.X, 8, Math.Max(8, Width - estimate - 8));
+                double y = first.Y - height - 4 < _safe.Top ? first.Bottom + 4 : first.Y - height - 4;
+                _markLabel.TranslationX = x;
+                _markLabel.TranslationY = y;
+            }
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// Puts <paramref name="view"/> over <paramref name="rect"/>: laid out at its size from the corner, and moved there
+    /// by translation, so following a scroll needs no layout pass.
+    /// </summary>
+    private static void Place(VisualElement view, Rect rect)
+    {
+        Rect laid = AbsoluteLayout.GetLayoutBounds(view);
+        if (laid.X != 0 || laid.Y != 0 || laid.Width != rect.Width || laid.Height != rect.Height)
+        {
+            AbsoluteLayout.SetLayoutBounds(view, new Rect(0, 0, rect.Width, rect.Height));
+        }
+
+        view.TranslationX = rect.X;
+        view.TranslationY = rect.Y;
     }
 
     public void Toast(string message)
     {
         _toastText.Text = message;
-        _toast.IsVisible = true;
+        // Drops in from the top, and goes back up; a newer toast takes the place of one already showing.
+        Reveal(_toast, true, dy: -16);
         // A newer toast keeps its own time on screen: this one's timer then does nothing.
         int shown = ++_toastsShown;
         Dispatcher.DispatchDelayed(TimeSpan.FromSeconds(message.Length > 70 ? 5 : 2.8), () =>
         {
             if (shown == _toastsShown)
             {
-                _toast.IsVisible = false;
+                Reveal(_toast, false, dy: -16);
             }
         });
     }

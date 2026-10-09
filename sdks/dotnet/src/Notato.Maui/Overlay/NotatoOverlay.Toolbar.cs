@@ -15,6 +15,8 @@ internal sealed partial class NotatoOverlay
     /// the host lays the overlay out again during a drag (on iOS, every frame) and must not put it back mid-drag.
     /// </summary>
     private Point? _dragFraction;
+    /// <summary>The bar (and its round button) are moved off their laid-out place by a drag under way.</summary>
+    private bool _shifted;
 
     private const double ToolbarMargin = 12;
 
@@ -42,6 +44,21 @@ internal sealed partial class NotatoOverlay
             ? ToolbarFold.LeftFromEdge(m.Edge, size.Width, m.HeldRight)
             : ToolbarFold.PlaceAt(fraction.X, minX, maxX);
         double y = ToolbarFold.PlaceAt(fraction.Y, minY, maxY);
+        if (_dragStart is not null && _morph is null && AbsoluteLayout.GetLayoutBounds(_toolbar) is { Width: > 0 } laid && laid.Width == size.Width)
+        {
+            // Dragged: moved by translation alone, with no layout pass (to which the iOS host answered by laying the
+            // whole overlay out again, on every frame of the drag). It is laid out where it is let go.
+            ShiftBar(x - laid.X, y - laid.Y);
+            bool held = HeldRight();
+            SyncChevron(held);
+            AnchorRow(held);
+            return;
+        }
+
+        if (_shifted)
+        {
+            ShiftBar(0, 0);
+        }
 #if ANDROID
         if (_morph is { } am)
         {
@@ -67,6 +84,15 @@ internal sealed partial class NotatoOverlay
         // Dragged to the other half, it folds the other way.
         SyncChevron(heldRight);
         AnchorRow(heldRight);
+    }
+
+    private void ShiftBar(double dx, double dy)
+    {
+        _shifted = dx != 0 || dy != 0;
+        _toolbar.TranslationX = dx;
+        _toolbar.TranslationY = dy;
+        _fabFace.TranslationX = dx;
+        _fabFace.TranslationY = dy;
     }
 
     private void OnDrag(object? sender, PanUpdatedEventArgs e)

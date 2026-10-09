@@ -28,9 +28,10 @@ internal sealed partial class NotatoController
 
         try
         {
-            // The note takes the picture, and disposes it once its screenshots are drawn: sending again after a
-            // failure goes without one.
-            NoteRecord record = await CreateAsync(session, selection.Elements, selection.TakeScreen(), comment, intent, severity, Author.Human(AuthorName), ModeName, null, peopleOnly);
+            // The note takes the picture (once it is taken: a quick Send waits for it), and disposes it once its
+            // screenshots are drawn: sending again after a failure goes without one.
+            CapturedScreen? screen = await selection.TakeScreenAsync();
+            NoteRecord record = await CreateAsync(session, selection.Elements, screen, comment, intent, severity, Author.Human(AuthorName), ModeName, null, peopleOnly);
             ClearSelection(session);
             session.View.ShowSelection(null);
             session.View.CloseSheet();

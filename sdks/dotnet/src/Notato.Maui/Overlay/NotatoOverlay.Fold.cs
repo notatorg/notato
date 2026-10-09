@@ -211,10 +211,6 @@ internal sealed partial class NotatoOverlay
         {
             FoldTo(collapsed);
         }
-        else
-        {
-            _fabFace.IsVisible = _controller.IsToolbarVisible;
-        }
 
         string? badge = ToolbarFold.BadgeText(count);
         _fabCountText.Text = badge ?? "";
@@ -260,17 +256,18 @@ internal sealed partial class NotatoOverlay
             : _controller.StartToolbarTrip(collapsed, room, fromWidth, toWidth, _dragFraction);
         bool heldRight = trip.HeldRight;
 
-        bool faceWasShowing = _fabFace.IsVisible && _fabFace.Opacity > 0.01;
+        bool faceWasShowing = _fabFace.Opacity > 0.01;
         double natural = NaturalWidth();
         Morph m = _morph = new Morph(trip, fromWidth) { LaidOut = natural + (natural - BarHeight) * 0.1 };
         AnchorRow(heldRight);
         SyncChevron(heldRight);
-        _fabFace.IsVisible = _controller.IsToolbarVisible;
         if (!CanAnimate())
         {
             FinishMorph();
             return;
         }
+
+        QuietShadow(true);
 
         int toward = heldRight ? 1 : -1;
         List<View> items = ToolbarFold.NearestHeldFirst(_row.Children.OfType<View>().Where(v => v.IsVisible), heldRight);
@@ -355,8 +352,38 @@ internal sealed partial class NotatoOverlay
             }
         }
 
+        QuietShadow(false);
         ApplySettled();
         PlaceToolbar();
+    }
+
+#if !ANDROID
+    private bool _shadowQuiet;
+#endif
+
+    /// <summary>
+    /// iOS and Mac Catalyst: the bar casts no shadow while it folds or opens. Its shape changes on every frame, and a
+    /// shadow would be worked out again from it each time; it comes back once the bar has settled. The same shadow,
+    /// only see-through, so the bar keeps the container MAUI gives a view with a shadow. Android's shadow is the
+    /// render thread's, from the bar's outline (see <c>NotatoOverlay.Fold.Android.cs</c>).
+    /// </summary>
+    private void QuietShadow(bool quiet)
+    {
+#if !ANDROID
+        if (quiet == _shadowQuiet)
+        {
+            return;
+        }
+
+        _shadowQuiet = quiet;
+        Shadow shadow = Ui.BarShadow();
+        if (quiet)
+        {
+            shadow.Opacity = 0;
+        }
+
+        _toolbar.Shadow = shadow;
+#endif
     }
 
     /// <summary>Every part as it is when folded, or when open, with nothing under way.</summary>
@@ -372,7 +399,6 @@ internal sealed partial class NotatoOverlay
         // fold, it cost Android a layout and a first draw there, and the fold's first frames were dropped.
         SetPose(_fabFace, new Pose(_shownCollapsed ? 1 : 0));
         SetPose(_fabCount, new Pose(1));
-        _fabFace.IsVisible = _controller.IsToolbarVisible;
     }
 
     /// <summary>

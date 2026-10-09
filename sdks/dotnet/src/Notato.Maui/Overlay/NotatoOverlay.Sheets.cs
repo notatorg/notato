@@ -9,11 +9,17 @@ namespace Notato.Maui.Overlay;
 // a time, over the app, fitted to the room the window and the keyboard leave.
 internal sealed partial class NotatoOverlay
 {
-
     /// <summary>The note being written goes at the top, away from a selection in the bottom half.</summary>
     private bool _sheetAtTop;
+    /// <summary>
+    /// The sheet that is open. One going away is still in the host until it is out of sight, but no longer open: what
+    /// asks whether a sheet (or the note being written) is open reads this.
+    /// </summary>
+    private View? _sheet;
+    /// <summary>The open sheet's height when it was last fitted: how far it slides in.</summary>
+    private double _sheetMeasured;
 
-    public bool SheetOpen => _sheetHost.Content is not null;
+    public bool SheetOpen => _sheet is not null;
 
     /// <summary>The note goes in the half of the screen the selection is not in, so the outline stays in view.</summary>
     private void PlaceSheetAwayFrom(SelectionView selection)
@@ -55,11 +61,15 @@ internal sealed partial class NotatoOverlay
         }
 
         _sheetFromBar = fromBar;
+        _sheet = card;
+        _sheetMeasured = 0;
         _sheetHost.Content = card;
+        _sheetHost.InputTransparent = false;
+        _backdrop.InputTransparent = false;
         ApplySheetPosition();
-        _sheetHost.IsVisible = true;
-        _backdrop.IsVisible = dim;
         FitSheet();
+        // Up out of the bottom; one replacing another (Back, or a menu row) is swapped where it is.
+        MoveSheet(show: true, dim);
         Render();
     }
 
@@ -81,6 +91,7 @@ internal sealed partial class NotatoOverlay
         double room = Height - margin.Top - margin.Bottom;
         // The whole sheet as tall as it wants to be, the body as it is now: the difference is everything else.
         double whole = ((IView)sheet).Measure(width, double.PositiveInfinity).Height;
+        _sheetMeasured = whole;
         double rest = whole - body.DesiredSize.Height;
         double cap = Math.Max(SheetBody.Least, room - rest);
         // Only a real change: setting it lays the sheet out again, which fits it again.
@@ -90,15 +101,16 @@ internal sealed partial class NotatoOverlay
         }
     }
 
+    /// <summary>Closes the sheet: it is closed at once, and slides away (out of reach of taps) before it leaves the host.</summary>
     public void CloseSheet()
     {
-        bool wasComposer = _sheetHost.Content is ComposerCard;
+        bool wasComposer = _sheet is ComposerCard;
         _session.Host.ReturnFocus();
-        _sheetHost.Content = null;
+        _sheet = null;
         _sheetFromBar = false;
-        _sheetHost.IsVisible = false;
-        _backdrop.IsVisible = false;
-        _session.Host.ReturnFocus();
+        _sheetHost.InputTransparent = true;
+        _backdrop.InputTransparent = true;
+        MoveSheet(show: false, dim: false);
         if (wasComposer)
         {
             _controller.CancelSelection(_session);
@@ -107,11 +119,11 @@ internal sealed partial class NotatoOverlay
         Render();
     }
 
-    public ComposerCard? Composer => _sheetHost.Content as ComposerCard;
+    public ComposerCard? Composer => _sheet as ComposerCard;
 
     public void OpenComposer(SelectionView selection, bool screenshotsOff)
     {
-        if (_sheetHost.Content is ComposerCard existing)
+        if (_sheet is ComposerCard existing)
         {
             existing.SetTarget(selection.Title, selection.Subtitle);
             PlaceSheetAwayFrom(selection);

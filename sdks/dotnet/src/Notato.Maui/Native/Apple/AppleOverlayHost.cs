@@ -1,4 +1,5 @@
 #if IOS || MACCATALYST
+using CoreAnimation;
 using CoreGraphics;
 using Foundation;
 using Microsoft.Maui;
@@ -25,10 +26,16 @@ internal sealed class AppleOverlayHost : IOverlayHost, IElementGeometry
     private NSObject? _keyboardShow, _keyboardHide;
     private double _keyboard;
     private bool _wanted = true;
+    /// <summary>The size, safe area and keyboard last told: a layout pass that changed none of them says nothing.</summary>
+    private (Size Size, Thickness Safe, double Keyboard)? _told;
+    private CADisplayLink? _link;
+    private Func<bool>? _frame;
 
     public AppleOverlayHost(UIWindow appWindow) => _appWindow = appWindow;
 
     public event EventHandler? MetricsChanged;
+
+    public event EventHandler? ContentMoving;
 
     public IElementGeometry Geometry => this;
 
@@ -43,6 +50,8 @@ internal sealed class AppleOverlayHost : IOverlayHost, IElementGeometry
         _window.BackgroundColor = UIColor.Clear;
         // Above alerts too: a note can be about an alert.
         _window.WindowLevel = UIWindowLevel.Alert + 1;
+        // Every touch on the screen is offered to this window first, the app's included: the app may be about to scroll.
+        _window.Touched = () => ContentMoving?.Invoke(this, EventArgs.Empty);
         _controller = new OverlayViewController(_appWindow, () =>
         {
             if (_controller?.View is { } root)
@@ -50,7 +59,8 @@ internal sealed class AppleOverlayHost : IOverlayHost, IElementGeometry
                 OverlayHosts.ArrangeRoot(overlay, root.Bounds.Width, root.Bounds.Height);
             }
 
-            MetricsChanged?.Invoke(this, EventArgs.Empty);
+            // Called on every layout pass of Notato's window, which its own animations cause too.
+            TellMetrics();
         });
         _window.RootViewController = _controller;
 
@@ -65,8 +75,47 @@ internal sealed class AppleOverlayHost : IOverlayHost, IElementGeometry
         _keyboardHide = UIKeyboard.Notifications.ObserveWillHide((_, _) =>
         {
             _keyboard = 0;
-            MetricsChanged?.Invoke(this, EventArgs.Empty);
+            TellMetrics();
         });
+    }
+
+    /// <summary>Raises <see cref="MetricsChanged"/> when the size, the safe area or the keyboard differ from the last time.</summary>
+    private void TellMetrics()
+    {
+        (Size, Thickness, double) now = (Size, SafeInsets, Math.Round(_keyboard, 1));
+        if (_told == now)
+        {
+            return;
+        }
+
+        _told = now;
+        MetricsChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    public void EveryFrame(Func<bool> frame)
+    {
+        _frame = frame;
+        if (_link is not null)
+        {
+            return;
+        }
+
+        _link = CADisplayLink.Create(() =>
+        {
+            if (_frame?.Invoke() != true)
+            {
+                StopFrames();
+            }
+        });
+        // The common modes: it keeps running while a scroll view is being dragged.
+        _link.AddToRunLoop(NSRunLoop.Main, NSRunLoopMode.Common);
+    }
+
+    private void StopFrames()
+    {
+        _frame = null;
+        _link?.Invalidate();
+        _link = null;
     }
 
     private void OnKeyboard(CGRect frameEnd)
@@ -84,7 +133,7 @@ internal sealed class AppleOverlayHost : IOverlayHost, IElementGeometry
             _keyboard = 0;
         }
 
-        MetricsChanged?.Invoke(this, EventArgs.Empty);
+        TellMetrics();
     }
 
     public void Refresh()
@@ -226,6 +275,7 @@ internal sealed class AppleOverlayHost : IOverlayHost, IElementGeometry
 
     public void Dispose()
     {
+        StopFrames();
         _keyboardShow?.Dispose();
         _keyboardHide?.Dispose();
         _content?.RemoveFromSuperview();
@@ -248,8 +298,16 @@ internal sealed class AppleOverlayHost : IOverlayHost, IElementGeometry
         public PassthroughWindow(CGRect frame) : base(frame) { }
 #pragma warning restore CA1422
 
+        /// <summary>A touch (or a trackpad's scroll) began somewhere on the screen; the pointer only hovering is not one.</summary>
+        public Action? Touched { get; set; }
+
         public override UIView? HitTest(CGPoint point, UIEvent? uievent)
         {
+            if (uievent?.Type is UIEventType.Touches or UIEventType.Scroll)
+            {
+                Touched?.Invoke();
+            }
+
             UIView? hit = base.HitTest(point, uievent);
             if (hit is null || hit == this || hit == RootViewController?.View)
             {

@@ -112,6 +112,9 @@ internal sealed class ComposerCard : ContentView
     /// <summary>What <c>@</c> can call right now: the server's mention plugins, if it has any.</summary>
     public void SetMentions(IReadOnlyList<MentionInfo> available) => _mentions.SetMentions(available);
 
+    /// <summary>Puts the cursor in the comment and opens the keyboard for it, as the other platforms do.</summary>
+    public void FocusComment() => _editor.Focus();
+
     public void SetTarget(string target, string? detail)
     {
         _title.Text = target;

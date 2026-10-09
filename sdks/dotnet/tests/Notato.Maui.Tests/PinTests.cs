@@ -150,17 +150,20 @@ public class PinTests
         PinPlacement open = new("A", 1, Statuses.Open, new Rect(16, 200, 284, 40), Detached: false, Pending: false);
         overlay.ShowPins([open, open with { Id = "B", Number = 2, Rect = new Rect(16, 400, 284, 40) }]);
         Border pin = Pin(overlay, "Note 1, open");
-        Rect at = AbsoluteLayout.GetLayoutBounds(pin);
+        Rect laid = AbsoluteLayout.GetLayoutBounds(pin);
+        double y = pin.TranslationY;
 
         // Marked, to see whether the next look touches it.
         pin.Opacity = 0.2;
-        overlay.ShowPins([open, open with { Id = "B", Number = 2, Rect = new Rect(16, 400, 284, 40) }]);
+        Assert.False(overlay.ShowPins([open, open with { Id = "B", Number = 2, Rect = new Rect(16, 400, 284, 40) }]));
         Assert.Equal(0.2, pin.Opacity);
 
-        // Scrolled: moved, not drawn again.
-        overlay.ShowPins([open with { Rect = new Rect(16, 150, 284, 40) }, open with { Id = "B", Number = 2, Rect = new Rect(16, 400, 284, 40) }]);
+        // Scrolled: moved, not drawn again, and not laid out again either: only its translation changes.
+        Assert.True(overlay.ShowPins([open with { Rect = new Rect(16, 150, 284, 40) }, open with { Id = "B", Number = 2, Rect = new Rect(16, 400, 284, 40) }]));
         Assert.Equal(0.2, pin.Opacity);
-        Assert.Equal(at.Y - 50, AbsoluteLayout.GetLayoutBounds(pin).Y);
+        Assert.Equal(y - 50, pin.TranslationY);
+        Assert.Equal(laid, AbsoluteLayout.GetLayoutBounds(pin));
+        Assert.Equal(new Rect(0, 0, PinLayout.Diameter, PinLayout.Diameter), laid);
 
         // Acknowledged: drawn again, the same view.
         overlay.ShowPins([open with { Status = Statuses.Acknowledged, Rect = new Rect(16, 150, 284, 40) }]);
@@ -168,6 +171,37 @@ public class PinTests
         Assert.Equal(1, pin.Opacity);
         Assert.DoesNotContain(VisualTree.Descendants(overlay), e => e is Border b && SemanticProperties.GetDescription(b) == "Note 2, open");
     }
+
+    [Fact]
+    public void The_selections_outline_is_moved_not_built_again_and_only_when_its_element_moved()
+    {
+        NotatoOverlay overlay = new(Fixtures.Controller(), new OverlaySession(null!, null!));
+        Notato.Maui.Native.OverlayHosts.ArrangeRoot(overlay, 402, 874);
+        overlay.ShowSelection(new SelectionView([new Rect(16, 200, 284, 40)], "Button “Sign in”", null));
+        Border outline = Outlines(overlay).Single();
+        Rect laid = AbsoluteLayout.GetLayoutBounds(outline);
+        Assert.Equal((16d, 200d), (outline.TranslationX, outline.TranslationY));
+
+        // A look that finds it where it was touches nothing.
+        Assert.False(overlay.MoveSelection([new Rect(16, 200, 284, 40)]));
+
+        // Scrolled: the same outline, moved by translation, not laid out again.
+        Assert.True(overlay.MoveSelection([new Rect(16, 120, 284, 40)]));
+        Assert.Same(outline, Outlines(overlay).Single());
+        Assert.Equal(120, outline.TranslationY);
+        Assert.Equal(laid, AbsoluteLayout.GetLayoutBounds(outline));
+
+        // Parent: a bigger element, laid out at its new size; a second outline is added, and hidden again after.
+        overlay.ShowSelection(new SelectionView([new Rect(0, 100, 402, 300), new Rect(16, 500, 100, 40)], "Grid", null));
+        Assert.Same(outline, Outlines(overlay).First());
+        Assert.Equal(new Rect(0, 0, 402, 300), AbsoluteLayout.GetLayoutBounds(outline));
+        overlay.MoveSelection([new Rect(0, 100, 402, 300)]);
+        Assert.Equal(2, Outlines(overlay).Count);
+        Assert.False(Outlines(overlay)[1].IsVisible);
+    }
+
+    private static List<Border> Outlines(Element overlay) =>
+        [.. VisualTree.Descendants(overlay).OfType<Border>().Where(b => b.Content is null && b.Stroke is SolidColorBrush { Color: var c } && c == Ui.Selection)];
 
     private static Border Pin(Element overlay, string description) =>
         VisualTree.Descendants(overlay).OfType<Border>().Single(b => SemanticProperties.GetDescription(b) == description);

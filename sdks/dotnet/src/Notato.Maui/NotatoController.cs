@@ -238,14 +238,16 @@ internal sealed partial class NotatoController : INotato, IDisposable
             AttachAll();
             StartSync();
             StartShake();
-            EnsureTimer();
+            WatchPages(true);
+            Wake();
         }
         else
         {
             _annotating = false;
             StopSync();
             StopShake();
-            _timer?.Stop();
+            WatchPages(false);
+            StopTicks();
             foreach (OverlaySession session in _sessions.ToList())
             {
                 Detach(session);
@@ -381,8 +383,27 @@ internal sealed partial class NotatoController : INotato, IDisposable
             session.View.Render();
         }
 
+        // Pins may have come, gone or changed: the next look is soon.
+        Wake();
         Changed?.Invoke(this, EventArgs.Empty);
     }
+
+    /// <summary>A page appearing is a new screen, maybe with its own pins: the overlay looks at once.</summary>
+    private void WatchPages(bool on)
+    {
+        if (Application.Current is not { } app)
+        {
+            return;
+        }
+
+        app.PageAppearing -= OnPageAppearing;
+        if (on)
+        {
+            app.PageAppearing += OnPageAppearing;
+        }
+    }
+
+    private void OnPageAppearing(object? sender, Page page) => Wake();
 
     /// <summary>
     /// Runs what a sync loop learnt on the main thread, unless that loop was stopped first (another server, another
@@ -436,7 +457,8 @@ internal sealed partial class NotatoController : INotato, IDisposable
         _optionsListener?.Dispose();
         StopSync();
         StopShake();
-        _timer?.Stop();
+        WatchPages(false);
+        StopTicks();
         foreach (OverlaySession session in _sessions.ToList())
         {
             Detach(session);

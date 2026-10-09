@@ -54,8 +54,21 @@ internal interface IOverlayHost : IDisposable
     /// <summary>The overlay's size, which is the window's.</summary>
     Size Size { get; }
 
-    /// <summary>Raised on the main thread when the safe area, the keyboard or the size change.</summary>
+    /// <summary>Raised on the main thread when the safe area, the keyboard or the size change, and only then.</summary>
     event EventHandler? MetricsChanged;
+
+    /// <summary>
+    /// Raised on the main thread when what the app shows may start moving: a touch or a scroll on it (iOS and Mac
+    /// Catalyst), a view in the window scrolling (Android, once a frame while it does). The pins and the selection then
+    /// follow it frame by frame (<see cref="EveryFrame"/>).
+    /// </summary>
+    event EventHandler? ContentMoving;
+
+    /// <summary>
+    /// Calls <paramref name="frame"/> on the main thread once a frame, in step with the display, until it returns
+    /// false. Calling again while it runs replaces the callback.
+    /// </summary>
+    void EveryFrame(Func<bool> frame);
 
     IElementGeometry Geometry { get; }
 

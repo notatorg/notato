@@ -74,6 +74,32 @@ public class CaptureAndShakeTests
         Assert.Equal(1, taken.Disposed);
     }
 
+    [Fact]
+    public async Task A_picture_taken_after_the_composer_came_in_waits_for_send_and_goes_if_the_selection_went_first()
+    {
+        // Send before the picture is taken waits for it.
+        SelectionState selection = new([], null);
+        TaskCompletionSource taking = new();
+        selection.Taking = taking.Task;
+        Task<CapturedScreen?> sending = selection.TakeScreenAsync();
+        Assert.False(sending.IsCompleted);
+        FakeImage image = new();
+        selection.Receive(Screen(image));
+        taking.SetResult();
+        CapturedScreen? screen = await sending;
+        Assert.NotNull(screen);
+        Assert.Null(selection.Screen);
+        screen.Dispose();
+
+        // Cancelled while the picture was being taken: it is let go as it arrives.
+        FakeImage late = new();
+        SelectionState cancelled = new([], null);
+        cancelled.Dispose();
+        cancelled.Receive(Screen(late));
+        Assert.Equal(1, late.Disposed);
+        Assert.Null(cancelled.Screen);
+    }
+
     private sealed class FakeAccelerometer : IAccelerometer
     {
         public bool IsSupported => true;

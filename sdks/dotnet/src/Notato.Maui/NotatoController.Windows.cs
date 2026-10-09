@@ -51,14 +51,20 @@ internal sealed partial class NotatoController
             return;
         }
 
-        host.MetricsChanged += (_, _) => session.View.Dispatcher.Dispatch(() => session.View.SetMetrics(host.SafeInsets, host.KeyboardHeight));
+        host.MetricsChanged += (_, _) => session.View.Dispatcher.Dispatch(() =>
+        {
+            session.View.SetMetrics(host.SafeInsets, host.KeyboardHeight);
+            // The keyboard or a new size can move what the app shows.
+            Follow(session);
+        });
+        host.ContentMoving += (_, _) => Follow(session);
         session.View.SetMetrics(host.SafeInsets, host.KeyboardHeight);
         window.ModalPushed += OnModalChanged;
         window.ModalPopped += OnModalChanged;
         window.Destroying += OnWindowDestroying;
         _sessions.Add(session);
         session.View.Render();
-        EnsureTimer();
+        Wake();
     }
 
     private void AttachAll()
