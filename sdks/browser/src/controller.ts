@@ -30,6 +30,7 @@ import { messageOf, plural } from "./text.ts";
 import type { AnnotateArgs, NotatoApi, NotatoProps } from "./types.ts";
 import { copyText, createCopyMenu } from "./ui/copy-menu.ts";
 import { h, ICONS, isolateFromPage } from "./ui/dom.ts";
+import { createFrames } from "./ui/frame.ts";
 import { viewportRect } from "./ui/frames.ts";
 import { createFreezer } from "./ui/freeze.ts";
 import {
@@ -261,6 +262,10 @@ export function createController(props: NotatoProps): NotatoController {
     const stopIsolating = isolateFromPage(host);
     document.body.append(host);
 
+    // Everything drawn over the page that follows it (pins, versions switchers, the popover, the picker's outlines) is
+    // measured and placed in one frame, all the measuring first: see frame.ts.
+    const frames = createFrames();
+
     // ---- pins -----------------------------------------------------------------------------------------------
     /** Whether this person wrote it: their name on a note a person made. Without a name nothing can be told apart. */
     const isMine = (a: Annotation) =>
@@ -301,6 +306,7 @@ export function createController(props: NotatoProps): NotatoController {
         onPeopleOnly: !server || actions ? (id, on) => setPeopleOnly(id, on) : undefined,
         agentName,
         refusal: (id) => sink?.refusal(id),
+        frames,
     });
 
     /** Read once: reading the page's location for each of thousands of notes is most of the time a count takes. */
@@ -314,7 +320,7 @@ export function createController(props: NotatoProps): NotatoController {
     const syncUi = () => {
         if (destroyed) return;
         pins.refresh();
-        variants.schedule();
+        variants.redraw();
         toolbar.setCount(countOnRoute());
     };
     // The store says so for each note it takes, reading the server's list hands it hundreds at once, and a busy project
@@ -341,7 +347,7 @@ export function createController(props: NotatoProps): NotatoController {
     });
 
     // ---- the toolbar and what opens from it -----------------------------------------------------------------
-    const popover = createPopover(layer);
+    const popover = createPopover(layer, frames);
     const packageDialog = createPackageDialog(layer);
     const shortcut = props.shortcut ?? ANNOTATE_SHORTCUT;
     const pauseKeys = shortcutLabel(PAUSE_SHORTCUT);
@@ -491,6 +497,7 @@ export function createController(props: NotatoProps): NotatoController {
         layer,
         describe: (el) => hoverLabel(el, props.testIdAttributes),
         onPick,
+        frames,
     });
 
     function setAnnotateMode(on: boolean) {
@@ -566,24 +573,50 @@ export function createController(props: NotatoProps): NotatoController {
             onSave: async ({ comment, severity, intent, peopleOnly }) => {
                 const current = draft;
                 if (!current) return;
-                await oneAtATime(async () => {
-                    addMade(
-                        await pipeline.create({
-                            kind: current.kind,
-                            elements: current.elements,
-                            rect: current.rect,
-                            selectedText: current.selectedText,
-                            comment,
-                            severity,
-                            intent,
-                            peopleOnly,
-                        })
-                    );
+                // The composer goes at once and the note's pin is there: the screenshot, the identity and the upload
+                // follow in the background, and the pin becomes the note's own once it is made. A server that refuses
+                // it, or cannot be reached, says so as it would anyway: a toast, and the pin.
+                const pending = pins.pending({
+                    number: nextPinNumber(store.list()) + saving,
+                    route: currentRoute(),
+                    elements: current.elements,
+                    rect: current.rect,
                 });
                 closeDraft();
+                saving += 1;
+                void oneAtATime(async () => {
+                    // Copying the page for the screenshot holds up everything else in it: the composer is let go first,
+                    // so its closing is under way (on the compositor, which carries on meanwhile).
+                    await afterPaint();
+                    const record = await pipeline.create({
+                        kind: current.kind,
+                        elements: current.elements,
+                        rect: current.rect,
+                        selectedText: current.selectedText,
+                        comment,
+                        severity,
+                        intent,
+                        peopleOnly,
+                    });
+                    addMade(record);
+                    pending.done(record.annotation.id);
+                })
+                    .catch((error) => {
+                        pending.cancel();
+                        warn("could not make the annotation", error);
+                        toast.show(`Could not save the note: ${messageOf(error)}`, 6000);
+                    })
+                    .finally(() => {
+                        saving -= 1;
+                    });
             },
         });
     }
+    /** Notes saved from the composer and still being made: the next one's pending pin numbers after them. */
+    let saving = 0;
+    /** Resolves once the browser has drawn a frame, and is past it. */
+    const afterPaint = () =>
+        new Promise<void>((resolve) => requestAnimationFrame(() => setTimeout(resolve, 0)));
 
     // ---- keys ---------------------------------------------------------------------------------------------------
     const annotateShortcut = parseShortcut(shortcut);
@@ -626,7 +659,7 @@ export function createController(props: NotatoProps): NotatoController {
     const reposition = () => {
         pins.schedule();
         popover.reposition();
-        variants.schedule();
+        variants.reposition();
     };
     // Versions an agent has put in the page for the person to compare: a switcher over each, and a pick to send back.
     const variants = createVariants({
@@ -636,11 +669,13 @@ export function createController(props: NotatoProps): NotatoController {
         namespace: props.project,
         onChoose: actions ? (id, name) => actions.chooseVariant(id, name) : undefined,
         agentName,
+        frames,
     });
     const page = watchPage({
         identityAttributes: ["id", ...(props.testIdAttributes ?? DEFAULT_TEST_ID_ATTRIBUTES)],
         onMove: reposition,
         onElementsChanged: (touched) => pins.domChanged(touched),
+        onVariantsChanged: (found) => variants.pageChanged(found),
         onRouteChange: () => {
             syncUi();
             reposition();
@@ -810,6 +845,7 @@ export function createController(props: NotatoProps): NotatoController {
         window.removeEventListener("keydown", onKey, true);
         unsubscribe();
         if (uiFrame) cancelAnimationFrame(uiFrame);
+        frames.destroy();
         unsubscribeSettings();
         settingsPanel.destroy();
         settings.destroy();
@@ -860,6 +896,7 @@ export function createController(props: NotatoProps): NotatoController {
     });
 
     syncUi();
+    variants.schedule(); // the versions the page has already
 
     return { setAnnotateMode, annotate, list, package: packageBundle, destroy };
 }

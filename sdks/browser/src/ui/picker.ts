@@ -1,5 +1,6 @@
 import type { Rect, Target } from "@notato/schema";
 import { h, isElement } from "./dom.ts";
+import { createFrames, type FrameJob, type Frames } from "./frame.ts";
 import { type Box, boxToTop, viewportRect, watchFrames } from "./frames.ts";
 import { addSheet, type Sheet } from "./sheet.ts";
 
@@ -35,6 +36,8 @@ interface PickerOptions {
      */
     describe(el: Element): string;
     onPick(event: PickEvent): void;
+    /** The frame the outlines are measured and drawn in, shared with whatever else follows the page. */
+    frames?: Frames;
 }
 
 const DRAG_THRESHOLD = 8;
@@ -107,6 +110,7 @@ const PICKING_MARKER = "data-notato-picking";
 
 export function createPicker(options: PickerOptions): Picker {
     const { host, layer } = options;
+    const paint = options.frames ?? createFrames();
     const label = h("div", { class: "hover-label" });
     const hover = h("div", { class: "hover" }, label);
     const drag = h("div", { class: "drag" });
@@ -216,29 +220,35 @@ export function createPicker(options: PickerOptions): Picker {
 
     /** The element the label was written for: the label is only worked out again for a different one. */
     let labelled: Element | null = null;
-    const paintHover = () => {
-        if (!active || !hovered?.isConnected) {
-            hover.style.display = "none";
-            labelled = null;
-            return;
-        }
-        const r = viewportRect(hovered);
+    /** Hides the outline. Nothing to measure, so it is done at once. */
+    const hideHover = () => {
+        hover.style.display = "none";
+        labelled = null;
+    };
+    /**
+     * Draws the outline at `r`. The label is kept inside the window, pulled back to the left next to its right edge,
+     * which needs its width: as last laid out when it already says this, or else a guess from its length (it is in a
+     * monospace font), put right at the next frame.
+     */
+    const paintHover = (r: Box, width: number | null) => {
+        if (!hovered) return hideHover();
         place(hover, r);
         if (labelled !== hovered) {
             label.textContent = options.describe(hovered);
             labelled = hovered;
+            width = null;
         }
         hover.classList.toggle("below", r.top < 30);
-        // Kept inside the window: next to the right edge the label is pulled back to the left.
-        label.style.transform = "";
-        const over = r.left - 2 + label.offsetWidth - (window.innerWidth - 8);
-        if (over > 0)
-            label.style.transform = `translateX(${-Math.min(over, Math.max(0, r.left - 6))}px)`;
+        const w = width ?? Math.min(380, 18 + (label.textContent?.length ?? 0) * 6.7);
+        const over = r.left - 2 + w - (window.innerWidth - 8);
+        label.style.transform =
+            over > 0 ? `translateX(${-Math.min(over, Math.max(0, r.left - 6))}px)` : "";
+        if (width === null) paint.schedule(job);
     };
 
-    const paintDraft = () => {
-        for (const box of selBoxes) box.style.display = "none";
-        const rects: Box[] = draftArea
+    /** Where the draft's outlines go: its elements, or the area dragged out. Only reads. */
+    const draftBoxes = (): Box[] =>
+        draftArea
             ? [
                   {
                       left: draftArea.x - window.scrollX,
@@ -248,6 +258,8 @@ export function createPicker(options: PickerOptions): Picker {
                   },
               ]
             : draftEls.filter((e) => e.isConnected).map((e) => viewportRect(e));
+    const paintDraft = (rects: Box[]) => {
+        for (const box of selBoxes) box.style.display = "none";
         rects.forEach((r, i) => {
             let box = selBoxes[i];
             if (!box) {
@@ -314,15 +326,33 @@ export function createPicker(options: PickerOptions): Picker {
      * pointer makes the browser lay the page out: that is done at most once a frame, for wherever the pointer is then.
      */
     let move: { win: Window; x: number; y: number; first: unknown } | null = null;
-    let moveFrame = 0;
-    const followPointer = () => {
-        moveFrame = 0;
-        const at = move;
-        move = null;
-        if (!active || !at) return;
-        // Over the same element as before, only its outline is placed again: its label is already written.
-        hovered = pointedAt(at.win, at.x, at.y, at.first);
-        paintHover();
+    /** What the frame measured, for it to draw. */
+    let measured: { hover: Box | null; width: number | null; draft: Box[] } | null = null;
+    /**
+     * Once a frame, with everything else over the page: what the pointer is over now, and where it and the draft are
+     * on screen (read), then the outlines drawn there (write).
+     */
+    const job: FrameJob = {
+        read() {
+            const at = move;
+            move = null;
+            if (active && at) hovered = pointedAt(at.win, at.x, at.y, at.first);
+            const shown = active && hovered?.isConnected ? hovered : null;
+            measured = {
+                hover: shown ? viewportRect(shown) : null,
+                // Over the same element as before, the label already says the right thing: its width is known.
+                width: shown && labelled === shown ? label.offsetWidth : null,
+                draft: draftBoxes(),
+            };
+        },
+        write() {
+            const now = measured;
+            measured = null;
+            if (!now) return;
+            if (now.hover) paintHover(now.hover, now.width);
+            else hideHover();
+            paintDraft(now.draft);
+        },
     };
 
     const onMouseMove = (ev: MouseEvent) => {
@@ -331,13 +361,13 @@ export function createPicker(options: PickerOptions): Picker {
             // Over our own UI, or Shift is down: nothing is being picked, so no highlight.
             move = null;
             hovered = null;
-            paintHover();
+            hideHover();
             return;
         }
         const win = windowOf(ev);
         // The event's path is only there while it is being dispatched: kept now, for the frame.
         move = { win, x: ev.clientX, y: ev.clientY, first: ev.composedPath()[0] };
-        if (!moveFrame) moveFrame = requestAnimationFrame(followPointer);
+        paint.schedule(job);
         if (
             down &&
             down.win === win &&
@@ -444,9 +474,24 @@ export function createPicker(options: PickerOptions): Picker {
         });
     };
 
-    const repaint = () => {
-        paintHover();
-        paintDraft();
+    // Scrolling and resizing move the outlines: followed only while there are any, annotating or with a draft open,
+    // and drawn again once a frame however many scroll events it has.
+    const repaint = () => paint.schedule(job);
+    let following = false;
+    const follow = (win: Window, on: boolean) => {
+        if (on) {
+            win.addEventListener("scroll", repaint, true);
+            win.addEventListener("resize", repaint);
+        } else {
+            win.removeEventListener("scroll", repaint, true);
+            win.removeEventListener("resize", repaint);
+        }
+    };
+    const syncFollowing = () => {
+        const want = active || draftEls.length > 0 || draftArea !== undefined;
+        if (want === following) return;
+        following = want;
+        for (const win of frames.windows()) follow(win, want);
     };
 
     /** Listeners for one window: the page's, or an iframe's. Events there are not ours until we ask. */
@@ -459,8 +504,7 @@ export function createPicker(options: PickerOptions): Picker {
         win.addEventListener("mousedown", onMouseDown, true);
         win.addEventListener("mouseup", onMouseUp, true);
         win.addEventListener("mousemove", onMouseMove, true);
-        win.addEventListener("scroll", repaint, true);
-        win.addEventListener("resize", repaint);
+        if (following) follow(win, true);
         return () => {
             for (const type of SWALLOWED) win.removeEventListener(type, swallow, true);
             win.removeEventListener("keydown", onShiftKey, true);
@@ -469,8 +513,7 @@ export function createPicker(options: PickerOptions): Picker {
             win.removeEventListener("mousedown", onMouseDown, true);
             win.removeEventListener("mouseup", onMouseUp, true);
             win.removeEventListener("mousemove", onMouseMove, true);
-            win.removeEventListener("scroll", repaint, true);
-            win.removeEventListener("resize", repaint);
+            follow(win, false);
             removeStyles(win);
         };
     };
@@ -486,10 +529,8 @@ export function createPicker(options: PickerOptions): Picker {
             hovered = null;
             down = null;
             move = null;
-            if (moveFrame) cancelAnimationFrame(moveFrame);
-            moveFrame = 0;
             dragging = false;
-            hover.style.display = "none";
+            hideHover();
             drag.style.display = "none";
             for (const win of frames.windows())
                 for (const f of Array.from(win.document.querySelectorAll(`iframe[${FOREIGN}]`)))
@@ -500,7 +541,8 @@ export function createPicker(options: PickerOptions): Picker {
             gesture = null;
             frames.rescan(); // marks the frames that cannot be entered
         }
-        paintHover();
+        hideHover();
+        syncFollowing();
     };
 
     return {
@@ -511,15 +553,21 @@ export function createPicker(options: PickerOptions): Picker {
         showDraft(elements, area) {
             draftEls = elements;
             draftArea = area;
-            paintDraft();
+            paintDraft(draftBoxes());
+            syncFollowing();
         },
         clearDraft() {
             draftEls = [];
             draftArea = undefined;
-            paintDraft();
+            paintDraft([]);
+            syncFollowing();
         },
         destroy() {
             setActive(false);
+            draftEls = [];
+            draftArea = undefined;
+            syncFollowing();
+            paint.cancel(job);
             frames.destroy();
             hover.remove();
             drag.remove();

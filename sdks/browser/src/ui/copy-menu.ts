@@ -1,6 +1,7 @@
 import { DETAILS, type Detail } from "@notato/core";
 import { capitalize, plural } from "../text.ts";
 import { dismissOnOutside, h, ICONS, icon } from "./dom.ts";
+import { animateIn, animateOut, DROP, type Motion, RISE, settle } from "./motion.ts";
 
 const BLURB: Record<Detail, string> = {
     compact: "One line per note: what and where.",
@@ -37,13 +38,29 @@ export interface CopyMenu {
  */
 export function createCopyMenu(layer: HTMLElement, remembered: () => Detail): CopyMenu {
     let el: HTMLElement | null = null;
+    /** Closed and fading away; gone at once when the menu opens again meanwhile. */
+    let leaving: HTMLElement | null = null;
+    /** Up from the button, or down from it: it goes back the way it came. */
+    let motion: Motion = RISE;
     let off: (() => void) | undefined;
     let closed: (() => void) | undefined;
 
     const close = () => {
         off?.();
         off = undefined;
-        el?.remove();
+        if (el) {
+            const going = el;
+            leaving = going;
+            going.inert = true;
+            animateOut(
+                going,
+                () => {
+                    going.remove();
+                    if (leaving === going) leaving = null;
+                },
+                motion
+            );
+        }
         el = null;
         const after = closed;
         closed = undefined;
@@ -56,6 +73,7 @@ export function createCopyMenu(layer: HTMLElement, remembered: () => Detail): Co
         },
         open(anchor, onPick, extras = {}) {
             close();
+            if (leaving) settle(leaving);
             closed = extras.onClose;
             const last = remembered();
             const none = extras.count === 0;
@@ -123,14 +141,19 @@ export function createCopyMenu(layer: HTMLElement, remembered: () => Detail): Co
             layer.append(el);
             const w = el.offsetWidth || 220;
             el.style.left = `${Math.max(8, Math.min(anchor.left + anchor.width / 2 - w / 2, window.innerWidth - w - 8))}px`;
-            if (anchor.top < window.innerHeight / 2)
-                el.style.top = `${anchor.top + (anchor.height ?? 0) + 8}px`;
+            const below = anchor.top < window.innerHeight / 2;
+            if (below) el.style.top = `${anchor.top + (anchor.height ?? 0) + 8}px`;
             else el.style.bottom = `${Math.max(8, window.innerHeight - anchor.top + 8)}px`;
+            motion = below ? DROP : RISE;
+            animateIn(el, motion);
             (el.querySelector(".menu-item:not(:disabled)") as HTMLElement | null)?.focus();
             off = dismissOnOutside(el, close, extras.owner);
         },
         close,
-        destroy: close,
+        destroy() {
+            close();
+            if (leaving) settle(leaving);
+        },
     };
 }
 

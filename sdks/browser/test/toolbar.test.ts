@@ -175,6 +175,45 @@ describe("moving the toolbar", () => {
         expect(loadToolbarFraction()).toBeNull();
     });
 
+    it("follows a drag by a transform, once a frame, and writes its place only when let go", async () => {
+        mount();
+        pointer(annotateButton(), "pointerdown", 100, 100);
+        pointer(annotateButton(), "pointermove", 140, 160);
+        pointer(annotateButton(), "pointermove", 150, 170);
+        window.dispatchEvent(new Event("resize")); // the window changing meanwhile does not put it back
+        expect(toolbar.el.style.left).toBe("");
+        await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+        expect(toolbar.el.style.transform).toBe("translate3d(50px, 70px, 0)");
+        expect(toolbar.el.style.left).toBe("");
+        pointer(annotateButton(), "pointerup", 150, 170);
+        expect(toolbar.el.style.transform).toBe("");
+        expect([toolbar.el.style.left, toolbar.el.style.top]).toEqual(["50px", "70px"]);
+    });
+
+    it("slides back to its corner when put back there, rather than jumping", () => {
+        window.localStorage.setItem("notato:toolbar-position", JSON.stringify({ x: 0.2, y: 0.2 }));
+        mount();
+        window.dispatchEvent(new Event("resize"));
+        const from = [
+            Number.parseInt(toolbar.el.style.left, 10),
+            Number.parseInt(toolbar.el.style.top, 10),
+        ] as const;
+        // happy-dom lays nothing out: in its corner, say it is at 900, 700.
+        toolbar.el.getBoundingClientRect = () => {
+            const dragged = toolbar.el.style.left !== "";
+            const left = dragged ? from[0] : 900;
+            const top = dragged ? from[1] : 700;
+            return { left, top, right: left, bottom: top, width: 0, height: 0 } as DOMRect;
+        };
+        const animate = vi.spyOn(toolbar.el, "animate");
+        grip().dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
+        expect(toolbar.el.style.left).toBe("");
+        expect(animate.mock.calls[0]?.[0]).toEqual([
+            { transform: `translate(${from[0] - 900}px, ${from[1] - 700}px)` },
+            { transform: "translate(0, 0)" },
+        ]);
+    });
+
     it("never leaves the window", () => {
         mount();
         pointer(annotateButton(), "pointerdown", 100, 100);

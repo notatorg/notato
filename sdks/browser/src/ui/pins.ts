@@ -12,7 +12,9 @@ import {
     pruneForms,
 } from "./card.ts";
 import { h } from "./dom.ts";
+import { createFrames, type FrameJob, type Frames } from "./frame.ts";
 import { viewportRect } from "./frames.ts";
+import { animateIn, animateOut, FADE, growIn, isLeaving, POP, settle } from "./motion.ts";
 
 export interface Pins {
     /** Re-sync pins with the records (added, removed, status changed). */
@@ -27,7 +29,28 @@ export interface Pins {
      */
     domChanged(touched?: Element[]): void;
     setVisible(visible: boolean): void;
+    /**
+     * A pin for a note still being made (its screenshot taken, its identity worked out), shown at once where the note
+     * will be. When the note is made its own pin takes this one's place, without coming in again.
+     */
+    pending(pin: PendingPin): PendingHandle;
     destroy(): void;
+}
+
+export interface PendingPin {
+    /** The number the note will have. */
+    number: number;
+    route: string;
+    /** What the note is being made on, and where that was, in page coordinates, for when it has gone. */
+    elements: Element[];
+    rect: { x: number; y: number; w: number; h: number };
+}
+
+export interface PendingHandle {
+    /** The note is made, with this id: its pin takes over at the next refresh. */
+    done(id: string): void;
+    /** It was not made after all: the pin goes. */
+    cancel(): void;
 }
 
 /**
@@ -46,6 +69,8 @@ interface PinsOptions extends CardActions {
      * and while another is shown that element is hidden; the pin then goes where the shown version is.
      */
     fallbackAnchor?(annotation: Annotation): { left: number; top: number } | null;
+    /** The frame the pins are measured and placed in, shared with whatever else follows the page. */
+    frames?: Frames;
 }
 
 /** The number on the pin. The screenshot plugin stores it so pin and screenshot always agree. */
@@ -91,6 +116,10 @@ interface PinView extends CardState {
     placed?: string;
     /** The pin's centre on screen, as last placed, for its card to go beside. */
     at?: { left: number; top: number };
+    /** The open card's height as last laid out, read with everything else so placing it does not lay the page out. */
+    cardHeight?: number;
+    /** Just made: it grows in the first time it is placed. */
+    fresh?: boolean;
     /** Shown because the pointer is over the pin or the card. */
     hovered: boolean;
     /** Focus is on the pin or in its card: kept up while someone tabs through it. */
@@ -108,11 +137,25 @@ const MAX_TOUCHED = 500;
 /** How long a card stays after the pointer leaves, so the pointer can travel from the pin onto it. */
 const HIDE_DELAY_MS = 160;
 
+/** A pin for a note being made (see `Pins.pending`). */
+interface Ghost extends PendingPin {
+    pin: HTMLButtonElement;
+    /** Set once the note is made: the note's pin takes this one over. */
+    id?: string;
+    placed?: string;
+}
+
+/** Where a pin goes on screen: its centre, by a transform, which moves it without laying the page out. */
+const moveTo = (pin: HTMLElement, left: number, top: number) => {
+    pin.style.transform = `translate3d(${left}px, ${top}px, 0)`;
+};
+
 export function createPins(options: PinsOptions): Pins {
     const { layer, records, currentRoute, fallbackAnchor, refusal } = options;
+    const frames = options.frames ?? createFrames();
     const views = new Map<string, PinView>();
+    const ghosts = new Set<Ghost>();
     let visible = true;
-    let frame = 0;
     /** What changed in the page since the pins were last placed (see `domChanged`); null for nothing. */
     let changed: { all: boolean; touched: Element[] } | null = null;
 
@@ -131,6 +174,7 @@ export function createPins(options: PinsOptions): Pins {
         const annotation = view.record.annotation;
         pruneForms(view, annotation, options);
         view.drawn = drawnFrom(view);
+        view.cardHeight = undefined;
         view.redrawing = true;
         try {
             drawCard(
@@ -202,8 +246,10 @@ export function createPins(options: PinsOptions): Pins {
             pin.right + 10 + CARD_WIDTH < window.innerWidth
                 ? pin.right + 10
                 : Math.max(8, pin.left - 10 - CARD_WIDTH);
+        // Measured with the pins when it was open already; just opened or redrawn, it has to be measured now.
+        const height = view.cardHeight ?? card.offsetHeight;
         card.style.left = `${left}px`;
-        card.style.top = `${Math.min(Math.max(8, pin.top - 8), Math.max(8, window.innerHeight - card.offsetHeight - 8))}px`;
+        card.style.top = `${Math.min(Math.max(8, pin.top - 8), Math.max(8, window.innerHeight - height - 8))}px`;
     };
 
     const expanded = (view: PinView, open: boolean) => {
@@ -212,9 +258,26 @@ export function createPins(options: PinsOptions): Pins {
             view.pin.setAttribute("aria-expanded", value);
     };
 
+    /** Fades a card away, and hides it once it has gone. */
+    const closeCard = (card: HTMLElement) => {
+        if (card.style.display !== "block" || isLeaving(card)) return;
+        animateOut(
+            card,
+            () => {
+                card.style.display = "none";
+            },
+            POP
+        );
+    };
+    /** Hides a card at once: its pin went too. */
+    const dropCard = (card: HTMLElement) => {
+        settle(card);
+        if (card.style.display !== "none") card.style.display = "none";
+    };
+
     const syncCard = (view: PinView) => {
         if (!isOpen(view)) {
-            if (view.card && view.card.style.display !== "none") view.card.style.display = "none";
+            if (view.card) closeCard(view.card);
             expanded(view, false);
             view.drawn = undefined;
             closeForms(view);
@@ -230,9 +293,12 @@ export function createPins(options: PinsOptions): Pins {
     const showCard = (view: PinView) => {
         if (view.drawn !== drawnFrom(view)) renderCard(view);
         const card = cardOf(view);
+        // Opened now, or opened again on its way out: it comes in (from where it got to). Open already, it only moves.
+        const coming = card.style.display !== "block" || isLeaving(card);
         card.style.display = "block";
         expanded(view, true);
         placeCard(view);
+        if (coming) animateIn(card, POP);
     };
 
     const unpinOthers = (keep: PinView) => {
@@ -270,7 +336,7 @@ export function createPins(options: PinsOptions): Pins {
             view.placed = "";
         }
         view.at = undefined;
-        if (view.card && view.card.style.display !== "none") view.card.style.display = "none";
+        if (view.card) dropCard(view.card);
         // No pointer can be over a pin that is not there; it never hears the pointer leave.
         if (view.hideTimer) clearTimeout(view.hideTimer);
         view.hovered = false;
@@ -351,11 +417,30 @@ export function createPins(options: PinsOptions): Pins {
         return offscreen ? null : { left, top, detached: !el };
     };
 
-    const position = () => {
-        if (frame) cancelAnimationFrame(frame);
-        frame = 0;
+    type Places = {
+        screen: { w: number; h: number };
+        pins: Array<[PinView, ReturnType<typeof measure>]>;
+        ghosts: Array<[Ghost, { left: number; top: number } | null]>;
+    };
+
+    /** Where a pending pin goes: on its element while that is in the page, else where it was. */
+    const measureGhost = (
+        ghost: Ghost,
+        screen: { sx: number; sy: number; w: number; h: number }
+    ): { left: number; top: number } | null => {
+        const el = ghost.elements.find((e) => e.isConnected);
+        const r = el ? viewportRect(el) : null;
+        const { left, top } =
+            r && (r.width > 0 || r.height > 0)
+                ? r
+                : { left: ghost.rect.x - screen.sx, top: ghost.rect.y - screen.sy };
+        const offscreen = top < -12 || left < -12 || top > screen.h + 12 || left > screen.w + 12;
+        return offscreen ? null : { left, top };
+    };
+
+    /** Read: where every pin goes, and how tall the open cards are. Nothing is written. */
+    const measureAll = (): Places => {
         const route = currentRoute();
-        // Read: where every pin goes.
         const screen = {
             sx: window.scrollX,
             sy: window.scrollY,
@@ -364,52 +449,107 @@ export function createPins(options: PinsOptions): Pins {
         };
         const look = changed;
         changed = null;
-        const places: Array<[PinView, ReturnType<typeof measure>]> = [];
+        const pins: Places["pins"] = [];
         for (const view of views.values()) {
             const shown = visible && view.here && view.record.annotation.route === route;
             // A pin not measured now misses what changed: it looks in the whole page when it is shown again.
             if (!shown && look) view.el = undefined;
-            places.push([view, shown ? measure(view, screen, look) : null]);
+            pins.push([view, shown ? measure(view, screen, look) : null]);
+            if (view.card?.style.display === "block") view.cardHeight = view.card.offsetHeight;
         }
-        // Write: the pins, then the open cards beside them.
-        for (const [view, at] of places) {
+        const pending: Places["ghosts"] = [];
+        for (const ghost of ghosts)
+            pending.push([
+                ghost,
+                visible && ghost.route === route ? measureGhost(ghost, screen) : null,
+            ]);
+        return { screen, pins, ghosts: pending };
+    };
+
+    /** Writes a pin's place, and its being shown, only when they changed. */
+    const place = (
+        target: { pin: HTMLButtonElement; placed?: string },
+        at: { left: number; top: number },
+        screen: { w: number; h: number },
+        detached: boolean
+    ) => {
+        const left = Math.min(Math.max(at.left, 12), screen.w - 12);
+        const top = Math.min(Math.max(at.top, 12), screen.h - 12);
+        const placed = `${left},${top},${detached}`;
+        if (target.placed !== placed) {
+            if (!target.placed) target.pin.style.display = "block";
+            target.placed = placed;
+            moveTo(target.pin, left, top);
+            target.pin.dataset.detached = String(detached);
+        }
+        return { left, top };
+    };
+
+    /** Write: the pins, then the open cards beside them. */
+    const placeAll = ({ screen, pins, ghosts: pending }: Places) => {
+        for (const [view, at] of pins) {
+            const fresh = view.fresh;
+            view.fresh = false;
             if (!at) {
                 hide(view);
                 continue;
             }
-            const left = Math.min(Math.max(at.left, 12), screen.w - 12);
-            const top = Math.min(Math.max(at.top, 12), screen.h - 12);
-            view.at = { left, top };
-            const placed = `${left},${top},${at.detached}`;
-            if (view.placed === placed) continue;
-            view.placed = placed;
-            view.pin.style.display = "block";
-            view.pin.style.left = `${left}px`;
-            view.pin.style.top = `${top}px`;
-            view.pin.dataset.detached = String(at.detached);
+            view.at = place(view, at, screen, at.detached);
+            if (fresh) growIn(view.pin);
         }
-        for (const [view, at] of places) if (at && isOpen(view)) showCard(view);
+        for (const [view, at] of pins) if (at && isOpen(view)) showCard(view);
+        for (const [ghost, at] of pending) {
+            if (at) place(ghost, at, screen, false);
+            else if (ghost.placed !== "") {
+                ghost.pin.style.display = "none";
+                ghost.placed = "";
+            }
+        }
     };
 
-    const schedule = () => {
-        if (!frame) frame = requestAnimationFrame(position);
+    let measured: Places | null = null;
+    const job: FrameJob = {
+        read: () => {
+            measured = measureAll();
+        },
+        write: () => {
+            const places = measured;
+            measured = null;
+            if (places) placeAll(places);
+        },
     };
+
+    /** Measures and places every pin now. */
+    const position = () => {
+        frames.cancel(job);
+        measured = null;
+        placeAll(measureAll());
+    };
+
+    const schedule = () => frames.schedule(job);
 
     const remove = (id: string, view: PinView) => {
         if (view.hideTimer) clearTimeout(view.hideTimer);
         view.pin.remove();
+        if (view.card) settle(view.card);
         view.card?.remove();
         views.delete(id);
     };
 
-    const makeView = (record: AnnotationRecord): PinView => {
-        const pin = h("button", {
-            class: "pin",
-            type: "button",
-            "aria-haspopup": "dialog",
-            "aria-expanded": "false",
-            "aria-controls": `notato-card-${record.annotation.id}`,
-        });
+    /** A pending pin taken off: faded out, or at once (`now`). */
+    const dropGhost = (ghost: Ghost, now = false) => {
+        ghosts.delete(ghost);
+        if (now || ghost.placed === "" || !ghost.placed) ghost.pin.remove();
+        else animateOut(ghost.pin, () => ghost.pin.remove(), FADE);
+    };
+
+    /** The pin of a note: a new one, which grows in, or the pending pin that stood for it while it was made. */
+    const makeView = (record: AnnotationRecord, from?: Ghost): PinView => {
+        const pin = from?.pin ?? h("button", { class: "pin", type: "button" });
+        delete pin.dataset.pending;
+        pin.setAttribute("aria-haspopup", "dialog");
+        pin.setAttribute("aria-expanded", "false");
+        pin.setAttribute("aria-controls", `notato-card-${record.annotation.id}`);
         const view: PinView = {
             pin,
             record,
@@ -417,6 +557,8 @@ export function createPins(options: PinsOptions): Pins {
             hovered: false,
             focused: false,
             pinned: false,
+            fresh: !from,
+            placed: from?.placed,
         };
         pin.addEventListener("mouseenter", () => setHover(view, true));
         pin.addEventListener("mouseleave", () => setHover(view, false));
@@ -431,7 +573,7 @@ export function createPins(options: PinsOptions): Pins {
             else view.focused = false;
             syncCard(view);
         });
-        layer.append(pin);
+        if (!from) layer.append(pin);
         return view;
     };
 
@@ -471,7 +613,9 @@ export function createPins(options: PinsOptions): Pins {
                 const a = record.annotation;
                 let view = views.get(id);
                 if (!view) {
-                    view = makeView(record);
+                    const ghost = [...ghosts].find((g) => g.id === id);
+                    if (ghost) ghosts.delete(ghost);
+                    view = makeView(record, ghost);
                     views.set(id, view);
                 }
                 view.here = true;
@@ -504,6 +648,8 @@ export function createPins(options: PinsOptions): Pins {
                 }
                 if (isOpen(view) && view.drawn !== drawnFrom(view)) renderCard(view);
             }
+            // A note made, but not drawn here (another page by now, or not among the shown): its pending pin goes.
+            for (const ghost of [...ghosts]) if (ghost.id) dropGhost(ghost);
             position();
         },
         schedule,
@@ -520,10 +666,38 @@ export function createPins(options: PinsOptions): Pins {
             visible = next;
             position();
         },
+        pending(init) {
+            const ghost: Ghost = {
+                ...init,
+                pin: h(
+                    "button",
+                    {
+                        class: "pin",
+                        type: "button",
+                        "data-pending": "true",
+                        "aria-label": `Annotation ${init.number}: saving`,
+                    },
+                    String(init.number)
+                ),
+            };
+            ghosts.add(ghost);
+            layer.append(ghost.pin);
+            position();
+            growIn(ghost.pin);
+            return {
+                done(id) {
+                    if (ghosts.has(ghost)) ghost.id = id;
+                },
+                cancel() {
+                    if (ghosts.has(ghost)) dropGhost(ghost);
+                },
+            };
+        },
         destroy() {
-            if (frame) cancelAnimationFrame(frame);
-            frame = 0;
+            frames.cancel(job);
+            measured = null;
             for (const [id, view] of [...views]) remove(id, view);
+            for (const ghost of [...ghosts]) dropGhost(ghost, true);
         },
     };
 }

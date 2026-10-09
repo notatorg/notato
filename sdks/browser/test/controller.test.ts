@@ -6,6 +6,7 @@ import { createController, type NotatoController } from "../src/controller.ts";
 import { hoverLabel } from "../src/labels.ts";
 import type { EventStream } from "../src/net.ts";
 import type { NotatoProps } from "../src/types.ts";
+import { reducedMotion } from "./support/motion.ts";
 
 const SERVER = "http://localhost:4801";
 const mounted: NotatoController[] = [];
@@ -595,5 +596,70 @@ describe("People only with no server", () => {
         toggle()?.click();
         await until(() => notato.list()[0]?.peopleOnly === undefined, "shared again");
         expect(notato.list()[0]?.thread.map((r) => r.peopleOnly)).toEqual([true, false]);
+    });
+});
+
+describe("saving a note from the composer", () => {
+    /** Picks an element the way a click does, writes a note on it, and presses Save. */
+    const saveOn = (selector: string, note: string) => {
+        const el = document.querySelector(selector) as HTMLElement;
+        for (const type of ["pointerdown", "mousedown", "pointerup", "mouseup", "click"])
+            el.dispatchEvent(
+                new MouseEvent(type, { bubbles: true, cancelable: true, composed: true, button: 0 })
+            );
+        const box = ui().querySelector(".popover textarea") as HTMLTextAreaElement;
+        box.value = note;
+        [...ui().querySelectorAll<HTMLButtonElement>(".popover button")]
+            .find((b) => b.textContent === "Save")
+            ?.click();
+    };
+    const pins = () => [...ui().querySelectorAll<HTMLElement>(".pin")];
+
+    it("closes the composer at once and shows the note's pin, which becomes the note's own once it is made", async () => {
+        reducedMotion();
+        let capture: () => void = () => {};
+        const captured = new Promise<void>((resolve) => {
+            capture = resolve;
+        });
+        const notato = mount({
+            plugins: [
+                {
+                    id: "slow",
+                    async capture() {
+                        await captured; // a screenshot that takes its time
+                        return undefined;
+                    },
+                },
+            ],
+        });
+        notato.setAnnotateMode(true);
+        saveOn("#pay", "make it green");
+        expect(ui().querySelector(".popover")).toBeNull();
+        const [pending] = pins();
+        expect(pending?.dataset.pending).toBe("true");
+        expect(pending?.textContent).toBe("1");
+        expect(notato.list()).toHaveLength(0);
+
+        capture();
+        await until(() => notato.list().length === 1, "the note");
+        await until(() => pins()[0]?.dataset.pending === undefined, "the note's pin");
+        expect(pins()).toEqual([pending]);
+        expect(pending?.getAttribute("aria-controls")).toBe(`notato-card-${notato.list()[0]?.id}`);
+    });
+
+    it("says so when the note could not be made, and takes its pin away", async () => {
+        reducedMotion();
+        vi.spyOn(console, "warn").mockImplementation(() => {});
+        const notato = mount({
+            // A route that is not one: the note cannot be made from it.
+            plugins: [{ id: "broken", capture: async () => ({ route: 42 as unknown as string }) }],
+        });
+        notato.setAnnotateMode(true);
+        saveOn("#pay", "never mind");
+        expect(pins()).toHaveLength(1);
+        await until(() => Boolean(ui().querySelector(".toast")), "the toast");
+        expect(ui().querySelector(".toast")?.textContent).toMatch(/^Could not save the note/);
+        expect(pins()).toHaveLength(0);
+        expect(notato.list()).toHaveLength(0);
     });
 });

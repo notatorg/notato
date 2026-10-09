@@ -35,11 +35,12 @@ button, input, textarea { font: inherit; }
 .drag { border: 1.5px dashed var(--sel); background: rgba(229, 72, 77, 0.08); }
 
 /* ---- pins -------------------------------------------------------------------------------------------------- */
+/* Placed by a transform from the top left: moving it is the compositor's work, and lays nothing out. */
 .pin {
-  position: fixed; display: none; width: 24px; height: 24px; margin: -12px 0 0 -12px; padding: 0;
+  position: fixed; left: 0; top: 0; display: none; width: 24px; height: 24px; margin: -12px 0 0 -12px; padding: 0;
   border: 0; border-radius: 50%; background: var(--st-open); color: #fff;
   font: 800 12px/24px var(--f); text-align: center; cursor: pointer; pointer-events: auto;
-  box-shadow: 0 2px 6px rgba(20, 24, 32, 0.3), 0 0 0 2px #fff;
+  box-shadow: 0 2px 6px rgba(20, 24, 32, 0.3), 0 0 0 2px #fff; will-change: transform;
 }
 /* Literal colours (the same as --st-*), so the settings tests can hold the pin colours apart from them. */
 .pin[data-status="acknowledged"] { background: #d99a1e; }
@@ -58,6 +59,10 @@ button, input, textarea { font: inherit; }
   box-shadow: 0 0 0 1.5px #fff;
 }
 .pin:focus-visible { outline: 3px solid rgba(69, 191, 168, 0.7); outline-offset: 2px; }
+/* A note still being made: its pin is there at once, breathing until the note is ready and the pin is its own. */
+.pin[data-pending="true"] { pointer-events: none; animation: notato-pending 0.9s ease-in-out infinite alternate; }
+@keyframes notato-pending { to { opacity: 0.55; } }
+@media (prefers-reduced-motion: reduce) { .pin[data-pending="true"] { animation: none; opacity: 0.7; } }
 
 /* ---- a pin's card -------------------------------------------------------------------------------------------- */
 .card {
@@ -159,7 +164,7 @@ button, input, textarea { font: inherit; }
   background: var(--b-bg); color: var(--b-fg); pointer-events: auto; font-size: 13px; user-select: none; touch-action: none;
   box-shadow: 0 14px 34px -12px rgba(15, 17, 20, 0.55), 0 0 0 1px var(--b-line);
 }
-.toolbar.dragging { cursor: grabbing; }
+.toolbar.dragging { cursor: grabbing; will-change: transform; }
 .tb-dot { display: grid; place-items: center; width: 22px; height: 32px; margin-left: 2px; }
 .tb-dot::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--b-mute); }
 .tb-dot[data-state="connected"]::before { background: #55c487; box-shadow: 0 0 0 3px rgba(85, 196, 135, 0.22); }

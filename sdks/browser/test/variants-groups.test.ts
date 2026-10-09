@@ -423,3 +423,36 @@ describe("a name that is padded or too long", () => {
         v.destroy();
     });
 });
+
+describe("looking through the page for versions", () => {
+    it("is not done for a page without any as it scrolls, changes or hears from the server", async () => {
+        // An earlier test wrote versions straight into the body: this page has none.
+        for (const el of document.querySelectorAll(`[${GROUP}]`)) el.remove();
+        const v = make();
+        const search = vi.spyOn(document, "querySelectorAll");
+        v.reposition();
+        v.pageChanged(false); // something was removed: no versions to lose
+        v.redraw();
+        await frame();
+        expect(search).not.toHaveBeenCalled();
+        versions("header", "Original", "Stacked");
+        v.pageChanged(true); // a version came
+        await frame();
+        expect(search).toHaveBeenCalled();
+        expect(pills()).toHaveLength(1);
+        search.mockRestore();
+    });
+
+    it("is not done to place the switchers as the page scrolls", async () => {
+        versions("header", "Original", "Stacked");
+        const v = make();
+        const search = vi.spyOn(document, "querySelectorAll");
+        v.reposition();
+        await frame();
+        expect(search).not.toHaveBeenCalled();
+        v.pageChanged(false); // with versions, something removed may have been one
+        await frame();
+        expect(search).toHaveBeenCalled();
+        search.mockRestore();
+    });
+});

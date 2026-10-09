@@ -3,6 +3,9 @@ import type { AnnotationRecord } from "@notato/core";
 import { type Annotation, sampleAnnotation } from "@notato/schema";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createPins, MAX_PINS, nextPinNumber, type Pins } from "../src/ui/pins.ts";
+import { useReducedMotion } from "./support/motion.ts";
+
+useReducedMotion();
 
 let layer: HTMLElement;
 let page: HTMLElement;

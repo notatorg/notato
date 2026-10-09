@@ -1,6 +1,9 @@
 // @vitest-environment happy-dom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createToast } from "../src/ui/toast.ts";
+import { useReducedMotion } from "./support/motion.ts";
+
+useReducedMotion();
 
 let layer: HTMLElement;
 beforeEach(() => {

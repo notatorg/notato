@@ -296,9 +296,8 @@ export function createToolbar(options: ToolbarOptions): Toolbar {
         setLeftTop(at.left, at.top);
     }
 
-    function moveTo(left: number, top: number) {
-        const s = size();
-        const v = viewport();
+    /** A top left for the toolbar, held inside the window, and the fraction it is at. Only works it out. */
+    function within(left: number, top: number, s: Size, v: Size) {
         const x = Math.min(
             Math.max(TOOLBAR_MARGIN, left),
             Math.max(TOOLBAR_MARGIN, v.w - s.w - TOOLBAR_MARGIN)
@@ -307,19 +306,46 @@ export function createToolbar(options: ToolbarOptions): Toolbar {
             Math.max(TOOLBAR_MARGIN, top),
             Math.max(TOOLBAR_MARGIN, v.h - s.h - TOOLBAR_MARGIN)
         );
-        setLeftTop(x, y);
-        fraction = fractionAt({ left: x, top: y }, s, v);
+        return { x, y, fraction: fractionAt({ left: x, top: y }, s, v) };
+    }
+
+    /** Puts the toolbar at a new place, as far as the window allows: where a drag ends, or an arrow key takes it. */
+    function moveTo(left: number, top: number, s: Size = size(), v: Size = viewport()) {
+        const to = within(left, top, s, v);
+        setLeftTop(to.x, to.y);
+        fraction = to.fraction;
         forgetFold();
         syncChevron(); // dragged past the middle, it now folds towards the other side
     }
 
+    /** The slide back to its corner, kept so a second one can take over from it. */
+    let glide: Animation | null = null;
     function resetPosition() {
+        const before = el.getBoundingClientRect();
         fraction = null;
         forgetFold();
         saveToolbarFraction(null);
         place();
+        // It slides there, rather than jumping: from where it was, drawn as an offset from its new place.
+        glide?.cancel();
+        glide = null;
+        if (!canAnimate()) return;
+        const after = el.getBoundingClientRect();
+        const dx = before.left - after.left;
+        const dy = before.top - after.top;
+        if (Math.abs(dx) < 1 && Math.abs(dy) < 1) return;
+        glide = el.animate(
+            [{ transform: `translate(${dx}px, ${dy}px)` }, { transform: "translate(0, 0)" }],
+            { duration: 520, easing: spring }
+        );
+        glide.finished.catch(() => {});
     }
 
+    /**
+     * A press on the bar, which becomes a drag once it has moved far enough. The bar's size and the window's are measured
+     * once, when the drag starts: from then on each move is only arithmetic, and the bar follows by a transform from
+     * where it started, at most once a frame. Its place is written when the drag ends.
+     */
     let drag: {
         id: number;
         x: number;
@@ -327,12 +353,35 @@ export function createToolbar(options: ToolbarOptions): Toolbar {
         left: number;
         top: number;
         moved: boolean;
+        size?: Size;
+        viewport?: Size;
+        /** Where the pointer last was, for the next frame to put the bar under it. */
+        to?: { x: number; y: number };
+        frame?: number;
     } | null = null;
     // A drag that started on a button must not also press it.
     let swallowClick = false;
 
     // Moves are followed on the window, not the bar: a quick flick leaves the bar before it is a drag, and moves over the
     // page never reach the bar. Capture phase, because Notato's host stops pointer events from leaving it.
+    /** Where a drag has the bar now: its top left, held inside the window. */
+    const dragged = (d: NonNullable<typeof drag>) =>
+        within(
+            d.left + (d.to?.x ?? d.x) - d.x,
+            d.top + (d.to?.y ?? d.y) - d.y,
+            d.size ?? size(),
+            d.viewport ?? viewport()
+        );
+    /** Draws the bar where the drag has it: an offset from where it started, which lays nothing out. */
+    const follow = () => {
+        if (!drag) return;
+        drag.frame = 0;
+        const at = dragged(drag);
+        el.style.transform = `translate3d(${at.x - drag.left}px, ${at.y - drag.top}px, 0)`;
+        fraction = at.fraction;
+        forgetFold();
+        syncChevron(); // dragged past the middle, it now folds towards the other side
+    };
     const onMove = (ev: PointerEvent) => {
         if (!drag || ev.pointerId !== drag.id) return;
         const dx = ev.clientX - drag.x;
@@ -340,6 +389,10 @@ export function createToolbar(options: ToolbarOptions): Toolbar {
         if (!drag.moved) {
             if (Math.hypot(dx, dy) < DRAG_THRESHOLD) return;
             drag.moved = true;
+            drag.size = size();
+            drag.viewport = viewport();
+            glide?.cancel();
+            glide = null;
             el.classList.add("dragging");
             try {
                 // Keeps the moves coming while the pointer is over an iframe.
@@ -349,14 +402,20 @@ export function createToolbar(options: ToolbarOptions): Toolbar {
             }
         }
         ev.preventDefault();
-        moveTo(drag.left + dx, drag.top + dy);
+        drag.to = { x: ev.clientX, y: ev.clientY };
+        drag.frame ||= requestAnimationFrame(follow);
     };
     const endDrag = (ev: PointerEvent) => {
         if (!drag || ev.pointerId !== drag.id) return;
-        const moved = drag.moved;
+        const ended = drag;
         drag = null;
         stopFollowing();
-        if (!moved) return;
+        if (ended.frame) cancelAnimationFrame(ended.frame);
+        if (!ended.moved) return;
+        // Where it was let go is where it stays: its place written, and the offset it was drawn with dropped.
+        const at = dragged(ended);
+        el.style.transform = "";
+        moveTo(at.x, at.y, ended.size, ended.viewport);
         el.classList.remove("dragging");
         if (fraction) saveToolbarFraction(fraction);
         swallowClick = true;
@@ -614,10 +673,14 @@ export function createToolbar(options: ToolbarOptions): Toolbar {
         forgetFold();
         place();
     };
-    window.addEventListener("resize", place);
+    // Not while it is being dragged: the drag has its place, and writes it when it ends.
+    const placeUnlessDragging = () => {
+        if (!drag?.moved) place();
+    };
+    window.addEventListener("resize", placeUnlessDragging);
     window.addEventListener("storage", onStorage);
     const resizes =
-        typeof ResizeObserver === "undefined" ? null : new ResizeObserver(() => place());
+        typeof ResizeObserver === "undefined" ? null : new ResizeObserver(placeUnlessDragging);
     resizes?.observe(el);
     // The first placement needs the bar's size, which it has once it is in the page.
     const firstPlace = requestAnimationFrame(place);
@@ -690,8 +753,11 @@ export function createToolbar(options: ToolbarOptions): Toolbar {
             cancelAnimationFrame(firstPlace);
             for (const a of morph) a.cancel();
             morph = [];
+            glide?.cancel();
+            if (drag?.frame) cancelAnimationFrame(drag.frame);
+            drag = null;
             stopFollowing();
-            window.removeEventListener("resize", place);
+            window.removeEventListener("resize", placeUnlessDragging);
             window.removeEventListener("storage", onStorage);
             resizes?.disconnect();
         },

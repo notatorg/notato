@@ -3,6 +3,9 @@ import type { AnnotationRecord } from "@notato/core";
 import { type Annotation, type Status, sampleAnnotation, type Variants } from "@notato/schema";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createPins } from "../src/ui/pins.ts";
+import { useReducedMotion } from "./support/motion.ts";
+
+useReducedMotion();
 
 let layer: HTMLElement;
 let page: HTMLElement;
@@ -448,7 +451,11 @@ describe("a pin whose element is hidden", () => {
         page.append(el);
         return el;
     };
-    const placed = (pin: HTMLElement) => [pin.style.display, pin.style.left, pin.style.top];
+    /** Whether a pin is shown, and where: it is placed by a transform from the top left of the window. */
+    const placed = (pin: HTMLElement) => {
+        const [, left, top] = /translate3d\((\S+), (\S+), 0\)/.exec(pin.style.transform) ?? [];
+        return [pin.style.display, left, top];
+    };
 
     it("goes where fallbackAnchor says, when the element takes up no room", () => {
         const { pin } = open("acknowledged", offered(), { fallbackAnchor: anchor }, [element()]);

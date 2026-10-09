@@ -2,6 +2,9 @@
 import { DETAILS, type Detail } from "@notato/core";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { type CopyMenu, copyText, createCopyMenu } from "../src/ui/copy-menu.ts";
+import { useReducedMotion } from "./support/motion.ts";
+
+useReducedMotion();
 
 let layer: HTMLElement;
 beforeEach(() => {

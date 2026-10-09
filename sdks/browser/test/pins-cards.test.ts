@@ -4,6 +4,9 @@ import { type Annotation, type Status, sampleAnnotation } from "@notato/schema";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createPins } from "../src/ui/pins.ts";
 import { STYLES } from "../src/ui/styles.ts";
+import { useReducedMotion } from "./support/motion.ts";
+
+useReducedMotion();
 
 let layer: HTMLElement;
 beforeEach(() => {

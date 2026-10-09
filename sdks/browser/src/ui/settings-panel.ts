@@ -2,6 +2,7 @@ import { DETAILS, type Detail } from "@notato/core";
 import { MARKER_COLORS, type SettingsStore } from "../settings.ts";
 import { plural } from "../text.ts";
 import { dismissOnOutside, h } from "./dom.ts";
+import { animateIn, animateOut, DROP, type Motion, RISE, settle } from "./motion.ts";
 import type { ConnectionState } from "./toolbar.ts";
 
 export interface ServerInfo {
@@ -63,6 +64,10 @@ const BLURB: Record<Detail, string> = {
 export function createSettingsPanel(options: SettingsPanelOptions): SettingsPanel {
     const { layer, settings } = options;
     let el: HTMLElement | null = null;
+    /** Closed and fading away; gone at once when the panel opens again meanwhile. */
+    let leaving: HTMLElement | null = null;
+    /** Up from the toolbar, or down from it: it goes back the way it came. */
+    let motion: Motion = RISE;
     let view: "main" | "server" = "main";
     let off: (() => void) | undefined;
     /** Saves a name typed but not yet saved: the panel can close, or move on, without the field being left first. */
@@ -74,7 +79,19 @@ export function createSettingsPanel(options: SettingsPanelOptions): SettingsPane
         commitName = undefined;
         off?.();
         off = undefined;
-        el?.remove();
+        if (el) {
+            const going = el;
+            leaving = going;
+            going.inert = true;
+            animateOut(
+                going,
+                () => {
+                    going.remove();
+                    if (leaving === going) leaving = null;
+                },
+                motion
+            );
+        }
         el = null;
         view = "main";
         if (was) options.onToggle?.(false);
@@ -398,6 +415,7 @@ export function createSettingsPanel(options: SettingsPanelOptions): SettingsPane
         const w = el.offsetWidth || 300;
         el.style.left = `${Math.max(8, Math.min(a.left + a.width - w, window.innerWidth - w - 8))}px`;
         // The toolbar can be dragged anywhere: open towards the side of the window with more room.
+        motion = a.top < window.innerHeight / 2 ? DROP : RISE;
         if (a.top < window.innerHeight / 2) {
             const top = a.top + (a.height ?? 0) + 8;
             el.style.top = `${top}px`;
@@ -416,9 +434,11 @@ export function createSettingsPanel(options: SettingsPanelOptions): SettingsPane
         },
         open() {
             if (el) return;
+            if (leaving) settle(leaving);
             el = h("div", { class: "spanel", role: "dialog", "aria-label": "Notato settings" });
             layer.append(el);
             render();
+            animateIn(el, motion);
             options.onToggle?.(true);
             off = dismissOnOutside(el, close, options.owner?.());
         },
@@ -427,6 +447,9 @@ export function createSettingsPanel(options: SettingsPanelOptions): SettingsPane
             if (el) close();
             else this.open();
         },
-        destroy: close,
+        destroy() {
+            close();
+            if (leaving) settle(leaving);
+        },
     };
 }

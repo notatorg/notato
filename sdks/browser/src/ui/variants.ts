@@ -1,6 +1,7 @@
 import type { Annotation } from "@notato/schema";
 import { clip, messageOf } from "../text.ts";
 import { h } from "./dom.ts";
+import { createFrames, type FrameJob, type Frames } from "./frame.ts";
 import { viewportRect } from "./frames.ts";
 import { addSheet, type Sheet } from "./sheet.ts";
 
@@ -50,13 +51,25 @@ export interface VariantsOptions {
     onChoose?(annotationId: string, name: string | null): Promise<void>;
     /** The connected agent's name when there is exactly one, so the switcher can say who applies the pick. */
     agentName?(): string | undefined;
+    /** The frame the switchers are measured and placed in, shared with whatever else follows the page. */
+    frames?: Frames;
 }
 
 export interface Variants {
-    /** Looks at the page again: finds groups, applies the shown version and places the switchers. Cheap; call often. */
+    /** Looks at the page again: finds groups, applies the shown version and places the switchers. */
     update(): void;
     /** Same, at the next frame; many calls in one frame make one. */
     schedule(): void;
+    /**
+     * The page changed in a way that can have changed its versions: `found` when a version marker was added or changed,
+     * otherwise only something removed, which matters only while there are versions. The page is looked through again
+     * at the next frame when it can matter, and not otherwise: a page without versions is never searched for them.
+     */
+    pageChanged(found: boolean): void;
+    /** What the server knows changed: the switchers there are are drawn again at the next frame. */
+    redraw(): void;
+    /** Something moved (a scroll, a resize): the switchers there are are placed again at the next frame. Cheap. */
+    reposition(): void;
     list(): VariantGroupInfo[];
     /** Where the shown version of a group is on screen (its top-left corner, in the viewport), or null if it is not. */
     anchor(group: string): { left: number; top: number } | null;
@@ -154,6 +167,8 @@ interface Switcher {
     el: HTMLElement;
     /** What it was last drawn from, so a redraw only happens when something changed. */
     drawn: string;
+    /** Its size as last laid out, while it was shown; nothing before it has been. */
+    size?: { w: number; h: number };
     busy: boolean;
     error?: string;
     errorTimer?: ReturnType<typeof setTimeout>;
@@ -166,7 +181,10 @@ export function createVariants(options: VariantsOptions): Variants {
     let groups = new Map<string, Group>();
     /** The group most recently used, which the keyboard shortcut acts on. */
     let lastGroup: string | undefined;
-    let frame = 0;
+    const frames = options.frames ?? createFrames();
+    /** The page has to be looked through for versions again, or the switchers drawn again, at the next frame. */
+    let rescan = true;
+    let redraw = false;
     /** A pick that settles after destroy() asks for a redraw; that must not put the rule and the switchers back. */
     let destroyed = false;
     /** The documents that have our style rule, so one that no longer needs it can lose it. */
@@ -380,16 +398,17 @@ export function createVariants(options: VariantsOptions): Variants {
         return area;
     }
 
-    function placeSwitcher(group: Group, sw: Switcher) {
+    /** Where a switcher goes: over the shown version, or nowhere (null) while that is off screen. Only reads. */
+    function measureSwitcher(group: Group, sw: Switcher) {
         const area = shownArea(group);
         const view = { w: window.innerWidth, h: window.innerHeight };
-        if (!area || area.bottom < 0 || area.top > view.h || area.right < 0 || area.left > view.w) {
-            sw.el.style.display = "none";
-            return;
-        }
-        sw.el.style.display = "flex";
-        const width = sw.el.offsetWidth || 260;
-        const height = sw.el.offsetHeight || 32;
+        if (!area || area.bottom < 0 || area.top > view.h || area.right < 0 || area.left > view.w)
+            return null;
+        // Hidden, it has no size: the one it had when last shown, or a guess, put right at the next frame.
+        const shown = sw.el.style.display === "flex";
+        if (shown && sw.el.offsetWidth) sw.size = { w: sw.el.offsetWidth, h: sw.el.offsetHeight };
+        const width = sw.size?.w || 260;
+        const height = sw.size?.h || 32;
         // Past where a pin for the annotation on this group would sit, at the top-left corner.
         const left = Math.min(Math.max(8, area.left + 34), Math.max(8, view.w - width - 8));
         // Above the group; when there is no room, over its top edge so it stays reachable.
@@ -398,13 +417,24 @@ export function createVariants(options: VariantsOptions): Variants {
             above >= 8
                 ? above
                 : Math.min(Math.max(8, area.top + 8), Math.max(8, view.h - height - 8));
-        sw.el.style.left = `${left}px`;
-        sw.el.style.top = `${top}px`;
+        return { left, top, guessed: !shown };
     }
 
-    // ---- the public surface ------------------------------------------------------------------------------
-    function update() {
-        frame = 0;
+    function placeSwitcher(sw: Switcher, at: ReturnType<typeof measureSwitcher>) {
+        if (!at) {
+            if (sw.el.style.display !== "none") sw.el.style.display = "none";
+            return;
+        }
+        sw.el.style.display = "flex";
+        sw.el.style.left = `${at.left}px`;
+        sw.el.style.top = `${at.top}px`;
+        // Placed by a guess at its size: placed again from its real size once it has one.
+        if (at.guessed) frames.schedule(job);
+    }
+
+    // ---- looking at the page -----------------------------------------------------------------------------
+    /** Finds the groups, applies the shown versions, and makes and drops switchers to match. */
+    function scan() {
         const docs = options.windows().map((w) => w.document);
         groups = findGroups(docs);
         for (const group of groups.values()) selected.set(group.id, activeOf(group));
@@ -418,32 +448,79 @@ export function createVariants(options: VariantsOptions): Variants {
             switchers.delete(id);
         }
         for (const group of groups.values()) {
-            let sw = switchers.get(group.id);
-            if (!sw) {
-                sw = {
-                    el: h("div", {
-                        class: "vpill",
-                        role: "group",
-                        "aria-label": `Variants of ${group.id}`,
-                    }),
-                    drawn: "",
-                    busy: false,
-                };
-                layer.append(sw.el);
-                switchers.set(group.id, sw);
-            }
-            drawSwitcher(group, infoOf(group), sw);
-            placeSwitcher(group, sw);
+            if (switchers.has(group.id)) continue;
+            const el = h("div", {
+                class: "vpill",
+                role: "group",
+                "aria-label": `Variants of ${group.id}`,
+            });
+            layer.append(el);
+            switchers.set(group.id, { el, drawn: "", busy: false });
         }
     }
 
+    let measured: Array<[Switcher, ReturnType<typeof measureSwitcher>]> = [];
+    /**
+     * Read: where each switcher goes. A frame that has to look through the page, or draw the switchers again, does that
+     * first; that changes the page, but only when versions come, go or are picked, not as it scrolls.
+     */
+    const job: FrameJob = {
+        read() {
+            if (destroyed) return;
+            if (rescan) {
+                rescan = false;
+                redraw = true;
+                scan();
+            }
+            if (redraw) {
+                redraw = false;
+                for (const group of groups.values()) {
+                    const sw = switchers.get(group.id);
+                    if (sw) drawSwitcher(group, infoOf(group), sw);
+                }
+            }
+            measured = [];
+            for (const group of groups.values()) {
+                const sw = switchers.get(group.id);
+                if (sw) measured.push([sw, measureSwitcher(group, sw)]);
+            }
+        },
+        write() {
+            const now = measured;
+            measured = [];
+            for (const [sw, at] of now) placeSwitcher(sw, at);
+        },
+    };
+
+    // ---- the public surface ------------------------------------------------------------------------------
+    function update() {
+        if (destroyed) return;
+        frames.cancel(job);
+        rescan = true;
+        job.read?.();
+        job.write?.();
+    }
+
     function schedule() {
-        if (!destroyed && !frame) frame = requestAnimationFrame(update);
+        if (destroyed) return;
+        rescan = true;
+        frames.schedule(job);
     }
 
     const api: Variants = {
         update,
         schedule,
+        pageChanged(found) {
+            if (found || groups.size > 0) schedule();
+        },
+        redraw() {
+            if (destroyed || groups.size === 0) return;
+            redraw = true;
+            frames.schedule(job);
+        },
+        reposition() {
+            if (!destroyed && groups.size > 0) frames.schedule(job);
+        },
         list: () => [...groups.values()].map(infoOf),
         anchor(id) {
             const group = groups.get(id);
@@ -474,7 +551,7 @@ export function createVariants(options: VariantsOptions): Variants {
         },
         destroy() {
             destroyed = true;
-            if (frame) cancelAnimationFrame(frame);
+            frames.cancel(job);
             for (const sw of switchers.values()) {
                 if (sw.errorTimer) clearTimeout(sw.errorTimer);
                 sw.el.remove();

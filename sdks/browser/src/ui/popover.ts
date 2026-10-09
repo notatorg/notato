@@ -1,7 +1,9 @@
 import type { Intent, Severity } from "@notato/schema";
 import { capitalize } from "../text.ts";
 import { h } from "./dom.ts";
+import { createFrames, type FrameJob, type Frames } from "./frame.ts";
 import { isMac } from "./keys.ts";
+import { animateIn, animateOut, RISE, settle } from "./motion.ts";
 
 export interface PopoverInit {
     /** "1 element", "Text selection", "Area" ... */
@@ -31,7 +33,9 @@ export interface Popover {
     open(init: PopoverInit): void;
     /** Refresh title, targets and anchor while keeping what the person has typed (multi-select). */
     update(patch: Partial<Pick<PopoverInit, "title" | "targets" | "anchor" | "hint">>): void;
+    /** Closes it: it fades away, and is gone for `isOpen` at once. */
     close(): void;
+    /** Places it again at the next frame, with the other things over the page (see frame.ts). */
     reposition(): void;
     destroy(): void;
 }
@@ -71,8 +75,10 @@ export function placePopover(
     return { left: clampX(anchor.left), top: clampY(anchor.top - GAP - size.h) };
 }
 
-export function createPopover(layer: HTMLElement): Popover {
+export function createPopover(layer: HTMLElement, frames: Frames = createFrames()): Popover {
     let el: HTMLElement | null = null;
+    /** Closed and fading away: gone at once if another opens meanwhile. */
+    let leaving: HTMLElement | null = null;
     let current: PopoverInit | null = null;
     let severity: Severity | undefined;
     let intent: Intent | undefined;
@@ -94,15 +100,28 @@ export function createPopover(layer: HTMLElement): Popover {
     let targetsEl: HTMLElement;
     let saving = false;
 
-    const place = () => {
+    /** Where it goes, worked out from its height as last laid out. */
+    let height = 0;
+    const placeNow = () => {
         if (!el || !current) return;
-        const size = { w: WIDTH, h: el.offsetHeight || 260 };
+        const size = { w: WIDTH, h: height || 260 };
         const pos = placePopover(current.anchor, size, {
             w: window.innerWidth,
             h: window.innerHeight,
         });
         el.style.left = `${pos.left}px`;
         el.style.top = `${pos.top}px`;
+    };
+    const place = () => {
+        height = el?.offsetHeight ?? 0;
+        placeNow();
+    };
+    // A scroll or a change in the page measures it with everything else, and places it once all of them are measured.
+    const job: FrameJob = {
+        read: () => {
+            height = el?.offsetHeight ?? 0;
+        },
+        write: placeNow,
     };
 
     const renderTargets = () => {
@@ -123,7 +142,7 @@ export function createPopover(layer: HTMLElement): Popover {
         saving = true;
         saveBtn.disabled = true;
         status.className = "status";
-        status.textContent = "Capturing…";
+        status.textContent = "Saving…";
         try {
             await current.onSave({
                 comment,
@@ -140,7 +159,21 @@ export function createPopover(layer: HTMLElement): Popover {
     };
 
     const close = () => {
-        el?.remove();
+        frames.cancel(job);
+        if (el) {
+            const going = el;
+            leaving = going;
+            // Typing or clicking in it while it fades would go nowhere.
+            going.inert = true;
+            animateOut(
+                going,
+                () => {
+                    going.remove();
+                    if (leaving === going) leaving = null;
+                },
+                RISE
+            );
+        }
         el = null;
         current = null;
         severity = undefined;
@@ -155,6 +188,7 @@ export function createPopover(layer: HTMLElement): Popover {
         },
         open(init) {
             close();
+            if (leaving) settle(leaving);
             current = init;
             const intentChips = INTENTS.filter((i) => i !== "variants" || init.variants).map((i) =>
                 h(
@@ -274,6 +308,7 @@ export function createPopover(layer: HTMLElement): Popover {
             layer.append(el);
             renderTargets();
             place();
+            animateIn(el, RISE);
             textarea.focus({ preventScroll: true });
         },
         update(patch) {
@@ -284,7 +319,12 @@ export function createPopover(layer: HTMLElement): Popover {
             place();
         },
         close,
-        reposition: place,
-        destroy: close,
+        reposition() {
+            if (el) frames.schedule(job);
+        },
+        destroy() {
+            close();
+            if (leaving) settle(leaving);
+        },
     };
 }

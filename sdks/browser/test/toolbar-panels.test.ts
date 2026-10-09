@@ -7,6 +7,9 @@ import { createPackageDialog } from "../src/ui/package-dialog.ts";
 import { createPicker } from "../src/ui/picker.ts";
 import { createSettingsPanel } from "../src/ui/settings-panel.ts";
 import { createToolbar } from "../src/ui/toolbar.ts";
+import { useReducedMotion } from "./support/motion.ts";
+
+useReducedMotion();
 
 let layer: HTMLElement;
 beforeEach(() => {

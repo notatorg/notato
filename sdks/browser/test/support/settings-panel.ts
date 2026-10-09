@@ -6,6 +6,7 @@ import {
     type ServerLinks,
     type SettingsPanel,
 } from "../../src/ui/settings-panel.ts";
+import { useReducedMotion } from "./motion.ts";
 
 // What the settings panel tests share: a panel over a real settings store, in a layer in the page, and ways to find
 // and use what is in it. A test file calls `useSettingsPanel()` once, and each of its tests starts afresh.
@@ -28,6 +29,7 @@ export let panel: SettingsPanel;
 export let onHide: Mock<() => void>;
 
 export function useSettingsPanel(): void {
+    useReducedMotion();
     beforeEach(() => {
         real.clear();
         layer = document.createElement("div");

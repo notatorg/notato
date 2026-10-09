@@ -132,11 +132,23 @@ const trackers = new Map<Window, Tracker>();
 /** Past this many added elements in one frame (a whole page rendered at once), the next look covers the whole page. */
 const MAX_ADDED = 2000;
 
-/** An element that is, or holds, an iframe, shadow roots included. */
+/** Whether an element's shadow root holds a frame. */
+const shadowHoldsFrame = (el: Element) =>
+    el.shadowRoot !== null && framesIn(el.shadowRoot).length > 0;
+
+/**
+ * An element that is, or holds, an iframe, shadow roots included. Most of what a page adds is a few elements with no
+ * frame anywhere: the browser's own search answers for the light DOM, and only the shadow roots need a walk, which
+ * goes element by element without first making a list of every one of them.
+ */
 function holdsFrame(el: Element): boolean {
-    if (isIframe(el) || el.querySelector("iframe")) return true;
-    for (const inner of [el, ...Array.from(el.querySelectorAll("*"))])
-        if (inner.shadowRoot && framesIn(inner.shadowRoot).length > 0) return true;
+    if (isIframe(el) || shadowHoldsFrame(el)) return true;
+    if (!el.firstElementChild) return false;
+    if (el.querySelector("iframe")) return true;
+    const doc = el.ownerDocument;
+    const walker = doc.createTreeWalker(el, 1 /* NodeFilter.SHOW_ELEMENT */);
+    for (let node = walker.nextNode(); node; node = walker.nextNode())
+        if (shadowHoldsFrame(node as Element)) return true;
     return false;
 }
 

@@ -1,6 +1,7 @@
 import { plural } from "../text.ts";
 import { h } from "./dom.ts";
 import { LOGO } from "./logo.ts";
+import { animateIn, animateOut, FADE, POP, settle } from "./motion.ts";
 
 export interface PackageDialogInit {
     count: number;
@@ -29,11 +30,28 @@ export function createPackageDialog(layer: HTMLElement): PackageDialog {
     let shade: HTMLElement | null = null;
     let closeTimer: ReturnType<typeof setTimeout> | undefined;
 
+    /** Closed and fading away: the dialog and its shade. Gone at once if it opens again meanwhile. */
+    let leaving: HTMLElement[] = [];
+
     const close = () => {
         if (closeTimer) clearTimeout(closeTimer);
-        el?.remove();
+        for (const [going, motion] of [
+            [el, POP],
+            [shade, FADE],
+        ] as const) {
+            if (!going) continue;
+            going.inert = true;
+            leaving.push(going);
+            animateOut(
+                going,
+                () => {
+                    going.remove();
+                    leaving = leaving.filter((l) => l !== going);
+                },
+                motion
+            );
+        }
         el = null;
-        shade?.remove();
         shade = null;
     };
 
@@ -44,6 +62,7 @@ export function createPackageDialog(layer: HTMLElement): PackageDialog {
         close,
         open(init) {
             close();
+            for (const going of leaving) settle(going);
             const name = h("input", {
                 type: "text",
                 value: init.name,
@@ -114,6 +133,8 @@ export function createPackageDialog(layer: HTMLElement): PackageDialog {
                     void run();
             });
             layer.append(shade, el);
+            animateIn(shade, FADE);
+            animateIn(el, POP);
             name.focus({ preventScroll: true });
         },
     };

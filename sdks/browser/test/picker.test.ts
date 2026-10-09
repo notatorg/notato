@@ -273,3 +273,22 @@ describe("what is under the pointer", () => {
         expect(described).toEqual([plain]);
     });
 });
+
+describe("following the page as it scrolls", () => {
+    it("is done only while annotating or with a draft open, and once a frame however many scrolls", async () => {
+        picker.setActive(false);
+        const asked = vi.spyOn(window, "requestAnimationFrame");
+        window.dispatchEvent(new Event("scroll"));
+        expect(asked).not.toHaveBeenCalled();
+
+        picker.showDraft([target]);
+        for (let i = 0; i < 3; i++) window.dispatchEvent(new Event("scroll"));
+        expect(asked).toHaveBeenCalledOnce();
+        await frame();
+
+        picker.clearDraft();
+        asked.mockClear();
+        window.dispatchEvent(new Event("scroll"));
+        expect(asked).not.toHaveBeenCalled();
+    });
+});

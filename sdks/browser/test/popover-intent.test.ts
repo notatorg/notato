@@ -2,6 +2,9 @@
 import type { Intent, Severity } from "@notato/schema";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createPopover, type Popover, type PopoverInit } from "../src/ui/popover.ts";
+import { useReducedMotion } from "./support/motion.ts";
+
+useReducedMotion();
 
 let layer: HTMLElement;
 let popover: Popover;
