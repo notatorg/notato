@@ -76,16 +76,26 @@ final _inspector = WidgetInspectorService.instance;
 final _created = Expando<Object>('notato creation');
 const _none = Object();
 
+/// Where each element's widget was created, as a walk over a whole screen reads it. A widget rebuilt is a new object,
+/// but its element keeps the widget's type and nearly always its place in the code: a screen that scrolls or animates is
+/// not read through the inspector again on every walk.
+final _createdAt = Expando<Object>('notato element creation');
+
 /// The creation location Flutter recorded for an element's widget, read through the inspector's own serialization
-/// (the one DevTools uses), or null in a build without widget creation tracking.
-CreationLocation? creationOf(Element element) {
+/// (the one DevTools uses), or null in a build without widget creation tracking. [exact] reads it for the widget the
+/// element has now; otherwise what was read for the element before will do, which is what walks over a whole screen
+/// use: reading it is the dearest part of them.
+CreationLocation? creationOf(Element element, {bool exact = true}) {
   if (!kDebugMode) return null;
   final widget = element.widget;
-  final known = _created[widget];
-  if (known != null) return known == _none ? null : known as CreationLocation;
-  final location = _readCreation(element);
-  _created[widget] = location ?? _none;
-  return location;
+  var known = _created[widget];
+  if (known == null && !exact) known = _createdAt[element];
+  if (known == null) {
+    known = _readCreation(element) ?? _none;
+    _created[widget] = known;
+  }
+  _createdAt[element] = known;
+  return known == _none ? null : known as CreationLocation;
 }
 
 CreationLocation? _readCreation(Element element) {
@@ -115,9 +125,9 @@ bool isLibraryFile(String file) =>
     file.startsWith('org-dartlang-sdk:') ||
     file.contains('/dart-sdk/');
 
-/// Whether an element's widget was written in the app's own code.
-bool isLocal(Element element) {
-  final location = creationOf(element);
+/// Whether an element's widget was written in the app's own code. [exact] as [creationOf] takes it.
+bool isLocal(Element element, {bool exact = true}) {
+  final location = creationOf(element, exact: exact);
   return location != null && !isLibraryFile(location.file);
 }
 
@@ -128,22 +138,31 @@ final _passThroughName = RegExp(r'(Builder|Listener|Provider|Consumer|Selector|S
 
 /// A widget class written in the app: a stateless or stateful widget whose build creates widgets in the app's code.
 /// (Flutter's `Card` is created by you but builds in Flutter; your `ProductCard` builds in your file.)
-bool isAppComponent(Element element) {
+bool isAppComponent(Element element, {bool exact = true}) {
   // Inherited and parent-data widgets (proxies) only pass their child on.
   if (element is! StatelessElement && element is! StatefulElement) return false;
-  final name = typeName(element.widget);
-  if (_passThrough.contains(name) || _passThroughName.hasMatch(name)) return false;
+  if (_passesThrough(element.widget.runtimeType)) return false;
   Element? child;
   element.visitChildren((c) => child ??= c);
-  return child != null && isLocal(child!);
+  return child != null && isLocal(child!, exact: exact);
 }
 
+final _passes = <Type, bool>{};
+bool _passesThrough(Type type) => _passes[type] ??= () {
+  final name = _typeName(type);
+  return _passThrough.contains(name) || _passThroughName.hasMatch(name);
+}();
+
 /// A widget's class name, without its type arguments: `StreamBuilder`, not `StreamBuilder<int>`.
-String typeName(Widget widget) {
-  final name = widget.runtimeType.toString();
+String typeName(Widget widget) => _typeName(widget.runtimeType);
+
+/// Worked out once a type: a walk over a screen asks for thousands.
+final _names = <Type, String>{};
+String _typeName(Type type) => _names[type] ??= () {
+  final name = type.toString();
   final generic = name.indexOf('<');
   return generic > 0 ? name.substring(0, generic) : name;
-}
+}();
 
 const _buttons = <String>{
   'ElevatedButton',
@@ -358,7 +377,7 @@ Picked describe(
   required bool maskInputs,
   bool full = false,
 }) {
-  final location = creationOf(view);
+  final location = creationOf(view, exact: full);
   final path = components.reversed.toList();
   final component = components.isEmpty ? null : components.first;
 
@@ -384,7 +403,7 @@ Picked describe(
     }
     if (widget is Tooltip) label ??= widget.message;
     final type = typeName(widget);
-    if (container == null && e != view && _buttons.contains(type) && isLocal(e)) container = e;
+    if (container == null && e != view && _buttons.contains(type) && isLocal(e, exact: full)) container = e;
     if (_buttons.contains(type)) role ??= 'button';
     role ??= _roles[type];
   }

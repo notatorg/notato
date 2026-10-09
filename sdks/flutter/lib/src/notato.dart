@@ -24,6 +24,7 @@ import 'serial.dart';
 import 'storage.dart';
 import 'tree.dart';
 import 'ui/composer.dart';
+import 'ui/motion.dart';
 import 'ui/parts.dart';
 import 'ui/pin_layout.dart';
 import 'ui/sheets.dart';
@@ -177,22 +178,28 @@ class Notato extends StatefulWidget {
   State<Notato> createState() => _NotatoState();
 }
 
-/// A widget picked to annotate, outlined and photographed, while its note is written.
+/// A note's screenshots: the screen outlined, and the widget on its own.
+typedef _Shots = ({Shot? full, Shot? crop});
+
+/// A widget picked to annotate, outlined, while its note is written. Its screenshots are still being made while the
+/// composer opens: sending waits for them.
 class _Selection {
   _Selection(this.picked, this.pin, this.id, this.shots);
   final Picked picked;
   final int pin;
   final String id;
-  final ({Shot? full, Shot? crop}) shots;
+  final Future<_Shots> shots;
 }
 
 /// A pin as it is drawn: its note and number, and where its widget is now, or was (detached) when it cannot be found.
+/// Hidden, it waits faded out: its widget is off the screen, or gone and being looked for again.
 class _Pin {
-  const _Pin(this.record, this.number, this.rect, this.detached);
+  const _Pin(this.record, this.number, this.rect, {this.detached = false, this.hidden = false});
   final NoteRecord record;
   final int number;
   final Rect rect;
   final bool detached;
+  final bool hidden;
 }
 
 /// The most pins drawn on one screen: the newest. The Notes list has every one.
@@ -218,14 +225,24 @@ class _NotatoState extends State<Notato> with WidgetsBindingObserver implements 
   });
   String? _toast;
   Timer? _toastTimer;
-  List<_Pin> _pins = const [];
-  Timer? _pinTimer;
 
-  /// A frame was drawn since the pins were last placed: something on screen may have moved. An app at rest draws no
-  /// frames, so its pins are not looked for again until it does.
-  var _drawn = true;
+  /// The pins as drawn. Only their layer is built again when they move: they follow their widgets frame by frame.
+  final _pins = ValueNotifier<List<_Pin>>(const []);
+
+  /// Pins are shown, and their widgets followed.
+  var _tracking = false;
   var _watchingFrames = false;
+
+  /// The notes the pins were last looked for, and the widget each was found on (null: not found), by note id.
   ScreenNotes? _placedFor;
+  var _targets = <String, RenderBox?>{};
+
+  /// A frame was drawn since the pins' widgets were last looked for: one may have gone, or another taken its place.
+  var _drawnSinceLook = true;
+  final _sinceLook = Stopwatch();
+
+  /// Looks for the pins' widgets again once the app has drawn nothing for a moment: never while it scrolls.
+  Timer? _settleTimer;
 
   /// The screen the overlay was last drawn for. Moving to another that redraws nothing of Notato's (one with no pins,
   /// say) is noticed by looking twice a second, and drawn then.
@@ -286,8 +303,9 @@ class _NotatoState extends State<Notato> with WidgetsBindingObserver implements 
         ..dispose();
     }
     _toastTimer?.cancel();
-    _pinTimer?.cancel();
+    _settleTimer?.cancel();
     _routeTimer?.cancel();
+    _pins.dispose();
     super.dispose();
   }
 
@@ -375,15 +393,23 @@ class _NotatoState extends State<Notato> with WidgetsBindingObserver implements 
   }
 
   @override
-  Future<({Shot? full, Shot? crop})> capture(Picked picked, int pin, String id) =>
-      _oneAtATime.run(() => _photograph(picked, pin, id));
+  Future<_Shots> capture(Picked picked, int pin, String id) => _oneAtATime.run(() => _photograph(picked, pin, id));
 
   /// The screenshots for a note: the widget on its own (masked), then the screen as the person saw it, outlined and
-  /// numbered. The two pictures of the whole screen are let go of as soon as the PNGs are made.
-  Future<({Shot? full, Shot? crop})> _photograph(Picked picked, int pin, String id) async {
+  /// numbered. [plainTaken] is told once the first is taken, for the outline (and the composer) to be shown: the
+  /// outlined one is taken under them. The two pictures of the whole screen are let go of as soon as the PNGs are made.
+  Future<_Shots> _photograph(Picked picked, int pin, String id, {VoidCallback? plainTaken}) async {
+    var told = false;
+    void tell() {
+      if (told) return;
+      told = true;
+      plainTaken?.call();
+    }
+
     final boundary = _shotKey.currentContext?.findRenderObject();
     final app = _appBox;
     if (!mounted || !runtime.screenshotsOn || boundary is! RenderRepaintBoundary || app == null) {
+      tell();
       return (full: null, crop: null);
     }
     Rect local(Rect global) => boundary.globalToLocal(global.topLeft) & global.size;
@@ -393,11 +419,17 @@ class _NotatoState extends State<Notato> with WidgetsBindingObserver implements 
     ui.Image? plain;
     ui.Image? outlined;
     try {
+      // The screen as it is already drawn will do, unless covers or an outline must come off it first.
+      final redraw = covers.isNotEmpty || _selection != null || !kDebugMode || boundary.debugNeedsPaint;
       setState(() => _capturing = (rect: Rect.zero, pin: pin, covers: covers));
-      await WidgetsBinding.instance.endOfFrame;
-      plain = await grab(boundary, ratio);
-      if (!mounted) return (full: null, crop: null);
+      if (redraw) await WidgetsBinding.instance.endOfFrame;
+      // A picture is of the screen as drawn when it is asked for: the outline and the composer can be drawn while it
+      // is made.
+      final plainShot = grab(boundary, ratio);
+      tell();
       setState(() => _capturing = (rect: rect, pin: pin, covers: covers));
+      plain = await plainShot;
+      if (!mounted) return (full: null, crop: null);
       await WidgetsBinding.instance.endOfFrame;
       outlined = await grab(boundary, ratio);
       final full = outlined == null ? null : await pngOf(outlined, '$id-full');
@@ -413,6 +445,7 @@ class _NotatoState extends State<Notato> with WidgetsBindingObserver implements 
       }
       return (full: full, crop: crop);
     } finally {
+      tell();
       plain?.dispose();
       outlined?.dispose();
     }
@@ -442,15 +475,27 @@ class _NotatoState extends State<Notato> with WidgetsBindingObserver implements 
 
   // ---- picking and writing a note ----------------------------------------------------------------------------------
 
+  /// Outlines the widget and opens the composer for it as soon as the plain screenshot is taken (a frame, at most two):
+  /// the rest of the screenshots are made while the note is written.
   Future<void> _choose(Picked picked, {_Selection? keep}) async {
     final pin = keep?.pin ?? runtime.nextPin(route());
     final id = keep?.id ?? ulid();
-    final shots = await capture(picked, pin, id);
-    if (!mounted) return;
-    setState(() {
-      _sheet = null;
-      _selection = _Selection(picked, pin, id, shots);
-    });
+    final shots = Completer<_Shots>();
+    void show() {
+      if (!mounted) return;
+      setState(() {
+        _sheet = null;
+        _selection = _Selection(picked, pin, id, shots.future);
+      });
+    }
+
+    // Screenshots that could not be made leave the note without them, as with screenshots off.
+    shots.complete(
+      _oneAtATime
+          .run(() => _photograph(picked, pin, id, plainTaken: show))
+          .catchError((Object _) => (full: null, crop: null) as _Shots),
+    );
+    await shots.future;
   }
 
   Future<void> _pickAt(Offset global) async {
@@ -488,6 +533,7 @@ class _NotatoState extends State<Notato> with WidgetsBindingObserver implements 
     setState(() => _selection = null);
     runtime.stopAnnotating();
     try {
+      final shots = await chosen.shots;
       final made = await runtime.createNote(
         chosen.picked,
         comment: draft.comment,
@@ -496,8 +542,8 @@ class _NotatoState extends State<Notato> with WidgetsBindingObserver implements 
         peopleOnly: draft.peopleOnly,
         id: chosen.id,
         pin: chosen.pin,
-        full: chosen.shots.full,
-        crop: chosen.shots.crop,
+        full: shots.full,
+        crop: shots.crop,
       );
       toast(made.problem ?? (runtime.hasServer ? 'Sent' : 'Saved on this device. Package it from the menu.'));
     } catch (e) {
@@ -535,7 +581,7 @@ class _NotatoState extends State<Notato> with WidgetsBindingObserver implements 
     return false;
   }
 
-  // ---- pins: where their widgets are now, found again by their selectors twice a second ----------------------------
+  // ---- pins: their widgets found by their selectors once the app is still, and followed frame by frame ----------
 
   void _schedulePins() {
     final wanted =
@@ -545,51 +591,62 @@ class _NotatoState extends State<Notato> with WidgetsBindingObserver implements 
         !runtime.isAnnotating &&
         runtime.pinsOn(route()).isNotEmpty;
     if (!wanted) {
-      _pinTimer?.cancel();
-      _pinTimer = null;
-      if (_pins.isNotEmpty) setState(() => _pins = const []);
+      _tracking = false;
+      _settleTimer?.cancel();
+      _placedFor = null;
+      _targets = {};
+      if (_pins.value.isNotEmpty) _pins.value = const [];
       return;
     }
-    if (_pinTimer != null) return;
-    _drawn = true;
+    _tracking = true;
     _watchFrames();
-    _placePins();
-    _pinTimer = Timer.periodic(const Duration(milliseconds: 500), (_) => _placePins());
+    // Another screen, or its notes changed: their widgets are looked for now.
+    if (!identical(_placedFor, runtime.pinsOn(route()))) _look();
   }
 
+  /// After every frame the app draws, while pins are shown: they follow their widgets, and their widgets are looked
+  /// for again once the app has been still for a moment. An app at rest draws no frames, and costs nothing.
   void _watchFrames() {
     if (_watchingFrames) return;
     _watchingFrames = true;
     void drawn(Duration _) {
       _watchingFrames = false;
-      if (!mounted || _pinTimer == null) return;
-      _drawn = true;
+      if (!mounted || !_tracking) return;
+      _drawnSinceLook = true;
+      _follow();
+      _settleTimer?.cancel();
+      _settleTimer = Timer(const Duration(milliseconds: 300), () {
+        if (mounted && _tracking && _drawnSinceLook) _look();
+      });
+      // Something not found keeps being looked for, now and then, in an app that never stops moving.
+      final missing = _targets.values.any((box) => box == null || !box.attached);
+      if (missing && _sinceLook.elapsed > const Duration(seconds: 3)) _look();
       _watchFrames();
     }
 
     WidgetsBinding.instance.addPostFrameCallback(drawn);
   }
 
-  void _placePins() {
+  /// Finds each pin's widget by its selector: a walk over the whole screen, so only when the screen or its notes change,
+  /// or the app has stopped moving.
+  void _look() {
     final root = _appElement;
-    if (!mounted || root == null) return;
+    if (!mounted || root == null || !_tracking) return;
     final here = runtime.pinsOn(route());
-    // Nothing drawn, and the same screen with the same notes as the last time: the pins are where they were.
-    if (!_drawn && identical(_placedFor, here)) return;
-    _drawn = false;
     _placedFor = here;
+    _drawnSinceLook = false;
+    _sinceLook
+      ..reset()
+      ..start();
     final shown = here.length > maxPins ? here.sublist(here.length - maxPins) : here;
     List<TreeElement>? elements;
     SelectorIndex<TreeElement>? index;
-    final screen = _screen;
-    final placed = <_Pin>[];
-    for (final (:number, :record) in shown) {
+    final targets = <String, RenderBox?>{};
+    for (final (number: _, :record) in shown) {
       final a = record.annotation;
-      final r = (a['target'] as Map?)?['rect'] as Map? ?? const {};
-      double n(String k) => (r[k] as num?)?.toDouble() ?? 0;
-      final stored = Rect.fromLTWH(n('x'), n('y'), n('w'), n('h'));
+      final stored = _storedRect(record);
       final identity = ((a['target'] as Map?)?['identity'] as List?)?.firstOrNull;
-      Rect? found;
+      RenderBox? found;
       if (identity is Map) {
         try {
           elements ??= elementsUnder(root, maskInputs: runtime.maskInputs);
@@ -602,20 +659,50 @@ class _NotatoState extends State<Notato> with WidgetsBindingObserver implements 
             final d = (rect.topLeft - stored.topLeft).distance + (rect.width - stored.width).abs();
             if (best == null || d < best) {
               best = d;
-              found = rect;
+              found = m.picked.box;
             }
           }
         } catch (_) {
           found = null;
         }
       }
-      // A widget scrolled out of sight takes its pin with it.
-      if (found != null && !found.overlaps(screen)) continue;
-      placed.add(_Pin(record, number, found ?? stored, found == null));
+      targets[record.id] = found;
+    }
+    _targets = targets;
+    _follow();
+  }
+
+  static Rect _storedRect(NoteRecord record) {
+    final r = (record.annotation['target'] as Map?)?['rect'] as Map? ?? const {};
+    double n(String k) => (r[k] as num?)?.toDouble() ?? 0;
+    return Rect.fromLTWH(n('x'), n('y'), n('w'), n('h'));
+  }
+
+  /// Puts each pin where its widget is now: cheap, so done after every frame the app draws.
+  void _follow() {
+    final here = _placedFor;
+    if (!mounted || here == null) return;
+    final shown = here.length > maxPins ? here.sublist(here.length - maxPins) : here;
+    final screen = _screen;
+    final before = {for (final p in _pins.value) p.record.id: p};
+    final placed = <_Pin>[];
+    for (final (:number, :record) in shown) {
+      if (!_targets.containsKey(record.id)) continue;
+      final box = _targets[record.id];
+      if (box == null) {
+        placed.add(_Pin(record, number, _storedRect(record), detached: true));
+      } else if (box.attached && box.hasSize) {
+        final rect = box.localToGlobal(Offset.zero) & box.size;
+        // A widget scrolled out of sight takes its pin with it.
+        placed.add(_Pin(record, number, rect, hidden: !rect.overlaps(screen)));
+      } else {
+        // Its widget went (a list's row scrolled away and built again): the pin waits where it was until it is found.
+        final last = before[record.id];
+        placed.add(_Pin(record, number, last?.rect ?? _storedRect(record), hidden: true));
+      }
     }
     // Only a change is drawn: setting the same pins again would draw a frame, and so look for them again.
-    if (_samePins(placed, _pins)) return;
-    setState(() => _pins = placed);
+    if (!_samePins(placed, _pins.value)) _pins.value = placed;
   }
 
   static bool _samePins(List<_Pin> a, List<_Pin> b) {
@@ -623,7 +710,11 @@ class _NotatoState extends State<Notato> with WidgetsBindingObserver implements 
     for (var i = 0; i < a.length; i++) {
       final x = a[i];
       final y = b[i];
-      if (!identical(x.record, y.record) || x.number != y.number || x.rect != y.rect || x.detached != y.detached) {
+      if (!identical(x.record, y.record) ||
+          x.number != y.number ||
+          x.rect != y.rect ||
+          x.detached != y.detached ||
+          x.hidden != y.hidden) {
         return false;
       }
     }
@@ -631,6 +722,15 @@ class _NotatoState extends State<Notato> with WidgetsBindingObserver implements 
   }
 
   // ---- what Notato draws -------------------------------------------------------------------------------------------
+
+  /// Made once (again only for another platform, which a theme takes when it is made): a theme from a seed colour is
+  /// dear to make, and the overlay is built often.
+  static ThemeData? _made;
+  static ThemeData get _theme {
+    final made = _made;
+    if (made != null && made.platform == defaultTargetPlatform) return made;
+    return _made = ThemeData(colorSchemeSeed: Brand.accent, useMaterial3: true);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -688,7 +788,7 @@ class _NotatoState extends State<Notato> with WidgetsBindingObserver implements 
                 DefaultWidgetsLocalizations.delegate,
               ],
               child: Theme(
-                data: ThemeData(colorSchemeSeed: Brand.accent, useMaterial3: true),
+                data: _theme,
                 child: Directionality(
                   textDirection: TextDirection.ltr,
                   child: Material(
@@ -705,29 +805,28 @@ class _NotatoState extends State<Notato> with WidgetsBindingObserver implements 
   }
 
   Widget _buildUi(BuildContext context) {
-    if (!runtime.isEnabled) return const SizedBox.shrink();
+    final on = runtime.isEnabled;
     final media = MediaQuery.of(context);
     final size = media.size;
     final rootBox = _rootKey.currentContext?.findRenderObject();
     Rect toLocal(Rect global) =>
         rootBox is RenderBox && rootBox.attached ? rootBox.globalToLocal(global.topLeft) & global.size : global;
-    final hiding = _capturing != null;
-    final selection = _selection;
+    final selection = on ? _selection : null;
     final screen = _drawnRoute = route();
     final here = runtime.notesOn(screen);
-    final sheet = _sheet;
-    final spots = placePins([for (final p in _pins) toLocal(p.rect)], size.width, top: media.padding.top + 4);
+    final sheet = on ? _sheet : null;
     final problem = switch (runtime.connection) {
       NotatoConnection.connecting => Brand.connecting,
       NotatoConnection.offline || NotatoConnection.refused => Brand.offline,
       _ => null,
     };
-    final composerAtTop = selection != null && toLocal(selection.picked.rect).center.dy > size.height / 2;
+    final top = media.padding.top + 4;
+    final toast = _toast;
 
     return Stack(
       children: [
         // Takes the taps that pick while annotating; Notato's own controls sit above it.
-        if (runtime.isAnnotating && sheet == null)
+        if (on && runtime.isAnnotating && sheet == null)
           Positioned.fill(
             child: GestureDetector(
               key: const ValueKey('NotatoPicker'),
@@ -735,97 +834,133 @@ class _NotatoState extends State<Notato> with WidgetsBindingObserver implements 
               onTapUp: (d) => _pickAt(d.globalPosition),
             ),
           ),
-        if (!hiding) ...[
-          for (final (i, pin) in _pins.indexed)
-            if (i < spots.length)
-              Positioned(
-                left: spots[i].dx,
-                top: spots[i].dy,
-                child: Opacity(
-                  opacity: pin.detached ? 0.55 : 1,
-                  child: Semantics(
-                    button: true,
-                    label: 'Note ${pin.number}, ${pin.record.status.replaceAll('_', ' ')}',
-                    child: GestureDetector(
-                      onTap: () => _open(PinSheetKind(pin.record.id)),
-                      child: PinDot(number: pin.number, status: pin.record.status, pending: pin.record.pending),
+        if (on)
+          Positioned.fill(
+            child: ValueListenableBuilder(
+              valueListenable: _pins,
+              builder: (context, pins, _) {
+                final spots = placePins([for (final p in pins) toLocal(p.rect)], size.width, top: top);
+                return Stack(
+                  children: [
+                    for (final (i, pin) in pins.indexed)
+                      Positioned(
+                        key: ValueKey(pin.record.id),
+                        left: spots[i].dx,
+                        top: spots[i].dy,
+                        child: _PinMark(pin: pin, open: () => _open(PinSheetKind(pin.record.id))),
+                      ),
+                  ],
+                );
+              },
+            ),
+          ),
+        Positioned.fill(
+          child: Presence(
+            child: on && runtime.isAnnotating && selection == null && sheet == null
+                ? Align(
+                    alignment: Alignment.topCenter,
+                    child: Padding(
+                      padding: EdgeInsets.fromLTRB(16, top, 16, 0),
+                      child: HintBar(done: _cancel),
+                    ),
+                  )
+                : null,
+            builder: (context, shown, child) => fadeSlide(context, shown, child, from: const Offset(0, -0.4)),
+          ),
+        ),
+        Toolbar(
+          shown: on && runtime.isToolbarVisible && selection == null,
+          insets: media.padding,
+          place: (x: runtime.toolbar.x, y: runtime.toolbar.y),
+          corner: runtime.configuration?.toolbarPosition ?? NotatoPosition.bottomRight,
+          folded: runtime.toolbar.folded,
+          annotating: runtime.isAnnotating,
+          count: here.length,
+          problem: problem,
+          problemLabel: runtime.describeConnection(),
+          onAnnotate: () => runtime.isAnnotating ? _cancel() : _startAnnotating(),
+          onMenu: () => _open(const MenuSheetKind()),
+          onFold: runtime.setFolded,
+          onMoved: runtime.placeToolbar,
+        ),
+        Positioned.fill(
+          child: Presence(
+            child: selection == null
+                ? null
+                : AnimatedAlign(
+                    // Away from what it is about.
+                    alignment: toLocal(selection.picked.rect).center.dy > size.height / 2
+                        ? Alignment.topCenter
+                        : Alignment.bottomCenter,
+                    duration: enter,
+                    curve: enterCurve,
+                    child: Padding(
+                      padding: EdgeInsets.fromLTRB(
+                        10,
+                        media.padding.top + 8,
+                        10,
+                        math.max(media.viewInsets.bottom, media.padding.bottom) + 10,
+                      ),
+                      child: Composer(
+                        key: ValueKey(selection.id),
+                        title: _title(selection.picked),
+                        subtitle: _subtitle(selection.picked),
+                        screenshotsOff: !runtime.screenshotsOn,
+                        onParent: _parent,
+                        onCancel: _cancel,
+                        onSend: _send,
+                      ),
                     ),
                   ),
-                ),
-              ),
-          if (runtime.isAnnotating && selection == null && sheet == null)
-            Positioned(
-              top: media.padding.top + 4,
-              left: 16,
-              right: 16,
-              child: Center(child: HintBar(done: _cancel)),
-            ),
-          if (runtime.isToolbarVisible && selection == null)
-            Toolbar(
-              room: size,
-              insets: media.padding,
-              place: (x: runtime.toolbar.x, y: runtime.toolbar.y),
-              corner: runtime.configuration?.toolbarPosition ?? NotatoPosition.bottomRight,
-              folded: runtime.toolbar.folded,
-              annotating: runtime.isAnnotating,
-              count: here.length,
-              problem: problem,
-              problemLabel: runtime.describeConnection(),
-              onAnnotate: () => runtime.isAnnotating ? _cancel() : _startAnnotating(),
-              onMenu: () => _open(const MenuSheetKind()),
-              onFold: runtime.setFolded,
-              onMoved: runtime.placeToolbar,
-            ),
-          if (selection != null)
-            Positioned(
-              left: 10,
-              right: 10,
-              top: composerAtTop ? media.padding.top + 8 : null,
-              bottom: composerAtTop ? null : math.max(media.viewInsets.bottom, media.padding.bottom) + 10,
-              child: Center(
-                child: Composer(
-                  key: ValueKey(selection.id),
-                  title: _title(selection.picked),
-                  subtitle: _subtitle(selection.picked),
-                  screenshotsOff: !runtime.screenshotsOn,
-                  onParent: _parent,
-                  onCancel: _cancel,
-                  onSend: _send,
-                ),
-              ),
-            ),
-          if (sheet != null)
-            Positioned.fill(
-              child: BottomSheetFrame(close: () => _open(null), child: _sheetFor(sheet, here)),
-            ),
-          if (_toast != null)
-            Positioned(
-              top: media.padding.top + 4,
-              left: 16,
-              right: 16,
-              child: IgnorePointer(
-                child: Center(
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 9),
-                    decoration: BoxDecoration(
-                      color: Bar.bar,
-                      borderRadius: BorderRadius.circular(999),
-                      border: Border.all(color: Bar.line),
-                      boxShadow: const [BoxShadow(color: Color(0x47000000), blurRadius: 12, offset: Offset(0, 4))],
+            builder: (context, shown, child) => fadeSlide(context, shown, child, from: const Offset(0, 0.08)),
+          ),
+        ),
+        Positioned.fill(
+          child: BottomSheetFrame(
+            close: () => _open(null),
+            child: sheet == null ? null : KeyedSubtree(key: _sheetKey(sheet), child: _sheetFor(sheet, here)),
+          ),
+        ),
+        Positioned.fill(
+          child: Presence(
+            child: on && toast != null
+                ? Align(
+                    alignment: Alignment.topCenter,
+                    child: Padding(
+                      padding: EdgeInsets.fromLTRB(16, top, 16, 0),
+                      child: IgnorePointer(
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 9),
+                          decoration: BoxDecoration(
+                            color: Bar.bar,
+                            borderRadius: BorderRadius.circular(999),
+                            border: Border.all(color: Bar.line),
+                            boxShadow: const [
+                              BoxShadow(color: Color(0x47000000), blurRadius: 12, offset: Offset(0, 4)),
+                            ],
+                          ),
+                          child: Text(
+                            toast,
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600, color: Bar.text),
+                          ),
+                        ),
+                      ),
                     ),
-                    child: Text(
-                      _toast!,
-                      textAlign: TextAlign.center,
-                      style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600, color: Bar.text),
-                    ),
-                  ),
-                ),
-              ),
-            ),
-        ],
+                  )
+                : null,
+            builder: (context, shown, child) => fadeSlide(context, shown, child, from: const Offset(0, -0.4)),
+          ),
+        ),
       ],
     );
   }
+
+  /// Which sheet is open, for the sheet frame to fade one into another: a note's card is told from another's.
+  static Key _sheetKey(Sheet sheet) => switch (sheet) {
+    PinSheetKind(:final id) => ValueKey(('pin', id)),
+    _ => ValueKey(sheet.runtimeType),
+  };
 
   Widget _sheetFor(Sheet sheet, ScreenNotes here) => switch (sheet) {
     MenuSheetKind() => MenuSheet(
@@ -877,6 +1012,42 @@ class _NotatoState extends State<Notato> with WidgetsBindingObserver implements 
     final where = source == null ? null : '${(source['file'] as String).split('/').last}:${source['line']}';
     final parts = [?said, ?where];
     return parts.isEmpty ? null : parts.join(' · ');
+  }
+}
+
+/// A pin over the app: it pops in when it first appears, and fades while its widget is out of sight or not found.
+class _PinMark extends StatelessWidget {
+  const _PinMark({required this.pin, required this.open});
+  final _Pin pin;
+  final VoidCallback open;
+
+  @override
+  Widget build(BuildContext context) {
+    final still = reducedMotion(context);
+    return IgnorePointer(
+      ignoring: pin.hidden,
+      child: ExcludeSemantics(
+        excluding: pin.hidden,
+        child: AnimatedOpacity(
+          opacity: pin.hidden ? 0 : (pin.detached ? 0.55 : 1),
+          duration: pin.hidden ? leave : enter,
+          child: TweenAnimationBuilder<double>(
+            tween: Tween(begin: 0, end: 1),
+            duration: enter,
+            curve: Curves.easeOutBack,
+            builder: (context, t, child) => Transform.scale(scale: still ? 1 : 0.4 + 0.6 * t, child: child),
+            child: Semantics(
+              button: true,
+              label: 'Note ${pin.number}, ${pin.record.status.replaceAll('_', ' ')}',
+              child: GestureDetector(
+                onTap: open,
+                child: PinDot(number: pin.number, status: pin.record.status, pending: pin.record.pending),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
   }
 }
 

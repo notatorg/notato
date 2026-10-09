@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../config.dart';
+import 'motion.dart';
 import 'parts.dart';
 import 'theme.dart';
 
@@ -11,11 +12,12 @@ const toolbarHeight = 54.0;
 const _margin = 12.0;
 
 /// The toolbar: grip, Annotate with the count of notes on this screen, ⋯ and the chevron that folds it into a round
-/// button with the potato. The whole bar drags; where it is left is kept.
+/// button with the potato. The whole bar drags; where it is left is kept. Folding, it shrinks towards the edge it is
+/// held to; hidden ([shown] false), it fades away and comes back where it was.
 class Toolbar extends StatefulWidget {
   const Toolbar({
     super.key,
-    required this.room,
+    required this.shown,
     required this.insets,
     required this.place,
     required this.corner,
@@ -30,7 +32,7 @@ class Toolbar extends StatefulWidget {
     required this.onMoved,
   });
 
-  final Size room;
+  final bool shown;
   final EdgeInsets insets;
   final ({double? x, double? y}) place;
   final NotatoPosition corner;
@@ -52,36 +54,45 @@ class Toolbar extends StatefulWidget {
 
 class _ToolbarState extends State<Toolbar> {
   Offset _drag = Offset.zero;
-  double _openWidth = 252;
-  final _measure = GlobalKey();
+  final _bar = GlobalKey();
+
+  /// Faded away entirely: nothing of it is built until it is shown again.
+  late var _gone = !widget.shown;
 
   String _count(int n) => n > 99 ? '99+' : '$n';
 
   @override
+  void didUpdateWidget(Toolbar old) {
+    super.didUpdateWidget(old);
+    if (widget.shown) _gone = false;
+  }
+
+  /// Where it was let go of, as a fraction of the room it has across and down.
+  void _drop(Size room, double fx, double fy) {
+    final bar = (_bar.currentContext?.findRenderObject() as RenderBox?)?.size ?? Size.zero;
+    final spanX = room.width - bar.width;
+    final spanY = room.height - bar.height;
+    final x = spanX <= 0 ? 0.0 : ((fx * spanX + _drag.dx) / spanX).clamp(0.0, 1.0);
+    final y = spanY <= 0 ? 0.0 : ((fy * spanY + _drag.dy) / spanY).clamp(0.0, 1.0);
+    // The new place is drawn in the same frame the drag is let go of: it never jumps back first.
+    setState(() => _drag = Offset.zero);
+    widget.onMoved(x, y);
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final width = widget.folded ? toolbarHeight : _openWidth;
-    final top = widget.insets.top + 8;
-    final spanX = (widget.room.width - width - _margin * 2).clamp(0.0, double.infinity);
-    final spanY = (widget.room.height - top - widget.insets.bottom - 8 - toolbarHeight).clamp(0.0, double.infinity);
+    if (_gone) return const SizedBox.shrink();
     final corner = widget.corner;
     final fx =
         widget.place.x ?? (corner == NotatoPosition.bottomRight || corner == NotatoPosition.topRight ? 1.0 : 0.0);
     final fy =
         widget.place.y ?? (corner == NotatoPosition.bottomRight || corner == NotatoPosition.bottomLeft ? 1.0 : 0.0);
-    final left = _margin + fx * spanX;
-    final y = top + fy * spanY;
     final heldRight = fx > 0.5;
-
-    // After the open bar is laid out, keep its width: it places the bar and the folded button on the same edge.
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      final box = _measure.currentContext?.findRenderObject() as RenderBox?;
-      if (box != null && box.hasSize && (box.size.width - _openWidth).abs() > 1 && mounted) {
-        setState(() => _openWidth = box.size.width);
-      }
-    });
+    final still = reducedMotion(context);
 
     final bar = AnimatedContainer(
-      duration: const Duration(milliseconds: 160),
+      duration: enter,
+      curve: enterCurve,
       height: toolbarHeight,
       decoration: BoxDecoration(
         color: Bar.bar,
@@ -89,21 +100,58 @@ class _ToolbarState extends State<Toolbar> {
         border: Border.all(color: Bar.line),
         boxShadow: const [BoxShadow(color: Color(0x730F1114), blurRadius: 14, offset: Offset(0, 10))],
       ),
-      child: widget.folded ? _folded() : _open(heldRight),
+      // Folding and unfolding, the bar's width follows its contents, held to its edge.
+      child: AnimatedSize(
+        duration: enter,
+        curve: enterCurve,
+        alignment: heldRight ? Alignment.centerRight : Alignment.centerLeft,
+        child: AnimatedSwitcher(
+          duration: const Duration(milliseconds: 160),
+          layoutBuilder: (current, _) => current ?? const SizedBox.shrink(),
+          child: widget.folded
+              ? KeyedSubtree(key: const ValueKey('folded'), child: _folded())
+              : KeyedSubtree(key: const ValueKey('open'), child: _open(heldRight)),
+        ),
+      ),
     );
 
+    // Placed by alignment in the room it has: the same point of the bar stays put however wide it grows.
     return Positioned(
-      left: left + _drag.dx,
-      top: y + _drag.dy,
-      child: GestureDetector(
-        onPanUpdate: (d) => setState(() => _drag += d.delta),
-        onPanEnd: (_) {
-          final x = spanX == 0 ? 0.0 : ((left + _drag.dx - _margin) / spanX).clamp(0.0, 1.0);
-          final yy = spanY == 0 ? 0.0 : ((y + _drag.dy - top) / spanY).clamp(0.0, 1.0);
-          setState(() => _drag = Offset.zero);
-          widget.onMoved(x, yy);
-        },
-        child: bar,
+      left: _margin,
+      right: _margin,
+      top: widget.insets.top + 8,
+      bottom: widget.insets.bottom + 8,
+      child: LayoutBuilder(
+        builder: (context, room) => Align(
+          alignment: Alignment(fx * 2 - 1, fy * 2 - 1),
+          child: IgnorePointer(
+            ignoring: !widget.shown,
+            child: ExcludeSemantics(
+              excluding: !widget.shown,
+              child: AnimatedOpacity(
+                opacity: widget.shown ? 1 : 0,
+                duration: widget.shown ? enter : leave,
+                curve: widget.shown ? enterCurve : leaveCurve,
+                onEnd: () {
+                  if (!widget.shown && mounted) setState(() => _gone = true);
+                },
+                child: AnimatedScale(
+                  scale: widget.shown || still ? 1 : 0.92,
+                  duration: widget.shown ? enter : leave,
+                  curve: widget.shown ? enterCurve : leaveCurve,
+                  child: Transform.translate(
+                    offset: _drag,
+                    child: GestureDetector(
+                      onPanUpdate: (d) => setState(() => _drag += d.delta),
+                      onPanEnd: (_) => _drop(room.biggest, fx, fy),
+                      child: KeyedSubtree(key: _bar, child: bar),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
       ),
     );
   }
@@ -182,7 +230,6 @@ class _ToolbarState extends State<Toolbar> {
   Widget _open(bool heldRight) {
     final on = widget.annotating;
     return Padding(
-      key: _measure,
       padding: const EdgeInsets.all(4),
       child: Row(
         mainAxisSize: MainAxisSize.min,

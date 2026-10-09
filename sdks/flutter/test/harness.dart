@@ -151,9 +151,9 @@ Future<T> drive<T>(WidgetTester tester, Future<T> future) async {
   return value as T;
 }
 
-/// Lets Notato catch up: a few frames, and the timers and network calls they start.
+/// Lets Notato catch up: the frames its pieces take to come and go, and the timers and network calls they start.
 Future<void> settle(WidgetTester tester) async {
-  for (var i = 0; i < 6; i++) {
+  for (var i = 0; i < 18; i++) {
     await tester.pump(const Duration(milliseconds: 20));
   }
 }

@@ -5,6 +5,7 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 
 import 'icons.dart';
+import 'motion.dart';
 import 'theme.dart';
 
 /// The icons' PNGs, decoded the first time each is drawn.
@@ -45,93 +46,183 @@ class Potato extends StatelessWidget {
   );
 }
 
-/// A floating bottom sheet, 8 points off the screen's edges, with a grabber, over a scrim. Pulled down far enough by
-/// its grabber, or with the scrim tapped, it closes.
+/// A floating bottom sheet, 8 points off the screen's edges, with a grabber, over a scrim. It slides up as it opens and
+/// down as it closes ([child] null), and takes another sheet's height smoothly, the one fading into the other. Pulled
+/// down far enough by its grabber, or with the scrim tapped, it closes; let go of sooner, it springs back.
 class BottomSheetFrame extends StatefulWidget {
   const BottomSheetFrame({super.key, required this.close, required this.child});
   final VoidCallback close;
-  final Widget child;
+
+  /// The sheet, keyed by which it is (another key fades into it), or null for none.
+  final Widget? child;
 
   @override
   State<BottomSheetFrame> createState() => _BottomSheetFrameState();
 }
 
-class _BottomSheetFrameState extends State<BottomSheetFrame> {
-  double _pull = 0;
+class _BottomSheetFrameState extends State<BottomSheetFrame> with TickerProviderStateMixin {
+  late final _shown = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 300),
+    reverseDuration: leave,
+  );
+  late final _slide = CurvedAnimation(parent: _shown, curve: enterCurve, reverseCurve: leaveCurve);
+
+  /// How far the grabber has pulled it down.
+  late final _pull = AnimationController.unbounded(vsync: this);
+
+  /// The sheet shown, kept while it slides away.
+  Widget? _last;
+
+  @override
+  void initState() {
+    super.initState();
+    _last = widget.child;
+    if (_last != null) _shown.forward();
+    _shown.addStatusListener((status) {
+      if (status != AnimationStatus.dismissed || widget.child != null || !mounted) return;
+      _pull.value = 0;
+      setState(() => _last = null);
+    });
+  }
+
+  @override
+  void didUpdateWidget(BottomSheetFrame old) {
+    super.didUpdateWidget(old);
+    if (widget.child != null) {
+      _last = widget.child;
+      _shown.forward();
+    } else {
+      _shown.reverse();
+    }
+  }
+
+  @override
+  void dispose() {
+    _slide.dispose();
+    _shown.dispose();
+    _pull.dispose();
+    super.dispose();
+  }
+
+  void _let(DragEndDetails d) {
+    if (_pull.value > 90 || (d.primaryVelocity ?? 0) > 900) {
+      widget.close();
+    } else {
+      _pull.animateTo(0, duration: const Duration(milliseconds: 220), curve: enterCurve);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
+    final last = _last;
+    if (last == null) return const SizedBox.shrink();
     final p = Palette.of(context);
     final media = MediaQuery.of(context);
-    return Stack(
-      children: [
-        Positioned.fill(
-          child: Semantics(
-            label: 'Close',
-            button: true,
-            child: GestureDetector(
-              onTap: widget.close,
-              child: const ColoredBox(color: Brand.scrim),
-            ),
-          ),
+    final still = reducedMotion(context);
+    // All the way off the screen: its own height, the gap under it, the keyboard, and its shadow.
+    final below = 8 + media.viewInsets.bottom + 24;
+    final sheet = ConstrainedBox(
+      constraints: const BoxConstraints(maxWidth: 480),
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: p.background,
+          borderRadius: BorderRadius.circular(34),
+          boxShadow: const [BoxShadow(color: Color(0x40000000), blurRadius: 20, offset: Offset(0, -6))],
         ),
-        Positioned(
-          left: 8,
-          right: 8,
-          bottom: 8 + media.viewInsets.bottom,
-          top: media.padding.top + 8,
-          child: Align(
-            alignment: Alignment.bottomCenter,
-            child: Transform.translate(
-              offset: Offset(0, _pull),
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 480),
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    color: p.background,
-                    borderRadius: BorderRadius.circular(34),
-                    boxShadow: const [BoxShadow(color: Color(0x40000000), blurRadius: 20, offset: Offset(0, -6))],
-                  ),
+        child: Padding(
+          padding: EdgeInsets.fromLTRB(18, 0, 18, media.viewInsets.bottom > 0 ? 16 : 24),
+          child: DefaultTextStyle(
+            style: TextStyle(color: p.text, fontSize: 15),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onVerticalDragStart: (_) => _pull.stop(),
+                  onVerticalDragUpdate: (d) => _pull.value = (_pull.value + d.delta.dy).clamp(0, 600),
+                  onVerticalDragEnd: _let,
                   child: Padding(
-                    padding: EdgeInsets.fromLTRB(18, 0, 18, media.viewInsets.bottom > 0 ? 16 : 24),
-                    child: DefaultTextStyle(
-                      style: TextStyle(color: p.text, fontSize: 15),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          GestureDetector(
-                            behavior: HitTestBehavior.opaque,
-                            onVerticalDragUpdate: (d) => setState(() => _pull = (_pull + d.delta.dy).clamp(0, 600)),
-                            onVerticalDragEnd: (d) {
-                              if (_pull > 90 || (d.primaryVelocity ?? 0) > 900) {
-                                widget.close();
-                              } else {
-                                setState(() => _pull = 0);
-                              }
-                            },
-                            child: Padding(
-                              padding: const EdgeInsets.only(top: 10, bottom: 10),
-                              child: Center(
-                                child: Container(
-                                  width: 36,
-                                  height: 5,
-                                  decoration: BoxDecoration(color: p.line, borderRadius: BorderRadius.circular(3)),
-                                ),
-                              ),
-                            ),
-                          ),
-                          Flexible(child: widget.child),
-                        ],
+                    padding: const EdgeInsets.only(top: 10, bottom: 10),
+                    child: Center(
+                      child: Container(
+                        width: 36,
+                        height: 5,
+                        decoration: BoxDecoration(color: p.line, borderRadius: BorderRadius.circular(3)),
                       ),
                     ),
                   ),
                 ),
-              ),
+                Flexible(
+                  child: AnimatedSize(
+                    duration: enter,
+                    curve: enterCurve,
+                    alignment: Alignment.topCenter,
+                    child: AnimatedSwitcher(
+                      duration: const Duration(milliseconds: 200),
+                      reverseDuration: const Duration(milliseconds: 90),
+                      layoutBuilder: (current, previous) =>
+                          Stack(alignment: Alignment.topCenter, children: [...previous, ?current]),
+                      child: last,
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
         ),
-      ],
+      ),
+    );
+    final leaving = widget.child == null;
+    return ExcludeFocus(
+      excluding: leaving,
+      child: IgnorePointer(
+        ignoring: leaving,
+        child: Stack(
+          children: [
+            Positioned.fill(
+              child: FadeTransition(
+                opacity: _shown,
+                child: Semantics(
+                  label: 'Close',
+                  button: true,
+                  child: GestureDetector(
+                    onTap: widget.close,
+                    child: const ColoredBox(color: Brand.scrim),
+                  ),
+                ),
+              ),
+            ),
+            Positioned(
+              left: 8,
+              right: 8,
+              bottom: 8 + media.viewInsets.bottom,
+              top: media.padding.top + 8,
+              child: Align(
+                alignment: Alignment.bottomCenter,
+                child: AnimatedBuilder(
+                  animation: Listenable.merge([_slide, _pull]),
+                  builder: (context, sheet) {
+                    final away = 1 - _slide.value;
+                    if (still) {
+                      return Opacity(
+                        opacity: _slide.value,
+                        child: Transform.translate(offset: Offset(0, _pull.value), child: sheet),
+                      );
+                    }
+                    return Transform.translate(
+                      offset: Offset(0, _pull.value + below * away),
+                      child: FractionalTranslation(translation: Offset(0, away), child: sheet),
+                    );
+                  },
+                  child: sheet,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

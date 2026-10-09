@@ -66,7 +66,7 @@ List<TreeElement> elementsUnder(Element root, {bool maskInputs = false, int limi
     final (element, around) = stack.removeLast();
     final mark = markBelow(element, around.mark);
     final box = element.renderObject;
-    if (box is RenderBox && box.attached && box.hasSize && isLocal(element)) {
+    if (box is RenderBox && box.attached && box.hasSize && isLocal(element, exact: false)) {
       final components = around.components?.items.take(maxPath).toList() ?? const <String>[];
       out.add(
         TreeElement(
@@ -83,7 +83,7 @@ List<TreeElement> elementsUnder(Element root, {bool maskInputs = false, int limi
     }
     // What its children see: a widget class of yours starts a new scope; anything else is part of the current one.
     final _Around below;
-    if (isAppComponent(element)) {
+    if (isAppComponent(element, exact: false)) {
       final name = typeName(element.widget);
       final top = around.components;
       below = (
