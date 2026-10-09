@@ -3,7 +3,9 @@
 //
 //   bun scripts/version.ts                  check that every manifest says the root's version
 //   bun scripts/version.ts 0.3.0            set it everywhere (then commit, and tag v0.3.0)
-//   bun scripts/version.ts --tag v0.3.0     check, and that the tag is this version (the release workflow does this)
+//   bun scripts/version.ts --tag v0.3.0     check, and that the tag is this version and the changelogs have it
+//                                           (the release workflow does this)
+//   bun scripts/version.ts --notes v0.3.0   print the version's CHANGELOG.md entry (the GitHub release's notes)
 //
 // A new SDK adds where its version is written to SDK_STAMPS (an npm package under sdks/ is found on its own).
 
@@ -109,20 +111,58 @@ function check(): string[] {
         .map((s) => `${s.file} says ${s.version ?? "nothing"}, not ${want}`);
 }
 
+/** The changelogs every release has an entry in: everything's, and the Flutter package's, which pub.dev shows. */
+export const CHANGELOGS = ["CHANGELOG.md", "sdks/flutter/CHANGELOG.md"];
+
+/** A version's entry in a changelog: what follows its `## 0.3.0` heading, up to the next one. Null when it has none. */
+export function changelogEntry(file: string, version: string): string | null {
+    const lines = readFileSync(join(ROOT, file), "utf8").split("\n");
+    const start = lines.findIndex((line) => line.trim() === `## ${version}`);
+    if (start < 0) return null;
+    const end = lines.findIndex((line, i) => i > start && line.startsWith("## "));
+    return lines
+        .slice(start + 1, end < 0 ? undefined : end)
+        .join("\n")
+        .trim();
+}
+
+/** The changelogs with no entry for this version. */
+export function changelogsWithout(version: string): string[] {
+    return CHANGELOGS.filter((file) => !changelogEntry(file, version));
+}
+
 if (import.meta.main) {
     const args = process.argv.slice(2);
-    const tagAt = args.indexOf("--tag");
-    const tag = tagAt >= 0 ? args[tagAt + 1] : undefined;
-    const asked = args.find((a, i) => !a.startsWith("--") && (tagAt < 0 || i !== tagAt + 1));
+    const flagValue = (flag: string) =>
+        args.includes(flag) ? args[args.indexOf(flag) + 1] : undefined;
+    // `--notes 0.3.0` prints that version's entry in CHANGELOG.md: the top of its GitHub release.
+    const notes = flagValue("--notes");
+    if (notes !== undefined) {
+        const entry = changelogEntry("CHANGELOG.md", notes.replace(/^v/, ""));
+        if (!entry) {
+            console.error(`✗ CHANGELOG.md has no entry for ${notes}`);
+            process.exit(1);
+        }
+        console.log(entry);
+        process.exit(0);
+    }
+    const tag = flagValue("--tag");
+    const asked = args.find((a, i) => !a.startsWith("--") && args[i - 1] !== "--tag");
     if (asked) {
         if (!SEMVER.test(asked)) throw new Error(`"${asked}" is not a version like 0.3.0`);
         setVersion(asked);
         console.log(`every Notato package is now ${asked}; commit, then tag v${asked}`);
+        for (const file of changelogsWithout(asked))
+            console.log(`  ${file} needs a "## ${asked}" entry before the tag`);
     }
     const wrong = check();
     const version = currentVersion();
     if (tag !== undefined && tag !== `v${version}`)
         wrong.push(`the tag ${tag} is not v${version}, the version in the repository`);
+    // A release says what is in it: its tag is refused until each changelog has an entry for it.
+    if (tag !== undefined)
+        for (const file of changelogsWithout(version))
+            wrong.push(`${file} has no "## ${version}" entry`);
     if (wrong.length) {
         for (const line of wrong) console.error(`✗ ${line}`);
         console.error("run `bun scripts/version.ts <version>` to set every one");

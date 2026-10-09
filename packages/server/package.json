@@ -1,6 +1,6 @@
 {
     "name": "@notato/server",
-    "version": "0.1.0",
+    "version": "0.1.1",
     "description": "The Notato server: the HTTP API apps send notes to, the MCP tools coding agents work from, the board's event streams and webhooks, on Bun and SQLite.",
     "keywords": [
         "notato",

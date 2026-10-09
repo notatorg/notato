@@ -13,7 +13,7 @@ npx notato dev           # the server your agent reads, on http://localhost:4747
 Add the package: in Xcode, File › Add Package Dependencies… with `https://github.com/notatorg/notato`, or in a `Package.swift`:
 
 ```swift
-.package(url: "https://github.com/notatorg/notato", from: "0.1.0"),
+.package(url: "https://github.com/notatorg/notato", from: "0.1.1"),
 ```
 
 with `.product(name: "Notato", package: "notato")` in your target's dependencies. Then start it as early as the app starts:

@@ -1,6 +1,6 @@
 {
     "name": "@notato/react-native",
-    "version": "0.1.0",
+    "version": "0.1.1",
     "description": "Notato for React Native: wrap your app in <Notato>, and people can pin notes to its views for your coding agent, with a screenshot and the component.",
     "keywords": [
         "notato",

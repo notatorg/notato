@@ -6,12 +6,15 @@ Everything is released together, at one version: the `notato` command and server
 
 ```bash
 bun scripts/version.ts 0.3.0     # writes 0.3.0 into every manifest and version constant
+# add a "## 0.3.0" entry to CHANGELOG.md and to sdks/flutter/CHANGELOG.md (pub.dev shows that one)
 git commit -am "Release 0.3.0"
 git tag v0.3.0
 git push origin main v0.3.0
 ```
 
-The tag starts [`release.yml`](.github/workflows/release.yml). It checks that the tag is the version every package says, builds and smoke-tests the binary on each platform, then builds every package. Each registry only gets an upload when its switch is on, so with every switch off a tag is a complete dry run: `npm publish --dry-run`, the Docker image built but not pushed, the Maven bundle and the NuGet package uploaded as workflow artifacts, and the website built.
+Every release has a changelog entry: [CHANGELOG.md](CHANGELOG.md) for everything, and the Flutter package's own for pub.dev. The tests and the tag both fail without them, and the CHANGELOG.md entry is the top of the GitHub release's notes, above GitHub's list of what was merged.
+
+The tag starts [`release.yml`](.github/workflows/release.yml). It checks that the tag is the version every package says and that the changelogs have it, builds and smoke-tests the binary on each platform, then builds every package. Each registry only gets an upload when its switch is on, so with every switch off a tag is a complete dry run: `npm publish --dry-run`, the Docker image built but not pushed, the Maven bundle and the NuGet package uploaded as workflow artifacts, and the website built.
 
 A pre-release (`0.3.0-rc.1`) works the same way: npm gets it under the `next` tag and Docker does not move `latest`.
 

@@ -5,7 +5,7 @@ import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { PAGES } from "../site/docs.ts";
 import { libraries, REPO_URL, ROOT } from "./repo.ts";
-import { currentVersion, readStamps, SDK_STAMPS } from "./version.ts";
+import { changelogsWithout, currentVersion, readStamps, SDK_STAMPS } from "./version.ts";
 
 const read = (file: string) => readFileSync(join(ROOT, file), "utf8");
 const dirs = (parent: string) =>
@@ -74,6 +74,10 @@ describe("publishing", () => {
     it("has one version everywhere", () => {
         const want = currentVersion();
         for (const stamp of readStamps()) expect(stamp.version, stamp.file).toBe(want);
+    });
+
+    it("says what is in the version in every changelog", () => {
+        expect(changelogsWithout(currentVersion())).toEqual([]);
     });
 
     it("names the same repository in every registry's metadata, and no placeholder anywhere", () => {

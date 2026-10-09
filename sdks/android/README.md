@@ -18,7 +18,7 @@ Add the artifacts from Maven Central to debug builds only, so release builds shi
 
 ```kotlin
 dependencies {
-    debugImplementation("dev.notato:notato-compose:0.1.0")   // or notato-android for a Views-only app
+    debugImplementation("dev.notato:notato-compose:0.1.1")   // or notato-android for a Views-only app
 }
 ```
 
