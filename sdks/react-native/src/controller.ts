@@ -276,11 +276,21 @@ export class NotatoController {
             ...(this.server ? { server: this.server } : {}),
             ...(this.authorName ? { author: this.authorName } : {}),
             screenshots: this.screenshotsWanted,
-            toolbar: {
-                ...(this.settings.toolbarX !== undefined ? { x: this.settings.toolbarX } : {}),
-                ...(this.settings.toolbarY !== undefined ? { y: this.settings.toolbarY } : {}),
-                folded: this.settings.folded ?? false,
-            },
+            toolbar: this.toolbarState(),
+        };
+    }
+
+    /** Where the toolbar is: the same object as last time while it has not moved, so what draws it can skip a draw. */
+    private toolbarState(): NotatoState["toolbar"] {
+        const s = this.settings;
+        const last = (this.snapshot as NotatoState | undefined)?.toolbar;
+        const folded = s.folded ?? false;
+        if (last && last.x === s.toolbarX && last.y === s.toolbarY && last.folded === folded)
+            return last;
+        return {
+            ...(s.toolbarX !== undefined ? { x: s.toolbarX } : {}),
+            ...(s.toolbarY !== undefined ? { y: s.toolbarY } : {}),
+            folded,
         };
     }
 
@@ -571,8 +581,10 @@ export class NotatoController {
         this.emit();
     }
 
-    setFolded(folded: boolean): void {
+    /** Folds or opens the toolbar; `x` moves it across at the same time (it keeps the edge it is held by). */
+    setFolded(folded: boolean, x?: number): void {
         this.settings.folded = folded;
+        if (x !== undefined) this.settings.toolbarX = Math.min(1, Math.max(0, x));
         this.rememberSettings();
         this.emit();
     }

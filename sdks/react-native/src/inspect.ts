@@ -4,6 +4,7 @@
 import type { Frame, Inspected } from "./identity.ts";
 import {
     elementsUnder,
+    elementWhere,
     type Fiber,
     fiberOf,
     instanceOf,
@@ -59,6 +60,8 @@ const renderers = (): Renderer[] => {
 
 let commits = 0;
 let counting: DevToolsHook["onCommitFiberRoot"];
+/** Who is told of each commit, with the root it was of. */
+const listeners = new Set<(root: unknown) => void>();
 
 /**
  * How many times React has committed since Notato began counting: React tells its DevTools hook after every commit,
@@ -73,12 +76,60 @@ export function commitCount(): number | undefined {
         const through = hook.onCommitFiberRoot;
         counting = function (this: unknown, ...args: unknown[]) {
             commits++;
+            for (const listener of listeners) {
+                try {
+                    listener(args[1]);
+                } catch {
+                    // never React's problem
+                }
+            }
             return through?.apply(this, args);
         };
         hook.onCommitFiberRoot = counting;
         commits++;
     }
     return commits;
+}
+
+/** The fiber at the top of a view's tree: its root, whose `stateNode` is what React commits. */
+function topOf(fiber: Fiber): Fiber {
+    let top = fiber;
+    while (top.return) top = top.return;
+    return top;
+}
+
+/**
+ * Calls `changed` after each of React's commits that rendered something inside `app` (the app's own view), and not
+ * after those that only rendered Notato's overlay, or another root. Returns how to stop, or undefined without React's
+ * DevTools hook (a release build), when commits cannot be told apart.
+ *
+ * React keeps two copies of each fiber, and renders into the copy that is not on screen. When only something beside
+ * the app's view rendered (or its view was drawn again with the same children), React copies the view and its children
+ * and stops there: what each child holds, and the child under it, stay the same objects. When anything under it
+ * rendered, they do not. Looked at after every commit, that cannot be missed.
+ */
+export function watchApp(app: () => unknown, changed: () => void): (() => void) | undefined {
+    if (commitCount() === undefined) return undefined;
+    const now = () => {
+        const marks: unknown[] = [];
+        for (let c = currentContainer(app())?.child; c; c = c.sibling)
+            marks.push(c.memoizedProps, c.memoizedState, c.child);
+        return marks;
+    };
+    let seen = now();
+    const listener = (root: unknown) => {
+        const own = fiberOf(app());
+        if (!own) return;
+        if (root !== undefined && root !== topOf(own).stateNode) return;
+        const marks = now();
+        if (marks.length === seen.length && marks.every((m, i) => m === seen[i])) return;
+        seen = marks;
+        changed();
+    };
+    listeners.add(listener);
+    return () => {
+        listeners.delete(listener);
+    };
 }
 
 /**
@@ -129,8 +180,7 @@ export function instanceAt(
 export function currentContainer(app: unknown): Fiber | undefined {
     const own = fiberOf(app);
     if (!own) return undefined;
-    let top: Fiber = own;
-    while (top.return) top = top.return;
+    const top = topOf(own);
     const current = (top.stateNode as { current?: Fiber } | null | undefined)?.current;
     if (!current) return own;
     const canonical = own.stateNode?.canonical;
@@ -150,22 +200,37 @@ export function appElements(app: unknown, maskInputs: boolean): TreeElement[] {
     return container ? elementsUnder(container, maskInputs) : [];
 }
 
-/**
- * The element for a native view, among the app's: its instance (a ref), or its native tag (what the inspector found
- * under a tap).
- */
-export function elementFor(elements: TreeElement[], instance: unknown): TreeElement | undefined {
+/** Whether a fiber is a native view: its instance (a ref), or its native tag (what the inspector found under a tap). */
+function isView(instance: unknown): ((fiber: Fiber) => boolean) | undefined {
     if (instance === null || instance === undefined) return undefined;
     const fiber = typeof instance === "number" ? undefined : fiberOf(instance);
     const tag =
         typeof instance === "number"
             ? instance
             : (instance as { __nativeTag?: unknown }).__nativeTag;
-    return elements.find(
-        (e) =>
-            (fiber && sameView(e.fiber, fiber)) ||
-            (typeof tag === "number" && e.fiber.stateNode?.canonical?.nativeTag === tag)
-    );
+    return (f) =>
+        (!!fiber && sameView(f, fiber)) ||
+        (typeof tag === "number" && f.stateNode?.canonical?.nativeTag === tag);
+}
+
+/** The element for a native view, among the app's: its instance (a ref), or its native tag. */
+export function elementFor(elements: TreeElement[], instance: unknown): TreeElement | undefined {
+    const match = isView(instance);
+    return match ? elements.find((e) => match(e.fiber)) : undefined;
+}
+
+/**
+ * The element for a native view of the app, with the views around it, found without describing the rest of the app:
+ * what a tap picks.
+ */
+export function elementAt(
+    app: unknown,
+    instance: unknown,
+    maskInputs: boolean
+): TreeElement | undefined {
+    const match = isView(instance);
+    const container = match ? currentContainer(app) : undefined;
+    return match && container ? elementWhere(container, maskInputs, match) : undefined;
 }
 
 /** React's component stack for a fiber, innermost first, with bundle locations, which Metro maps to files. */

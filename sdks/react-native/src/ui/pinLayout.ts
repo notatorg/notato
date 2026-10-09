@@ -1,6 +1,6 @@
 // Where pins go: each at its element's top right, and moved aside when another pin is there already (several notes on
 // one element, or on elements next to each other). The Swift SDK's PinLayout.
-import type { Point, Rect } from "./geometry.ts";
+import type { Point, Rect } from "./rect.ts";
 
 /** A pin's size: its middle sits on its element's top right corner. */
 const PIN = 24;

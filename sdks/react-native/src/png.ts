@@ -1,3 +1,20 @@
+import type { AssetRef } from "@notato/schema";
+
+/** A screenshot as it is sent and kept: its PNG bytes, and the reference the note carries. */
+export interface Shot {
+    bytes: Uint8Array;
+    ref: AssetRef;
+}
+
+/**
+ * A screenshot as react-native-view-shot hands it over, as base64 and not read yet: turning it into bytes is work for
+ * the JavaScript thread, left until the note is sent, so it is never done while the composer comes in.
+ */
+export interface RawShot {
+    id: string;
+    data: string;
+}
+
 const ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 const LOOKUP = new Uint8Array(256);
 for (let i = 0; i < ALPHABET.length; i++) LOOKUP[ALPHABET.charCodeAt(i)] = i;
@@ -46,4 +63,14 @@ export function captureSize(
         width: Math.max(1, Math.round(width * factor)),
         height: Math.max(1, Math.round(height * factor)),
     };
+}
+
+/** A screenshot's bytes and reference, read from what view-shot gave. Undefined when it is not a PNG. */
+export function readShot(raw: RawShot | undefined): Shot | undefined {
+    if (!raw) return undefined;
+    const bytes = fromBase64(raw.data);
+    const dims = pngSize(bytes);
+    return dims
+        ? { bytes, ref: { id: raw.id, mime: "image/png", w: dims.w, h: dims.h } }
+        : undefined;
 }

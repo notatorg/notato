@@ -1,4 +1,4 @@
-import { forwardRef, type ReactNode, useRef } from "react";
+import { forwardRef, type ReactNode, useEffect, useMemo, useRef } from "react";
 import {
     Animated,
     Image,
@@ -13,6 +13,7 @@ import {
     View,
 } from "react-native";
 import { ICONS, type IconName, POTATO } from "./icons.ts";
+import { useReducedMotion } from "./motion.ts";
 import { BRAND, type Palette, statusColor, usePalette } from "./theme.ts";
 
 /** One of Notato's icons, tinted. */
@@ -46,21 +47,53 @@ const CLOSE_VELOCITY = 1.2;
 /**
  * A floating bottom sheet, 8 points off the screen's edges, with a grabber, over a scrim. Pulled down far enough by
  * its grabber, or with the scrim tapped, it closes.
+ *
+ * It comes and goes with `progress` (0 gone, 1 there, on the native driver): it slides up from below its own height
+ * as the scrim fades in, and back down. Let go of past the threshold, it slides on down from where the finger left it.
+ * `content` fades its contents, so one sheet can give way to the next.
  */
 export function BottomSheet({
     close,
     children,
     maxHeight,
     top = 0,
+    progress,
+    leaving = false,
+    content,
 }: {
     close(): void;
     children: ReactNode;
     maxHeight: number;
     /** Room kept clear at the top (the status bar), whatever the keyboard leaves. */
     top?: number;
+    progress: Animated.Value;
+    /** On its way out: it takes no taps. */
+    leaving?: boolean;
+    content?: Animated.Value;
 }) {
     const p = usePalette();
+    const still = useReducedMotion();
     const pull = useRef(new Animated.Value(0)).current;
+    // How far it travels in: from below its own height, once laid out; until then, below the tallest it can be.
+    const travel = useRef(new Animated.Value(maxHeight + 24)).current;
+    useEffect(() => {
+        if (still) travel.setValue(0);
+    }, [still, travel]);
+    const motion = useMemo(
+        () => ({
+            transform: [
+                {
+                    translateY: Animated.add(
+                        pull,
+                        Animated.multiply(Animated.subtract(1, progress), travel)
+                    ),
+                },
+            ],
+            // Under Reduce Motion it does not travel: it fades in place.
+            ...(still ? { opacity: progress } : {}),
+        }),
+        [pull, progress, travel, still]
+    );
     // The pan responder is made once: it closes through the latest `close`.
     const closing = useRef(close);
     closing.current = close;
@@ -78,27 +111,29 @@ export function BottomSheet({
     ).current;
     return (
         // In the flow, not absolute, so a KeyboardAvoidingView around it lifts it over the keyboard.
-        <View style={styles.sheetRoot} pointerEvents="box-none">
-            <Pressable
-                style={[StyleSheet.absoluteFill, { backgroundColor: p.scrim }]}
-                onPress={close}
-                accessibilityLabel="Close"
-            />
+        <View style={styles.sheetRoot} pointerEvents={leaving ? "none" : "box-none"}>
+            <Animated.View
+                style={[StyleSheet.absoluteFill, { backgroundColor: p.scrim, opacity: progress }]}
+            >
+                <Pressable
+                    style={StyleSheet.absoluteFill}
+                    onPress={close}
+                    accessibilityLabel="Close"
+                />
+            </Animated.View>
             <View style={[styles.sheetWrap, { paddingTop: top }]} pointerEvents="box-none">
                 <Animated.View
-                    style={[
-                        styles.sheet,
-                        {
-                            backgroundColor: p.background,
-                            maxHeight,
-                            transform: [{ translateY: pull }],
-                        },
-                    ]}
+                    onLayout={(e) => {
+                        if (!still) travel.setValue(e.nativeEvent.layout.height + 16);
+                    }}
+                    style={[styles.sheet, { backgroundColor: p.background, maxHeight }, motion]}
                 >
                     <View {...pan.panHandlers} style={styles.grabberArea}>
                         <View style={[styles.grabber, { backgroundColor: p.line }]} />
                     </View>
-                    {children}
+                    <Animated.View style={[styles.content, content ? { opacity: content } : null]}>
+                        {children}
+                    </Animated.View>
                 </Animated.View>
             </View>
         </View>
@@ -493,6 +528,8 @@ const styles = StyleSheet.create({
         elevation: 16,
     },
     grabberArea: { alignItems: "center", paddingTop: 10, paddingBottom: 2 },
+    // Lays its sheet out as the sheet itself did: a column, 10 apart, that shrinks to fit.
+    content: { flexShrink: 1, gap: 10 },
     grabber: { width: 36, height: 5, borderRadius: 3 },
     header: {
         flexDirection: "row",

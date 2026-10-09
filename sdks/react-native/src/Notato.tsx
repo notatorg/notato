@@ -1,8 +1,9 @@
-import { type ReactNode, useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { type ReactNode, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { DevSettings, StyleSheet, View } from "react-native";
 import { isDev, type NotatoConfig } from "./config.ts";
 import { NotatoController, type NotatoState } from "./controller.ts";
 import { Overlay } from "./ui/Overlay.tsx";
+import { Stage, StageView } from "./ui/Stage.tsx";
 
 export interface NotatoProps extends NotatoConfig {
     children?: ReactNode;
@@ -49,10 +50,14 @@ export function Notato(props: NotatoProps) {
     return <NotatoRoot {...props} />;
 }
 
+/** Whether Notato is on: all `<Notato>` itself draws differently. The overlay follows the rest of the state. */
+const isEnabled = () => notato.getState().enabled;
+
 function NotatoRoot(props: NotatoProps) {
     const outer = useRef<View>(null);
     const app = useRef<View>(null);
-    const state = useNotato();
+    const enabled = useSyncExternalStore(notato.subscribe, isEnabled, isEnabled);
+    const [stage] = useState(() => new Stage());
     const route = useRef(props.route);
     route.current = props.route;
 
@@ -82,14 +87,27 @@ function NotatoRoot(props: NotatoProps) {
         }
     };
 
-    // The app is always inside the same two views, so switching Notato on or off never remounts it.
-    return (
-        <View ref={outer} collapsable={false} style={styles.fill}>
+    // The app's view is made again only when the app is: Notato drawing itself never draws the app's view again, and
+    // so never looks to React like a change in the app (what the pins go by).
+    const appView = useMemo(
+        () => (
             <View ref={app} collapsable={false} style={styles.fill}>
                 {props.children}
             </View>
-            {state.enabled ? (
-                <Overlay notato={notato} state={state} outer={outer} app={app} route={readRoute} />
+        ),
+        [props.children]
+    );
+
+    // The app is always inside the same views, so switching Notato on or off never remounts it. The screenshots are of
+    // `outer`: the app, and the stage Notato draws the outline and the covers on. The rest of Notato is beside it.
+    return (
+        <View style={styles.fill}>
+            <View ref={outer} collapsable={false} style={styles.fill}>
+                {appView}
+                {enabled ? <StageView stage={stage} /> : null}
+            </View>
+            {enabled ? (
+                <Overlay notato={notato} outer={outer} app={app} stage={stage} route={readRoute} />
             ) : null}
         </View>
     );

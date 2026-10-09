@@ -10,6 +10,7 @@ export interface Fiber {
     tag: number;
     type: unknown;
     memoizedProps?: Record<string, unknown> | null;
+    memoizedState?: unknown;
     return: Fiber | null;
     child: Fiber | null;
     sibling: Fiber | null;
@@ -171,6 +172,34 @@ export function elementsUnder(root: Fiber, maskInputs: boolean, limit = 20_000):
 }
 
 /**
+ * The first native view under `root` that `match` takes, described with the views around it, and nothing else
+ * described: what a tap picks, found without the cost of describing the whole app (`elementsUnder`).
+ */
+export function elementWhere(
+    root: Fiber,
+    maskInputs: boolean,
+    match: (fiber: Fiber) => boolean
+): TreeElement | undefined {
+    type Link = { fiber: Fiber; native: string; mark: Mark; parent?: Link };
+    let found: Link | undefined;
+    walkHosts<Link>(
+        root,
+        (fiber, native, mark, parent) => {
+            const link: Link = parent ? { fiber, native, mark, parent } : { fiber, native, mark };
+            if (!found && match(fiber)) found = link;
+            return link;
+        },
+        () => !found
+    );
+    const describe = (link: Link): TreeElement => {
+        const element = elementOf(link.fiber, link.native, link.mark, maskInputs);
+        if (link.parent) element.parent = describe(link.parent);
+        return element;
+    };
+    return found ? describe(found) : undefined;
+}
+
+/**
  * What screenshots cover: every native view inside a private `<NotatoMask>`, password fields, and (with `maskInputs`)
  * text fields not inside `private={false}`, each with the native views around it. Every view is looked at, however
  * many there are: something private is never left uncovered because the screen is big.
@@ -191,24 +220,31 @@ type FabricUIManager = { measure(node: unknown, callback: (...n: number[]) => vo
 /** How long Fabric gets to say where a view is before it is taken to be off screen. */
 const MEASURE_TIMEOUT_MS = 500;
 
-/** Where a native view is on the page, from Fabric's own layout. Null when it is not on screen. */
+/**
+ * Where a native view is on the page, from Fabric's own layout. Null when it is not on screen. Fabric answers at once,
+ * from the layout it has; the timer is only started when it did not, so measuring every pin often costs no timers.
+ */
 export function measure(fiber: Fiber): Promise<Frame | null> {
     return new Promise((resolve) => {
         const ui = (globalThis as { nativeFabricUIManager?: FabricUIManager })
             .nativeFabricUIManager;
         const node = fiber.stateNode?.node;
         if (!ui || !node) return resolve(null);
-        const timer = setTimeout(() => resolve(null), MEASURE_TIMEOUT_MS);
+        let done = false;
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        const finish = (frame: Frame | null) => {
+            if (done) return;
+            done = true;
+            if (timer) clearTimeout(timer);
+            resolve(frame);
+        };
         try {
-            ui.measure(node, (_x, _y, width = 0, height = 0, pageX = 0, pageY = 0) => {
-                clearTimeout(timer);
-                resolve(
-                    width > 0 && height > 0 ? { left: pageX, top: pageY, width, height } : null
-                );
-            });
+            ui.measure(node, (_x, _y, width = 0, height = 0, pageX = 0, pageY = 0) =>
+                finish(width > 0 && height > 0 ? { left: pageX, top: pageY, width, height } : null)
+            );
         } catch {
-            clearTimeout(timer);
-            resolve(null);
+            finish(null);
         }
+        if (!done) timer = setTimeout(() => finish(null), MEASURE_TIMEOUT_MS);
     });
 }

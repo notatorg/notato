@@ -1,5 +1,5 @@
 import type { Annotation, ElementIdentity } from "@notato/schema";
-import { useCallback, useMemo, useState } from "react";
+import { memo, useCallback, useMemo, useState } from "react";
 import {
     FlatList,
     type ListRenderItem,
@@ -55,8 +55,8 @@ const device =
 const capital = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 const messageOf = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
-/** The bottom sheet's content: the sheet it shows, with what each needs. */
-export function SheetView(props: {
+/** The bottom sheet's content: the sheet it shows, with what each needs. Drawn again only when one of them changes. */
+export const SheetView = memo(function SheetView(props: {
     sheet: Sheet;
     notato: NotatoController;
     state: NotatoState;
@@ -109,7 +109,7 @@ export function SheetView(props: {
             );
         }
     }
-}
+});
 
 /** The pill beside the menu's title: how the connection stands. */
 function connectionPill(

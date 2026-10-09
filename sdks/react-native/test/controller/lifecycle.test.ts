@@ -160,3 +160,20 @@ describe("mounting", () => {
         });
     });
 });
+
+describe("the toolbar's state", () => {
+    it("is the same object until the toolbar moves, and a fold can move it across in the same change", () => {
+        const { notato } = start({ project: "shop" }, fakeServer());
+        const before = notato.getState().toolbar;
+        notato.startAnnotating();
+        notato.stopAnnotating();
+        expect(notato.getState().toolbar).toBe(before);
+        let draws = 0;
+        const stop = notato.subscribe(() => draws++);
+        notato.setFolded(true, 0.8);
+        stop();
+        expect(draws).toBe(1);
+        expect(notato.getState().toolbar).toEqual({ x: 0.8, folded: true });
+        expect(notato.getState().toolbar).not.toBe(before);
+    });
+});

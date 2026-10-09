@@ -2,29 +2,32 @@ import {
     type RefObject,
     useCallback,
     useEffect,
+    useLayoutEffect,
     useMemo,
     useReducer,
     useRef,
     useState,
+    useSyncExternalStore,
 } from "react";
 import {
+    Animated,
     BackHandler,
     KeyboardAvoidingView,
+    LayoutAnimation,
     PixelRatio,
     Platform,
-    Pressable,
     StyleSheet,
     Text,
     View,
 } from "react-native";
 import { routeName } from "../annotation.ts";
-import type { Shot } from "../capture.ts";
 import { NotatoError } from "../client.ts";
-import type { Host, NotatoController, NotatoState } from "../controller.ts";
+import type { Host, NotatoController } from "../controller.ts";
 import { ulid } from "../ids.ts";
 import {
     appElements,
     canInspect,
+    elementAt,
     elementFor,
     inspect,
     instanceAt,
@@ -33,13 +36,23 @@ import {
 import { query, SelectorError } from "../selectors.ts";
 import { fiberOf, measure, type TreeElement } from "../tree.ts";
 import { Composer, type Draft } from "./Composer.tsx";
-import { INSETS, onScreen, type Point, type Rect, toRect } from "./geometry.ts";
-import { BottomSheet, PinDot } from "./parts.tsx";
-import { placePins } from "./pinLayout.ts";
+import { INSETS, onScreen, type Point, toRect } from "./geometry.ts";
+import {
+    animate,
+    fadeSlide,
+    reducedMotion,
+    SWAP_IN_MS,
+    SWAP_OUT_MS,
+    usePresence,
+    useReducedMotion,
+} from "./motion.ts";
+import { PinLayer } from "./Pins.tsx";
+import { BottomSheet } from "./parts.tsx";
+import type { Stage } from "./Stage.tsx";
+import { readShots, type Selection, selectionFor, shotsToSend } from "./selection.ts";
 import { backFrom, type Sheet, SheetView } from "./sheets.tsx";
 import { HintBar, Toolbar } from "./Toolbar.tsx";
-import { BAR, BRAND, PROBLEM_DOT } from "./theme.ts";
-import { usePlacedPins } from "./usePins.ts";
+import { BAR, PROBLEM_DOT } from "./theme.ts";
 import { useScreenshots } from "./useScreenshots.ts";
 
 /** How long a toast stays. */
@@ -48,49 +61,40 @@ const TOAST_MS = 3200;
 /** How often the screen is looked at, so a move to one that redraws nothing of Notato's is noticed. */
 const ROUTE_CHECK_MS = 500;
 
-/** The element a note is being written about, with its pin, its screenshots and what the composer calls it. */
-interface Selection {
-    picked: Picked;
-    rect: Rect;
-    pin: number;
-    id: string;
-    shots: { full?: Shot; crop?: Shot };
-    title: string;
-    subtitle?: string;
-}
-
-/** What a selection is called in the composer: the component and the view, then where it is and what it says. */
-function titleOf(element: TreeElement): { title: string; subtitle?: string } {
-    const component = element.path[element.path.length - 1];
-    const title = component ? `${component} › ${element.tag}` : element.tag;
-    const said = element.testId
-        ? `#${element.testId}`
-        : element.text
-          ? `“${element.text.slice(0, 40)}”`
-          : element.label;
-    const where = element.path.slice(0, -1).slice(-3).join(" › ");
-    const subtitle = [said, where].filter(Boolean).join(" · ");
-    return subtitle ? { title, subtitle } : { title };
-}
+/** How far the toast, the hint and the composer travel as they come in. */
+const TOP_TRAVEL = -14;
+const COMPOSER_TRAVEL = 28;
 
 const messageOf = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
-/** Everything Notato draws over the app, and the host the runtime picks and photographs through. */
+/** Which sheet is which: another of them cross-fades in; the same one again only updates. */
+const sheetKey = (sheet: Sheet | null) =>
+    sheet ? (sheet.kind === "pin" ? `pin:${sheet.id}` : sheet.kind) : null;
+
+/**
+ * Everything Notato draws over the app, beside the view the screenshots are of, and the host the runtime picks and
+ * photographs through. What goes into a screenshot (the outline and the covers) it draws on `stage`, inside that view.
+ */
 export function Overlay(props: {
     notato: NotatoController;
-    state: NotatoState;
-    /** The view the overlay and the app share. */
+    /** The view the stage and the app share: the screenshots are of it. */
     outer: RefObject<View | null>;
     /** The app's own view. */
     app: RefObject<View | null>;
+    stage: Stage;
     route: () => string;
 }) {
-    const { notato, state, outer, app } = props;
+    const { notato, outer, app, stage } = props;
+    const state = useSyncExternalStore(notato.subscribe, notato.getState, notato.getState);
+    const still = useReducedMotion();
     const [size, setSize] = useState({ width: 0, height: 0 });
-    const [sheet, setSheet] = useState<Sheet | null>(null);
+    const [sheet, setSheetNow] = useState<Sheet | null>(null);
     const [selection, setSelection] = useState<Selection | null>(null);
     const [toast, flash] = useToast();
     const route = useRoute(props.route);
+    // Read by callbacks that stay the same from one draw to the next.
+    const now = useRef({ sheet, selection, state });
+    now.current = { sheet, selection, state };
 
     /** Where the overlay is on the page, so the page's frames can be drawn on it. */
     const origin = useCallback(async (): Promise<Point> => {
@@ -99,7 +103,15 @@ export function Overlay(props: {
         return { x: frame?.left ?? 0, y: frame?.top ?? 0 };
     }, [outer]);
 
-    const { capturing, capture } = useScreenshots({ notato, outer, app, origin, size });
+    const capture = useScreenshots({ notato, outer, app, stage, origin, size });
+
+    // The selection's outline is drawn on the stage, into its screenshot, from the commit that opens the composer.
+    useLayoutEffect(() => {
+        stage.set({
+            selected: selection ? { rect: selection.rect, pin: selection.pin } : undefined,
+        });
+    }, [selection, stage]);
+    useEffect(() => () => stage.set({ selected: undefined, capturing: undefined }), [stage]);
 
     /** Finds an element by selector or view instance, now. */
     const resolve = useCallback(
@@ -143,26 +155,77 @@ export function Overlay(props: {
     );
 
     /**
-     * Makes an element the selection: outlined, photographed, and the composer opened on it. Picking another element
-     * while writing keeps the note's pin and id, and what is written.
+     * Opens a sheet, or closes it (null). One sheet giving way to another fades its contents out, and the next in,
+     * while the sheet takes the new height.
+     */
+    const contentFade = useRef(new Animated.Value(1)).current;
+    const swaps = useRef(0);
+    /** The swap whose sheet fades in once it is drawn (elsewhere than iOS, which waits for the new height). */
+    const fadeInAfterDraw = useRef<number | null>(null);
+    const fadeIn = useCallback(
+        (token: number) => {
+            // Another sheet asked for meanwhile, or closed: that one stands.
+            if (token === swaps.current) animate(contentFade, 1, { duration: SWAP_IN_MS }).start();
+        },
+        [contentFade]
+    );
+    const openSheet = useCallback(
+        (next: Sheet | null) => {
+            const token = ++swaps.current;
+            const current = now.current.sheet;
+            if (!current || !next || sheetKey(current) === sheetKey(next) || reducedMotion()) {
+                contentFade.setValue(1);
+                setSheetNow(next);
+                return;
+            }
+            animate(contentFade, 0, { duration: SWAP_OUT_MS }).start(() => {
+                if (token !== swaps.current) return;
+                // iOS animates the new height natively. Android's layout animations are left out: on the New
+                // Architecture they can leave views behind mid-flight, and the fade covers the change well enough.
+                // The contents fade in only after: started with the layout animation, the fade is overridden by it and
+                // the sheet stays blank.
+                if (Platform.OS === "ios") {
+                    const duration = SWAP_IN_MS + 60;
+                    LayoutAnimation.configureNext(
+                        { duration, update: { type: LayoutAnimation.Types.easeInEaseOut } },
+                        () => fadeIn(token)
+                    );
+                    // Should the layout animation never say it ended.
+                    setTimeout(() => fadeIn(token), duration + 80);
+                } else {
+                    fadeInAfterDraw.current = token;
+                }
+                setSheetNow(next);
+            });
+        },
+        [contentFade, fadeIn]
+    );
+    const shownKey = sheetKey(sheet);
+    // biome-ignore lint/correctness/useExhaustiveDependencies: the sheet drawn is the trigger, not an input
+    useEffect(() => {
+        const token = fadeInAfterDraw.current;
+        if (token === null) return;
+        fadeInAfterDraw.current = null;
+        fadeIn(token);
+    }, [shownKey, fadeIn]);
+    const closeSheet = useCallback(() => openSheet(null), [openSheet]);
+
+    /**
+     * Makes an element the selection: outlined, and the composer opened on it at once, while its screenshots are taken
+     * behind it. Picking another element while writing keeps the note's pin and id, and what is written.
      */
     const choose = useCallback(
         async (picked: Picked, keep?: Selection | null) => {
-            const pin = keep?.pin ?? notato.nextPin(route);
-            const id = keep?.id ?? ulid();
-            const at = await origin();
-            const shots = await capture(picked, pin, id);
-            setSheet(null);
-            setSelection({
-                picked,
-                rect: toRect(picked.frame, at),
-                pin,
-                id,
-                shots,
-                ...titleOf(picked.element),
+            const next = selectionFor(picked, keep, {
+                origin: await origin(),
+                nextPin: () => notato.nextPin(route),
+                newId: ulid,
+                shoot: (pin, id) => capture(picked, pin, id),
             });
+            openSheet(null);
+            setSelection(next);
         },
-        [notato, route, origin, capture]
+        [notato, route, origin, capture, openSheet]
     );
 
     // The runtime picks and photographs through this overlay while it is mounted: through a host that stays the same,
@@ -170,7 +233,7 @@ export function Overlay(props: {
     const hostRef = useRef<Host | undefined>(undefined);
     hostRef.current = {
         resolve,
-        capture,
+        capture: async (picked, pin, id) => readShots(await capture(picked, pin, id)),
         select: (picked) => {
             notato.startAnnotating();
             void choose(picked);
@@ -204,74 +267,86 @@ export function Overlay(props: {
         return () => notato.detachHost(host);
     }, [notato]);
 
-    const pickAt = async (x: number, y: number) => {
-        try {
-            const instance = await instanceAt(app.current, x, y);
-            const element = elementFor(appElements(app.current, notato.maskInputs), instance);
-            const picked = element ? await inspect(element) : null;
-            if (!picked) {
-                flash("Nothing to annotate there.");
-                return;
+    /** Picks what is under a tap: only that view and those around it are described, not the whole app. */
+    const pickAt = useCallback(
+        async (x: number, y: number) => {
+            try {
+                const instance = await instanceAt(app.current, x, y);
+                const element = elementAt(app.current, instance, notato.maskInputs);
+                const picked = element ? await inspect(element) : null;
+                if (!picked) {
+                    flash("Nothing to annotate there.");
+                    return;
+                }
+                await choose(picked, now.current.selection);
+            } catch (e) {
+                flash(`Could not select that: ${messageOf(e)}`);
             }
-            await choose(picked, selection);
-        } catch (e) {
-            flash(`Could not select that: ${messageOf(e)}`);
-        }
-    };
+        },
+        [app, notato, flash, choose]
+    );
 
     /**
      * The composer's Parent: selects the nearest view around the selection that is bigger (a wrapper the same size
      * says nothing new).
      */
-    const selectParent = async () => {
-        if (!selection) return;
-        const f = selection.picked.frame;
-        for (let element = selection.picked.element.parent; element; element = element.parent) {
+    const selectParent = useCallback(async () => {
+        const selected = now.current.selection;
+        if (!selected) return;
+        const f = selected.picked.frame;
+        for (let element = selected.picked.element.parent; element; element = element.parent) {
             const picked = await inspect(element);
             if (
                 picked &&
                 (picked.frame.width > f.width + 0.5 || picked.frame.height > f.height + 0.5)
             ) {
-                await choose(picked, selection);
+                await choose(picked, selected);
                 return;
             }
         }
         flash("Nothing around this one to select.");
-    };
+    }, [choose, flash]);
 
     const cancel = useCallback(() => {
         setSelection(null);
         notato.stopAnnotating();
     }, [notato]);
 
-    const send = async (draft: Draft) => {
-        if (!selection) return;
-        const chosen = selection;
-        setSelection(null);
-        notato.stopAnnotating();
-        try {
-            const { problem } = await notato.createNote(chosen.picked, draft, {
-                id: chosen.id,
-                pin: chosen.pin,
-                ...chosen.shots,
-            });
-            flash(
-                problem ??
-                    (notato.hasServer ? "Sent" : "Saved on this device. Package it from the menu.")
-            );
-        } catch (e) {
-            flash(`Not saved: ${messageOf(e)}`);
-        }
-    };
+    /** Sends the note: the composer goes at once, and the screenshots are waited for (and read) only now. */
+    const send = useCallback(
+        async (draft: Draft) => {
+            const chosen = now.current.selection;
+            if (!chosen) return;
+            setSelection(null);
+            notato.stopAnnotating();
+            try {
+                const shots = await shotsToSend(chosen);
+                const { problem } = await notato.createNote(chosen.picked, draft, {
+                    id: chosen.id,
+                    pin: chosen.pin,
+                    ...shots,
+                });
+                flash(
+                    problem ??
+                        (notato.hasServer
+                            ? "Sent"
+                            : "Saved on this device. Package it from the menu.")
+                );
+            } catch (e) {
+                flash(`Not saved: ${messageOf(e)}`);
+            }
+        },
+        [notato, flash]
+    );
 
     const startAnnotating = useCallback(() => {
-        setSheet(null);
+        openSheet(null);
         if (!canInspect()) {
             flash("Annotating needs a development build of the app.");
             return;
         }
         notato.startAnnotating();
-    }, [notato, flash]);
+    }, [notato, flash, openSheet]);
 
     // Annotating stopped from code: drop the selection with it.
     useEffect(() => {
@@ -283,32 +358,39 @@ export function Overlay(props: {
     useEffect(() => {
         if (!busy) return;
         const subscription = BackHandler.addEventListener("hardwareBackPress", () => {
-            if (sheet) setSheet(backFrom(sheet));
+            const open = now.current.sheet;
+            if (open) openSheet(backFrom(open));
             else cancel();
             return true;
         });
         return () => subscription.remove();
-    }, [busy, sheet, cancel]);
+    }, [busy, openSheet, cancel]);
+
+    // What the toolbar is handed stays the same from one draw to the next unless it changed, so it is not drawn again
+    // for the rest of the overlay's changes.
+    const room = useMemo(
+        () => ({ width: size.width, height: size.height, top: INSETS.top, bottom: INSETS.bottom }),
+        [size.width, size.height]
+    );
+    const onAnnotate = useCallback(
+        () => (now.current.state.annotating ? cancel() : startAnnotating()),
+        [cancel, startAnnotating]
+    );
+    const onMenu = useCallback(() => openSheet({ kind: "menu" }), [openSheet]);
+    const onFold = useCallback(
+        (folded: boolean, x?: number) => notato.setFolded(folded, x),
+        [notato]
+    );
+    const onMoved = useCallback((x: number, y: number) => notato.placeToolbar(x, y), [notato]);
+    const openPin = useCallback(
+        (id: string) => openSheet({ kind: "pin", id, fromList: false }),
+        [openSheet]
+    );
+    const onParent = useCallback(() => void selectParent(), [selectParent]);
+    const onSend = useCallback((draft: Draft) => void send(draft), [send]);
 
     const here = notato.notesOn(route);
     const pinnable = notato.pinsOn(route);
-    const pins = usePlacedPins({
-        notato,
-        app,
-        pinnable,
-        wanted: state.pinsVisible && !selection && !state.annotating,
-        origin,
-        size,
-    });
-    const spots = useMemo(
-        () =>
-            placePins(
-                pins.map((p) => p.rect),
-                size.width,
-                INSETS.top - 9
-            ),
-        [pins, size.width]
-    );
 
     const problemDot =
         state.connection === "connecting" ||
@@ -316,22 +398,44 @@ export function Overlay(props: {
         state.connection === "refused"
             ? PROBLEM_DOT[state.connection]
             : undefined;
-    // While a screenshot is taken, nothing of Notato's shows but the outline and the covers.
-    const hide = capturing !== null;
-    const outline =
-        capturing ?? (selection ? { rect: selection.rect, pin: selection.pin, covers: [] } : null);
+
+    // What comes and goes, kept on screen while it leaves.
+    const composer = usePresence(selection);
+    const sheets = usePresence(sheet);
+    // A sheet on its way out shows what it showed: a note deleted from it does not turn into "That note is gone."
+    const sheetData = useRef({ state, here });
+    if (sheet) sheetData.current = { state, here };
+    const hint = usePresence(state.annotating && !selection && !sheet ? true : null);
+    const toasts = usePresence(toast);
+    const shownSelection = composer.shown;
     // The composer goes where it hides nothing of the selection: above it when it is in the lower half.
-    const composerAtTop = selection
-        ? selection.rect.y + selection.rect.h / 2 > size.height / 2
+    const composerAtTop = shownSelection
+        ? shownSelection.rect.y + shownSelection.rect.h / 2 > size.height / 2
         : false;
+    const composerMotion = useMemo(
+        () =>
+            fadeSlide(composer.progress, still, {
+                y: composerAtTop ? -COMPOSER_TRAVEL : COMPOSER_TRAVEL,
+            }),
+        [composer.progress, still, composerAtTop]
+    );
+    const hintMotion = useMemo(
+        () => fadeSlide(hint.progress, still, { y: TOP_TRAVEL }),
+        [hint.progress, still]
+    );
+    const toastMotion = useMemo(
+        () => fadeSlide(toasts.progress, still, { y: TOP_TRAVEL }),
+        [toasts.progress, still]
+    );
 
     return (
         <View
             style={StyleSheet.absoluteFill}
             pointerEvents="box-none"
-            onLayout={(e) =>
-                setSize({ width: e.nativeEvent.layout.width, height: e.nativeEvent.layout.height })
-            }
+            onLayout={(e) => {
+                const { width, height } = e.nativeEvent.layout;
+                setSize((s) => (s.width === width && s.height === height ? s : { width, height }));
+            }}
         >
             {/* Takes the taps that pick while annotating; Notato's own controls sit above it. */}
             {state.annotating && !sheet ? (
@@ -345,150 +449,108 @@ export function Overlay(props: {
                 />
             ) : null}
 
-            {capturing?.covers.map((c) => (
-                <View
-                    key={`${c.x},${c.y},${c.w},${c.h}`}
-                    pointerEvents="none"
-                    style={[styles.cover, { left: c.x, top: c.y, width: c.w, height: c.h }]}
-                />
-            ))}
+            <PinLayer
+                notato={notato}
+                app={app}
+                pinnable={pinnable}
+                shown={state.pinsVisible && !selection && !state.annotating}
+                paused={sheet !== null}
+                origin={origin}
+                size={size}
+                onOpen={openPin}
+            />
 
-            {outline ? (
-                <View
-                    pointerEvents="none"
-                    style={[
-                        styles.outline,
-                        {
-                            left: outline.rect.x - 2,
-                            top: outline.rect.y - 2,
-                            width: outline.rect.w + 4,
-                            height: outline.rect.h + 4,
-                        },
-                    ]}
+            {hint.shown ? (
+                <Animated.View
+                    style={[styles.hint, { top: INSETS.top - 4 }, hintMotion]}
+                    pointerEvents={hint.leaving ? "none" : "box-none"}
                 >
-                    <View style={styles.outlinePin}>
-                        <Text style={styles.pinText}>{outline.pin}</Text>
-                    </View>
-                </View>
+                    <HintBar done={cancel} />
+                </Animated.View>
             ) : null}
 
-            <View
-                style={[StyleSheet.absoluteFill, hide && styles.hidden]}
-                pointerEvents={hide ? "none" : "box-none"}
-            >
-                {pins.map((pin, i) => {
-                    const spot = spots[i] ?? { x: pin.rect.x, y: pin.rect.y };
-                    const a = pin.record.annotation;
-                    return (
-                        <Pressable
-                            key={a.id}
-                            accessibilityRole="button"
-                            accessibilityLabel={`Note ${pin.number}, ${a.status.replace(/_/g, " ")}`}
-                            onPress={() => setSheet({ kind: "pin", id: a.id, fromList: false })}
-                            hitSlop={6}
-                            style={[
-                                styles.pin,
-                                { left: spot.x, top: spot.y },
-                                pin.detached && styles.detached,
-                            ]}
-                        >
-                            <PinDot
-                                number={pin.number}
-                                status={a.status}
-                                pending={pin.record.pending}
-                            />
-                        </Pressable>
-                    );
-                })}
+            {size.width > 0 ? (
+                <Toolbar
+                    room={room}
+                    place={state.toolbar}
+                    corner={notato.configuration?.toolbarPosition ?? "bottom-right"}
+                    folded={state.toolbar.folded}
+                    visible={state.toolbarVisible && !selection}
+                    annotating={state.annotating}
+                    count={here.length}
+                    problem={problemDot}
+                    problemLabel={notato.describeConnection()}
+                    onAnnotate={onAnnotate}
+                    onMenu={onMenu}
+                    onFold={onFold}
+                    onMoved={onMoved}
+                />
+            ) : null}
 
-                {state.annotating && !selection && !sheet ? (
-                    <View style={[styles.hint, { top: INSETS.top - 4 }]} pointerEvents="box-none">
-                        <HintBar done={cancel} />
-                    </View>
-                ) : null}
-
-                {state.toolbarVisible && !selection && size.width > 0 ? (
-                    <Toolbar
-                        room={{
-                            width: size.width,
-                            height: size.height,
-                            top: INSETS.top,
-                            bottom: INSETS.bottom,
-                        }}
-                        place={state.toolbar}
-                        corner={notato.configuration?.toolbarPosition ?? "bottom-right"}
-                        folded={state.toolbar.folded}
-                        annotating={state.annotating}
-                        count={here.length}
-                        problem={problemDot}
-                        problemLabel={notato.describeConnection()}
-                        onAnnotate={() => (state.annotating ? cancel() : startAnnotating())}
-                        onMenu={() => setSheet({ kind: "menu" })}
-                        onFold={(folded) => notato.setFolded(folded)}
-                        onMoved={(x, y) => notato.placeToolbar(x, y)}
-                    />
-                ) : null}
-
-                {selection ? (
-                    <KeyboardAvoidingView
-                        behavior="padding"
-                        style={[
-                            StyleSheet.absoluteFill,
-                            styles.composer,
-                            composerAtTop
-                                ? { justifyContent: "flex-start", paddingTop: INSETS.top }
-                                : { justifyContent: "flex-end", paddingBottom: INSETS.bottom },
-                        ]}
-                        pointerEvents="box-none"
-                    >
+            {shownSelection ? (
+                <KeyboardAvoidingView
+                    behavior="padding"
+                    style={[
+                        StyleSheet.absoluteFill,
+                        styles.composer,
+                        composerAtTop
+                            ? { justifyContent: "flex-start", paddingTop: INSETS.top }
+                            : { justifyContent: "flex-end", paddingBottom: INSETS.bottom },
+                    ]}
+                    pointerEvents={composer.leaving ? "none" : "box-none"}
+                >
+                    <Animated.View style={composerMotion}>
                         <Composer
-                            key={selection.id}
-                            title={selection.title}
-                            subtitle={selection.subtitle}
+                            key={shownSelection.id}
+                            title={shownSelection.title}
+                            subtitle={shownSelection.subtitle}
                             screenshotsOff={!notato.screenshotsOn}
-                            canParent={!!selection.picked.element.parent}
-                            onParent={() => void selectParent()}
+                            canParent={!!shownSelection.picked.element.parent}
+                            onParent={onParent}
                             onCancel={cancel}
-                            onSend={(draft) => void send(draft)}
+                            onSend={onSend}
                         />
-                    </KeyboardAvoidingView>
-                ) : null}
+                    </Animated.View>
+                </KeyboardAvoidingView>
+            ) : null}
 
-                {sheet ? (
-                    <KeyboardAvoidingView
-                        behavior="padding"
-                        style={StyleSheet.absoluteFill}
-                        pointerEvents="box-none"
+            {sheets.shown ? (
+                <KeyboardAvoidingView
+                    behavior="padding"
+                    style={StyleSheet.absoluteFill}
+                    pointerEvents="box-none"
+                >
+                    <BottomSheet
+                        close={closeSheet}
+                        maxHeight={Math.max(240, size.height - INSETS.top - 16)}
+                        top={INSETS.top - 8}
+                        progress={sheets.progress}
+                        leaving={sheets.leaving}
+                        content={contentFade}
                     >
-                        <BottomSheet
-                            close={() => setSheet(null)}
-                            maxHeight={Math.max(240, size.height - INSETS.top - 16)}
-                            top={INSETS.top - 8}
-                        >
-                            <SheetView
-                                sheet={sheet}
-                                notato={notato}
-                                state={state}
-                                here={here}
-                                pins={pinnable.length}
-                                open={setSheet}
-                                annotate={startAnnotating}
-                                toast={flash}
-                            />
-                        </BottomSheet>
-                    </KeyboardAvoidingView>
-                ) : null}
+                        <SheetView
+                            sheet={sheets.shown}
+                            notato={notato}
+                            state={sheetData.current.state}
+                            here={sheetData.current.here}
+                            pins={pinnable.length}
+                            open={openSheet}
+                            annotate={startAnnotating}
+                            toast={flash}
+                        />
+                    </BottomSheet>
+                </KeyboardAvoidingView>
+            ) : null}
 
-                {toast ? (
-                    <View
-                        style={[styles.toastWrap, { top: INSETS.top - 5 }]}
-                        pointerEvents="none"
-                        accessibilityLiveRegion="polite"
-                    >
-                        <Text style={styles.toast}>{toast}</Text>
-                    </View>
-                ) : null}
-            </View>
+            {toasts.shown ? (
+                <Animated.View
+                    style={[styles.toastWrap, { top: INSETS.top - 5 }, toastMotion]}
+                    pointerEvents="none"
+                    accessibilityLiveRegion="polite"
+                >
+                    <Text style={styles.toast}>{toasts.shown}</Text>
+                </Animated.View>
+            ) : null}
         </View>
     );
 }
@@ -532,31 +594,6 @@ function useRoute(read: () => string): string {
 }
 
 const styles = StyleSheet.create({
-    cover: { position: "absolute", backgroundColor: BRAND.cover, borderRadius: 4 },
-    outline: {
-        position: "absolute",
-        borderWidth: 2,
-        borderColor: BRAND.selection,
-        backgroundColor: "rgba(229,72,77,0.08)",
-        borderRadius: 4,
-    },
-    outlinePin: {
-        position: "absolute",
-        top: -12,
-        right: -12,
-        width: 24,
-        height: 24,
-        borderRadius: 12,
-        backgroundColor: BRAND.selection,
-        alignItems: "center",
-        justifyContent: "center",
-        borderWidth: 2,
-        borderColor: "#fff",
-    },
-    pinText: { color: "#fff", fontSize: 12, fontWeight: "800" },
-    hidden: { opacity: 0 },
-    pin: { position: "absolute" },
-    detached: { opacity: 0.55 },
     hint: { position: "absolute", left: 0, right: 0, alignItems: "center" },
     composer: { paddingHorizontal: 10, paddingTop: 10, paddingBottom: 10 },
     toastWrap: { position: "absolute", left: 16, right: 16, alignItems: "center" },
