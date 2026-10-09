@@ -1,6 +1,7 @@
 package dev.notato.android.overlay
 
 import android.animation.TimeInterpolator
+import android.animation.ValueAnimator
 import android.content.Context
 import android.content.res.ColorStateList
 import android.content.res.Configuration
@@ -11,6 +12,7 @@ import android.graphics.drawable.GradientDrawable
 import android.graphics.drawable.InsetDrawable
 import android.graphics.drawable.StateListDrawable
 import android.os.Build
+import android.provider.Settings
 import android.text.TextUtils
 import android.util.TypedValue
 import android.view.Gravity
@@ -26,6 +28,7 @@ import androidx.core.graphics.ColorUtils
 import androidx.core.graphics.drawable.toDrawable
 import androidx.core.graphics.toColorInt
 import androidx.core.view.ViewCompat
+import androidx.core.view.isVisible
 import dev.notato.android.R
 import dev.notato.android.inspect.ViewInspector
 import dev.notato.android.model.Status
@@ -386,11 +389,68 @@ internal class Ui(val context: Context) {
     }
 }
 
-/** The overlay's easing curves: the same in the toolbar and the sheets. */
+/** The overlay's easing curves and timings: the same in the toolbar, the sheets, the pins and the toast. */
 internal object Motion {
     /** Quick off the mark and settling gently: things arriving. */
     val SETTLE: TimeInterpolator = PathInterpolator(0.32f, 0.72f, 0f, 1f)
 
     /** Slow to start, then away: things leaving. */
     val EASE_IN: TimeInterpolator = PathInterpolator(0.42f, 0f, 1f, 1f)
+
+    /** How long something takes to arrive, and to leave: leaving is quicker, so what comes next is not kept waiting. */
+    const val IN_MS = 220L
+    const val OUT_MS = 170L
+
+    /**
+     * Whether animations play: not when the person has turned them off (Developer options, or Remove animations in
+     * Accessibility), which sets the animator duration scale to 0. Things then go straight to where they are going.
+     */
+    fun enabled(context: Context): Boolean = if (Build.VERSION.SDK_INT >= 26) {
+        ValueAnimator.areAnimatorsEnabled()
+    } else {
+        Settings.Global.getFloat(context.contentResolver, Settings.Global.ANIMATOR_DURATION_SCALE, 1f) != 0f
+    }
+
+    /**
+     * Shows or hides [view] with a fade, sliding [offsetY] and growing from [scale] as it comes, and back the same way
+     * as it goes; gone once it has. Asked again for where it is going already (the overlay renders often), nothing
+     * starts again. Only alpha, scale and [offsetY] are touched, so a view placed by its translation keeps its place
+     * when [offsetY] is 0.
+     */
+    fun reveal(view: View, show: Boolean, offsetY: Float = 0f, scale: Float = 1f) {
+        val going = view.getTag(R.id.notato_motion) as? Boolean ?: view.isVisible
+        if (going == show) return
+        view.setTag(R.id.notato_motion, show)
+        val animator = view.animate()
+        animator.cancel()
+        if (!enabled(view.context) || !view.isAttachedToWindow) {
+            view.alpha = 1f
+            view.scaleX = 1f
+            view.scaleY = 1f
+            if (offsetY != 0f) view.translationY = 0f
+            view.visibility = if (show) View.VISIBLE else View.GONE
+            return
+        }
+        if (show) {
+            if (!view.isVisible) {
+                view.alpha = 0f
+                view.scaleX = scale
+                view.scaleY = scale
+                if (offsetY != 0f) view.translationY = offsetY
+                view.visibility = View.VISIBLE
+            }
+            animator.alpha(1f).scaleX(1f).scaleY(1f).apply { if (offsetY != 0f) translationY(0f) }
+                .setStartDelay(0).setDuration(IN_MS).setInterpolator(SETTLE).start()
+        } else {
+            animator.alpha(0f).scaleX(scale).scaleY(scale).apply { if (offsetY != 0f) translationY(offsetY) }
+                .setStartDelay(0).setDuration(OUT_MS).setInterpolator(EASE_IN)
+                .withEndAction {
+                    view.visibility = View.GONE
+                    view.alpha = 1f
+                    view.scaleX = 1f
+                    view.scaleY = 1f
+                    if (offsetY != 0f) view.translationY = 0f
+                }.start()
+        }
+    }
 }

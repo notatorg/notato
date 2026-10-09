@@ -1,8 +1,8 @@
 package dev.notato.android.internal
 
 import android.view.View
-import dev.notato.android.inspect.Box
 import dev.notato.android.inspect.Reading
+import dev.notato.android.inspect.ScreenElement
 import dev.notato.android.inspect.Selectors
 import dev.notato.android.inspect.ViewInspector
 import dev.notato.android.model.Annotation
@@ -47,10 +47,11 @@ internal class NoteRecord(
     var viewKey: ViewKey? = null
 
     /**
-     * Where the view it was made on is, while that view is on screen and still shows what the note is about. A list's
-     * recycled row shows another item: the reference is dropped, and the note's selector finds it from then on.
+     * The view it was made on, described, while that view is on screen and still shows what the note is about. A
+     * list's recycled row shows another item: the reference is dropped, and the note's selector finds it from then on.
+     * Asked when the screen is read for the pins, not on every frame: between readings the pin follows the view.
      */
-    fun liveBounds(maskInputs: Boolean): Box? {
+    fun live(maskInputs: Boolean): ScreenElement? {
         val view = view?.get() ?: return null
         if (!view.isAttachedToWindow || !view.isShown) return null
         val now = ViewInspector.describe(view, maskInputs, Reading(lite = true))
@@ -58,7 +59,7 @@ internal class NoteRecord(
             this.view = null
             return null
         }
-        return now.bounds
+        return now
     }
 
     private var parsedFrom: String? = null

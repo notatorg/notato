@@ -1,6 +1,5 @@
 package dev.notato.android
 
-import android.view.View
 import dev.notato.android.internal.Hider
 import dev.notato.android.overlay.PinSpread
 import org.junit.Assert.assertEquals
@@ -45,32 +44,34 @@ class OverlayTest {
         assertEquals(3, spread(List(3) { 2f to 30f }, width = 20f, height = 40f).size)
     }
 
-    private class Overlay(var visibility: Int = View.VISIBLE)
+    private class Overlay(var alpha: Float = 1f)
+
+    private fun hider() = Hider<Overlay, Float>({ it.alpha }, { overlay, value -> overlay.alpha = value }, 0f)
 
     @Test
     fun overlappingCapturesShowTheOverlayAgainWhenTheLastEnds() {
-        val hider = Hider<Overlay>({ it.visibility }, { overlay, value -> overlay.visibility = value })
+        val hider = hider()
         val overlay = Overlay()
         hider.hide(overlay) // an agent's capture
         hider.hide(overlay) // a tap during it
-        assertEquals(View.INVISIBLE, overlay.visibility)
+        assertEquals(0f, overlay.alpha)
         hider.show(overlay) // the agent's ends first
-        assertEquals(View.INVISIBLE, overlay.visibility)
+        assertEquals(0f, overlay.alpha)
         hider.show(overlay)
-        assertEquals(View.VISIBLE, overlay.visibility)
+        assertEquals(1f, overlay.alpha)
         // Shown once more by mistake: nothing changes.
         hider.show(overlay)
-        assertEquals(View.VISIBLE, overlay.visibility)
+        assertEquals(1f, overlay.alpha)
     }
 
     @Test
     fun anOverlayComesBackAsItWasBeforeTheFirstCapture() {
-        val hider = Hider<Overlay>({ it.visibility }, { overlay, value -> overlay.visibility = value })
-        val overlay = Overlay(View.GONE)
+        val hider = hider()
+        val overlay = Overlay(0.5f)
         hider.hide(overlay)
         hider.hide(overlay)
         hider.show(overlay)
         hider.show(overlay)
-        assertEquals(View.GONE, overlay.visibility)
+        assertEquals(0.5f, overlay.alpha)
     }
 }

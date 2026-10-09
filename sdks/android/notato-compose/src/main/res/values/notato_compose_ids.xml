@@ -2,4 +2,6 @@
 <resources>
     <!-- A ComposeView's source index, reused for half a second (NotatoCompose.SourceIndex). -->
     <item name="notato_source_index" type="id" />
+    <!-- The screen composable a ComposeView showed when last worked out: the route uses it while the window keeps drawing. -->
+    <item name="notato_source_screen" type="id" />
 </resources>

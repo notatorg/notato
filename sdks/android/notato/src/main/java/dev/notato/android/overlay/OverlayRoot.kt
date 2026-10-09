@@ -1,11 +1,15 @@
 package dev.notato.android.overlay
 
+import android.animation.TimeInterpolator
 import android.annotation.SuppressLint
 import android.content.Context
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.RectF
+import android.graphics.drawable.Drawable
+import android.graphics.drawable.InsetDrawable
+import android.graphics.drawable.LayerDrawable
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
@@ -24,14 +28,17 @@ import androidx.core.view.WindowInsetsCompat
 import dev.notato.android.NotatoConnection
 import dev.notato.android.inspect.Box
 import dev.notato.android.inspect.ViewInspector
+import dev.notato.android.internal.Follower
 import kotlin.math.abs
 import kotlin.math.floor
 
 /** What the overlay draws for a selection: outlines and a name, in window pixels. Equal when it would draw the same. */
 internal data class SelectionDrawing(val boxes: List<Box>, val title: String)
 
-/** A pin as the overlay draws it. */
-internal data class PinDrawing(val id: String, val number: Int, val status: String, val box: Box, val detached: Boolean, val pending: Boolean)
+/** A pin as the overlay draws it, and its element followed from frame to frame (none when it was not found). */
+internal data class PinDrawing(
+    val id: String, val number: Int, val status: String, val box: Box, val detached: Boolean, val pending: Boolean, val follow: Follower? = null,
+)
 
 /**
  * Where pins go when several want the same spot. A pin that would cover one already placed tries the left, then the
@@ -110,6 +117,10 @@ internal interface OverlayActions {
     fun openMenu()
     fun openPin(id: String)
     fun sheetClosed(wasComposer: Boolean)
+    /** The window drew a frame: something on screen may have moved. */
+    fun drew()
+    /** The window gained or lost focus, or the overlay left it: a dialog may have opened or closed. */
+    fun windowsChanged()
 }
 
 /**
@@ -126,7 +137,11 @@ internal class OverlayRoot(context: Context, private val actions: OverlayActions
     private val hint: LinearLayout
     private val toolbar: ToolbarView
     private val backdrop = ui.own(View(context))
-    private val sheetHost = ui.own(FrameLayout(context))
+
+    /** Holds the sheet. One closing takes no touches on its way out: they go on to what is underneath. */
+    private val sheetHost = ui.own(object : FrameLayout(context) {
+        override fun dispatchTouchEvent(event: MotionEvent): Boolean = sheet != null && super.dispatchTouchEvent(event)
+    })
     private val toast: TextView
     private val handler = Handler(Looper.getMainLooper())
     private val pins = HashMap<String, Pin>()
@@ -136,6 +151,18 @@ internal class OverlayRoot(context: Context, private val actions: OverlayActions
         var number = -1
         var status: String? = null
         var pending = false
+
+        /** How opaque it is when shown: fainter when its element was not found, and it stands where the note was made. */
+        var alpha = 1f
+
+        /** Its element, followed from frame to frame; where that was when the pin was placed, and where the pin went. */
+        var follow: Follower? = null
+        var anchor: Box? = null
+        var x = 0f
+        var y = 0f
+
+        /** Its element has left the screen since it was placed: hidden until the screen is next read. */
+        var lost = false
     }
 
     /**
@@ -150,7 +177,17 @@ internal class OverlayRoot(context: Context, private val actions: OverlayActions
     private val drawn = ViewTreeObserver.OnDrawListener {
         frames++
         lastFrameAt = SystemClock.uptimeMillis()
+        actions.drew()
     }
+
+    /** Before each frame is drawn the pins catch up with their elements, so they move in the same frame as those do. */
+    private val following = ViewTreeObserver.OnPreDrawListener {
+        followPins()
+        true
+    }
+
+    /** A dialog opening takes the focus from the window without it drawing anything. */
+    private val focus = ViewTreeObserver.OnWindowFocusChangeListener { actions.windowsChanged() }
 
     var safeTop = 0
         private set
@@ -234,6 +271,8 @@ internal class OverlayRoot(context: Context, private val actions: OverlayActions
         super.onAttachedToWindow()
         viewTreeObserver.addOnGlobalLayoutListener(rootInsets)
         viewTreeObserver.addOnDrawListener(drawn)
+        viewTreeObserver.addOnPreDrawListener(following)
+        viewTreeObserver.addOnWindowFocusChangeListener(focus)
         // Another window (a dialog's, or the activity's again): whatever was worked out for the last one is stale.
         frames++
         ViewCompat.getRootWindowInsets(this)?.let { if (readInsets(it)) layoutInsets() }
@@ -242,7 +281,11 @@ internal class OverlayRoot(context: Context, private val actions: OverlayActions
     override fun onDetachedFromWindow() {
         viewTreeObserver.removeOnGlobalLayoutListener(rootInsets)
         viewTreeObserver.removeOnDrawListener(drawn)
+        viewTreeObserver.removeOnPreDrawListener(following)
+        viewTreeObserver.removeOnWindowFocusChangeListener(focus)
         super.onDetachedFromWindow()
+        // Its window went (a dialog closed): it goes back into the one under it.
+        actions.windowsChanged()
     }
 
     /** Takes the safe areas and the keyboard's height from [insets]; true when they changed. */
@@ -268,11 +311,13 @@ internal class OverlayRoot(context: Context, private val actions: OverlayActions
     // ---- state from the controller ---------------------------------------------------------------------------------
 
     fun render() {
-        toolbar.visibility = if (actions.isToolbarVisible) VISIBLE else GONE
-        pinLayer.visibility = if (actions.pinsVisible) VISIBLE else GONE
+        // Out of the way while a note is written, and back once it is sent or cancelled.
+        toolbar.centerPivot()
+        Motion.reveal(toolbar, actions.isToolbarVisible && sheet !is ComposerSheet, scale = 0.9f)
+        Motion.reveal(pinLayer, actions.pinsVisible)
         val annotating = actions.isAnnotating
         pickSurface.visibility = if (annotating) VISIBLE else GONE
-        hint.visibility = if (annotating && marks.selection == null && sheet == null) VISIBLE else GONE
+        Motion.reveal(hint, annotating && marks.selection == null && sheet == null, offsetY = -ui.dp(12).toFloat())
         toolbar.render()
         if (!annotating && sheet == null) marks.show(null)
         (sheet as? BottomSheet)?.refresh()
@@ -311,10 +356,11 @@ internal class OverlayRoot(context: Context, private val actions: OverlayActions
         val keep = HashSet<String>(drawings.size * 2)
         for ((index, pin) in drawings.withIndex()) {
             keep += pin.id
+            var fresh = false
             val held = pins.getOrPut(pin.id) {
+                fresh = true
                 Pin(ui.text("", 12f, Color.WHITE, maxLines = 1, weight = 800).apply {
                     gravity = Gravity.CENTER
-                    elevation = ui.dp(3).toFloat()
                     isClickable = true
                     setOnClickListener { actions.openPin(pin.id) }
                     pinLayer.addView(this, LayoutParams(size, size))
@@ -324,28 +370,130 @@ internal class OverlayRoot(context: Context, private val actions: OverlayActions
             // Only what changed is set: setting the same text or a new drawable would lay out and draw the pin again,
             // and a window that keeps drawing never looks still.
             if (held.number != pin.number) view.text = pin.number.toString()
-            if (held.status != pin.status || held.pending != pin.pending) {
-                view.background = ui.rounded(Ui.statusColor(pin.status), 14, if (pin.pending) Ui.PENDING_RING else Color.WHITE, 2)
-            }
+            if (held.status != pin.status || held.pending != pin.pending) view.background = pinLook(pin.status, pin.pending)
             if (held.number != pin.number || held.status != pin.status) {
                 view.contentDescription = "Note ${pin.number}, ${pin.status.replace('_', ' ')}"
             }
             held.number = pin.number
             held.status = pin.status
             held.pending = pin.pending
-            // These three draw again only when the value is new.
-            view.alpha = if (pin.detached) 0.55f else 1f
-            view.translationX = places[index].first
-            view.translationY = places[index].second
+            // Followed from here: where its element is now is where the pin was just placed from.
+            if (held.follow !== pin.follow) held.follow?.release()
+            held.follow = pin.follow
+            held.anchor = pin.follow?.bounds()
+            held.x = places[index].first
+            held.y = places[index].second
+            // These two draw again only when the value is new.
+            view.translationX = held.x
+            view.translationY = held.y
+            val alpha = if (pin.detached) 0.55f else 1f
+            when {
+                fresh || held.lost -> {
+                    held.alpha = alpha
+                    held.lost = false
+                    popIn(held, grow = true)
+                }
+                alpha != held.alpha -> {
+                    held.alpha = alpha
+                    popIn(held, grow = false)
+                }
+            }
         }
         val each = pins.entries.iterator()
         while (each.hasNext()) {
             val (id, held) = each.next()
             if (id !in keep) {
-                pinLayer.removeView(held.view)
+                held.follow?.release()
+                val view = held.view
+                view.setOnClickListener(null)
+                view.isClickable = false
+                popOut(view) { pinLayer.removeView(view) }
                 each.remove()
             }
         }
+    }
+
+    /**
+     * Moves the pins with their elements, before a frame is drawn: by as much as each element has moved since the pin
+     * was placed, so pins spread apart stay apart. One whose element has left the screen shrinks away until the screen
+     * is next read, which finds it again (or where it is now).
+     */
+    private fun followPins() {
+        if (pins.isEmpty() || pinLayer.visibility != VISIBLE) return
+        val size = ui.dp(28)
+        val maxX = (width - size - 2).toFloat().coerceAtLeast(2f)
+        val minY = safeTop.toFloat()
+        val maxY = (height - size).toFloat().coerceAtLeast(minY)
+        for (held in pins.values) {
+            val follow = held.follow ?: continue
+            val anchor = held.anchor ?: continue
+            val now = follow.bounds()
+            if (now == null) {
+                if (!held.lost) {
+                    held.lost = true
+                    popOut(held.view, then = null)
+                }
+                continue
+            }
+            // Setting the same place again draws nothing.
+            held.view.translationX = (held.x + now.right - anchor.right).coerceIn(2f, maxX)
+            held.view.translationY = (held.y + now.top - anchor.top).coerceIn(minY, maxY)
+            if (held.lost) {
+                held.lost = false
+                popIn(held, grow = true)
+            }
+        }
+    }
+
+    /**
+     * A pin's look: its status's colour in a white ring (amber while its note waits to be sent), on a faint dark rim
+     * that stands it off a light background. Drawn rather than an elevation shadow: a hundred and more shadows, drawn
+     * again whenever the pins move, cost far more than a rim.
+     */
+    private fun pinLook(status: String, pending: Boolean): Drawable = LayerDrawable(
+        arrayOf(
+            ui.rounded(Color.argb(46, 0, 0, 0), 14),
+            InsetDrawable(ui.rounded(Ui.statusColor(status), 13, if (pending) Ui.PENDING_RING else Color.WHITE, 2), ui.dp(1)),
+        ),
+    )
+
+    /** A pin arriving, or coming back: it grows out of its spot ([grow]), or only fades to how opaque it should be. */
+    private fun popIn(held: Pin, grow: Boolean) {
+        val view = held.view
+        view.visibility = VISIBLE
+        if (!Motion.enabled(context)) {
+            view.animate().cancel()
+            view.alpha = held.alpha
+            view.scaleX = 1f
+            view.scaleY = 1f
+            return
+        }
+        if (grow) {
+            view.animate().cancel()
+            // A new pin starts small; one caught shrinking away turns round where it is.
+            if (view.scaleX >= 1f) {
+                view.alpha = 0f
+                view.scaleX = 0.4f
+                view.scaleY = 0.4f
+            }
+            view.animate().alpha(held.alpha).scaleX(1f).scaleY(1f).setStartDelay(0).setDuration(PIN_IN_MS).setInterpolator(POP).start()
+        } else {
+            view.animate().alpha(held.alpha).setStartDelay(0).setDuration(Motion.IN_MS).setInterpolator(Motion.SETTLE).start()
+        }
+    }
+
+    /** A pin leaving, or hidden while its element is off screen: it shrinks away, then [then] (or it waits, invisible). */
+    private fun popOut(view: View, then: (() -> Unit)?) {
+        view.animate().cancel()
+        val done = Runnable {
+            if (then != null) then() else view.visibility = INVISIBLE
+        }
+        if (!Motion.enabled(context) || !view.isShown) {
+            view.alpha = 0f
+            done.run()
+            return
+        }
+        view.animate().alpha(0f).scaleX(0.4f).scaleY(0.4f).setStartDelay(0).setDuration(Motion.OUT_MS).setInterpolator(Motion.EASE_IN).withEndAction(done).start()
     }
 
     // ---- sheets -----------------------------------------------------------------------------------------------------
@@ -356,17 +504,30 @@ internal class OverlayRoot(context: Context, private val actions: OverlayActions
      * to close. What the bottom sheet opens is shown inside it, not here.
      */
     fun showSheet(view: View, dim: Boolean, atTop: Boolean = false) {
+        // One still on its way out goes at once: two sheets never show together.
         sheetHost.removeAllViews()
         sheet = view
         sheetAtTop = atTop
         val screen = resources.displayMetrics.widthPixels
         val width = if (view is BottomSheet) minOf(ui.dp(480), screen) else minOf(ui.dp(480), screen - ui.dp(20))
         sheetHost.addView(view, LayoutParams(width, LayoutParams.WRAP_CONTENT, Gravity.CENTER_HORIZONTAL))
-        backdrop.visibility = if (dim) VISIBLE else GONE
+        // Fading out, it lets touches through to the app; shown, a tap on it closes the sheet.
+        backdrop.isClickable = dim
+        Motion.reveal(backdrop, dim)
         applySheetPosition()
         render()
-        (view as? BottomSheet)?.slideIn()
+        if (view is BottomSheet) {
+            view.slideIn()
+        } else if (Motion.enabled(context)) {
+            // The composer floats up (or down, at the top) into place as it fades in.
+            view.alpha = 0f
+            view.translationY = composerOffset(atTop)
+            view.animate().alpha(1f).translationY(0f).setStartDelay(0).setDuration(Motion.IN_MS).setInterpolator(Motion.SETTLE).start()
+        }
     }
+
+    /** How far the composer travels as it comes and goes: from below, or from above when it floats at the top. */
+    private fun composerOffset(atTop: Boolean) = ui.dp(if (atTop) -16 else 24).toFloat()
 
     private fun applySheetPosition() {
         val params = sheetHost.layoutParams as LayoutParams
@@ -386,12 +547,27 @@ internal class OverlayRoot(context: Context, private val actions: OverlayActions
         sheetHost.layoutParams = params
     }
 
+    /**
+     * Closes the sheet, whatever closes it (Cancel, Send, the backdrop, a fold of the toolbar, code): it goes the way it
+     * came, the bottom sheet down off the screen's edge and the composer fading as it drops away, and is taken away once
+     * it has. It is closed as far as anything else is concerned at once.
+     */
     fun closeSheet() {
-        val wasComposer = sheet is ComposerSheet
+        val closing = sheet
+        val wasComposer = closing is ComposerSheet
         hideKeyboard()
-        sheetHost.removeAllViews()
         sheet = null
-        backdrop.visibility = GONE
+        closing?.let { view ->
+            val gone = Runnable { if (view.parent === sheetHost) sheetHost.removeView(view) }
+            when {
+                !Motion.enabled(context) || !view.isShown -> gone.run()
+                view is BottomSheet -> view.slideOut(gone)
+                else -> view.animate().alpha(0f).translationY(composerOffset(sheetAtTop)).setStartDelay(0).setDuration(Motion.OUT_MS)
+                    .setInterpolator(Motion.EASE_IN).withEndAction(gone).start()
+            }
+        }
+        backdrop.isClickable = false
+        Motion.reveal(backdrop, false)
         actions.sheetClosed(wasComposer)
         render()
     }
@@ -402,15 +578,21 @@ internal class OverlayRoot(context: Context, private val actions: OverlayActions
         context.getSystemService(InputMethodManager::class.java)?.hideSoftInputFromWindow(windowToken, 0)
     }
 
+    /** A word at the top of the screen: it drops in, fading, and goes back up after a moment (longer for more words). */
     fun toast(message: String) {
         toast.text = message
-        toast.visibility = VISIBLE
+        val offset = -ui.dp(12).toFloat()
+        Motion.reveal(toast, true, offsetY = offset, scale = 0.96f)
         handler.removeCallbacksAndMessages(TOAST)
-        handler.postAtTime({ toast.visibility = GONE }, TOAST, SystemClock.uptimeMillis() + if (message.length > 70) 5000 else 2800)
+        handler.postAtTime({ Motion.reveal(toast, false, offsetY = offset, scale = 0.96f) }, TOAST, SystemClock.uptimeMillis() + if (message.length > 70) 5000 else 2800)
     }
 
     private companion object {
         val TOAST = Any()
+
+        /** Pins pop in on a spring, overshooting a little. */
+        val POP = TimeInterpolator { spring(it) }
+        const val PIN_IN_MS = 300L
     }
 
     /** Takes every tap while annotating: the controller picks what is underneath. */

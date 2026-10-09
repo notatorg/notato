@@ -45,6 +45,10 @@ internal class SourceIndex private constructor(tables: Collection<CompositionDat
     /** Calls that open a window of their own (`Dialog(…)` in SizeGuideDialog), in the compositions of the app's window. */
     private val windowCalls = ArrayList<Group>()
 
+    /** The screen composable, for the route, once it has been worked out from this index (it can be none). */
+    var screenWorkedOut = false
+    var screen: String? = null
+
     init {
         for (table in tables) read(table, collectWindowCalls = false)
         for (table in windowTables) read(table, collectWindowCalls = true)
@@ -168,7 +172,10 @@ internal class SourceIndex private constructor(tables: Collection<CompositionDat
     }
 
     companion object {
-        private class Cached(val changes: Long, val tables: Int, val at: Long, val index: SourceIndex)
+        private class Cached(val changes: Long, val tables: Int, val at: Long, val index: SourceIndex) {
+            /** When the compositions were first seen to have moved on from these, while the index went on being used. */
+            var behindSince = -1L
+        }
 
         /**
          * How many times the Recomposer of [view]'s window has applied changes: the compositions are as they were
@@ -212,6 +219,19 @@ internal class SourceIndex private constructor(tables: Collection<CompositionDat
             }
             return SourceIndex(tables, windowViews(view).flatMap { tablesOf(it) })
                 .also { view.setTag(R.id.notato_source_index, Cached(changes, tables.size, now, it)) }
+        }
+
+        /**
+         * The index read last for [view], without reading the compositions again even when they have changed: unless
+         * they have been seen to differ from it for [maxBehindMs] or more. Null when there is none to use.
+         */
+        fun last(view: View, maxBehindMs: Long): SourceIndex? {
+            val cached = view.getTag(R.id.notato_source_index) as? Cached ?: return null
+            val tables = (view.getTag(androidx.compose.ui.R.id.inspection_slot_table_set) as? Set<*>)?.size ?: 0
+            if (cached.tables == tables && cached.changes == changesOf(view)) return cached.index
+            val now = SystemClock.uptimeMillis()
+            if (cached.behindSince < 0) cached.behindSince = now
+            return cached.index.takeIf { now - cached.behindSince < maxBehindMs }
         }
     }
 }

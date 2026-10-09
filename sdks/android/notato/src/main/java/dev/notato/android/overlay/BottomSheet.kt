@@ -1,5 +1,8 @@
 package dev.notato.android.overlay
 
+import android.animation.Animator
+import android.animation.AnimatorListenerAdapter
+import android.animation.ValueAnimator
 import android.annotation.SuppressLint
 import android.graphics.drawable.GradientDrawable
 import android.view.Gravity
@@ -32,8 +35,9 @@ internal class SheetParts(val top: List<View>, val body: View? = null, val botto
  * The modal bottom sheet the menu, Notes, Settings, Clear notes and a note's card are all drawn in: a grabber over the
  * content, on the bottom edge and under the navigation bar (and over the keyboard). Going from the menu to what it
  * opens, and back, swaps the content inside it ([show]); [refresh] builds it again in place when what it shows has
- * changed, so the server's state (and a Retry) shows live in the menu. It slides up when shown; dragged down, it closes
- * through [dismiss].
+ * changed, so the server's state (and a Retry) shows live in the menu. Either way the new content fades in and the
+ * sheet's height eases to it. It slides up when shown; dragged down, it closes through [dismiss], and closed any other
+ * way it slides down the same ([slideOut]).
  */
 @SuppressLint("ViewConstructor")
 internal class BottomSheet(private val ui: Ui, first: SheetPage, private val dismiss: () -> Unit) : LinearLayout(ui.context) {
@@ -90,21 +94,67 @@ internal class BottomSheet(private val ui: Ui, first: SheetPage, private val dis
     fun show(next: SheetPage, fade: Boolean = true, keepScroll: Boolean = false) {
         page = next
         built = next.state()
-        fill(next.build(), keepScroll)
-        if (fade) {
-            for (part in listOf(top, scroll, bottom)) {
-                part.alpha = 0f
-                part.animate().alpha(1f).setDuration(160).setInterpolator(Motion.SETTLE).start()
-            }
-        }
+        change(next.build(), keepScroll, fade)
     }
 
-    /** Builds the content again if what it shows has changed. */
+    /** Builds the content again if what it shows has changed: faded in, as another page is. */
     fun refresh() {
         val now = page.state()
         if (now == built) return
         built = now
-        fill(page.build(), keepScroll = true)
+        change(page.build(), keepScroll = true, fade = true)
+    }
+
+    /** Fills it with [parts]; [fade]d in, and the height eased from what it was, when it is on screen. */
+    private fun change(parts: SheetParts, keepScroll: Boolean, fade: Boolean) {
+        val before = height
+        fill(parts, keepScroll)
+        if (!fade || !isShown || before == 0 || !Motion.enabled(context)) return
+        for (part in listOf(top, scroll, bottom)) {
+            part.alpha = 0f
+            part.animate().alpha(1f).setDuration(160).setInterpolator(Motion.SETTLE).start()
+        }
+        resize(before)
+    }
+
+    private var resizing: ValueAnimator? = null
+
+    /**
+     * Eases the height from [from] to what the new content needs. That is known only once it has been laid out, so
+     * the frame that would show it is skipped, and the height starts from [from] on the next: it never jumps.
+     */
+    private fun resize(from: Int) {
+        resizing?.cancel()
+        val params = layoutParams ?: return
+        params.height = LayoutParams.WRAP_CONTENT
+        layoutParams = params
+        viewTreeObserver.addOnPreDrawListener(object : ViewTreeObserver.OnPreDrawListener {
+            override fun onPreDraw(): Boolean {
+                if (viewTreeObserver.isAlive) viewTreeObserver.removeOnPreDrawListener(this)
+                val to = height
+                if (to == from || layoutParams !== params) return true
+                params.height = from
+                layoutParams = params
+                resizing = ValueAnimator.ofInt(from, to).apply {
+                    duration = Motion.IN_MS
+                    interpolator = Motion.SETTLE
+                    addUpdateListener {
+                        params.height = it.animatedValue as Int
+                        layoutParams = params
+                    }
+                    addListener(object : AnimatorListenerAdapter() {
+                        override fun onAnimationEnd(animation: Animator) {
+                            if (resizing === animation) resizing = null
+                            // As tall as its content again, should that change later (the keyboard, a longer reply).
+                            params.height = LayoutParams.WRAP_CONTENT
+                            layoutParams = params
+                        }
+                    })
+                    start()
+                }
+                return false
+            }
+        })
     }
 
     private fun fill(parts: SheetParts, keepScroll: Boolean) {
@@ -125,6 +175,16 @@ internal class BottomSheet(private val ui: Ui, first: SheetPage, private val dis
         bottom.visibility = if (parts.bottom.isNotEmpty()) VISIBLE else GONE
         (bottom.layoutParams as LayoutParams).topMargin = gap
         if (keepScroll) scroll.post { scroll.scrollTo(0, y) } else scroll.scrollTo(0, 0)
+    }
+
+    /**
+     * Down off the screen's edge, then [then]: closed by a button, the backdrop or code, it goes as a drag takes it.
+     * One dragged off already goes at once.
+     */
+    fun slideOut(then: Runnable) {
+        animate().cancel()
+        if (height == 0 || translationY >= height) return then.run()
+        animate().translationY(height.toFloat()).setDuration(Motion.OUT_MS + 30).setInterpolator(Motion.EASE_IN).withEndAction(then).start()
     }
 
     /** Up from below the screen's edge, once it has been laid out. */

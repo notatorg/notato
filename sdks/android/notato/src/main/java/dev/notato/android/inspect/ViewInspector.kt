@@ -40,6 +40,16 @@ public class HostInfo(
     public val density: Float,
     /** How private the host view is (`Notato.mask` on it or a view around it): what it holds is at least this private. */
     public val privacy: Privacy = Privacy.DEFAULT,
+    /**
+     * A reading for the pins, taken whenever the screen has settled: each element need say only what a selector looks
+     * at (its role, control, id, words, place and privacy), not its styles or where it is written.
+     */
+    public val lite: Boolean = false,
+    /**
+     * Whether the window has been still for a moment. While it keeps drawing (a list scrolling), [ElementProvider.screenOf]
+     * may answer from what it worked out last rather than work it out again on the main thread mid-scroll.
+     */
+    public val settled: Boolean = true,
 )
 
 /**
@@ -58,6 +68,13 @@ public interface ElementProvider {
 
     /** The screen [view] shows (`ProductListScreen`), for the route, or null when the provider cannot tell. */
     public fun screenOf(view: View, host: HostInfo): String? = null
+
+    /**
+     * Where the live object behind one of this provider's elements ([ScreenElement.ref]) is now, in window pixels:
+     * asked on every frame while a pin follows it, so it must be cheap. Null when [ref] is not one of this provider's,
+     * or what it points at has gone or now shows something else (a list row reused for another item).
+     */
+    public fun boundsOf(ref: WeakReference<Any>): Box? = null
 }
 
 /**
@@ -165,15 +182,18 @@ internal object ViewInspector {
         return (if (screen != null && components.size >= 2) components.drop(1) else emptyList()) to screen
     }
 
-    /** The screen a provider's view shows, from the largest such view on screen (a ComposeView). */
-    fun providedScreen(root: View): String? {
+    /**
+     * The screen a provider's view shows, from the largest such view on screen (a ComposeView). Not [settled] (the
+     * window is still drawing), a provider may answer from what it worked out last.
+     */
+    fun providedScreen(root: View, settled: Boolean = true): String? {
         var best: Pair<Float, String>? = null
         fun visit(view: View) {
             if (isOwn(view)) return
             val box = visibleBox(view) ?: return
             val provider = providers.firstOrNull { it.handles(view) }
             if (provider != null) {
-                val screen = runCatching { provider.screenOf(view, hostInfo(view)) }.getOrNull()
+                val screen = runCatching { provider.screenOf(view, hostInfo(view, settled = settled)) }.getOrNull()
                 if (screen != null && (best == null || box.area > best!!.first)) best = box.area to screen
                 return
             }
@@ -257,8 +277,11 @@ internal object ViewInspector {
         else -> null
     }
 
+    /** Runs of white space, made into one space: compiled once, not for every view of every reading. */
+    private val spaces = Regex("\\s+")
+
     private fun clip(text: CharSequence?, max: Int = 200): String? {
-        val one = text?.toString()?.split(Regex("\\s+"))?.filter { it.isNotEmpty() }?.joinToString(" ")?.ifEmpty { null } ?: return null
+        val one = text?.toString()?.replace(spaces, " ")?.trim(' ')?.ifEmpty { null } ?: return null
         return if (one.length > max) one.take(max - 1) + "…" else one
     }
 
@@ -325,14 +348,14 @@ internal object ViewInspector {
     }
 
     /** What a provider is told about [view], the View it reads into; [reading] shares what is worked out once per reading. */
-    fun hostInfo(view: View, reading: Reading? = null): HostInfo {
+    fun hostInfo(view: View, reading: Reading? = null, settled: Boolean = true): HostInfo {
         val density = view.resources.displayMetrics.density
         // The pins need only how private the view is: not where it is, nor what is around it.
-        if (reading?.lite == true) return HostInfo(null, emptyList(), emptyList(), density, privacyOf(view))
+        if (reading?.lite == true) return HostInfo(null, emptyList(), emptyList(), density, privacyOf(view), lite = true)
         val fragments = fragmentsOf(view, reading?.fragments)
         val activity = activityOf(view)?.javaClass?.simpleName
         val components = listOfNotNull(activity) + fragments
-        return HostInfo(fragments.lastOrNull() ?: activity, components, ancestorsOf(view), density, privacyOf(view))
+        return HostInfo(fragments.lastOrNull() ?: activity, components, ancestorsOf(view), density, privacyOf(view), settled = settled)
     }
 
     private fun shortName(view: View) = controlName(view) + (idName(view)?.let { "#$it" } ?: "")
@@ -426,7 +449,8 @@ internal object ViewInspector {
             ancestors = info.ancestors.ifEmpty { null },
             styles = if (lite) null else stylesOf(view),
             screen = info.screen,
-            ref = if (lite) null else WeakReference(view),
+            // Kept in a reading for the pins too: a pin follows its view from frame to frame through it.
+            ref = WeakReference(view),
             isMasked = hidden,
             isUnmasked = privacy == Privacy.SHOWN,
         )

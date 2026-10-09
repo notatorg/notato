@@ -4,6 +4,7 @@ import android.annotation.SuppressLint
 import android.text.Editable
 import android.text.TextWatcher
 import android.view.Gravity
+import android.view.inputmethod.InputMethodManager
 import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.TextView
@@ -73,6 +74,12 @@ internal class ComposerSheet(
         })
         addView(ui.card(ui.column(12, header, comment, intents.view, severities.view, peopleOnly.first, error, footer)))
         update()
+    }
+
+    /** Puts the cursor in the comment and opens the keyboard for it, as the other platforms do. */
+    fun focusComment() {
+        if (!isAttachedToWindow || !comment.requestFocus()) return
+        context.getSystemService(InputMethodManager::class.java)?.showSoftInput(comment, InputMethodManager.SHOW_IMPLICIT)
     }
 
     fun setTarget(title: String, subtitle: String?) {

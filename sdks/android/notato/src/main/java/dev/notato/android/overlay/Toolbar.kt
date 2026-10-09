@@ -11,7 +11,6 @@ import android.graphics.Outline
 import android.graphics.Paint
 import android.graphics.RectF
 import android.os.Build
-import android.provider.Settings
 import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
@@ -188,17 +187,23 @@ internal class ToolbarView(
     private var annotating = false
     private var trouble: Int? = null
 
+    /** The count the bar and the badge show: null before the first render. */
+    private var shownCount: Int? = null
+
     fun render() {
         if (actions.isAnnotating != annotating) {
             annotating = actions.isAnnotating
             styleAnnotate(annotating)
         }
         val n = actions.count
-        count.text = barCount(n)
-        if (Build.VERSION.SDK_INT >= 30) annotate.stateDescription = if (n == 1) "1 note on this screen" else "$n notes on this screen"
-        val folded = foldedCount(n)
-        badge.text = folded ?: ""
-        badge.visibility = if (folded != null) VISIBLE else GONE
+        // Set only when they change: setting a TextView's text, even the same, lays the bar out again, on every render.
+        if (n != shownCount) {
+            shownCount = n
+            count.text = barCount(n)
+            if (Build.VERSION.SDK_INT >= 30) annotate.stateDescription = if (n == 1) "1 note on this screen" else "$n notes on this screen"
+            badge.text = foldedCount(n) ?: ""
+        }
+        badge.visibility = if (foldedCount(n) != null) VISIBLE else GONE
         val problem = connectionDotColor(actions.connection)
         if (problem != trouble) {
             trouble = problem
@@ -326,13 +331,12 @@ internal class ToolbarView(
     /** On screen and placed, so where it is can be read. */
     private fun placed(): Boolean = isAttachedToWindow && isShown && width > 0 && ((parent as? View)?.width ?: 0) > 0
 
-    private fun animationsOn(): Boolean {
-        if (!placed()) return false
-        return if (Build.VERSION.SDK_INT >= 26) {
-            ValueAnimator.areAnimatorsEnabled()
-        } else {
-            Settings.Global.getFloat(context.contentResolver, Settings.Global.ANIMATOR_DURATION_SCALE, 1f) != 0f
-        }
+    private fun animationsOn(): Boolean = placed() && Motion.enabled(context)
+
+    /** Scales about the bar showing (the round button, when folded), so it shrinks and grows in place. */
+    fun centerPivot() {
+        pivotX = shownLeft + shown / 2
+        pivotY = height / 2f
     }
 
     private fun setCollapsed(next: Boolean) {

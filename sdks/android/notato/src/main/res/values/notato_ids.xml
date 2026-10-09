@@ -2,4 +2,6 @@
 <resources>
     <!-- Notato.mask(view, masked): true (private, in screenshots and text), false (a field shown even when inputs are masked), or none. -->
     <item name="notato_mask" type="id" />
+    <!-- Where one of the overlay's views is going: shown (true) or hidden (false), while it fades there. -->
+    <item name="notato_motion" type="id" />
 </resources>

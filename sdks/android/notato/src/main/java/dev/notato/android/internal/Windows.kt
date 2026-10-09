@@ -17,6 +17,7 @@ import android.view.inspector.WindowInspector
 import androidx.core.graphics.createBitmap
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withTimeoutOrNull
 import java.lang.reflect.Field
 import java.util.WeakHashMap
 import kotlin.coroutines.resume
@@ -55,25 +56,25 @@ internal class CapturedScreen(val bitmap: Bitmap, val density: Float) {
 }
 
 /**
- * Hides a view while any capture needs it hidden. Captures overlap (two agent requests, or a tap during one), so each
- * one hides and shows it again, and it comes back, as it was before the first, only when the last one is done.
- * Main thread only.
+ * Hides a view while any capture needs it hidden, by setting what [read] and [write] look after (its alpha) to
+ * [hidden]. Captures overlap (two agent requests, or a tap during one), so each one hides and shows it again, and it
+ * comes back, as it was before the first, only when the last one is done. Main thread only.
  */
-internal class Hider<T : Any>(private val visibility: (T) -> Int, private val setVisibility: (T, Int) -> Unit) {
-    private class Held(var count: Int, val was: Int)
+internal class Hider<T : Any, V>(private val read: (T) -> V, private val write: (T, V) -> Unit, private val hidden: V) {
+    private class Held<V>(var count: Int, val was: V)
 
-    private val held = WeakHashMap<T, Held>()
+    private val held = WeakHashMap<T, Held<V>>()
 
     fun hide(target: T) {
-        val entry = held.getOrPut(target) { Held(0, visibility(target)) }
-        if (entry.count++ == 0) setVisibility(target, View.INVISIBLE)
+        val entry = held.getOrPut(target) { Held(0, read(target)) }
+        if (entry.count++ == 0) write(target, hidden)
     }
 
     fun show(target: T) {
         val entry = held[target] ?: return
         if (--entry.count > 0) return
         held.remove(target)
-        setVisibility(target, entry.was)
+        write(target, entry.was)
     }
 }
 
@@ -123,26 +124,54 @@ internal object Windows {
         return (candidates.lastOrNull() as? ViewGroup) ?: base
     }
 
-    /** Waits for a frame to be drawn. */
-    private suspend fun nextFrame() = suspendCancellableCoroutine { continuation ->
+    /** Waits for a frame to begin. */
+    suspend fun nextFrame() = suspendCancellableCoroutine { continuation ->
         val callback = Choreographer.FrameCallback { continuation.resume(Unit) }
         Choreographer.getInstance().postFrameCallback(callback)
         continuation.invokeOnCancellation { Choreographer.getInstance().removeFrameCallback(callback) }
     }
 
-    private val overlays = Hider<View>({ it.visibility }, { view, value -> view.visibility = value })
+    /**
+     * Waits until the frame being drawn next in [root]'s window has been handed to the display, so a copy of the window
+     * is of that frame. Before Android 10 there is no word of it: two frames are waited for instead, as before.
+     */
+    private suspend fun frameDrawn(root: View) {
+        if (Build.VERSION.SDK_INT < 29) {
+            nextFrame()
+            nextFrame()
+            return
+        }
+        // Something must draw for the frame to come: the overlay hidden does, unless a capture before this one hid it.
+        root.invalidate()
+        // Software rendering, or a window going away, never says: the copy then goes ahead after a moment all the same.
+        val observer = root.viewTreeObserver
+        withTimeoutOrNull(FRAME_WAIT_MS) {
+            suspendCancellableCoroutine { continuation ->
+                val committed = Runnable { if (continuation.isActive) continuation.resume(Unit) }
+                observer.registerFrameCommitCallback(committed)
+                continuation.invokeOnCancellation { if (observer.isAlive) observer.unregisterFrameCommitCallback(committed) }
+            }
+        } ?: nextFrame()
+    }
+
+    /** How long a capture waits to hear that the frame it copies is drawn. */
+    private const val FRAME_WAIT_MS = 250L
 
     /**
-     * A picture of [root]'s window. The overlay is in the same window, so it is hidden for the frames in which the
-     * window is copied.
+     * The overlay is hidden for a capture by its alpha rather than made invisible: nothing in it is laid out again, and
+     * it is gone only for the frame the copy is of (and the one after, while the copy is made), too short to see.
+     */
+    private val overlays = Hider<View, Float>({ it.alpha }, { view, value -> view.alpha = value }, 0f)
+
+    /**
+     * A picture of [root]'s window. The overlay is in the same window, so it is hidden for the frame that is copied.
      */
     suspend fun capture(activity: Activity, root: View, overlay: View?): CapturedScreen? {
         if (root.width == 0 || root.height == 0) return null
         val bitmap = createBitmap(root.width, root.height)
         overlay?.let { overlays.hide(it) }
         try {
-            nextFrame()
-            nextFrame()
+            frameDrawn(root)
             val copied = when {
                 Build.VERSION.SDK_INT >= 34 && root !== activity.window.decorView -> copy(PixelCopy.Request.Builder.ofWindow(root).setDestinationBitmap(bitmap).build())
                 Build.VERSION.SDK_INT >= 26 && root === activity.window.decorView -> copy(activity, bitmap)

@@ -158,4 +158,23 @@ class NotatoMaskTest {
             assertTrue(e.isCovered(maskInputs))
         }
     }
+
+    @Test
+    fun aReadingForThePinsSaysWhatSelectorsLookAtAndNoMore() {
+        val button = semantics {
+            this[SemanticsProperties.Role] = Role.Button
+            this[SemanticsProperties.Text] = listOf(AnnotatedString("  Add   to cart "))
+            this[SemanticsProperties.TestTag] = "add"
+            this[SemanticsProperties.Disabled] = Unit
+        }
+        val full = describe(button)!!
+        val lite = NotatoCompose.describe(button, Box(0f, 0f, 200f, 100f), HostInfo(null, emptyList(), emptyList(), 2f, lite = true), false, Privacy.DEFAULT)!!
+        // The same to a selector: role, control, id and words (white space made one space, as before).
+        assertEquals(listOf(full.role, full.control, full.identifier, full.words), listOf(lite.role, lite.control, lite.identifier, lite.words))
+        assertEquals("Add to cart", lite.words)
+        // Its styles (formatted numbers, for every node, twice a second) only when the note needs them.
+        assertEquals("100dp", full.styles?.get("width"))
+        assertEquals("false", full.styles?.get("enabled"))
+        assertNull(lite.styles)
+    }
 }

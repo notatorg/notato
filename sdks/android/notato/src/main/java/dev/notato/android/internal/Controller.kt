@@ -5,6 +5,7 @@ import android.app.Application
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import android.util.Log
 import android.view.View
 import dev.notato.android.AnnotateOptions
@@ -260,6 +261,7 @@ internal class Controller(
         if (startedActivities == 0) startedActivities = 1
         updateWork()
         if (enabled) session(activity).apply { attach(); overlay.render() }
+        wake()
     }
 
     override fun onActivityStarted(activity: Activity) {
@@ -285,8 +287,14 @@ internal class Controller(
     /** Activities started and not stopped: none means the app is in the background. */
     private var startedActivities = 0
 
-    /** Whether the tick and the shake detector are running: only while Notato is on and the app is in the foreground. */
+    /** Whether the tick and the shake detector may run: only while Notato is on and the app is in the foreground. */
     private var working = false
+
+    /**
+     * Whether the tick is going. It stops once the screen is still and the route and pins have been worked out for it,
+     * so a screen nobody touches costs nothing; the next frame the window draws (or a change to the notes) starts it.
+     */
+    private var ticking = false
 
     private fun updateWork() {
         val want = enabled && startedActivities > 0
@@ -294,12 +302,27 @@ internal class Controller(
         working = want
         if (want) {
             if (config.shakeToToggle) shake.start()
-            handler.post(tick)
+            wake()
         } else {
             // In the background nothing is on screen to follow, and a shake in a pocket must not toggle the toolbar.
             shake.stop()
             handler.removeCallbacks(tick)
+            ticking = false
         }
+    }
+
+    /** The tick keeps going until then at least, whatever it finds: a dialog that has taken the focus is laid out soon. */
+    private var awakeUntil = 0L
+
+    /**
+     * Something on screen may have changed (the window drew, a note came, a dialog opened): the tick starts again,
+     * and goes on for [forMs] at least.
+     */
+    fun wake(forMs: Long = 0) {
+        if (forMs > 0) awakeUntil = maxOf(awakeUntil, SystemClock.uptimeMillis() + forMs)
+        if (!working || ticking) return
+        ticking = true
+        handler.post(tick)
     }
 
     /** The last thing the tick tripped over, so a problem that repeats every tick is logged once. */
@@ -307,14 +330,19 @@ internal class Controller(
 
     private val tick = object : Runnable {
         override fun run() {
-            if (!working) return
+            if (!working) {
+                ticking = false
+                return
+            }
+            var more = false
             // The tick runs on the app's own main thread: whatever Notato trips over reading the screen must not reach the app.
             try {
                 currentSession()?.let { session ->
                     session.attach()
-                    session.updateRoute()
+                    val now = SystemClock.uptimeMillis()
+                    more = session.updateRoute(now)
                     if (pinsVisible) {
-                        session.placePins(sync.notes.version, config.resolvedMaskInputs) { pinned(recordsOnRoute(session)) }
+                        more = session.placePins(sync.notes.version, config.resolvedMaskInputs, now) { pinned(recordsOnRoute(session)) } || more
                     } else {
                         session.hidePins()
                     }
@@ -328,7 +356,7 @@ internal class Controller(
                     Log.e(TAG, "Notato could not update its pins; the app carries on.", error)
                 }
             }
-            handler.postDelayed(this, TICK_MS)
+            if (more || SystemClock.uptimeMillis() < awakeUntil) handler.postDelayed(this, TICK_MS) else ticking = false
         }
     }
 
@@ -343,20 +371,52 @@ internal class Controller(
 
     // ---- picking ---------------------------------------------------------------------------------------------------
 
+    /**
+     * A tap while annotating: the outline and the composer are up as soon as what is under the finger is known, and the
+     * picture is taken after them ([shoot]). Another tap while the composer is open keeps the picture taken for the
+     * first: the screen under the composer has not changed.
+     */
     fun pick(session: Session, x: Float, y: Float) {
         val root = session.root ?: return
         val chain = ViewInspector.chainAt(root, x, y, config.resolvedMaskInputs).ifEmpty {
             val d = root.resources.displayMetrics.density
             listOf(ScreenElement("area", null, null, null, null, "Area", Box(x - 32 * d, y - 32 * d, x + 32 * d, y + 32 * d)))
         }
-        val existing = session.selection
-        if (existing != null) {
-            select(session, Selection(chain, 0, existing.all, existing.screen))
+        session.selection?.shot?.let { shot ->
+            select(session, Selection(chain, 0, shot))
             return
         }
+        val shot = PendingShot()
+        select(session, Selection(chain, 0, shot))
+        shoot(session, root, shot)
+    }
+
+    /**
+     * Takes the picture for a note and reads the screen, in the background once the composer is up: the picture first,
+     * then the reading, so what it says to cover is where it was in the picture (see [captureThenScan]). Send waits for
+     * them. The reading is a light one (what selectors and masks look at): the element itself was described in full when
+     * it was picked. Should the picture fail, the note goes without screenshots, as it always has.
+     */
+    private fun shoot(session: Session, root: View, into: PendingShot) {
         scope.launch {
-            val (screen, all) = captureThenScan({ picture(session, root) }) { ViewInspector.elements(root, config.resolvedMaskInputs) }
-            select(session, Selection(chain, 0, all, screen))
+            var screen: CapturedScreen? = null
+            var all: List<ScreenElement> = emptyList()
+            try {
+                // With no picture to take, the reading waits for the composer's first frame all the same.
+                screen = picture(session, root) ?: run {
+                    Windows.nextFrame()
+                    null
+                }
+                all = ViewInspector.elements(root, config.resolvedMaskInputs, lite = true)
+            } catch (error: CancellationException) {
+                screen?.release()
+                throw error
+            } catch (error: Exception) {
+                Log.w(TAG, "Notato could not read the screen for a note: it is made from what it has.", error)
+            }
+            into.complete(Shot(screen, all))
+            // The keyboard comes up for the note only now: opening it can move the app under the picture.
+            (session.overlay.sheet as? ComposerSheet)?.focusComment()
         }
     }
 
@@ -365,8 +425,8 @@ internal class Controller(
         if (wanted && screenshotsOn) Windows.capture(session.activity, root, session.overlay) else null
 
     private fun select(session: Session, selection: Selection) {
-        // Another picture than the one this selection keeps (a second tap before the first's picture came): its memory goes back.
-        session.selection?.screen?.takeIf { it !== selection.screen }?.release()
+        // Another picture than the one this selection keeps (a selection made from code over a tap's): its memory goes back.
+        session.selection?.shot?.takeIf { it !== selection.shot }?.release()
         session.selection = selection
         val drawing = selection.drawing()
         session.overlay.showSelection(drawing)
@@ -451,7 +511,7 @@ internal class Controller(
             return make(session, selection, comment, intent, severity, author, mode, steps, peopleOnly)
         } finally {
             // Several megabytes at full resolution: back now, not when the collector gets round to it.
-            selection.screen?.release()
+            selection.shot.release()
         }
     }
 
@@ -459,15 +519,18 @@ internal class Controller(
         session: Session, selection: Selection, comment: String, intent: String?, severity: String?, author: Author, mode: String, steps: List<AgentStep>?,
         peopleOnly: Boolean,
     ): NoteRecord {
+        // Taken just after the composer opened: almost always there long before Send is.
+        val shot = selection.shot.await()
         val root = session.root
         val density = root?.resources?.displayMetrics?.density ?: 1f
         val element = selection.element
         val route = session.currentRoute()
         val pin = screens.on(route).size + 1
-        val shots = selection.screen?.takeIf { screenshotsOn }?.let { screen ->
+        val masks = selection.masks(shot.all, config.resolvedMaskInputs)
+        val shots = shot.screen?.takeIf { screenshotsOn }?.let { screen ->
             screen.use {
                 withContext(Dispatchers.Default) {
-                    ScreenshotComposer.compose(screen, listOf(element.bounds), pin, selection.masks(config.resolvedMaskInputs), config.maxScreenshotScale)
+                    ScreenshotComposer.compose(screen, listOf(element.bounds), pin, masks, config.maxScreenshotScale)
                 }
             }
         }
@@ -502,7 +565,7 @@ internal class Controller(
             ),
             target = Target(
                 kind = if (element.kind == "area") "area" else "element",
-                identity = listOf(identity(element, selection.all)),
+                identity = listOf(identity(element, shot.all)),
                 rect = PageRect(round(element.bounds.left), round(element.bounds.top), round(element.bounds.width), round(element.bounds.height)),
             ),
             comment = comment.trim(),
@@ -616,7 +679,7 @@ internal class Controller(
         val element = enrich(root, found)
         val author = options.agentName?.let { Author.agent(it) } ?: Author.human(authorName)
         val noteMode = if (options.agentName != null) "agent" else mode.name.lowercase()
-        val record = create(session, Selection(listOf(element), 0, all, screen), comment, options.intent, options.severity, author, noteMode, options.steps, options.peopleOnly)
+        val record = create(session, Selection(listOf(element), 0, PendingShot.of(Shot(screen, all))), comment, options.intent, options.severity, author, noteMode, options.steps, options.peopleOnly)
         sync.send(record)
         return record.annotation
     }
@@ -658,7 +721,7 @@ internal class Controller(
             val bounds = element.bounds
             val chain = listOf(element) + ViewInspector.chainAt(root, bounds.left + bounds.width / 2, bounds.top + bounds.height / 2, config.resolvedMaskInputs)
                 .filter { it.bounds.area > bounds.area * PARENT_GROWTH }
-            select(session, Selection(chain, 0, all, screen))
+            select(session, Selection(chain, 0, PendingShot.of(Shot(screen, all))))
         }
     }
 
@@ -744,6 +807,8 @@ internal class Controller(
     /** Draws the overlays again: for what only they show (the toolbar's place and fold, the pins shown or hidden). */
     private fun render() {
         for (session in sessions.values) session.overlay.render()
+        // The notes or what is shown may have changed: the pins are placed again.
+        wake()
     }
 
     private var emittedVersion = -1L
@@ -789,7 +854,7 @@ internal class Controller(
     }
 
     private companion object {
-        /** How often the overlay looks at the screen: the pins, the route and the window it belongs in. */
+        /** How often the overlay looks at the screen while it is drawing: the pins, the route and the window it belongs in. */
         const val TICK_MS = 250L
 
         /** Parent selects the nearest element around this one that is bigger than it by more than this. */

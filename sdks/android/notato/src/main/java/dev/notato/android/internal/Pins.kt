@@ -1,7 +1,12 @@
 package dev.notato.android.internal
 
+import android.graphics.Rect
+import android.view.View
+import dev.notato.android.inspect.Box
 import dev.notato.android.inspect.ScreenElement
 import dev.notato.android.inspect.Selectors
+import dev.notato.android.inspect.ViewInspector
+import java.lang.ref.WeakReference
 
 /** The most pins drawn on one screen: the newest. The Notes list has every one (as in the React Native and Flutter SDKs). */
 internal const val MAX_PINS = 150
@@ -88,5 +93,65 @@ internal class ScreenNotes(private val notes: NoteBook) {
         byRoute = groups.mapValues { (_, list) -> list.sortedWith(order).mapIndexed { index, record -> index + 1 to record } }
         waiting = pending
         groupedVersion = notes.version
+    }
+}
+
+/**
+ * Where a pinned element is from one frame to the next, between readings of the screen: so a pin moves with a list as
+ * it scrolls, rather than wait for the scroll to end. Only its place is asked for, never its description, so it is
+ * cheap enough for every frame. Main thread only.
+ */
+internal interface Follower {
+    /** Where the element is now, in window pixels; null once it has gone, or now shows something else. */
+    fun bounds(): Box?
+
+    /** No longer followed. */
+    fun release() = Unit
+
+    companion object {
+        /** A follower for the live object behind [element], when it has one (a View, or a provider's node). */
+        fun of(element: ScreenElement): Follower? {
+            val ref = element.ref ?: return null
+            val target = ref.get() ?: return null
+            if (target is View) return ViewFollower(target)
+            val provider = ViewInspector.providers.firstOrNull { runCatching { it.boundsOf(ref) }.getOrNull() != null } ?: return null
+            return object : Follower {
+                override fun bounds(): Box? = runCatching { provider.boundsOf(ref) }.getOrNull()
+            }
+        }
+    }
+}
+
+/**
+ * Follows a View. One taken off the window even for a moment (a list row scrolled away, which a RecyclerView can
+ * bind to another item and put back within the same frame) is not followed any more: the next reading of the screen
+ * finds the note's element again.
+ */
+private class ViewFollower(view: View) : Follower, View.OnAttachStateChangeListener {
+    private val view = WeakReference(view)
+    private var gone = !view.isAttachedToWindow
+    private val location = IntArray(2)
+    private val visible = Rect()
+
+    init {
+        view.addOnAttachStateChangeListener(this)
+    }
+
+    override fun bounds(): Box? {
+        val v = view.get() ?: return null
+        // Shown and not scrolled out of what holds it.
+        if (gone || !v.isShown || !v.getGlobalVisibleRect(visible)) return null
+        v.getLocationInWindow(location)
+        return Box(location[0].toFloat(), location[1].toFloat(), (location[0] + v.width).toFloat(), (location[1] + v.height).toFloat())
+    }
+
+    override fun release() {
+        view.get()?.removeOnAttachStateChangeListener(this)
+    }
+
+    override fun onViewAttachedToWindow(v: View) = Unit
+
+    override fun onViewDetachedFromWindow(v: View) {
+        gone = true
     }
 }
