@@ -77,6 +77,54 @@ struct UIKitTests {
         #expect(try pixel(full, 200, 240) != grey, "and nothing else")
     }
 
+    @Test func aPinInAScrollViewFollowsItsScrollAndGoesOutOfSightWithIt() {
+        let home = window(0)
+        let list = UIScrollView(frame: CGRect(x: 0, y: 100, width: 400, height: 600))
+        list.contentSize = CGSize(width: 400, height: 3000)
+        home.addSubview(list)
+        let row = UIView(frame: CGRect(x: 16, y: 200, width: 368, height: 44))
+        list.addSubview(row)
+        let rect = CGRect(x: 16, y: 300, width: 368, height: 44)
+        let anchor = try! #require(ScrollAnchor(rect, in: home))
+        #expect(anchor.scrollViews == [list])
+        #expect(anchor.rect(in: home) == rect)
+        list.contentOffset = CGPoint(x: 0, y: 150)
+        #expect(anchor.rect(in: home) == rect.offsetBy(dx: 0, dy: -150), "followed without reading the screen")
+        list.contentOffset = CGPoint(x: 0, y: 900)
+        #expect(anchor.rect(in: home) == nil, "scrolled out of the list's sight")
+        #expect(ScrollAnchor(rect, in: home, clipped: false)?.rect(in: home) != nil, "a cover is followed wherever it goes")
+        // The list itself is not in a scroll view: nothing to follow.
+        #expect(ScrollAnchor(list.frame, in: home) == nil)
+    }
+
+    private final class Counter: @unchecked Sendable {
+        var count = 0
+    }
+
+    @Test func scrollingAWatchedScrollViewWakesThePins() {
+        let home = window(0)
+        let list = UIScrollView(frame: CGRect(x: 0, y: 0, width: 400, height: 800))
+        list.contentSize = CGSize(width: 400, height: 3000)
+        home.addSubview(list)
+        let watcher = ScrollWatcher()
+        let woken = Counter()
+        watcher.watch([list, list]) { woken.count += 1 }
+        list.contentOffset = CGPoint(x: 0, y: 40)
+        #expect(woken.count == 1, "once, however often it is listed")
+        watcher.unwatch()
+        list.contentOffset = CGPoint(x: 0, y: 80)
+        #expect(woken.count == 1, "no longer watched")
+    }
+
+    @Test func aScreenshotIsTakenNoFinerThanTheNoteKeepsItAndDrawnOffTheMainActor() async throws {
+        let home = window(0)
+        home.backgroundColor = .white
+        let shot = try #require(ScreenshotTaker.capture(home, elements: [], privateViews: [], maskInputs: true, maxScale: 1))
+        #expect(shot.picture.scale == 1)
+        let composed = await Task.detached { ScreenshotComposer.compose(shot, targets: [CGRect(x: 10, y: 10, width: 40, height: 40)], pin: 1, maxScale: 2) }.value
+        #expect(composed.refs.full.w == 400 && composed.refs.crop != nil)
+    }
+
     @Test func aMarkPutBackWithoutNewGeometryFindsItsFrameAgain() {
         let registry = MarkRegistry.shared
         let home = window(0)

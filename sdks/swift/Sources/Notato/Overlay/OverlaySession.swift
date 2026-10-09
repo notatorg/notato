@@ -45,8 +45,17 @@ final class OverlaySession {
     /// The app's window as the accessibility tree last described it for pins, and when.
     var scanned: [ScreenElement] = []
     var lastScan = Date.distantPast
+    /// The screen must be read again before the pins are next placed: another screen, a note added or gone, the end
+    /// of a scroll.
+    var needsScan = true
+    /// The notes pinned when the pins were last placed.
+    var pinnedIds: [String] = []
+    /// Pins followed their elements since the screen was last read.
+    var moved = false
     /// Where this window's pins were put.
     let pins = PinBoard()
+    /// The scroll views the pins are in, watched so that a scroll wakes the pins up to follow it.
+    let scrolls = ScrollWatcher()
     private weak var controller: OverlayHostingController<OverlayRoot>?
 
     init(scene: UIWindowScene, appWindow: UIWindow, hooks: PlatformHooks) {
@@ -96,13 +105,40 @@ final class OverlaySession {
         if model.sheet == .composer { model.sheet = nil }
         scanned = []
         lastScan = .distantPast
+        needsScan = true
         pins.reset()
+        scrolls.unwatch()
     }
 
     func close() {
         if window.isKeyWindow { appWindow?.makeKey() }
         window.isHidden = true
         window.rootViewController = nil
+    }
+}
+
+/// Watches scroll views scroll (their `contentOffset`, which UIKit sets on every frame of a scroll, on the main thread).
+@MainActor
+final class ScrollWatcher {
+    private var watching: [ObjectIdentifier: NSKeyValueObservation] = [:]
+
+    /// Watches these scroll views, and stops watching the rest: `scrolled` is called as any of them scrolls.
+    func watch(_ scrollViews: [UIScrollView], scrolled: @escaping @MainActor @Sendable () -> Void) {
+        var next: [ObjectIdentifier: NSKeyValueObservation] = [:]
+        for scroll in scrollViews {
+            let key = ObjectIdentifier(scroll)
+            if next[key] != nil { continue }
+            next[key] = watching.removeValue(forKey: key) ?? scroll.observe(\.contentOffset) { _, _ in
+                MainActor.assumeIsolated { scrolled() }
+            }
+        }
+        for observation in watching.values { observation.invalidate() }
+        watching = next
+    }
+
+    func unwatch() {
+        for observation in watching.values { observation.invalidate() }
+        watching = [:]
     }
 }
 

@@ -100,47 +100,129 @@ struct PinPlacement: Identifiable, Equatable {
     let origin: CGPoint
     let detached: Bool
     let pending: Bool
+    /// How many times it has jumped too far to be seen moving: it fades out where it was and in where it went instead.
+    var hop = 0
+
+    /// Who it is to the view drawing it: a pin that hops is another pin, which comes in as the old one goes.
+    var key: String { "\(id)#\(hop)" }
 }
 
-/// One window's pins, kept from one tick of the overlay to the next: where each note's element was found and where its
-/// pin went. The costly part (finding the elements, laying the pins out) is done again only when there is something
-/// new to do it with: a scan of the screen, a note added or gone, another width. Every tick only reads each note's
-/// status, so a pin turns amber or green as soon as its note does.
+/// One window's pins, kept from one placing to the next: where each note's element was found, how to follow it, and
+/// where its pin went. The costly part (reading the screen, laying the pins out) is done again only when there is
+/// something new to do it with: a scan of the screen, a note added or gone, another width. In between, a pin whose
+/// element can be followed (a marked view, or an element in a scroll view) moves with it on every frame (`follow`), by
+/// as much as the element moved since the pins were laid out. Every placing reads each note's status, so a pin turns
+/// amber or green as soon as its note does.
 @MainActor
 final class PinBoard {
-    private var found: [String: (rect: CGRect, detached: Bool)] = [:]
-    private var laidOut: (ids: [String], width: CGFloat, origins: [CGPoint])?
+    /// Where a note's element was found, and how to read where it is now without reading the screen.
+    struct Located {
+        var rect: CGRect
+        /// The element's frame now, or nil when it is out of sight (scrolled out of its scroll view, or gone with its
+        /// marked view). None for an element only a scan of the screen can find again.
+        var follow: (@MainActor () -> CGRect?)?
+
+        init(rect: CGRect, follow: (@MainActor () -> CGRect?)? = nil) {
+            self.rect = rect
+            self.follow = follow
+        }
+    }
+
+    private struct Found {
+        var rect: CGRect
+        var detached: Bool
+        /// Out of sight: no pin.
+        var hidden: Bool
+        var follow: (@MainActor () -> CGRect?)?
+    }
+
+    private var found: [String: Found] = [:]
+    /// The pins as last laid out: each one's top left, and its element's frame then.
+    private var laidOut: (ids: [String], width: CGFloat, places: [String: (origin: CGPoint, rect: CGRect)])?
+    /// The notes last placed, for `placements` after a `follow`.
+    private var shown: (pinned: [(number: Int, record: NoteRecord)], width: CGFloat)?
+
+    /// Whether any pin moves with its element between scans.
+    var follows: Bool { found.values.contains { $0.follow != nil } }
 
     /// Forgets everything: the screen changed.
     func reset() {
         found = [:]
         laidOut = nil
+        shown = nil
     }
 
     /// The pins of `pinned` (`Notato.notes(onRoute:)`). `scanned` says the screen was read again since the last call,
     /// so every element is looked for again; otherwise only a note not placed yet is. `locate` finds a note's element
     /// on screen, or nil, when it is not there and the pin goes where the note was made.
     func pins(for pinned: [(number: Int, record: NoteRecord)], width: CGFloat, scanned: Bool,
-              locate: (NoteRecord) -> CGRect?) -> [PinPlacement] {
-        if scanned { found = [:] }
+              locate: (NoteRecord) -> Located?) -> [PinPlacement] {
         var moved = scanned
-        for (_, record) in pinned where found[record.id] == nil {
-            let rect = locate(record)
-            found[record.id] = (rect ?? Self.stored(record), rect == nil)
-            moved = true
+        if scanned {
+            var next: [String: Found] = [:]
+            for (_, record) in pinned { next[record.id] = find(record, locate) }
+            found = next
+        } else {
+            for (_, record) in pinned where found[record.id] == nil {
+                found[record.id] = find(record, locate)
+                moved = true
+            }
         }
         let ids = pinned.map(\.record.id)
-        let origins: [CGPoint]
-        if !moved, let laidOut, laidOut.ids == ids, laidOut.width == width {
-            origins = laidOut.origins
-        } else {
-            origins = PinLayout.place(ids.map { found[$0]?.rect ?? .zero }, width: width)
-            laidOut = (ids, width, origins)
+        if moved || laidOut == nil || laidOut?.ids != ids || laidOut?.width != width {
+            let showing = ids.filter { found[$0]?.hidden == false }
+            let rects = showing.map { found[$0]?.rect ?? .zero }
+            let origins = PinLayout.place(rects, width: width)
+            var places: [String: (origin: CGPoint, rect: CGRect)] = [:]
+            for (index, id) in showing.enumerated() { places[id] = (origins[index], rects[index]) }
+            laidOut = (ids, width, places)
         }
-        return pinned.enumerated().map { index, pin in
-            let place = found[pin.record.id] ?? (Self.stored(pin.record), true)
-            return PinPlacement(id: pin.record.id, number: pin.number, status: pin.record.annotation.status, rect: place.rect,
-                                origin: origins[index], detached: place.detached, pending: pin.record.pending)
+        shown = (pinned, width)
+        return placements()
+    }
+
+    /// Where `locate` says, else (for an element followed out of sight since) nowhere, else where the note was made.
+    private func find(_ record: NoteRecord, _ locate: (NoteRecord) -> Located?) -> Found {
+        if let located = locate(record) { return Found(rect: located.rect, detached: false, hidden: false, follow: located.follow) }
+        // Scrolled out of sight: its pin stays out of sight with it, rather than going back to where the note was made.
+        if let known = found[record.id], let follow = known.follow, follow() == nil {
+            return Found(rect: known.rect, detached: false, hidden: true, follow: follow)
+        }
+        return Found(rect: Self.stored(record), detached: true, hidden: false, follow: nil)
+    }
+
+    /// Reads again where each followed element is: cheap (a frame converted to the window), so it can be done on every
+    /// frame of a scroll. Returns whether any pin moved, or went out of sight or came back into it.
+    func follow() -> Bool {
+        var moved = false
+        for (id, entry) in found {
+            guard let follow = entry.follow else { continue }
+            let now = follow()
+            guard (now == nil) != entry.hidden || (now != nil && now != entry.rect) else { continue }
+            var next = entry
+            if let now { next.rect = now }
+            next.hidden = now == nil
+            found[id] = next
+            moved = true
+        }
+        return moved
+    }
+
+    /// The pins as they are now, for the notes last placed.
+    func placements() -> [PinPlacement] {
+        guard let shown else { return [] }
+        return shown.pinned.compactMap { number, record in
+            guard let place = found[record.id], !place.hidden else { return nil }
+            let origin: CGPoint
+            if let laid = laidOut?.places[record.id] {
+                // Moved with its element since the pins were laid out: by as much as the element's top right moved.
+                origin = CGPoint(x: laid.origin.x + place.rect.maxX - laid.rect.maxX, y: laid.origin.y + place.rect.minY - laid.rect.minY)
+            } else {
+                // Come into sight since: at its element, until the pins are next laid out.
+                origin = PinLayout.place([place.rect], width: shown.width)[0]
+            }
+            return PinPlacement(id: record.id, number: number, status: record.annotation.status, rect: place.rect,
+                                origin: origin, detached: place.detached, pending: record.pending)
         }
     }
 

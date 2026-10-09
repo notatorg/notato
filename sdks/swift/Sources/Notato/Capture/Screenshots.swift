@@ -5,19 +5,22 @@ import UIKit
 typealias CapturedScreen = Captured<UIImage>
 
 /// The two pictures a note carries: the window with the target outlined, and a crop around it.
-struct ComposedScreenshots {
+struct ComposedScreenshots: Sendable {
     let refs: Screenshots
     let assets: [String: Data]
 }
 
 @MainActor
 enum ScreenshotTaker {
-    /// The window now, and what to cover in it now: `elements` (scanned just before) and the private views.
-    static func capture(_ window: UIWindow, elements: [ScreenElement], privateViews: [CGRect], maskInputs: Bool) -> CapturedScreen? {
+    /// The window now, and what to cover in it now: `elements` (scanned just before) and the private views. Drawn at
+    /// no more than `maxScale`, the most the note's pictures are drawn at: a 3x screen is not drawn at 3x to be shrunk.
+    static func capture(_ window: UIWindow, elements: [ScreenElement], privateViews: [CGRect], maskInputs: Bool,
+                        maxScale: Double = 4) -> CapturedScreen? {
         let bounds = window.bounds
         guard bounds.width > 0, bounds.height > 0 else { return nil }
         let format = UIGraphicsImageRendererFormat()
-        format.scale = window.traitCollection.displayScale > 0 ? window.traitCollection.displayScale : 2
+        let display = window.traitCollection.displayScale > 0 ? window.traitCollection.displayScale : 2
+        format.scale = max(1, min(display, CGFloat(maxScale)))
         format.opaque = true
         let image = UIGraphicsImageRenderer(bounds: bounds, format: format).image { _ in
             _ = window.drawHierarchy(in: bounds, afterScreenUpdates: false)
@@ -26,6 +29,8 @@ enum ScreenshotTaker {
     }
 }
 
+/// Drawn off the main actor (`UIGraphicsImageRenderer` may be used from any thread), so a note's pictures are encoded
+/// without holding up the overlay.
 enum ScreenshotComposer {
     private static let outline = UIColor(red: 0.937, green: 0.267, blue: 0.267, alpha: 1)
     private static let maskColor = UIColor(red: 0.612, green: 0.639, blue: 0.686, alpha: 1)

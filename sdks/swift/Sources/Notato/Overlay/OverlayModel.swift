@@ -125,7 +125,7 @@ final class OverlayModel {
 /// Calls back on every frame the display shows, until told there are no more. The display link keeps it, not the
 /// model, so a model that goes away mid-move is let go. The link runs on the main run loop.
 @MainActor
-private final class FrameTicker: NSObject {
+final class FrameTicker: NSObject {
     private let tick: (CFTimeInterval) -> Bool
 
     init(_ tick: @escaping (CFTimeInterval) -> Bool) { self.tick = tick }
@@ -133,6 +133,24 @@ private final class FrameTicker: NSObject {
     @objc func step(_ link: CADisplayLink) {
         // When this frame will be on screen, so the move is drawn where it is then.
         if !tick(link.targetTimestamp) { link.invalidate() }
+    }
+}
+extension FrameTicker {
+    /// A display link calling `tick` on every frame, in every run loop mode (so a scroll being tracked does not hold it
+    /// up), until `tick` says there are no more.
+    static func link(preferred: Float = 120, _ tick: @escaping (CFTimeInterval) -> Bool) -> CADisplayLink {
+        let link = CADisplayLink(target: FrameTicker(tick), selector: #selector(FrameTicker.step(_:)))
+        link.preferredFrameRateRange = CAFrameRateRange(minimum: 30, maximum: 120, preferred: preferred)
+        link.add(to: .main, forMode: .common)
+        return link
+    }
+
+    /// Calls `then` on the next frame: after what was changed now is on its way to the screen.
+    static func nextFrame(_ then: @escaping () -> Void) {
+        _ = link(preferred: 60) { _ in
+            then()
+            return false
+        }
     }
 }
 #endif

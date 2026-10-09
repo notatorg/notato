@@ -121,7 +121,9 @@ public final class Notato {
     var authorName: String? { state.author ?? configuration?.author }
     var screenshotsWanted: Bool { state.screenshots ?? configuration?.screenshots ?? true }
     var screenshotsOn: Bool { screenshotsWanted && serverScreenshots }
-    var pinsVisible: Bool { state.pinsVisible ?? true }
+    /// Whether the pins show: `state`'s, kept apart from it, so the overlay reading it is not drawn again whenever
+    /// something else is remembered (the toolbar dropped somewhere, or folded).
+    private(set) var pinsVisible = true
 
     // ---- start-up ----------------------------------------------------------------------------------------------
 
@@ -151,6 +153,7 @@ public final class Notato {
             return
         }
         isToolbarVisible = state.toolbarVisible ?? configuration.showToolbar
+        pinsVisible = state.pinsVisible ?? true
         setEnabled(state.enabled ?? configuration.enabled, remember: false)
     }
 
@@ -165,6 +168,7 @@ public final class Notato {
     /// Forgets the choices made at runtime and goes back to the configuration.
     public func resetRuntimeState() {
         state.reset()
+        pinsVisible = true
         guard let configuration else { return }
         isToolbarVisible = configuration.showToolbar
         platform?.toolbarPositionReset()
@@ -196,7 +200,10 @@ public final class Notato {
         platform?.clearSelection()
     }
 
-    func togglePins() { state.pinsVisible = !pinsVisible }
+    func togglePins() {
+        pinsVisible.toggle()
+        state.pinsVisible = pinsVisible
+    }
 
     private func setEnabled(_ on: Bool, remember: Bool) {
         if on, let problem {

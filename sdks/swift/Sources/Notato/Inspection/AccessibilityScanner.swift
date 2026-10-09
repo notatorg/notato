@@ -7,6 +7,11 @@ import UIKit
 /// the system's, not the app's: Notato remembers what it was and puts it back when it is switched off or the app goes
 /// to the background. `NotatoConfiguration.readAccessibility = false` leaves it alone (identity then comes from
 /// `.notato()` marks only).
+///
+/// With it on, UIKit and SwiftUI keep the tree up to date as the app changes, which costs the app on every update. So
+/// Notato switches it on only once it first needs it (annotating starts, a screen has pins to place, a note is made
+/// from code), not as soon as it is enabled, and then leaves it on until it is switched off or the app goes to the
+/// background: switching a system setting off and on as someone moves between screens would cost more than it saves.
 @MainActor
 enum AccessibilityRuntime {
     private typealias Getter = @convention(c) () -> Bool
@@ -14,27 +19,33 @@ enum AccessibilityRuntime {
     private static var bundlesLoaded = false
     /// What application accessibility was before Notato turned it on; nil when Notato has not changed it.
     private static var previous: Bool?
+    /// When Notato last switched it on, as the tree began to be built; nil while it has not (or it was on already).
+    private(set) static var switchedOn: Date?
     private static var observers: [NSObjectProtocol] = []
     private static let changedKey = "notato.accessibility.changed"
 
     private static func library() -> UnsafeMutableRawPointer? { dlopen("/usr/lib/libAccessibility.dylib", RTLD_NOW) }
 
-    static func activate() {
+    /// Returns whether it switched the setting on just now, when the tree is not built yet: it is built as it is first
+    /// read, so what is read straight after may be missing parts (`switchedOn` says when).
+    @discardableResult
+    static func activate() -> Bool {
         observe()
         // Launched in the background (a push, a fetch, a location update): there is nothing on screen to read, and no
         // move to the background would come to put the setting back. It is switched on when the app comes forward.
-        guard UIApplication.shared.applicationState != .background else { return }
+        guard UIApplication.shared.applicationState != .background else { return false }
         loadBundles()
         guard let handle = library(), let get = dlsym(handle, "_AXSApplicationAccessibilityEnabled"),
-              let set = dlsym(handle, "_AXSApplicationAccessibilitySetEnabled") else { return }
+              let set = dlsym(handle, "_AXSApplicationAccessibilitySetEnabled") else { return false }
         let enabled = unsafeBitCast(get, to: Getter.self)()
         // A run that was killed (Xcode's stop button) could not put it back: the marker says it was off before Notato.
         if UserDefaults.standard.bool(forKey: changedKey) { previous = false }
-        if !enabled {
-            if previous == nil { previous = false }
-            UserDefaults.standard.set(true, forKey: changedKey)
-            unsafeBitCast(set, to: Setter.self)(true)
-        }
+        guard !enabled else { return false }
+        if previous == nil { previous = false }
+        UserDefaults.standard.set(true, forKey: changedKey)
+        unsafeBitCast(set, to: Setter.self)(true)
+        switchedOn = Date()
+        return true
     }
 
     private static func observe() {
@@ -44,7 +55,7 @@ enum AccessibilityRuntime {
         })
         for name in [UIApplication.willEnterForegroundNotification, UIApplication.didBecomeActiveNotification] {
             observers.append(NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { _ in
-                MainActor.assumeIsolated { activate() }
+                MainActor.assumeIsolated { _ = activate() }
             })
         }
         observers.append(NotificationCenter.default.addObserver(forName: UIApplication.willTerminateNotification, object: nil, queue: .main) { _ in
@@ -66,6 +77,7 @@ enum AccessibilityRuntime {
             unsafeBitCast(set, to: Setter.self)(previous)
         }
         previous = nil
+        switchedOn = nil
         UserDefaults.standard.removeObject(forKey: changedKey)
         if !keepObserving {
             for observer in observers { NotificationCenter.default.removeObserver(observer) }

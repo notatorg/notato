@@ -36,26 +36,33 @@ final class MarkRegistry {
 
     private(set) var marks: [UUID: Mark] = [:]
     private var counter = 0
+    /// Told when a mark moves (`false`), or appears or goes (`true`): the overlay's pins follow marked views, and its
+    /// route is made of marked screens.
+    var changed: (@MainActor (_ appearedOrWent: Bool) -> Void)?
 
     func upsert(id: UUID, kind: Mark.Kind, name: String, file: String, line: Int, column: Int, frame: CGRect) {
         if var existing = marks[id] {
+            let moved = existing.frame != frame
             existing.frame = frame
             existing.name = name
             // `.notatoMask(isPrivate)` can change its mind while the view is showing.
             existing.kind = kind
             marks[id] = existing
+            if moved { changed?(false) }
         } else {
             counter += 1
             marks[id] = Mark(id: id, kind: kind, name: name, file: file, line: line, column: column, frame: frame, order: counter)
+            changed?(true)
         }
     }
 
     func remove(id: UUID) {
-        marks[id] = nil
+        let went = marks.removeValue(forKey: id) != nil
         #if canImport(UIKit)
         // The probe stays with its view, which comes back with the mark when the view does; gone views are let go.
         probes = probes.filter { $0.value.view != nil }
         #endif
+        if went { changed?(true) }
     }
 
     #if canImport(UIKit)
@@ -66,6 +73,9 @@ final class MarkRegistry {
     func attach(probe: UIView, to id: UUID) {
         probes[id] = WeakView(probe)
     }
+
+    /// The UIKit view standing in for a mark, while it has one.
+    func probe(of id: UUID) -> UIView? { marks[id].flatMap { $0.probe ?? probes[id]?.view } }
     #endif
 
     /// Brings every mark's frame up to date from its probe, in window coordinates; marks not in a window are dropped

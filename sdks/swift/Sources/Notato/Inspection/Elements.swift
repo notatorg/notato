@@ -115,3 +115,6 @@ struct Captured<Picture> {
         covers = Privacy.covered(elements, masks: privateViews, maskInputs: maskInputs)
     }
 }
+
+/// A picture (a `UIImage`, which does not change) and the frames over it can go to be drawn off the main actor.
+extension Captured: Sendable where Picture: Sendable {}

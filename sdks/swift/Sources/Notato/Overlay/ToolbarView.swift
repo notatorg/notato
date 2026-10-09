@@ -1,13 +1,15 @@
 #if canImport(UIKit)
 import SwiftUI
 
-/// The floating toolbar: the open bar or the round button it folds into, wherever it was dragged to.
+/// The floating toolbar: the open bar or the round button it folds into, wherever it was dragged to. Shown and hidden
+/// (`Notato.showToolbar()`, a shake) by growing in and shrinking away where it is, or with Reduce Motion by fading.
 struct ToolbarLayer: View {
     let model: OverlayModel
     let notato: Notato
     @State private var drag: CGSize = .zero
     /// The open bar's width, measured once its parts are laid out (about this with a count under 10).
     @State private var openWidth: CGFloat = 252
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         GeometryReader { geometry in
@@ -18,17 +20,24 @@ struct ToolbarLayer: View {
             let width = d + max(0, look.extent) * max(0, openWidth - d)
             let container = geometry.size
             let origin = ToolbarPlacement.placed(model.toolbarFraction, width: width, in: container, moved: drag)
-            bar(look: look, width: width)
-                .position(x: origin.x + width / 2, y: origin.y + d / 2)
-                .gesture(DragGesture(minimumDistance: 6)
-                    .onChanged { drag = $0.translation }
-                    .onEnded { value in
-                        let dropped = ToolbarPlacement.placed(model.toolbarFraction, width: width, in: container, moved: value.translation)
-                        let fraction = ToolbarPlacement.fraction(of: dropped, width: width, in: container)
-                        model.toolbarFraction = fraction
-                        notato.state.toolbarPosition = fraction
-                        drag = .zero
-                    })
+            // Placed as a whole, so the bar grows from its own middle as it comes in.
+            ZStack {
+                if notato.isToolbarVisible {
+                    bar(look: look, width: width)
+                        .transition(reduceMotion ? .opacity : .scale(scale: 0.6).combined(with: .opacity))
+                }
+            }
+            .animation(reduceMotion ? .easeOut(duration: 0.2) : .spring(duration: 0.3, bounce: 0.2), value: notato.isToolbarVisible)
+            .position(x: origin.x + width / 2, y: origin.y + d / 2)
+            .gesture(DragGesture(minimumDistance: 6)
+                .onChanged { drag = $0.translation }
+                .onEnded { value in
+                    let dropped = ToolbarPlacement.placed(model.toolbarFraction, width: width, in: container, moved: value.translation)
+                    let fraction = ToolbarPlacement.fraction(of: dropped, width: width, in: container)
+                    model.toolbarFraction = fraction
+                    notato.state.toolbarPosition = fraction
+                    drag = .zero
+                })
         }
         // Placed by its left and right edges, not by leading and trailing.
         .environment(\.layoutDirection, .leftToRight)

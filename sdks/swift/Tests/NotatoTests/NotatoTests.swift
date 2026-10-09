@@ -79,9 +79,9 @@ struct NoteIndexTests {
         notato.insert((0..<3).map { NoteRecord(Fixture.note($0)) })
         let board = PinBoard()
         var looked: [String] = []
-        let locate: (NoteRecord) -> CGRect? = { record in
+        let locate: (NoteRecord) -> PinBoard.Located? = { record in
             looked.append(record.id)
-            return record.id == "note00002" ? nil : CGRect(x: 16, y: 200, width: 370, height: 40)
+            return record.id == "note00002" ? nil : PinBoard.Located(rect: CGRect(x: 16, y: 200, width: 370, height: 40))
         }
         let first = board.pins(for: notato.notes(onRoute: "/ProductList").pinned, width: 402, scanned: true, locate: locate)
         #expect(looked.count == 3)
@@ -106,6 +106,77 @@ struct NoteIndexTests {
         // The screen read again: every one is.
         _ = board.pins(for: notato.notes(onRoute: "/ProductList").pinned, width: 402, scanned: true, locate: locate)
         #expect(looked.count == 8)
+    }
+
+    @Test func pinsFollowTheirElementsBetweenScansAndOnlyTheyMove() {
+        let notato = Fixture.notato()
+        notato.insert((0..<3).map { NoteRecord(Fixture.note($0)) })
+        let pinned = notato.notes(onRoute: "/ProductList").pinned
+        let board = PinBoard()
+        // The first two are in a list that scrolls; the third can only be found by reading the screen again.
+        var scrolled: CGFloat = 0
+        let rows = [CGRect(x: 16, y: 300, width: 370, height: 40), CGRect(x: 16, y: 400, width: 370, height: 40)]
+        let first = board.pins(for: pinned, width: 402, scanned: true) { record in
+            switch record.id {
+            case "note00000", "note00001":
+                let row = rows[record.id == "note00000" ? 0 : 1]
+                return PinBoard.Located(rect: row) { row.offsetBy(dx: 0, dy: -scrolled) }
+            default:
+                return PinBoard.Located(rect: CGRect(x: 16, y: 120, width: 370, height: 40))
+            }
+        }
+        #expect(board.follows)
+        #expect(!board.follow(), "nothing moved")
+
+        scrolled = 120
+        #expect(board.follow())
+        let after = board.placements()
+        #expect(after[0].origin == CGPoint(x: first[0].origin.x, y: first[0].origin.y - 120))
+        #expect(after[1].origin == CGPoint(x: first[1].origin.x, y: first[1].origin.y - 120))
+        #expect(after[2].origin == first[2].origin, "not followed: it stays until the screen is read again")
+        #expect(after[0].rect == rows[0].offsetBy(dx: 0, dy: -120))
+        #expect(!board.follow(), "and moves again only when its element does")
+    }
+
+    @Test func aPinScrolledOutOfSightGoesAndStaysGoneUntilItsElementIsBack() {
+        let notato = Fixture.notato()
+        notato.insert([NoteRecord(Fixture.note(0))])
+        let pinned = notato.notes(onRoute: "/ProductList").pinned
+        let board = PinBoard()
+        var inSight = true
+        let row = CGRect(x: 16, y: 300, width: 370, height: 40)
+        _ = board.pins(for: pinned, width: 402, scanned: true) { _ in PinBoard.Located(rect: row) { inSight ? row : nil } }
+        inSight = false
+        #expect(board.follow())
+        #expect(board.placements().isEmpty, "out of sight with its element")
+        // The screen read again (the scroll ended) does not find it: it stays out of sight, not where the note was made.
+        #expect(board.pins(for: pinned, width: 402, scanned: true) { _ in nil }.isEmpty)
+        inSight = true
+        #expect(board.follow())
+        #expect(board.placements().map(\.rect) == [row], "scrolled back: at its element again")
+        // An element not found that was never followed out of sight goes where the note was made, faded.
+        board.reset()
+        #expect(board.pins(for: pinned, width: 402, scanned: true) { _ in nil }.map(\.detached) == [true])
+    }
+
+    @Test func aPinThatHopsIsAnotherPinToTheViewDrawingIt() {
+        var pin = PinPlacement(id: "note00000", number: 1, status: Status.open, rect: .zero, origin: .zero, detached: false, pending: false)
+        let before = pin.key
+        pin.hop += 1
+        #expect(pin.key != before && pin.id == "note00000")
+    }
+
+    @Test func showingOrHidingPinsIsSeenWithoutWatchingEverythingRemembered() {
+        let notato = Fixture.notato()
+        let pins = Flag(), other = Flag()
+        withObservationTracking { _ = notato.pinsVisible } onChange: { other.raised = true }
+        // The toolbar dropped somewhere, or folded: remembered, and not a reason to draw the pins again.
+        notato.state.toolbarPosition = CGPoint(x: 0.2, y: 0.8)
+        notato.state.toolbarCollapsed = true
+        #expect(!other.raised)
+        withObservationTracking { _ = notato.pinsVisible } onChange: { pins.raised = true }
+        notato.togglePins()
+        #expect(pins.raised && !notato.pinsVisible && notato.state.pinsVisible == false)
     }
 
     @Test func aNoteRecordParsesItsSelectorOnce() {

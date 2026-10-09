@@ -27,8 +27,11 @@ struct OverlayRoot: View {
     let session: WeakSession
     /// Read so that the overlay draws again when the system switches between light and dark.
     @Environment(\.colorScheme) private var systemScheme
+    /// With Reduce Motion, what comes and goes fades rather than sliding or growing.
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
+        let hint = notato.isAnnotating && model.selection == nil && model.sheet == nil
         ZStack {
             if notato.isAnnotating {
                 // Takes the taps that pick; Notato's own controls sit above it.
@@ -41,30 +44,32 @@ struct OverlayRoot: View {
             }
             SelectionLayer(selection: model.selection).allowsHitTesting(false).ignoresSafeArea()
             if notato.pinsVisible {
-                PinsLayer(model: model, open: { id in model.sheet = .pin(id) }).ignoresSafeArea()
+                PinsLayer(model: model).ignoresSafeArea().transition(.opacity)
             }
-            if notato.isAnnotating, model.selection == nil, model.sheet == nil {
-                VStack {
-                    HintBar(done: { notato.stopAnnotating() }).region("hint", model)
-                    Spacer()
+            VStack {
+                if hint {
+                    HintBar(done: { notato.stopAnnotating() })
+                        .region("hint", model)
+                        .transition(OverlayMotion.fromEdge(.top, reduceMotion))
                 }
-                .padding(.top, 8)
+                Spacer()
             }
-            if notato.isToolbarVisible {
-                ToolbarLayer(model: model, notato: notato)
-            }
+            .padding(.top, 8)
+            ToolbarLayer(model: model, notato: notato)
             if let sheet = model.sheet {
                 if sheet == .composer {
                     SheetContainer(atTop: model.sheetAtTop) {
                         sheetContent(sheet)
                     }
+                    // Up from below, or down from above when it is held at the top.
+                    .transition(OverlayMotion.nudged(model.sheetAtTop ? -36 : 36, reduceMotion))
                 } else {
-                    Palette.scrim.ignoresSafeArea().onTapGesture { close() }
+                    Palette.scrim.ignoresSafeArea().onTapGesture { close() }.transition(.opacity)
                     // One sheet, whose content changes as someone goes from the menu to what it opens and back.
                     BottomSheet(close: close) {
                         sheetContent(sheet)
                     }
-                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                    .transition(OverlayMotion.fromEdge(.bottom, reduceMotion))
                 }
             }
             if let toast = model.toast {
@@ -73,8 +78,18 @@ struct OverlayRoot: View {
         }
         .onGeometryChange(for: CGSize.self) { $0.size } action: { model.windowSize = $0 }
         // Annotating from code (or a shortcut) while the toolbar is folded opens it, and folds it again after.
-        .onChange(of: notato.isAnnotating, initial: true) { _, active in model.annotatingChanged(active) }
-        .animation(.easeOut(duration: 0.15), value: model.sheet)
+        .onChange(of: notato.isAnnotating, initial: true) { _, active in
+            model.annotatingChanged(active)
+            hooks.refresh()
+        }
+        // Hidden toolbar and pins: the overlay has nothing to keep up to date, and stops (`PlatformHooks.refresh`).
+        .onChange(of: notato.isToolbarVisible) { hooks.refresh() }
+        .onChange(of: notato.pinsVisible) { hooks.refresh() }
+        .animation(OverlayMotion.sheet(reduceMotion), value: model.sheet)
+        // Chosen again across the middle of the window, the note being written moves to the other end.
+        .animation(OverlayMotion.sheet(reduceMotion), value: model.sheetAtTop)
+        .animation(OverlayMotion.sheet(reduceMotion), value: hint)
+        .animation(.easeOut(duration: 0.2), value: notato.pinsVisible)
         .animation(.easeOut(duration: 0.15), value: model.toast)
         .environment(\.colorScheme, scheme)
     }
@@ -191,58 +206,103 @@ struct ToastLayer: View {
     }
 }
 
-/// The selection's outline, and a label saying what it is.
+/// The selection's outline, and a label saying what it is. It fades in, and moves to what is chosen next (with Reduce
+/// Motion, fades out there and in here).
 struct SelectionLayer: View {
     let selection: SelectionView?
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         ZStack(alignment: .topLeading) {
             Color.clear
             if let selection {
-                ForEach(Array(selection.rects.enumerated()), id: \.offset) { _, rect in
-                    RoundedRectangle(cornerRadius: 4)
-                        .fill(Palette.selection.opacity(0.08))
-                        .overlay(RoundedRectangle(cornerRadius: 4).stroke(Palette.selection, lineWidth: 2))
-                        .frame(width: rect.width, height: rect.height)
-                        .offset(x: rect.minX, y: rect.minY)
+                ZStack(alignment: .topLeading) {
+                    ForEach(Array(selection.rects.enumerated()), id: \.offset) { _, rect in
+                        RoundedRectangle(cornerRadius: 4)
+                            .fill(Palette.selection.opacity(0.08))
+                            .overlay(RoundedRectangle(cornerRadius: 4).stroke(Palette.selection, lineWidth: 2))
+                            .frame(width: rect.width, height: rect.height)
+                            .offset(x: rect.minX, y: rect.minY)
+                    }
+                    if let first = selection.rects.first {
+                        Text(selection.title)
+                            .font(.caption)
+                            .lineLimit(1)
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 7).padding(.vertical, 2)
+                            .background(Palette.selection, in: RoundedRectangle(cornerRadius: 6))
+                            .fixedSize()
+                            .offset(x: max(8, first.minX), y: first.minY > 90 ? first.minY - 24 : first.maxY + 4)
+                    }
                 }
-                if let first = selection.rects.first {
-                    Text(selection.title)
-                        .font(.caption)
-                        .lineLimit(1)
-                        .foregroundStyle(.white)
-                        .padding(.horizontal, 7).padding(.vertical, 2)
-                        .background(Palette.selection, in: RoundedRectangle(cornerRadius: 6))
-                        .fixedSize()
-                        .offset(x: max(8, first.minX), y: first.minY > 90 ? first.minY - 24 : first.maxY + 4)
-                }
+                .id(reduceMotion ? "\(selection.rects)" : "outline")
+                .transition(.opacity)
             }
         }
+        .animation(reduceMotion ? .easeOut(duration: 0.15) : .spring(duration: 0.3), value: selection)
     }
 }
 
-/// The pins of the notes on this screen, each at its element.
+/// The pins of the notes on this screen, each at its element. Given the model alone, so that it is drawn again only
+/// when the pins change, not whenever the rest of the overlay is.
 struct PinsLayer: View {
     let model: OverlayModel
-    let open: (String) -> Void
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         ZStack(alignment: .topLeading) {
             Color.clear.allowsHitTesting(false)
-            // Placed by the overlay's tick (`PinBoard`): nothing is worked out here, on every frame.
-            ForEach(model.pins) { pin in
-                Button { open(pin.id) } label: {
+            // Placed by the overlay (`PinBoard`): nothing is worked out here, on every frame.
+            ForEach(model.pins, id: \.key) { pin in
+                Button { model.sheet = .pin(pin.id) } label: {
                     PinMark(number: pin.number, status: pin.status, pending: pin.pending)
-                        .shadow(color: Palette.pinShadow.opacity(0.3), radius: 3, y: 2)
+                        .background { PinShadow() }
                         // Not found on screen: where the note was made, faded.
                         .opacity(pin.detached ? 0.55 : 1)
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("Note \(pin.number), \(pin.status.replacingOccurrences(of: "_", with: " "))")
-                .region("pin.\(pin.id)", model)
+                .region("pin.\(pin.key)", model)
                 .offset(x: pin.origin.x, y: pin.origin.y)
+                // Grows from its own middle: the anchor is in the unmoved frame's terms, as the offset is outside it.
+                .transition(reduceMotion ? .opacity : .scale(scale: 0.4, anchor: UnitPoint(x: (pin.origin.x + 12) / 24, y: (pin.origin.y + 12) / 24))
+                    .combined(with: .opacity))
             }
         }
+    }
+}
+
+/// A pin's shadow, drawn as a soft ring under it rather than blurred: with up to 150 pins, a `.shadow` each is a
+/// blur each, drawn off screen again whenever they move. Made to look like the shadow it replaces (radius 3, 2 down,
+/// 30%), seen only outside the pin.
+struct PinShadow: View {
+    var body: some View {
+        Circle()
+            .fill(RadialGradient(stops: [
+                .init(color: Palette.pinShadow.opacity(0.3), location: 0.6),
+                .init(color: Palette.pinShadow.opacity(0.15), location: 0.79),
+                .init(color: Palette.pinShadow.opacity(0.04), location: 0.9),
+                .init(color: Palette.pinShadow.opacity(0), location: 1),
+            ], center: .center, startRadius: 0, endRadius: 16.5))
+            .frame(width: 33, height: 33)
+            .offset(y: 2)
+            .allowsHitTesting(false)
+    }
+}
+
+/// How the overlay's pieces come and go, the same everywhere; with Reduce Motion, nothing slides or grows.
+enum OverlayMotion {
+    /// Sheets, the note being written, the hint: a spring of about 0.3 s, or a short fade.
+    static func sheet(_ reduceMotion: Bool) -> Animation { reduceMotion ? .easeOut(duration: 0.2) : .spring(duration: 0.3) }
+
+    /// In from an edge as it fades in.
+    static func fromEdge(_ edge: Edge, _ reduceMotion: Bool) -> AnyTransition {
+        reduceMotion ? .opacity : .move(edge: edge).combined(with: .opacity)
+    }
+
+    /// Moved a little up or down as it fades in.
+    static func nudged(_ y: CGFloat, _ reduceMotion: Bool) -> AnyTransition {
+        reduceMotion ? .opacity : .offset(y: y).combined(with: .opacity)
     }
 }
 
