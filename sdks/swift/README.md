@@ -83,9 +83,9 @@ Notato.start()   // reads Info.plist and the environment
 | -------------------------------- | ------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `Project` (`project`)            | (required)                                  | Project id on the server. Letters, digits and `. _ - @`, not only dots                                                                                                                          |
 | `Mode` (`mode`)                  | `dev`                                       | `dev`, `test` or `agent` (see below)                                                                                                                                                            |
-| `Server` (`server`)              | `http://localhost:4747` (none in test mode) | An empty string means no server                                                                                                                                                                 |
+| `Server` (`server`)              | `http://localhost:4747` (none in test mode) | An empty string means no server. `NOTATO_SERVER` wins over it (see below)                                                                                                                       |
 | `Token` (`token`)                |                                             | A project token (`notato_…`) for a shared `notato serve`. Sent only to the configured server (the same scheme, host and port); a server typed into Settings gets no token                       |
-| `Enabled` (`enabled`)            | `true`                                      | Whether Notato is on at launch. The app can switch it at runtime                                                                                                                                |
+| `Enabled` (`enabled`)            | `true`                                      | Whether Notato is on at launch. The app can switch it at runtime; `NOTATO_ENABLED` wins over both (see below)                                                                                   |
 | `ShowToolbar`, `ToolbarPosition` | `true`, `bottomTrailing`                    | The floating toolbar. People can drag it, and fold it into one round button with its chevron (it opens again while they annotate); where they leave it, and whether it is folded, is remembered |
 | `ShakeToToggle`                  | `true`                                      | Shaking the device shows or hides the toolbar (real devices)                                                                                                                                    |
 | `Author`                         |                                             | The name on this person's notes. They can change it in the toolbar's settings                                                                                                                   |
@@ -97,6 +97,21 @@ Notato.start()   // reads Info.plist and the environment
 | `SourceRoot`                     | found from `.git`                           | The folder source paths are given from                                                                                                                                                          |
 | `AppName`, `AppVersion`          | from the bundle                             | Recorded on every note                                                                                                                                                                          |
 | `MaxScreenshotScale`             | `2`                                         | Phones are 3x; 2x is plenty to read and half the size                                                                                                                                           |
+
+### For one launch: `NOTATO_ENABLED` and `NOTATO_SERVER`
+
+These two are read however Notato is started, from code too, so whoever launches the app decides for that launch without changing it: in an Xcode scheme (Run › Arguments › Environment Variables), with the `SIMCTL_CHILD_` prefix for `xcrun simctl launch`, or from a launcher such as .NET Aspire.
+
+```bash
+SIMCTL_CHILD_NOTATO_ENABLED=false xcrun simctl launch booted com.example.shop
+```
+
+|                  |                                                                                                                                                                                   |
+| ---------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `NOTATO_ENABLED` | `true`, `1`, `yes` or `on`, or `false`, `0`, `no` or `off`, in any case. Wins over `Enabled`, and over on or off chosen at runtime in an earlier launch. Anything else is ignored |
+| `NOTATO_SERVER`  | The server, such as `http://localhost:4747`. Wins over `Server`, and counts as the configured server, so `Token` goes to it. Blank is ignored (it never means no server)          |
+
+`enable()` and `disable()` still work during the launch and are remembered as before, but the next launch with `NOTATO_ENABLED` set goes by it again; `resetRuntimeState()` goes back to it when it is set, else to the configuration. A server typed into Settings still wins over `NOTATO_SERVER`, as it does over `Server`.
 
 ## At runtime: `Notato.shared`
 
@@ -114,7 +129,7 @@ struct DeveloperSettings: View {
 
 |                                                                 |                                                                                                                                                                               |
 | --------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `enable()`, `disable()`, `isEnabled`                            | On and off. A choice made here wins over `enabled` in the configuration until `resetRuntimeState()`                                                                           |
+| `enable()`, `disable()`, `isEnabled`                            | On and off. A choice made here wins over `enabled` in the configuration until `resetRuntimeState()`; a launch with `NOTATO_ENABLED` set goes by that                          |
 | `showToolbar()`, `hideToolbar()`, `isToolbarVisible`            | The toolbar. Off still lets the app drive Notato from code                                                                                                                    |
 | `startAnnotating()`, `stopAnnotating()`                         | The next tap selects what is under it                                                                                                                                         |
 | `select("#AddToCart")`                                          | Select an element as if it had been tapped, and open the note for it                                                                                                          |

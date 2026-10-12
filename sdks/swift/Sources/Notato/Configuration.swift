@@ -17,7 +17,9 @@ public enum ToolbarCorner: String, Sendable, Codable, CaseIterable {
 
 /// Settings for Notato. Set them in code, or load them from the app's Info.plist (a `Notato` dictionary) or a JSON
 /// file, with `NOTATO_*` environment variables over either. Choices made at runtime (on or off, the toolbar, a name,
-/// a server typed in) are remembered on the device and win over these until reset.
+/// a server typed in) are remembered on the device and win over these until reset. `NOTATO_ENABLED` and
+/// `NOTATO_SERVER` are read however Notato is started, in code too, and `NOTATO_ENABLED` wins over the on or off
+/// remembered: they are what whoever launched the app asked for this launch.
 public struct NotatoConfiguration: Sendable, Equatable {
     /// What `notato dev` listens on.
     public static let defaultServer = URL(string: "http://localhost:4747")!
@@ -25,10 +27,12 @@ public struct NotatoConfiguration: Sendable, Equatable {
     /// Project id on the server. Letters, digits and `. _ - @`, but not only dots.
     public var project: String
     /// Whether Notato is on when the app starts. `Notato.shared.enable()` and `.disable()` change it at runtime.
+    /// `NOTATO_ENABLED` wins over both.
     public var enabled: Bool = true
     /// Who annotates, and where the notes go.
     public var mode: NotatoMode = .dev
-    /// The server. Defaults to `localhost:4747` in dev and agent mode and to none in test mode.
+    /// The server. Defaults to `localhost:4747` in dev and agent mode and to none in test mode. `NOTATO_SERVER` wins
+    /// over it.
     public var server: URL?
     /// Leave the server out entirely, even in dev mode: notes stay on the device.
     public var noServer: Bool = false
@@ -120,7 +124,9 @@ public struct NotatoConfiguration: Sendable, Equatable {
     public static func from(_ values: [String: Any], environment: [String: String] = [:]) -> NotatoConfiguration? {
         var merged: [String: Any] = [:]
         for (key, value) in values { merged[key.lowercased()] = value }
-        for (key, value) in environment where key.hasPrefix("NOTATO_") {
+        // `NOTATO_ENABLED` and `NOTATO_SERVER` are read as `Notato.start` reads them (`LaunchEnvironment`), last: one
+        // that cannot be read, or a blank server, leaves the value under it alone instead of clearing it.
+        for (key, value) in environment where key.hasPrefix("NOTATO_") && !LaunchEnvironment.keys.contains(key) {
             merged[String(key.dropFirst("NOTATO_".count)).replacingOccurrences(of: "_", with: "").lowercased()] = value
         }
         func string(_ key: String) -> String? {
@@ -134,8 +140,7 @@ public struct NotatoConfiguration: Sendable, Equatable {
             switch merged[key] {
             case let value as Bool: return value
             case let value as NSNumber: return value.boolValue
-            case let value as String: return ["1", "true", "yes", "on"].contains(value.lowercased()) ? true
-                : ["0", "false", "no", "off"].contains(value.lowercased()) ? false : nil
+            case let value as String: return flag(value)
             default: return nil
             }
         }
@@ -165,6 +170,51 @@ public struct NotatoConfiguration: Sendable, Equatable {
         if let value = double("maxscreenshotscale") { configuration.maxScreenshotScale = value }
         if let corner = string("toolbarposition").flatMap({ raw in ToolbarCorner.allCases.first { $0.rawValue.lowercased() == raw.lowercased() } }) {
             configuration.toolbarPosition = corner
+        }
+        return LaunchEnvironment(environment).applied(to: configuration)
+    }
+
+    /// `true`, `1`, `yes` or `on`, or `false`, `0`, `no` or `off`, in any case and with spaces around. Nil for
+    /// anything else.
+    static func flag(_ text: String) -> Bool? {
+        switch text.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
+        case "true", "1", "yes", "on": true
+        case "false", "0", "no", "off": false
+        default: nil
+        }
+    }
+}
+
+/// What whoever launched the app asks of Notato for this launch: `NOTATO_ENABLED` and `NOTATO_SERVER`, set in an
+/// Xcode scheme, as `SIMCTL_CHILD_NOTATO_…` with `xcrun simctl launch`, or by a launcher such as .NET Aspire. They are
+/// read however Notato is started, from code too, and win over the configuration; `NOTATO_ENABLED` also wins over
+/// the on or off remembered from an earlier launch (`Notato.enabledAtStart`). A value that cannot be read is left
+/// out, as if it were not set. The names and the order are the same in every Notato SDK.
+struct LaunchEnvironment: Equatable {
+    static let keys: Set<String> = ["NOTATO_ENABLED", "NOTATO_SERVER"]
+
+    /// `NOTATO_ENABLED`, read by `NotatoConfiguration.flag`.
+    var enabled: Bool?
+    /// `NOTATO_SERVER`, unless it is blank. Unlike `Server` in the configuration, blank is not "no server": a launcher
+    /// that has no server to give leaves the configured one.
+    var server: URL?
+
+    init(_ environment: [String: String]) {
+        enabled = environment["NOTATO_ENABLED"].flatMap(NotatoConfiguration.flag)
+        let server = environment["NOTATO_SERVER"]?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        self.server = server.isEmpty ? nil : URL(string: server)
+    }
+
+    /// The configuration with these over it. A server from here counts as the configured server, so the configured
+    /// token goes to it, and only to it (`Notato.token(for:configuration:)`): the environment is set by the developer
+    /// launching the app, as the code and Info.plist are, not by someone using it, and `Notato.start()` has always read
+    /// `NOTATO_SERVER` into the configuration. A server typed into Settings still wins over it, and still gets no token.
+    func applied(to configuration: NotatoConfiguration) -> NotatoConfiguration {
+        var configuration = configuration
+        if let enabled { configuration.enabled = enabled }
+        if let server {
+            configuration.server = server
+            configuration.noServer = false
         }
         return configuration
     }
