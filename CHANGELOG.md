@@ -2,7 +2,7 @@
 
 Every Notato package is released together, at one version: the `notato` command and server, the npm packages, the Swift package, the Android libraries, the .NET MAUI package, the Flutter package, the Docker image and the website. A release's entry here is also the top of its [GitHub release](https://github.com/notatorg/notato/releases), and a tag is refused until this file has its version.
 
-## Unreleased
+## 0.2.0
 
 Notato in .NET Aspire, and switching Notato on or off from where an app is built or launched.
 
