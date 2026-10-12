@@ -20,7 +20,8 @@ public static class NotatoAppBuilderExtensions
 
     /// <summary>
     /// Adds Notato, bound from the <c>Notato</c> section of <c>builder.Configuration</c> when there is one, then
-    /// adjusted by <paramref name="configure"/>.
+    /// adjusted by <paramref name="configure"/>, then by the <c>NOTATO_ENABLED</c> and <c>NOTATO_SERVER</c> environment
+    /// variables the app was launched with.
     /// <code>
     /// builder.UseMauiApp&lt;App&gt;()
     ///        .UseNotato(options =&gt; options.Project = "checkout-app");
@@ -102,6 +103,9 @@ public static class NotatoAppBuilderExtensions
         {
             options.Configure(configure);
         }
+
+        // After the configuration and the code: what launched the app has the last word.
+        options.PostConfigure(o => EnvironmentSettings.Apply(o, Environment.GetEnvironmentVariable));
 
         services.TryAddSingleton<NotatoController>();
         services.TryAddSingleton<INotato>(sp => sp.GetRequiredService<NotatoController>());

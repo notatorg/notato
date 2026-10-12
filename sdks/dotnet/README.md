@@ -63,9 +63,9 @@ builder.UseNotato(o => o.AppVersion = "2.1-beta");                     // the se
 | ---------------------------------------------------- | ------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `Project`                                            | (required)                                  | Project id on the server. Letters, digits and `. _ - @`                                                                                                                |
 | `Mode`                                               | `Dev`                                       | `Dev`, `Test` or `Agent` (see below)                                                                                                                                   |
-| `Server`                                             | `http://localhost:4747` (none in test mode) | An empty string means no server                                                                                                                                        |
+| `Server`                                             | `http://localhost:4747` (none in test mode) | An empty string means no server. `NOTATO_SERVER` wins over it (below)                                                                                                  |
 | `Token`                                              |                                             | A project token (`notato_…`) for a shared `notato serve`. Only ever sent to the server configured here, never to one typed into the settings                           |
-| `Enabled`                                            | `true`                                      | Whether Notato is on at start-up. The app can switch it at runtime                                                                                                     |
+| `Enabled`                                            | `true`                                      | Whether Notato is on at start-up. The app can switch it at runtime. `NOTATO_ENABLED` wins over both (below)                                                            |
 | `ShowToolbar`, `ToolbarPosition`, `ToolbarCollapsed` | `true`, `BottomRight`, `false`              | The floating toolbar. People can drag it anywhere and fold it into one round button (it opens by itself while annotating); where they leave it, and how, is remembered |
 | `ShakeToToggle`                                      | `true`                                      | Shaking the device shows or hides the toolbar (real devices). It shares the accelerometer if the app reads it too, and only stops it if it started it                  |
 | `Author`                                             |                                             | The name on this person's notes. They can change it in the toolbar's settings                                                                                          |
@@ -79,6 +79,21 @@ builder.UseNotato(o => o.AppVersion = "2.1-beta");                     // the se
 | `MaxScreenshotScale`                                 | `2`                                         | Phones are 3x; 2x is plenty to read and half the size                                                                                                                  |
 
 The configuration is read through `IOptionsMonitor`, so a source that reloads takes effect without a restart.
+
+### For one launch: `NOTATO_ENABLED` and `NOTATO_SERVER`
+
+Two environment variables are read whatever the configuration is, after it and after the code in `MauiProgram`, so whoever launches the app decides for that launch without changing it: [.NET Aspire](https://github.com/notatorg/notato/tree/main/sdks/dotnet/src/Notato.Aspire#readme) sets them for an app it runs (`WithReference(notato)`), and so can an IDE's launch profile, or `xcrun simctl launch` with the `SIMCTL_CHILD_` prefix.
+
+```bash
+SIMCTL_CHILD_NOTATO_ENABLED=false xcrun simctl launch booted com.example.checkout
+```
+
+|                  |                                                                                                                                                                                                                                          |
+| ---------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `NOTATO_ENABLED` | `true`, `1`, `yes` or `on`, or `false`, `0`, `no` or `off`, in any case. Wins over `Enabled`, and over on or off chosen at runtime in an earlier launch. Anything else is ignored                                                        |
+| `NOTATO_SERVER`  | The server, such as `http://localhost:4747`, over `Server`. A phone or the Android emulator reaches a `localhost` server through the dev tunnel the build recorded for it (above), so Aspire's address works there too. Blank is ignored |
+
+`Enable()` and `Disable()` still work during the launch and are remembered as before, but the next launch with `NOTATO_ENABLED` set goes by it again. A server typed into the toolbar's settings still wins over `NOTATO_SERVER`, as it does over `Server`. They only matter where `UseNotato` is in the build: behind `#if DEBUG`, a release build has nothing of Notato for them to switch on.
 
 ## At runtime: `INotato`
 
@@ -95,16 +110,16 @@ public partial class DeveloperSettingsPage(INotato notato) : ContentPage
 }
 ```
 
-|                                                                            |                                                                                                           |
-| -------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
-| `Enable()`, `Disable()`, `IsEnabled`                                       | On and off. A choice made here wins over `Enabled` in configuration until `ResetRuntimeState()`           |
-| `ShowToolbar()`, `HideToolbar()`, `IsToolbarVisible`                       | The toolbar. Off still lets the app drive Notato from code                                                |
-| `StartAnnotating()`, `StopAnnotating()`                                    | The next tap selects what is under it                                                                     |
-| `SelectAsync(element)`                                                     | Select an element as if it had been tapped, and open the note for it                                      |
-| `AnnotateAsync(element, comment, options)`                                 | Make a note with no UI, as a person (`PeopleOnly` keeps it from the agent) or (with `AgentName`) an agent |
-| `AnnotateAsync("#SignIn", comment, options)`                               | The same, finding the element with a selector                                                             |
-| `Annotations`, `PendingCount`, `Connection`, `ConnectionDetail`, `Changed` | What Notato knows, for a status line or a badge. Safe to read from any thread                             |
-| `PackageAsync()`                                                           | Test mode: the device's notes as a bundle zip                                                             |
+|                                                                            |                                                                                                                                                  |
+| -------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `Enable()`, `Disable()`, `IsEnabled`                                       | On and off. A choice made here wins over `Enabled` in configuration until `ResetRuntimeState()`; a launch with `NOTATO_ENABLED` set goes by that |
+| `ShowToolbar()`, `HideToolbar()`, `IsToolbarVisible`                       | The toolbar. Off still lets the app drive Notato from code                                                                                       |
+| `StartAnnotating()`, `StopAnnotating()`                                    | The next tap selects what is under it                                                                                                            |
+| `SelectAsync(element)`                                                     | Select an element as if it had been tapped, and open the note for it                                                                             |
+| `AnnotateAsync(element, comment, options)`                                 | Make a note with no UI, as a person (`PeopleOnly` keeps it from the agent) or (with `AgentName`) an agent                                        |
+| `AnnotateAsync("#SignIn", comment, options)`                               | The same, finding the element with a selector                                                                                                    |
+| `Annotations`, `PendingCount`, `Connection`, `ConnectionDetail`, `Changed` | What Notato knows, for a status line or a badge. Safe to read from any thread                                                                    |
+| `PackageAsync()`                                                           | Test mode: the device's notes as a bundle zip                                                                                                    |
 
 The sample's **Feedback** tab does each of these.
 
