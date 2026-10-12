@@ -77,6 +77,26 @@ async function main() {
         "aria-checked": String(config.enabled),
         "aria-label": "Notato on this site",
     });
+    const destination = (value: "server" | "browser", title: string, hint: string) => {
+        const input = el("input", { type: "radio", name: "destination", value });
+        input.checked = (value === "browser") === Boolean(config.noServer);
+        return {
+            input,
+            label: el(
+                "label",
+                { class: "opt" },
+                input,
+                el("span", {}, title, el("small", {}, hint))
+            ),
+        };
+    };
+    const toServer = destination("server", "A Notato server", "Live to your coding agent");
+    const inBrowser = destination(
+        "browser",
+        "This browser only",
+        "No server: download the notes as a zip"
+    );
+    const noServer = () => inBrowser.input.checked;
 
     const current = (): SiteConfig => ({
         enabled: sw.getAttribute("aria-checked") === "true",
@@ -84,21 +104,25 @@ async function main() {
         project: project.value.trim() || config.project,
         ...(token.value ? { token: token.value } : {}),
         ...(author.value.trim() ? { author: author.value.trim() } : {}),
+        ...(noServer() ? { noServer: true } : {}),
     });
 
     /** Applies what is in the form to this site, and to the page if it is open. */
     const apply = async (enabled: boolean) => {
         const next = { ...current(), enabled };
-        const serverBase = serverOrigin(next.server);
-        if (!serverBase) return say("That is not a server address.", false);
+        const serverBase = next.noServer ? null : serverOrigin(next.server);
+        if (!next.noServer && !serverBase) return say("That is not a server address.", false);
         if (enabled) {
-            // Asked first, while the click that started this still counts: the site, and the server if it is somewhere else.
+            // Asked first, while the click that started this still counts: the site, and the server if it is somewhere
+            // else. With no server, only the site.
             const granted = await chrome.permissions.request({
-                origins: [`${origin}/*`, `${serverBase}/*`],
+                origins: [`${origin}/*`, ...(serverBase ? [`${serverBase}/*`] : [])],
             });
             if (!granted)
                 return say(
-                    "Notato needs permission to run on this site and reach the server.",
+                    next.noServer
+                        ? "Notato needs permission to run on this site."
+                        : "Notato needs permission to run on this site and reach the server.",
                     false
                 );
         }
@@ -107,7 +131,11 @@ async function main() {
             await registerSite(origin);
             await removeNow(tabId).catch(() => {});
             await injectNow(tabId);
-            say("Notato is on for this site. Use the toolbar on the page.");
+            say(
+                next.noServer
+                    ? "Notato is on for this site. Your notes stay in this browser: download them from the toolbar's export button."
+                    : "Notato is on for this site. Use the toolbar on the page."
+            );
         } else {
             await unregisterSite(origin);
             await removeNow(tabId).catch(() => {});
@@ -138,6 +166,27 @@ async function main() {
     const board = el("button", { class: "b", type: "button" }, "Open board");
     board.addEventListener("click", () => void chrome.tabs.create({ url: current().server }));
 
+    // What only a server needs, shown only with one.
+    const serverLabel = el("label", {}, "Notato server", server);
+    const tokenLabel = el("label", {}, "Project token", token);
+    const browserNote = el(
+        "p",
+        { class: "note" },
+        "Notes are kept in this browser until you download them as a zip (the toolbar's export button). A Notato board imports the zip into the same project."
+    );
+    const show = () => {
+        for (const node of [serverLabel, tokenLabel, check, board]) node.hidden = noServer();
+        browserNote.hidden = !noServer();
+    };
+    show();
+    for (const choice of [toServer.input, inBrowser.input])
+        choice.addEventListener("change", () => {
+            show();
+            say("");
+            // On already: the page changes over now, as it does for the switch.
+            if (sw.getAttribute("aria-checked") === "true") void apply(true);
+        });
+
     app.replaceChildren(
         el(
             "div",
@@ -150,10 +199,18 @@ async function main() {
             ),
             sw
         ),
-        el("label", {}, "Notato server", server),
+        el(
+            "fieldset",
+            { class: "dest" },
+            el("legend", {}, "Notes go to"),
+            toServer.label,
+            inBrowser.label
+        ),
+        serverLabel,
+        browserNote,
         el("label", {}, "Project (each site is its own by default)", project),
         el("label", {}, "Your name", author),
-        el("label", {}, "Project token", token),
+        tokenLabel,
         el("div", { class: "buttons" }, save, check, board),
         message
     );

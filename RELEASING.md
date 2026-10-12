@@ -27,7 +27,7 @@ Repository variables (Settings › Secrets and variables › Actions › Variabl
 | `PUBLISH_NPM`    | `notato`, `@notato/cli-*`, and every public workspace package | secret `NPM_TOKEN`                                                                                |
 | `PUBLISH_DOCKER` | `ghcr.io/notatorg/notato`                                     | nothing more                                                                                      |
 | `PUBLISH_MAVEN`  | `dev.notato:notato-android` and `dev.notato:notato-compose`   | secrets `MAVEN_CENTRAL_USERNAME`, `MAVEN_CENTRAL_PASSWORD`, `SIGNING_KEY`, `SIGNING_KEY_PASSWORD` |
-| `PUBLISH_NUGET`  | `Notato.Maui`                                                 | variable `NUGET_USER` and a Trusted Publishing policy on nuget.org (below); no key                |
+| `PUBLISH_NUGET`  | `Notato.Maui` and `Notato.Aspire`                             | variable `NUGET_USER` and a Trusted Publishing policy on nuget.org (below); no key                |
 | `PUBLISH_PUB`    | `notato` on pub.dev (Flutter)                                 | automated publishing turned on for the package on pub.dev (below)                                 |
 | `PUBLISH_SITE`   | the website and docs, on GitHub Pages                         | Pages' source set to GitHub Actions, and tags allowed to deploy (below)                           |
 | `PUBLISH_GITHUB` | a GitHub release with the binaries and the extension zip      | nothing more                                                                                      |

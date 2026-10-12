@@ -39,6 +39,7 @@ class NotatoConfig {
     this.appVersion,
     this.author,
     this.enabled = true,
+    this.enabledDeclared = false,
     this.showToolbar = true,
     this.toolbarPosition = NotatoPosition.bottomRight,
     this.screenshots = true,
@@ -59,6 +60,10 @@ class NotatoConfig {
   final String? appVersion;
   final String? author;
   final bool enabled;
+
+  /// The build declares `NOTATO_ENABLED`, and [enabled] is what it says: at launch it wins over the choice remembered
+  /// from an earlier one.
+  final bool enabledDeclared;
   final bool showToolbar;
   final NotatoPosition toolbarPosition;
   final bool screenshots;
@@ -79,6 +84,7 @@ class NotatoConfig {
     String? appVersion,
     String? author,
     bool enabled = true,
+    bool enabledDeclared = false,
     bool showToolbar = true,
     NotatoPosition toolbarPosition = NotatoPosition.bottomRight,
     bool screenshots = true,
@@ -102,6 +108,7 @@ class NotatoConfig {
       appVersion: appVersion,
       author: author,
       enabled: enabled,
+      enabledDeclared: enabledDeclared,
       showToolbar: showToolbar,
       toolbarPosition: toolbarPosition,
       screenshots: screenshots,

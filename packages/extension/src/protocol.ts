@@ -10,12 +10,17 @@ export const CHANNEL = "notato-extension";
 /** What a person has set for one site. */
 export interface SiteConfig {
     enabled: boolean;
-    /** Where the Notato server is, e.g. http://localhost:4747. */
+    /** Where the Notato server is, e.g. http://localhost:4747. Kept while `noServer` is on, for switching back. */
     server: string;
     project: string;
     /** For a shared server that asks for one. */
     token?: string;
     author?: string;
+    /**
+     * No server: the notes stay in this browser, across reloads, until they are downloaded as a zip (the toolbar's test
+     * mode), and the extension reaches no server for the site at all.
+     */
+    noServer?: boolean;
 }
 
 /**
@@ -192,7 +197,8 @@ const ID = "[A-Za-z0-9_-]{1,128}";
 /**
  * What the toolbar asks of the server, by method and by path under the server's own address: `{project}` is only ever
  * this site's project. Nothing else, not the settings, the webhooks, the tokens, the list of projects, another
- * project's notes or the relay (the extension runs the toolbar in dev mode, which never uses it).
+ * project's notes or the relay (the extension runs the toolbar in dev mode, which never uses it). A site with no server
+ * gets none of it.
  */
 const ROUTES: Array<{ methods: string[]; path: RegExp }> = [
     { methods: ["GET"], path: /^\/(health|config|status|auth\/me)$/ },
@@ -247,6 +253,7 @@ export function allowedRequest(
     url: string,
     method: string
 ): boolean {
+    if (site.noServer) return false;
     const path = apiPath(site.server, url);
     if (path === null) return false;
     // The project is compared decoded, as the server reads it, so no encoding of another name can pass for it.

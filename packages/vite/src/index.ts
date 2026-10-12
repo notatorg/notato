@@ -8,7 +8,8 @@ export { SOURCE_ATTRIBUTE, tagJsx } from "./transform.ts";
 export interface NotatoSourceOptions {
     /**
      * Whether to tag elements. By default only when `VITE_NOTATO=true` is set (in the environment or a `.env` file),
-     * so a build without it is exactly what it was, and nothing changes in tests that load this config.
+     * so a build without it is exactly what it was, and nothing changes in tests that load this config. The same
+     * variable turns the toolbar on in `<Notato />` and `provideNotato`.
      */
     enabled?: boolean;
     /**
@@ -36,6 +37,10 @@ function findRepoRoot(from: string): string | null {
         if (dirname(dir) === dir) return fallback;
     }
 }
+
+/** On for `true`, `1`, `yes` and `on` in any case, as `<Notato />` reads the same variable. */
+const switchedOn = (value: unknown) =>
+    typeof value === "string" && ["true", "1", "yes", "on"].includes(value.trim().toLowerCase());
 
 /**
  * A worktree's `.git` file points at `<repository>/.git/worktrees/<name>`, which has a `commondir` file; a
@@ -70,7 +75,7 @@ export function notatoSource(options: NotatoSourceOptions = {}): Plugin {
         enforce: "pre",
         configResolved(config) {
             active =
-                options.enabled ?? (config.env as Record<string, unknown>).VITE_NOTATO === "true";
+                options.enabled ?? switchedOn((config.env as Record<string, unknown>).VITE_NOTATO);
             base = resolve(options.root ?? findRepoRoot(config.root) ?? config.root);
         },
         transform(code, id) {

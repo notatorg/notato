@@ -1,9 +1,10 @@
-import type { EventStream, Transport } from "@notato/browser";
+import type { EventStream, NotatoProps, Transport } from "@notato/browser";
 import {
     CHANNEL,
     decodeResponse,
     encodeInit,
     type PageConfig,
+    projectOf,
     type ToPage,
     type ToRelay,
 } from "./protocol.ts";
@@ -47,6 +48,32 @@ export function requestConfig(bus: PageBus, timeoutMs = 3000): Promise<PageConfi
         }, timeoutMs);
         bus.post({ channel: CHANNEL, to: "relay", kind: "hello" });
     });
+}
+
+/**
+ * How the toolbar starts on a page of a site with these settings. With a server it is live to it (dev mode), its
+ * requests carried by the extension, and keeps nothing in the page. With none it keeps the notes in this browser,
+ * across reloads, until they are downloaded as a zip: test mode, which also covers what is typed in screenshots.
+ */
+export function toolbarProps(
+    config: PageConfig,
+    location: Pick<Location, "origin" | "host">,
+    transport: Transport
+): NotatoProps {
+    const page = {
+        project: projectOf(config, location.origin),
+        // No token: it stays in the extension, and the background worker adds it to each request (`asSite`).
+        author: config.author || undefined,
+        appName: location.host,
+    };
+    if (config.noServer) return { ...page, mode: "test", persist: true };
+    return {
+        ...page,
+        mode: "dev",
+        server: config.server.replace(/\/$/, ""),
+        persist: false,
+        transport,
+    };
 }
 
 const RECONNECT_MAX_MS = 10_000;

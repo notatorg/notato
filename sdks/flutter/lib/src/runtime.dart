@@ -238,7 +238,10 @@ class NotatoRuntime extends ChangeNotifier implements NotatoController {
     _notes.replaceAll(const []);
     _assets.clear();
     _toolbarVisible = _settings['toolbarVisible'] as bool? ?? current.showToolbar;
-    _setEnabled(_settings['enabled'] as bool? ?? current.enabled, remember: false);
+    // A NOTATO_ENABLED the build declares decides, over the choice remembered from an earlier launch. A choice made
+    // from now on is still remembered, for a launch that declares nothing.
+    final remembered = current.enabledDeclared ? null : _settings['enabled'] as bool?;
+    _setEnabled(remembered ?? current.enabled, remember: false);
   }
 
   /// The app's storage, or memory for this run when the app's own `storage` fails.
@@ -599,8 +602,9 @@ class NotatoRuntime extends ChangeNotifier implements NotatoController {
 
   // ---- sending -----------------------------------------------------------------------------------------------------
 
-  /// A client for a server. The token goes only to the server the app was configured with: one typed into the settings
-  /// (a typo, someone else's) never gets it.
+  /// A client for a server. The token goes only to the server the app was configured with, in code or by the build's
+  /// `NOTATO_SERVER` (whoever builds the app chose that server as they chose the token): one typed into the settings (a
+  /// typo, someone else's) never gets it.
   NotatoClient _clientFor(String server) => NotatoClient(
     server: server,
     project: _config!.project,

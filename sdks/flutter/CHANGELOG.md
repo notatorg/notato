@@ -2,6 +2,10 @@
 
 Every Notato package is released together, at the same version: see [the releases](https://github.com/notatorg/notato/releases).
 
+## Unreleased
+
+- Two declarations from the build win over the options in code: `--dart-define=NOTATO_ENABLED=true` (or `false`) switches Notato on or off, over `enabled` and the choice remembered from an earlier launch, and `--dart-define=NOTATO_SERVER=…` sets the server, which gets the `token` as one set in code does. A release build that declares neither is as before.
+
 ## 0.1.1
 
 - The composer opens as soon as a widget is picked; its screenshots are taken behind it, and the toolbar and pins stay on screen.

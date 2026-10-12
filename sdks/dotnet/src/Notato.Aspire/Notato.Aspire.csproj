@@ -1,0 +1,32 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!-- What Aspire.Hosting itself targets, so an app host on any .NET that Aspire supports can use it. -->
+    <TargetFramework>net8.0</TargetFramework>
+    <RootNamespace>Aspire.Hosting</RootNamespace>
+    <AssemblyName>Notato.Aspire</AssemblyName>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+
+    <PackageId>Notato.Aspire</PackageId>
+    <Description>Notato in a .NET Aspire app host. AddNotato() runs the Notato board, the server your apps' notes go to and MCP for your coding agents (Claude Code, Codex, Cursor and others); WithReference(notato) turns Notato on in the apps that use it.</Description>
+    <PackageTags>aspire;hosting;feedback;annotations;mcp;ai-agents;claude;codex;notato</PackageTags>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <PackageIcon>notato.png</PackageIcon>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Aspire.Hosting" Version="$(AspireMinimumVersion)" />
+    <!-- To tell a JavaScript app (Vite's variables) from the rest. -->
+    <PackageReference Include="Aspire.Hosting.JavaScript" Version="$(AspireMinimumVersion)" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Notato.Aspire.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="README.md" Pack="true" PackagePath="\" />
+    <None Include="..\..\..\..\assets\notato.png" Pack="true" PackagePath="\" Visible="false" />
+  </ItemGroup>
+
+</Project>

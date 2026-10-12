@@ -1,4 +1,5 @@
 import type { NotatoController, NotatoProps } from "@notato/browser";
+import { type NotatoEnvironment, notatoEnvironment } from "@notato/browser/env";
 import { useEffect, useRef } from "react";
 
 /**
@@ -44,12 +45,26 @@ export function startToolbar(load: Load, props: () => NotatoProps): () => void {
     };
 }
 
+/** Whether the toolbar starts: what the environment says, else `enabled`, else whether this is a development build. */
+export function wantsToolbar(props: NotatoProps, env: NotatoEnvironment): boolean {
+    return env.enabled ?? props.enabled ?? !isProduction();
+}
+
+/** The props the toolbar starts with: the server the environment names, where it names one, over `server`. */
+export function startProps(props: NotatoProps, env: NotatoEnvironment): NotatoProps {
+    return env.server ? { ...props, server: env.server } : props;
+}
+
 /**
  * Renders nothing. In production builds it does nothing at all unless `enabled` is set: the toolbar,
  * plugins and screenshot code live behind a dynamic import that is only requested when enabled.
+ *
+ * Where the app is built with Vite, `VITE_NOTATO=true` or `false` decides instead, over `enabled`, and
+ * `VITE_NOTATO_SERVER` names the server, over `server`: what launches the app knows best where it runs.
  */
 export function Notato(props: NotatoProps): null {
-    const enabled = props.enabled ?? !isProduction();
+    const env = notatoEnvironment();
+    const enabled = wantsToolbar(props, env);
     const latest = useRef(props);
     // After render, never during it: React may render and throw the result away.
     useEffect(() => {
@@ -62,7 +77,7 @@ export function Notato(props: NotatoProps): null {
         if (!enabled) return;
         return startToolbar(
             () => import("@notato/browser"),
-            () => latest.current
+            () => startProps(latest.current, env)
         );
     }, [enabled, key]);
 

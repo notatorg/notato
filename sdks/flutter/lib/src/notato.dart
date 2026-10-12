@@ -14,6 +14,7 @@ import 'capture.dart';
 import 'client.dart';
 import 'config.dart';
 import 'controller.dart';
+import 'environment.dart';
 import 'identity.dart';
 import 'ids.dart';
 import 'note_book.dart';
@@ -76,7 +77,7 @@ class NotatoRouteObserver extends NavigatorObserver {
 
 /// Notato for Flutter: wrap your app in it. People tap Annotate, then any widget, and write what should change; the
 /// note reaches your coding agent with a screenshot, the widget and the file and line it is written at. In a release
-/// build it is your app and nothing else, unless [enabled] says otherwise.
+/// build it is your app and nothing else, unless [enabled] or the build's `NOTATO_ENABLED` says otherwise.
 class Notato extends StatefulWidget {
   /// Notato around [child], your app, for [project] on the server.
   const Notato({
@@ -115,7 +116,8 @@ class Notato extends StatefulWidget {
 
   /// The Notato server. Default `http://localhost:4747` in dev and agent mode (the iOS simulator and desktop apps reach
   /// it as it is; for the Android emulator, forward it first: `adb reverse tcp:4747 tcp:4747`), and none in test mode,
-  /// where a server set here gets the packages. An empty string for none in any mode.
+  /// where a server set here gets the packages. An empty string for none in any mode. A `NOTATO_SERVER` the build
+  /// declares (`--dart-define=NOTATO_SERVER=…`) wins over it.
   final String? server;
 
   /// A project token (`notato_…`), for a shared server (`notato serve`).
@@ -134,8 +136,9 @@ class Notato extends StatefulWidget {
   /// [navigatorObserver] saw last, when it is in your app's `navigatorObservers`.
   final String? Function()? route;
 
-  /// Whether Notato is on at launch. Default: debug builds. The app can switch it at runtime ([notato]). Picking a
-  /// widget needs a debug build either way.
+  /// Whether Notato is on at launch. Default: debug builds. The app can switch it at runtime ([notato]). A
+  /// `NOTATO_ENABLED` the build declares (`--dart-define=NOTATO_ENABLED=true`) wins over it, and over a choice made at
+  /// runtime in an earlier launch. Picking a widget needs a debug build either way.
   final bool? enabled;
 
   /// Show the toolbar at launch. The app can show or hide it at runtime.
@@ -251,17 +254,22 @@ class _NotatoState extends State<Notato> with WidgetsBindingObserver implements 
 
   /// Decided once: a release build that changed its mind later would put the app in another place in the tree, and
   /// Flutter would build it again from scratch.
-  late final bool _available = kDebugMode || (widget.enabled ?? false);
+  late final bool _available = kDebugMode || (_enabled ?? false);
+
+  /// The `enabled` option, unless the build declares `NOTATO_ENABLED`: then that. In a release build that declares
+  /// nothing, the option and nothing else, as it always was.
+  bool? get _enabled => readsEnabled ? declarations.enabled ?? widget.enabled : widget.enabled;
 
   NotatoConfig get _config => NotatoConfig.resolve(
     project: widget.project,
     mode: widget.mode,
-    server: widget.server,
+    server: readsServer ? declarations.server ?? widget.server : widget.server,
     token: widget.token,
     appName: widget.appName,
     appVersion: widget.appVersion,
     author: widget.author,
-    enabled: widget.enabled ?? kDebugMode,
+    enabled: _enabled ?? kDebugMode,
+    enabledDeclared: readsEnabled && declarations.enabled != null,
     showToolbar: widget.showToolbar,
     toolbarPosition: widget.toolbarPosition,
     screenshots: widget.screenshots,

@@ -15,6 +15,8 @@ if (import.meta.env.DEV) createController({ project: "checkout-web", server: "ht
 
 ## Good to know
 
+- In an app built with Vite, `notatoEnvironment()` from `@notato/browser/env` reads `VITE_NOTATO` (`true` or `false`) and `VITE_NOTATO_SERVER`, as `<Notato />` and `provideNotato` do, without loading the toolbar: `if (notatoEnvironment().enabled ?? import.meta.env.DEV) createController(...)`.
+
 - On a page with many notes, pins are drawn for the newest 150 on that page, as in the native SDKs. The toolbar's count, the copied Markdown and the board have every note.
 - Notato's styles are constructed stylesheets, which a strict Content-Security-Policy (`style-src` without `'unsafe-inline'`) allows. A browser too old for those (Safari before 16.4) gets `<style>` elements instead: pass the nonce your policy allows as `nonce` and they carry it. The script tag from a Notato server passes its own nonce on.
 

@@ -49,7 +49,7 @@ public final class Notato {
 
     // ---- what the app and the overlay read ----------------------------------------------------------------------
 
-    /// What Notato was started with, or nil before `start`.
+    /// What Notato was started with, with `NOTATO_ENABLED` and `NOTATO_SERVER` over it, or nil before `start`.
     public private(set) var configuration: NotatoConfiguration?
     /// Whether Notato is on: its overlay showing (unless the toolbar is hidden) and its connection open.
     public private(set) var isEnabled = false
@@ -75,6 +75,8 @@ public final class Notato {
     private(set) var generation = 0
     /// What the person chose on the device, over the configuration.
     var state = RuntimeState(remember: true)
+    /// `NOTATO_ENABLED` and `NOTATO_SERVER`, as they were when Notato started.
+    @ObservationIgnored var launch = LaunchEnvironment([:])
     /// Whether the server takes screenshots: one that has them off wins over the configuration.
     var serverScreenshots = true
     /// Why the configuration cannot be used, when it cannot: Notato stays off.
@@ -104,9 +106,10 @@ public final class Notato {
     private init() {}
 
     /// A Notato of its own with nothing running (no overlay, no connection, nothing remembered on the device): for
-    /// tests, which must not touch `shared`'s server or the app's settings.
-    init(configuration: NotatoConfiguration) {
-        self.configuration = configuration
+    /// tests, which must not touch `shared`'s server or the app's settings. `environment` stands in for the process's.
+    init(configuration: NotatoConfiguration, environment: [String: String] = [:]) {
+        launch = LaunchEnvironment(environment)
+        self.configuration = launch.applied(to: configuration)
         state = RuntimeState(remember: false)
     }
 
@@ -128,9 +131,10 @@ public final class Notato {
     // ---- start-up ----------------------------------------------------------------------------------------------
 
     /// Starts Notato with a configuration. Call once, early (the app's `init`). Whether it shows straight away
-    /// depends on `enabled` and on what was chosen at runtime before.
+    /// depends on `NOTATO_ENABLED`, then on what was chosen at runtime before, then on `enabled`; `NOTATO_SERVER`
+    /// wins over `server`.
     public static func start(_ configuration: NotatoConfiguration) {
-        shared.begin(configuration)
+        shared.begin(configuration, environment: ProcessInfo.processInfo.environment)
     }
 
     /// Starts Notato from the app's Info.plist (`Notato` dictionary) and `NOTATO_*` environment variables.
@@ -143,7 +147,9 @@ public final class Notato {
         start(configuration)
     }
 
-    private func begin(_ configuration: NotatoConfiguration) {
+    private func begin(_ configuration: NotatoConfiguration, environment: [String: String]) {
+        launch = LaunchEnvironment(environment)
+        let configuration = launch.applied(to: configuration)
         self.configuration = configuration
         state = RuntimeState(remember: configuration.rememberRuntimeState)
         started = Date()
@@ -154,25 +160,30 @@ public final class Notato {
         }
         isToolbarVisible = state.toolbarVisible ?? configuration.showToolbar
         pinsVisible = state.pinsVisible ?? true
-        setEnabled(state.enabled ?? configuration.enabled, remember: false)
+        setEnabled(enabledAtStart, remember: false)
     }
 
     // ---- on and off -----------------------------------------------------------------------------------------------
 
-    /// Switches Notato on. Remembered across launches unless `rememberRuntimeState` is off.
+    /// On or off at start, and again when the runtime choices are reset: `NOTATO_ENABLED` when it is set (whoever
+    /// launched the app asked for this launch), else the on or off remembered from before, else the configuration.
+    var enabledAtStart: Bool { launch.enabled ?? state.enabled ?? configuration?.enabled ?? true }
+
+    /// Switches Notato on. Remembered across launches unless `rememberRuntimeState` is off; a launch with
+    /// `NOTATO_ENABLED` set goes by that instead.
     public func enable() { setEnabled(true, remember: true) }
 
     /// Switches Notato off: removes the overlay and closes the connection. Remembered like `enable()`.
     public func disable() { setEnabled(false, remember: true) }
 
-    /// Forgets the choices made at runtime and goes back to the configuration.
+    /// Forgets the choices made at runtime and goes back to `NOTATO_ENABLED` when it is set, and to the configuration.
     public func resetRuntimeState() {
         state.reset()
         pinsVisible = true
         guard let configuration else { return }
         isToolbarVisible = configuration.showToolbar
         platform?.toolbarPositionReset()
-        setEnabled(configuration.enabled, remember: false)
+        setEnabled(enabledAtStart, remember: false)
         restartSync()
     }
 

@@ -10,7 +10,7 @@ name: Release
 #                                                                              MAVEN_CENTRAL_PASSWORD (a Central Portal
 #                                                                              user token), SIGNING_KEY (ASCII-armoured
 #                                                                              private key), SIGNING_KEY_PASSWORD
-#   PUBLISH_NUGET   nuget.org: Notato.Maui                                     variable NUGET_USER: no key, nuget.org trusts
+#   PUBLISH_NUGET   nuget.org: Notato.Maui, Notato.Aspire                      variable NUGET_USER: no key, nuget.org trusts
 #                                                                              this workflow (a Trusted Publishing policy)
 #   PUBLISH_PUB     pub.dev: notato (Flutter)                                  none: pub.dev trusts this repository's tags
 #                                                                              (its admin page, "Automated publishing")
@@ -216,6 +216,7 @@ jobs:
             # The same workload set as the SDK's CI (.github/workflows/sdk-dotnet.yml).
             - run: dotnet workload install maui --version 10.0.401
             - run: dotnet pack src/Notato.Maui -c Release -o artifacts
+            - run: dotnet pack src/Notato.Aspire -c Release -o artifacts
             - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
               with:
                   name: nuget

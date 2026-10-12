@@ -5,6 +5,8 @@
     <!-- What the package asks for: the first MAUI 10, so it never forces an app to upgrade (a new app on the 10.0.400 SDK is on 10.0.20). -->
     <MauiMinimumVersion>10.0.0</MauiMinimumVersion>
     <MicrosoftExtensionsVersion>10.0.0</MicrosoftExtensionsVersion>
+    <!-- What Notato.Aspire asks for: an app host on this Aspire or any later one can use it. -->
+    <AspireMinimumVersion>13.2.4</AspireMinimumVersion>
     <LangVersion>latest</LangVersion>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>

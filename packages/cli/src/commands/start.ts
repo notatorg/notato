@@ -23,6 +23,8 @@ Options:
                        Needs the devtunnel CLI, signed in once (\`devtunnel user login\`).
       --no-mcp         Refuse coding agents while this runs, whatever the settings say. To switch them off
                        and on as you go, use the board (Settings › Agents) or \`notato config set mcp off\`.
+      --attach         If Notato is already running on the port, stay attached to it instead of exiting, and
+                       serve in its place if it stops. For tools that keep a process running, such as .NET Aspire.
   -h, --help           Show this help`;
 
 /** What `/mcp` on an already running server says about itself, to tell an old server from one with MCP off. */
@@ -48,6 +50,7 @@ export async function runStartCommand(argv: string[], version: string): Promise<
             config: { type: "string", short: "c" },
             tunnel: { type: "boolean", short: "t" },
             "no-mcp": { type: "boolean" },
+            attach: { type: "boolean" },
             help: { type: "boolean", short: "h" },
         },
     });
@@ -70,8 +73,12 @@ export async function runStartCommand(argv: string[], version: string): Promise<
     if (dev.role !== "primary") {
         // Another notato already serves this port (another `npx notato`, or an agent's own `notato dev`): use that one.
         const mcp = await probeMcp(base);
-        await dev.close();
-        console.log(`Notato is already running on port ${dev.port}.\n`);
+        if (!values.attach) await dev.close();
+        console.log(
+            values.attach
+                ? `Notato is already running on port ${dev.port}. This one stays attached to it, and serves in its place if it stops.\n`
+                : `Notato is already running on port ${dev.port}.\n`
+        );
         console.log(`  Board  ${base}`);
         if (mcp === "on") console.log(`  MCP    ${base}/mcp`);
         else if (mcp === "off") console.log("  MCP    turned off (Settings › Agents on the board)");
@@ -79,7 +86,18 @@ export async function runStartCommand(argv: string[], version: string): Promise<
             console.log(
                 "  MCP    not served: that server is an older Notato. Stop it and run this again."
             );
-        console.log(`\nTo run a second one, give it another --port.`);
+        if (!values.attach) {
+            console.log(`\nTo run a second one, give it another --port.`);
+            return 0;
+        }
+        // Attached, the runtime only watches the other server, on a timer that would let the process end. Whatever
+        // started this one (Aspire, say) counts it as Notato, so it stays until stopped, and takes over the port if
+        // the other server goes away.
+        const hold = setInterval(() => {}, 60_000);
+        stopOnSignals(async () => {
+            clearInterval(hold);
+            await dev.close();
+        });
         return 0;
     }
 

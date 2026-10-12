@@ -107,7 +107,7 @@ abstract interface class NotatoController implements Listenable {
   int get pendingCount;
 
   /// Switches Notato on. Remembered across launches unless `rememberRuntimeState` is off, and it wins over the
-  /// `enabled` option until [resetRuntimeState].
+  /// `enabled` option until [resetRuntimeState]. A `NOTATO_ENABLED` the build declares wins over it at the next launch.
   void enable();
 
   /// Switches Notato off: removes the overlay and closes the connection. Remembered like [enable].
@@ -117,7 +117,7 @@ abstract interface class NotatoController implements Listenable {
   void setEnabled(bool on);
 
   /// Forgets the choices made at runtime (on or off, the toolbar, a name, a server typed in) and goes back to the
-  /// `Notato` widget's options.
+  /// `Notato` widget's options, and to what the build declares (`NOTATO_ENABLED`, `NOTATO_SERVER`) over them.
   void resetRuntimeState();
 
   /// Shows the toolbar.

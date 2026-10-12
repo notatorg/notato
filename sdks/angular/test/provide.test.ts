@@ -34,6 +34,7 @@ afterEach(() => {
     createController.mockClear();
     destroy.mockClear();
     vi.restoreAllMocks();
+    vi.unstubAllEnvs();
 });
 
 describe("provideNotato", () => {
@@ -90,5 +91,28 @@ describe("provideNotato", () => {
             "[notato] the toolbar could not start",
             expect.objectContaining({ message: "no document.body yet" })
         );
+    });
+
+    it("starts or stays off as VITE_NOTATO says, over `enabled`", async () => {
+        vi.stubEnv("VITE_NOTATO", "true");
+        start("browser", { project: "shop", enabled: false });
+        await settle();
+        expect(createController).toHaveBeenCalledOnce();
+
+        createController.mockClear();
+        vi.stubEnv("VITE_NOTATO", "false");
+        start("browser", { project: "shop", enabled: true });
+        await settle();
+        expect(createController).not.toHaveBeenCalled();
+    });
+
+    it("starts the toolbar with the server VITE_NOTATO_SERVER names, over `server`", async () => {
+        vi.stubEnv("VITE_NOTATO_SERVER", "http://localhost:4800");
+        start("browser", { project: "shop", server: "http://localhost:4747" });
+        await settle();
+        expect(createController).toHaveBeenCalledWith({
+            project: "shop",
+            server: "http://localhost:4800",
+        });
     });
 });

@@ -41,8 +41,15 @@ public sealed class NotatoOptions
     /// Whether Notato is on when the app starts. It can be switched at runtime with <see cref="INotato.Enable"/> and
     /// <see cref="INotato.Disable"/>, and that choice is remembered (see <see cref="RememberRuntimeState"/>). To ship
     /// nothing at all, leave <c>UseNotato</c> out of the build (for example behind <c>#if DEBUG</c>).
+    /// <para>
+    /// The <c>NOTATO_ENABLED</c> environment variable (<c>true</c> or <c>false</c>), when the app is launched with it,
+    /// decides instead: over this, and over the choice remembered on the device. .NET Aspire sets it.
+    /// </para>
     /// </summary>
     public bool Enabled { get; set; } = true;
+
+    /// <summary>Set when <c>NOTATO_ENABLED</c> decided <see cref="Enabled"/>: it then wins over the remembered choice too.</summary>
+    internal bool EnabledByEnvironment { get; set; }
 
     /// <summary>Who annotates, and where the notes go: <see cref="NotatoMode.Dev"/> unless set.</summary>
     public NotatoMode Mode { get; set; } = NotatoMode.Dev;
@@ -55,6 +62,11 @@ public sealed class NotatoOptions
     /// notes then only leave the device as a zip. Set it to an empty string to work with no server. When it is not set
     /// and the app was built while <c>notato dev --tunnel</c> ran, a phone (or the Android emulator) uses that dev
     /// tunnel and its device token, and the iOS simulator that server's local address.
+    /// <para>
+    /// The <c>NOTATO_SERVER</c> environment variable, when the app is launched with it, is used in place of this. A
+    /// phone or emulator that cannot reach this machine's localhost reaches a localhost server through the dev tunnel the
+    /// build recorded for it, so <c>http://localhost:4747</c> from .NET Aspire works on one too.
+    /// </para>
     /// </summary>
     public string? Server { get; set; }
 
@@ -125,9 +137,23 @@ public sealed class NotatoOptions
 
     internal string? ResolvedServer => ResolveServer(Runtime.DeviceAccess.Recorded, Runtime.DeviceAccess.ReachesLoopback);
 
-    internal string? ResolveServer(Runtime.DeviceAccess? device, bool reachesLoopback) => Server is null
-        ? Mode == NotatoMode.Test ? null : device?.ServerFor(reachesLoopback) ?? DefaultServer
-        : string.IsNullOrWhiteSpace(Server) ? null : Server.Trim().TrimEnd('/');
+    internal string? ResolveServer(Runtime.DeviceAccess? device, bool reachesLoopback)
+    {
+        if (Server is null)
+        {
+            return Mode == NotatoMode.Test ? null : device?.ServerFor(reachesLoopback) ?? DefaultServer;
+        }
+
+        if (string.IsNullOrWhiteSpace(Server))
+        {
+            return null;
+        }
+
+        string server = Server.Trim().TrimEnd('/');
+        // The development machine's own server, named as the machine sees it: from a device that cannot reach the
+        // machine's localhost, it is the tunnel the build recorded for that server.
+        return !reachesLoopback && device?.Tunnel is { } tunnel && SameOrigin(server, device.Local) ? tunnel : server;
+    }
 
     /// <summary>
     /// The token for <paramref name="server"/>: the configured one when it is the configured server, else the device

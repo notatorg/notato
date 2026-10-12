@@ -207,8 +207,11 @@ internal sealed partial class NotatoController : INotato, IDisposable
 
         LogRecorder.Shared.Entries.Capacity = Options.LogLimit;
         _toolbarVisible = _state.ToolbarVisible ?? Options.ShowToolbar;
-        SetEnabled(_state.Enabled ?? Options.Enabled, remember: false);
+        SetEnabled(WantsEnabled, remember: false);
     }
+
+    /// <summary>On or off as the options and the device say: what was chosen on the device, unless the environment decided.</summary>
+    private bool WantsEnabled => Options.EnabledByEnvironment ? Options.Enabled : _state.Enabled ?? Options.Enabled;
 
     private void SetEnabled(bool on, bool remember)
     {
@@ -297,7 +300,7 @@ internal sealed partial class NotatoController : INotato, IDisposable
         }
 
         _toolbarVisible = _state.ToolbarVisible ?? Options.ShowToolbar;
-        bool wanted = _state.Enabled ?? Options.Enabled;
+        bool wanted = WantsEnabled;
         if (wanted != _enabled)
         {
             SetEnabled(wanted, remember: false);

@@ -19,6 +19,15 @@ It is [`@notato/browser`](https://www.npmjs.com/package/@notato/browser) as a co
 
 A changed prop restarts the toolbar with it: the token, the author, `persist` and the rest. `plugins` and `transport` are read as it starts; give `<Notato />` a new `key` to change those. If the toolbar cannot load, the console says why.
 
+## On or off from where the app is built
+
+In an app built with Vite, two variables in the environment it is built or served from (the shell, a `.env` file, or [.NET Aspire](https://github.com/notatorg/notato/tree/main/sdks/dotnet/src/Notato.Aspire#readme)) win over the props:
+
+- `VITE_NOTATO`: `true` (or `1`, `yes`, `on`) starts the toolbar, in a production build too, such as one made with `vite build --watch` and served with `vite preview`. `false` (or `0`, `no`, `off`) keeps it off, in development too. Anything else, or nothing, leaves it to `enabled` and the kind of build.
+- `VITE_NOTATO_SERVER`: the server, over `server`.
+
+`VITE_NOTATO` is also what [`@notato/vite`](https://www.npmjs.com/package/@notato/vite) records source positions under, so one variable turns the lot on. A guard around `<Notato />` decides first: for an app that is built and previewed, write it as `npx notato init` does there, `{(import.meta.env.DEV || import.meta.env.VITE_NOTATO === "true") && <Notato … />}`, and a build without the variable still ships nothing of Notato. Other bundlers do not pass `VITE_` variables to the page; pass `enabled` and `server` from your own there.
+
 ## Example
 
 [`example/`](https://github.com/notatorg/notato/tree/main/sdks/react/example) is a small Vite app with the toolbar: `bun install` at the repository root, then `bun run dev` in `sdks/react/example`. Its notes go to `http://localhost:4747` unless the page's URL says otherwise (`?server=http://localhost:4799`), and `?mode=test` or `?mode=agent` switch the mode.
