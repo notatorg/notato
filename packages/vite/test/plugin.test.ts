@@ -54,6 +54,20 @@ describe("when it is on", () => {
         ).toBeNull();
     });
 
+    it("reads VITE_NOTATO as <Notato /> does: 1, yes and on too, in any case", () => {
+        const root = tree({ ".git/HEAD": "" });
+        for (const on of ["1", "yes", "ON", " True "])
+            expect(
+                plugin(root, { VITE_NOTATO: on }).run(JSX, join(root, "a.tsx")),
+                on
+            ).not.toBeNull();
+        for (const off of ["0", "no", "maybe", ""])
+            expect(
+                plugin(root, { VITE_NOTATO: off }).run(JSX, join(root, "a.tsx")),
+                off
+            ).toBeNull();
+    });
+
     it("runs before the JSX is compiled", () => {
         expect((notatoSource() as { enforce?: string }).enforce).toBe("pre");
     });

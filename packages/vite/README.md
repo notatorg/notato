@@ -24,13 +24,13 @@ export default defineConfig({
 
 Or let `npx notato init --plugin` do it for every Vite app in the repository.
 
-It does nothing unless `VITE_NOTATO=true` is set where the build runs (in the environment or a `.env` file), so any other build, and every test that loads the config, is exactly what it was.
+It does nothing unless `VITE_NOTATO=true` is set where the build runs (in the environment or a `.env` file), so any other build, and every test that loads the config, is exactly what it was. The same variable starts the toolbar in `<Notato />` and `provideNotato`, in a production build too, so one switch turns Notato on in a build (`1`, `yes` and `on` work as well).
 
 ## Options
 
-| Option    | Default                                 | What it does                                                                                                                          |
-| --------- | --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
-| `enabled` | `VITE_NOTATO` is `true`                 | Turns tagging on or off, whatever the environment says.                                                                               |
+| Option    | Default                                 | What it does                                                                                                                                |
+| --------- | --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| `enabled` | `VITE_NOTATO` is on                     | Turns tagging on or off, whatever the environment says.                                                                                     |
 | `root`    | the repository root above the Vite root | The folder recorded paths start from, so in a repository of several apps a path begins with the app's folder. No repository: the Vite root. |
 
 ## What it tags

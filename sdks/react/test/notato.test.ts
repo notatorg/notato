@@ -1,11 +1,14 @@
 import type { NotatoProps } from "@notato/browser";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { startKey, startToolbar } from "../src/Notato.ts";
+import { startKey, startProps, startToolbar, wantsToolbar } from "../src/Notato.ts";
 
 const base: NotatoProps = { project: "shop", server: "http://localhost:4799" };
 const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
 
-afterEach(() => vi.restoreAllMocks());
+afterEach(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllEnvs();
+});
 
 describe("what restarts the toolbar", () => {
     it("is any plain prop changing: the token, the author, keeping notes, and the rest", () => {
@@ -82,5 +85,32 @@ describe("starting the toolbar", () => {
             "[notato] the toolbar could not start",
             expect.objectContaining({ message: "chunk failed to load" })
         );
+    });
+});
+
+describe("what the environment says", () => {
+    it("decides whether the toolbar starts, over `enabled` and over the kind of build", () => {
+        vi.stubEnv("NODE_ENV", "production");
+        expect(wantsToolbar(base, {})).toBe(false);
+        expect(wantsToolbar(base, { enabled: true })).toBe(true);
+        expect(wantsToolbar({ ...base, enabled: false }, { enabled: true })).toBe(true);
+        vi.stubEnv("NODE_ENV", "development");
+        expect(wantsToolbar(base, {})).toBe(true);
+        expect(wantsToolbar({ ...base, enabled: true }, { enabled: false })).toBe(false);
+    });
+
+    it("leaves it to `enabled`, then the kind of build, when it says nothing", () => {
+        vi.stubEnv("NODE_ENV", "production");
+        expect(wantsToolbar({ ...base, enabled: true }, {})).toBe(true);
+        vi.stubEnv("NODE_ENV", "development");
+        expect(wantsToolbar({ ...base, enabled: false }, {})).toBe(false);
+    });
+
+    it("names the server the toolbar starts with, over `server`", () => {
+        expect(startProps(base, { server: "http://localhost:4800" })).toEqual({
+            ...base,
+            server: "http://localhost:4800",
+        });
+        expect(startProps(base, {})).toBe(base);
     });
 });

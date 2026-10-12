@@ -9,6 +9,8 @@ import {
     provideEnvironmentInitializer,
 } from "@angular/core";
 import type { NotatoController, NotatoProps } from "@notato/browser";
+// Its own small entry, apart from the toolbar's, so reading the environment loads nothing else.
+import { notatoEnvironment } from "@notato/browser/env";
 
 // Only types from the browser SDK: a value exported from here would put the whole toolbar in the app's first chunk
 // (Angular's bundler keeps a re-exported module that the app imports nothing from), and it must stay a lazy one.
@@ -24,6 +26,9 @@ export type { NotatoPlugin, NotatoProps } from "@notato/browser";
  * `enabled` is set: the toolbar is a separate chunk that is only loaded when it starts. During server-side rendering
  * it does nothing.
  *
+ * Where the app is built with Vite (Analog, say), `VITE_NOTATO=true` or `false` decides instead, over `enabled`, and
+ * `VITE_NOTATO_SERVER` names the server, over `server`: what launches the app knows best where it runs.
+ *
  * The toolbar runs outside Angular's zone. Everything it does (following scrolls each frame, its timers, the server's
  * live stream) is its own, and inside the zone each of those would set change detection running over the whole app.
  */
@@ -31,7 +36,8 @@ export function provideNotato(options: NotatoProps): EnvironmentProviders {
     return makeEnvironmentProviders([
         provideEnvironmentInitializer(() => {
             if (inject(PLATFORM_ID) !== "browser") return;
-            if (!(options.enabled ?? isDevMode())) return;
+            const env = notatoEnvironment();
+            if (!(env.enabled ?? options.enabled ?? isDevMode())) return;
             let cancelled = false;
             let controller: NotatoController | undefined;
             // A zoneless app's stand-in zone just runs it; an injector with no zone at all starts it as it is.
@@ -39,7 +45,10 @@ export function provideNotato(options: NotatoProps): EnvironmentProviders {
             const start = () =>
                 import("@notato/browser")
                     .then(({ createController }) => {
-                        if (!cancelled) controller = createController(options);
+                        if (!cancelled)
+                            controller = createController(
+                                env.server ? { ...options, server: env.server } : options
+                            );
                     })
                     .catch((error: unknown) =>
                         console.warn("[notato] the toolbar could not start", error)
