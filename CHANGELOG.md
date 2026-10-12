@@ -11,6 +11,7 @@ Notato in .NET Aspire, and switching Notato on or off from where an app is built
 - **Web:** in an app built with Vite, `<Notato />` and `provideNotato` read `VITE_NOTATO` (`true` starts the toolbar in a production build too, `false` keeps it off in development) and `VITE_NOTATO_SERVER`, over `enabled` and `server`. `@notato/browser/env` reads them for an app that starts the toolbar itself. `@notato/vite` takes `1`, `yes` and `on` for `VITE_NOTATO` as well.
 - **.NET MAUI and Swift:** `NOTATO_ENABLED` and `NOTATO_SERVER` in the app's environment win over `Enabled` and `Server`, and `NOTATO_ENABLED` over the on or off remembered on the device. On a phone or the Android emulator, MAUI reaches a `localhost` server through the dev tunnel the build recorded for it.
 - **Flutter:** the same two from `--dart-define`. A release build that declares neither is as before.
+- **Browser extension, no server:** a site can keep its notes in the browser instead (**Notes go to › This browser only**). The toolbar runs in test mode there: notes and screenshots survive reloads and download as a zip that a Notato board imports, and the extension reaches no server for that site.
 
 ## 0.1.1
 

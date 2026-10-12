@@ -8,7 +8,7 @@ import { type DevRuntime, runDev } from "@notato/server";
 import { net, setTransport } from "../../../sdks/browser/src/net.ts";
 import { createServerSync } from "../../../sdks/browser/src/sync.ts";
 import { createWorker, type WorkerPort } from "../src/background.ts";
-import { createPageTransport, type PageBus, requestConfig } from "../src/page.ts";
+import { createPageTransport, type PageBus, requestConfig, toolbarProps } from "../src/page.ts";
 import {
     CHANNEL,
     type SiteConfig,
@@ -318,6 +318,59 @@ describe("a page's requests, carried by the extension to a real Notato server", 
         const pending = transport.fetch(`${server}/health`, { signal: controller.signal });
         controller.abort();
         await expect(pending).rejects.toThrow();
+    });
+});
+
+describe("how the toolbar starts on a page", () => {
+    const location = { origin: "https://app.example.com", host: "app.example.com" };
+    const transport = createPageTransport({ post: () => {}, listen: () => () => {} });
+
+    it("with a server: live to it, through the extension, keeping nothing in the page", () => {
+        expect(
+            toolbarProps(
+                { enabled: true, server: "http://localhost:4747/", project: "", author: "Ana" },
+                location,
+                transport
+            )
+        ).toEqual({
+            mode: "dev",
+            server: "http://localhost:4747",
+            project: "app.example.com",
+            author: "Ana",
+            appName: "app.example.com",
+            persist: false,
+            transport,
+        });
+    });
+
+    it("with none: test mode, no server and no transport, its notes kept in this browser", () => {
+        expect(
+            toolbarProps(
+                { enabled: true, server: "http://localhost:4747", project: "shop", noServer: true },
+                location,
+                transport
+            )
+        ).toEqual({
+            mode: "test",
+            project: "shop",
+            author: undefined,
+            appName: "app.example.com",
+            persist: true,
+        });
+    });
+
+    it("is told it has no server by the relay, and never the token", async () => {
+        const { bus } = connect(ORIGIN, {
+            ...siteFor("http://localhost:4747"),
+            token: "notato_secret",
+            noServer: true,
+        });
+        expect(await requestConfig(bus)).toEqual({
+            enabled: true,
+            server: "http://localhost:4747",
+            project: "shop",
+            noServer: true,
+        });
     });
 });
 

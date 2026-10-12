@@ -117,6 +117,26 @@ describe("the worker's requests", () => {
         expect(calls).toEqual([]);
     });
 
+    it("reaches no server at all for a site that keeps its notes in the browser", async () => {
+        const calls: string[] = [];
+        const w = worker(
+            async (url) => {
+                calls.push(url);
+                return new Response("{}");
+            },
+            { ...SITE, noServer: true }
+        );
+        for (const url of [
+            "http://localhost:4747/health",
+            "http://localhost:4747/config",
+            "http://localhost:4747/projects/p/annotations",
+        ])
+            expect(
+                (await w.handle("https://app.example", { kind: "fetch", url, init: {} })).ok
+            ).toBe(false);
+        expect(calls).toEqual([]);
+    });
+
     it("only what the toolbar asks, by method too, for the site's own project", async () => {
         const calls: string[] = [];
         const w = worker(async (url, init) => {
@@ -420,5 +440,21 @@ describe("the worker's streams", () => {
         await tick();
         expect(t.sent).toEqual([{ kind: "state", state: "error" }]);
         expect(t.isDisconnected()).toBe(true);
+    });
+    it("opens none for a site that keeps its notes in the browser", async () => {
+        const calls: string[] = [];
+        const w = worker(
+            async (url) => {
+                calls.push(url);
+                return new Response("");
+            },
+            { ...SITE, noServer: true }
+        );
+        const t = port();
+        w.stream("https://app.example", t.p);
+        t.begin("http://localhost:4747/projects/p/events");
+        await until(() => t.isDisconnected());
+        expect(t.sent).toEqual([{ kind: "state", state: "error" }]);
+        expect(calls).toEqual([]);
     });
 });

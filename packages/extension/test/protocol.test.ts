@@ -155,6 +155,12 @@ describe("what the extension will fetch for a page", () => {
     const may = (method: string, path: string, over: Partial<SiteConfig> = {}) =>
         allowedRequest({ ...site, ...over }, ORIGIN, `${server}${path}`, method);
 
+    it("nothing at all for a site with no server, though its old address is still kept", () => {
+        expect(may("GET", "/health", { noServer: true })).toBe(false);
+        expect(may("POST", "/projects/shop/annotations", { noServer: true })).toBe(false);
+        expect(may("GET", "/health", { noServer: false })).toBe(true);
+    });
+
     it("what the toolbar asks for, for the site's own project", () => {
         for (const [method, path] of [
             ["GET", "/health"],
