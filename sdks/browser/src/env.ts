@@ -40,7 +40,14 @@ export function readEnvironment(env: Env): NotatoEnvironment {
 export function notatoEnvironment(): NotatoEnvironment {
     try {
         return readEnvironment({
+            // Written exactly as bundlers and Vitest look for them. Only Vite's and Bun's types declare
+            // `import.meta.env`, and an app that compiles this source with Angular's has neither, hence the ignores (an
+            // expect-error would fail where it is declared). A cast would hide the reads from Vitest.
+            // biome-ignore lint/suspicious/noTsIgnore: declared by some compilers' types and not others
+            // @ts-ignore
             VITE_NOTATO: import.meta.env?.VITE_NOTATO,
+            // biome-ignore lint/suspicious/noTsIgnore: as above
+            // @ts-ignore
             VITE_NOTATO_SERVER: import.meta.env?.VITE_NOTATO_SERVER,
         });
     } catch {
