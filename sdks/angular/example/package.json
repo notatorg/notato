@@ -6,12 +6,12 @@
         "build": "ng build"
     },
     "dependencies": {
-        "@angular/common": "^22.2.0",
-        "@angular/compiler": "^22.2.0",
-        "@angular/core": "^22.2.0",
-        "@angular/forms": "^22.2.0",
-        "@angular/platform-browser": "^22.2.0",
-        "@angular/router": "^22.2.0",
+        "@angular/common": "^22.2.2",
+        "@angular/compiler": "^22.2.2",
+        "@angular/core": "^22.2.2",
+        "@angular/forms": "^22.2.2",
+        "@angular/platform-browser": "^22.2.2",
+        "@angular/router": "^22.2.2",
         "rxjs": "~7.8.0",
         "tslib": "^2.3.0",
         "@notato/angular": "workspace:*"
@@ -19,7 +19,7 @@
     "devDependencies": {
         "@angular/build": "^22.2.2",
         "@angular/cli": "^22.2.2",
-        "@angular/compiler-cli": "^22.2.0",
+        "@angular/compiler-cli": "^22.2.2",
         "typescript": "~6.0.2"
     }
 }

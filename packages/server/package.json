@@ -26,7 +26,7 @@
         "src"
     ],
     "dependencies": {
-        "@modelcontextprotocol/sdk": "^1.32.0",
+        "@modelcontextprotocol/sdk": "^1.32.1",
         "@notato/core": "workspace:*",
         "@notato/schema": "workspace:*",
         "fflate": "^0.8.2",
