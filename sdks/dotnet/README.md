@@ -205,6 +205,7 @@ The picker hit-tests the visual tree with the native views' real positions (scro
 ```bash
 cd sdks/dotnet
 dotnet test tests/Notato.Maui.Tests                     # includes a contract test against packages/schema/schema.json
+dotnet test tests/Notato.Aspire.Tests                   # AddNotato and WithReference (src/Notato.Aspire)
 dotnet build src/Notato.Maui -p:EnforceCodeStyleInBuild=true   # every target, with .editorconfig's rules
 dotnet build samples/Notato.Maui.Sample -t:Run -f net10.0-ios
 dotnet build samples/Notato.Maui.Sample -t:Run -f net10.0-android

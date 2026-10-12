@@ -30,6 +30,8 @@ claude mcp add --transport http --scope user notato http://localhost:4747/mcp
 
 The board's **Settings › Agents** has the same line for Codex, Cursor, Gemini CLI and VS Code, and shows which agents are connected. Then put the toolbar in your app (below), or on any page with the [bookmark](#any-page-with-nothing-to-install). `npx notato --tunnel` adds a [dev tunnel](#phones-a-dev-tunnel) for phones; `npx notato --help` lists the rest. Run it again while one is running and it tells you where that one is.
 
+**In a .NET Aspire app host**, `builder.AddNotato()` (NuGet `Notato.Aspire`) runs the same with your apps, and `.WithReference(notato)` turns Notato on in each app and points it there, a production build of a Vite app included: [Notato for .NET Aspire](sdks/dotnet/src/Notato.Aspire/README.md).
+
 ## Add it to your app
 
 | Your app                                       | Package                                               | How to set it up                                                        |
@@ -41,6 +43,7 @@ The board's **Settings › Agents** has the same line for Codex, Cursor, Gemini 
 | SwiftUI and UIKit, iOS 17 and later            | `Notato` (Swift package)                              | [Notato for SwiftUI](sdks/swift/README.md)                              |
 | Jetpack Compose and Views, Android 7 and later | `dev.notato:notato-android`, `notato-compose` (Maven) | [Notato for Android](sdks/android/README.md)                            |
 | .NET MAUI, .NET 10 and later                   | `Notato.Maui` (NuGet)                                 | [Notato for .NET MAUI](sdks/dotnet/README.md)                           |
+| Apps run by a .NET Aspire app host             | `Notato.Aspire` (NuGet), with the app's own SDK       | [Notato for .NET Aspire](sdks/dotnet/src/Notato.Aspire/README.md)       |
 | React Native 0.76 and later, Expo or bare      | `@notato/react-native` (npm)                          | [Notato for React Native](sdks/react-native/README.md)                  |
 | Flutter 3.32 and later                         | `notato` (pub.dev)                                    | [Notato for Flutter](sdks/flutter/README.md)                            |
 
@@ -68,7 +71,7 @@ npx notato init --app app-shell          # choose explicitly
 npx notato init --app app-shell --agent-dir .   # register your agents for the repo root
 ```
 
-**Apps that are built, not served, in development.** `import.meta.env.DEV` is false under `vite build --watch` + `vite preview`, so a dev-only guard would never render there. When a script in `package.json` does that, `init` also lets the toolbar render in a build made with `VITE_NOTATO=true` (put it in `.env.local`, or set it where the build runs); without the variable a build still ships nothing. Force either way with `--guard dev|env`.
+**Apps that are built, not served, in development.** `import.meta.env.DEV` is false under `vite build --watch` + `vite preview`, so a dev-only guard would never render there. When a script in `package.json` does that, `init` also lets the toolbar render in a build made with `VITE_NOTATO=true` (put it in `.env.local`, or set it where the build runs, as [.NET Aspire](sdks/dotnet/src/Notato.Aspire/README.md) does); without the variable a build still ships nothing. Force either way with `--guard dev|env`. `<Notato />` reads the variable itself too: `VITE_NOTATO=false` keeps the toolbar off, in development too, and `VITE_NOTATO_SERVER` names the server.
 
 **The exact file and line, even in a built app.** React only knows which file an element came from in a development build. In an app that is built and previewed, the agent would get the component name and the selector but no line. The Vite plugin closes that gap: `npx notato init --plugin` adds `notatoSource()` (from `@notato/vite`, which you install in each app) to the `plugins` array of every Vite app's config. A federation setup needs it in each module, since each is built separately; `--plugin-only --app <dir>` does one app and nothing else. It does nothing unless `VITE_NOTATO=true` is set where the build runs, so any other build is exactly what it was. It adds a `data-notato-src` attribute to each element your JSX writes, Notato reads it, and the agent is told `written at src/checkout/PayButton.tsx:18:7`. Paths start at the repository root (looking past a submodule's `.git` file), so in a repo of several apps they begin with the app's folder. Elements a library creates are reported as "inside the element written at …", the nearest one that is tagged. Works with Vite 5 and later.
 
@@ -253,6 +256,7 @@ bun run build:extension     # or take notato-extension-<version>.zip from a rele
 
 Then in `chrome://extensions` turn on Developer mode, **Load unpacked**, and choose `packages/extension/dist` (or the unzipped folder). On a page, click the Notato icon, switch **Notato on this site** on, allow the permission Chrome asks for, and check the server address (the default is `http://localhost:4747`) and the project. It remembers each site, loads itself there from then on, and does nothing anywhere else. It needs no hot reload: variants appear when the page next loads or reloads.
 
+
 How it stays safe and works on pages with their own security policy: the part that reads the page runs in the page; it cannot call the server itself, so it asks a relay, which asks the extension's background worker. The worker only reaches the server set for that site, and only Notato's own API on it, so a page cannot use the extension to reach anything else on your machine. It asks for almost nothing up front: scripting and storage, plus loopback addresses; each site and any other server address is asked for when you turn it on. An unpacked build has a fixed id that the server accepts by default; a build from a store has its own, which you list with `--cors-origin chrome-extension://<id>`. The extension is not on any store. A page that is turned on could write notes to your project through the extension (it could with an SDK token too), so turn it on for sites you trust.
 
 ## Screenshots: on or off
@@ -383,16 +387,18 @@ docker run -p 4747:4747 -v notato:/data -e NOTATO_ADMIN_PASSWORD=… ghcr.io/not
 
 ## SDK props
 
-| Prop                                                                                        |                                                                                                                                     |
-| ------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
-| `mode`                                                                                      | `dev` (default), `test`, `agent`                                                                                                    |
-| `project`                                                                                   | Project id                                                                                                                          |
-| `server`, `token`                                                                           | Server URL, and a project token for a shared server                                                                                 |
-| `appName`, `appVersion`                                                                     | Recorded on every annotation                                                                                                        |
-| `plugins`                                                                                   | Extra plugins; one with the same `id` as a built-in replaces it (for example a different `screenshot`)                              |
-| `enabled`                                                                                   | `<Notato />` and `provideNotato` only: off in production builds by default. Guard with `import.meta.env.DEV` to ship nothing at all |
-| `screenshots`                                                                               | `false` never takes a screenshot from this page. A server that has them off wins either way                                         |
-| `hashRoutes`, `testIdAttributes`, `maskInputs`, `shortcut`, `position`, `author`, `persist` | See the types                                                                                                                       |
+| Prop                                                                                        |                                                                                                                                                                         |
+| ------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `mode`                                                                                      | `dev` (default), `test`, `agent`                                                                                                                                        |
+| `project`                                                                                   | Project id                                                                                                                                                              |
+| `server`, `token`                                                                           | Server URL, and a project token for a shared server. `VITE_NOTATO_SERVER` wins over `server` (below)                                                                    |
+| `appName`, `appVersion`                                                                     | Recorded on every annotation                                                                                                                                            |
+| `plugins`                                                                                   | Extra plugins; one with the same `id` as a built-in replaces it (for example a different `screenshot`)                                                                  |
+| `enabled`                                                                                   | `<Notato />` and `provideNotato` only: off in production builds by default. Guard with `import.meta.env.DEV` to ship nothing at all. `VITE_NOTATO` wins over it (below) |
+| `screenshots`                                                                               | `false` never takes a screenshot from this page. A server that has them off wins either way                                                                             |
+| `hashRoutes`, `testIdAttributes`, `maskInputs`, `shortcut`, `position`, `author`, `persist` | See the types                                                                                                                                                           |
+
+**From the environment.** In an app built with Vite, `VITE_NOTATO` and `VITE_NOTATO_SERVER` where it is built or served win over `enabled` and `server` in `<Notato />` and `provideNotato`: `true` starts the toolbar in a production build too, and `false` keeps it off in development. The Swift and .NET MAUI SDKs read `NOTATO_ENABLED` and `NOTATO_SERVER` the same way from the app's environment, and Flutter from `--dart-define`. [.NET Aspire](sdks/dotnet/src/Notato.Aspire/README.md) sets them for the apps it runs.
 
 The toolbar lives in a shadow root, so your styles cannot leak in or out. Identity resolves a test id attribute (`data-testid`, `data-qa`, `data-cy`, `data-test`), then role and accessible name, then the shortest unique CSS selector; in a React development build it also records the component and source file.
 

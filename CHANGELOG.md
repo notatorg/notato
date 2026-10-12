@@ -2,6 +2,16 @@
 
 Every Notato package is released together, at one version: the `notato` command and server, the npm packages, the Swift package, the Android libraries, the .NET MAUI package, the Flutter package, the Docker image and the website. A release's entry here is also the top of its [GitHub release](https://github.com/notatorg/notato/releases), and a tag is refused until this file has its version.
 
+## Unreleased
+
+Notato in .NET Aspire, and switching Notato on or off from where an app is built or launched.
+
+- **`Notato.Aspire`** (NuGet), for an Aspire app host. `builder.AddNotato()` runs the board, the server and MCP for your coding agents with your apps, on the same port every run, from the repository's root. `.WithReference(notato)` turns Notato on in an app and points it there: `VITE_NOTATO` and `VITE_NOTATO_SERVER` for a JavaScript app, `NOTATO_ENABLED` and `NOTATO_SERVER` for the rest. `.WithDataDirectory`, `.WithConfigFile`, `.WithTunnel` and `.WithNotatoCommand` change how it runs. Nothing of it is published.
+- **`notato start --attach`:** with a Notato already on the port, it stays up beside that one instead of exiting, and serves the port itself if that one stops. Aspire runs it this way.
+- **Web:** in an app built with Vite, `<Notato />` and `provideNotato` read `VITE_NOTATO` (`true` starts the toolbar in a production build too, `false` keeps it off in development) and `VITE_NOTATO_SERVER`, over `enabled` and `server`. `@notato/browser/env` reads them for an app that starts the toolbar itself. `@notato/vite` takes `1`, `yes` and `on` for `VITE_NOTATO` as well.
+- **.NET MAUI and Swift:** `NOTATO_ENABLED` and `NOTATO_SERVER` in the app's environment win over `Enabled` and `Server`, and `NOTATO_ENABLED` over the on or off remembered on the device. On a phone or the Android emulator, MAUI reaches a `localhost` server through the dev tunnel the build recorded for it.
+- **Flutter:** the same two from `--dart-define`. A release build that declares neither is as before.
+
 ## 0.1.1
 
 Smoother toolbars on every platform. Nothing changes in the server, the wire format or any SDK's API.
