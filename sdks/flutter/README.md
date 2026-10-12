@@ -39,7 +39,7 @@ Notes not sent yet, test-mode notes, their screenshots and people's choices (on 
 adb reverse tcp:4747 tcp:4747
 ```
 
-A phone on Wi-Fi needs the server's [dev tunnel](../../README.md#phones-a-dev-tunnel): pass its URL as `server` and the device token as `token`, from the build (`--dart-define=NOTATO_SERVER=…`). A sandboxed macOS app needs the `com.apple.security.network.client` entitlement in its debug profile, as the example has.
+A phone on Wi-Fi needs the server's [dev tunnel](../../README.md#phones-a-dev-tunnel): pass its URL as `server`, or from the build (`--dart-define=NOTATO_SERVER=…`, [below](#from-the-build)), and the device token as `token`. A sandboxed macOS app needs the `com.apple.security.network.client` entitlement in its debug profile, as the example has.
 
 ## Options
 
@@ -61,7 +61,21 @@ A phone on Wi-Fi needs the server's [dev tunnel](../../README.md#phones-a-dev-tu
 | `maxScreenshotScale`             | `2`                                          | Pixels per point screenshots are kept at. Phones are 2x to 3.5x; 2x is plenty                                     |
 | `storage`                        | the app's support folder                     | Where notes and choices are kept: `(_) async => MemoryStorage()` keeps them for this run only                     |
 
-In a release build `Notato` is your app and nothing else, unless `enabled` is `true` when it mounts (that is decided once, so the app is never built again from scratch because Notato came or went). A `Notato` that takes the place of another (a parent rebuilt it with a new key) leaves Notato running.
+In a release build `Notato` is your app and nothing else, unless `enabled` or `NOTATO_ENABLED` is `true` when it mounts (that is decided once, so the app is never built again from scratch because Notato came or went). A `Notato` that takes the place of another (a parent rebuilt it with a new key) leaves Notato running.
+
+### From the build
+
+Two declarations win over the options in code, so a build can switch Notato or send its notes elsewhere without a change to the app. Give them with `--dart-define` or `--dart-define-from-file`:
+
+- `NOTATO_ENABLED`: `true`, `1`, `yes` or `on`, or `false`, `0`, `no` or `off`, in any case. It wins over `enabled` and over the choice remembered from an earlier launch: `true` puts Notato in a profile or release build (picking still needs a debug build), and `false` keeps it off in debug. The app and the **⋯** menu still switch it for the rest of the launch, and that choice is remembered for a launch that declares nothing; `resetRuntimeState()` goes back to the declaration.
+- `NOTATO_SERVER`: the server, over `server`. It counts as a server set in code, so the `token` goes to it (one typed into the settings never gets the token).
+
+A blank value, or any other, is ignored, and the option in code stands. A release build that does not declare `NOTATO_ENABLED` decides from `enabled` alone, as before.
+
+```bash
+flutter run --dart-define=NOTATO_ENABLED=false   # off, even in debug
+flutter run --profile --dart-define=NOTATO_ENABLED=true --dart-define=NOTATO_SERVER=https://…   # on in a profile build
+```
 
 ## At runtime: `notato`
 
@@ -151,7 +165,7 @@ Everything people write reaches the agent: new notes and every reply. Two switch
 ## Development
 
 ```bash
-flutter test                         # selectors, masking, the runtime (modes, queue, relay, remounts, packages), the client (paging, time limits, the stream's watchdog), storage, the note against the server's schema (needs bun)
+flutter test                         # selectors, masking, the runtime (modes, queue, relay, remounts, packages, the build's declarations), the client (paging, time limits, the stream's watchdog), storage, the note against the server's schema (needs bun)
 cd example && flutter run --dart-define=NOTATO_SERVER=http://localhost:4799 --dart-define=NOTATO_MODE=test   # the example, sending to a scratch server
 ```
 

@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:notato/notato.dart';
 
-// Another server than the one on 4747, and another mode:
+// Another server than the one on 4747, and another mode. Notato reads NOTATO_SERVER (and NOTATO_ENABLED) itself; the
+// mode is the example's own:
 // flutter run --dart-define=NOTATO_SERVER=http://localhost:4799 --dart-define=NOTATO_MODE=test
-const server = String.fromEnvironment('NOTATO_SERVER');
 const mode = String.fromEnvironment('NOTATO_MODE', defaultValue: 'dev');
 
 void main() {
@@ -13,7 +13,6 @@ void main() {
       appName: 'Spud Shop',
       appVersion: '1.0.0',
       mode: NotatoMode.values.byName(mode),
-      server: server.isEmpty ? null : server,
       child: const SpudShop(),
     ),
   );
