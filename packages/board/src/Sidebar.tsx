@@ -6,7 +6,7 @@ import { initial } from "./model.ts";
 import { ProjectNav } from "./ProjectNav.tsx";
 import { href, type Route, type Tab } from "./route.ts";
 import { setBoardName, useBoardName } from "./storage.ts";
-import { Icon, type IconName, Logo, ThemeSwitch } from "./ui.tsx";
+import { Icon, type IconName, Logo } from "./ui.tsx";
 
 interface Props {
     me: Me;
@@ -160,7 +160,6 @@ export function Sidebar({ me, route, current, projects, onNewProject, onSignOut 
                         </form>
                     )}
                 </div>
-                <ThemeSwitch icons />
                 {me.username && me.mode === "serve" ? (
                     <button type="button" className="link sign-out" onClick={onSignOut}>
                         Sign out {me.username}

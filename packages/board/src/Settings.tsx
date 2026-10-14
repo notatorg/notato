@@ -459,7 +459,9 @@ function BrowserPreferences() {
                 <div className="setting-row">
                     <div className="setting-text">
                         <strong>Appearance</strong>
-                        <span className="muted small">Also at the bottom of the sidebar.</span>
+                        <span className="muted small">
+                            Choose a light or dark theme for this browser.
+                        </span>
                     </div>
                     <ThemeSwitch />
                 </div>
