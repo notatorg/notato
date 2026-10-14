@@ -60,7 +60,7 @@ export interface AuthProvider {
         secure?: boolean
     ): Promise<
         | { ok: true; cookie: string }
-        | { ok: false; status: 401 | 429; error: string; retryAfter?: number }
+        | { ok: false; status: 401 | 403 | 429; error: string; retryAfter?: number }
     >;
     /** The `Set-Cookie` value that signs the request's session out. */
     logout(req: Request, secure?: boolean): Promise<string>;
