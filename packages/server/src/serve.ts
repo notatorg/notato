@@ -45,6 +45,8 @@ export interface ServeRuntime {
     readonly backend: LocalBackend;
     readonly auth: AuthProvider;
     readonly store: Store & AuthStore;
+    /** Answers a request the way the listener does (extension middleware, MCP and all), without a socket. For tests. */
+    handle(req: Request, info?: { ip?: string }): Promise<Response>;
     stop(): Promise<void>;
 }
 
@@ -147,19 +149,23 @@ export async function runServe(options: ServeOptions): Promise<ServeRuntime> {
     });
     const wrap = extension?.fetch?.(full);
 
+    const handle = (req: Request, info: { ip?: string } = {}): Promise<Response> => {
+        const path = new URL(req.url).pathname;
+        const answer = () => (path === "/mcp" ? mcp.handle(req) : app(req, info));
+        return wrap ? wrap(req, { ip: info.ip, path }, answer) : answer();
+    };
+
     const server = Bun.serve({
         hostname: host,
         port,
         ...SERVE_LIMITS,
         ...(http?.maxRequestBodySize ? { maxRequestBodySize: http.maxRequestBodySize } : {}),
         fetch: (req, srv) => {
-            const path = new URL(req.url).pathname;
             const ip = trustProxy
                 ? (req.headers.get("x-forwarded-for")?.split(",").at(-1)?.trim() ??
                   srv.requestIP(req)?.address)
                 : srv.requestIP(req)?.address;
-            const answer = () => (path === "/mcp" ? mcp.handle(req) : app(req, { ip }));
-            return wrap ? wrap(req, { ip, path }, answer) : answer();
+            return handle(req, { ip });
         },
     });
 
@@ -182,6 +188,7 @@ export async function runServe(options: ServeOptions): Promise<ServeRuntime> {
         backend,
         auth,
         store,
+        handle,
         async stop() {
             hooks.stop();
             await mcp.close();
