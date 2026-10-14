@@ -22,7 +22,7 @@ import { Project } from "./Project.tsx";
 import { go, projectHref, type Route, useRoute } from "./route.ts";
 import { Settings } from "./Settings.tsx";
 import { Sidebar } from "./Sidebar.tsx";
-import { KEYS, keepFreshToken, remember, remembered } from "./storage.ts";
+import { KEYS, keepFreshAgentToken, keepFreshToken, remember, remembered } from "./storage.ts";
 import { Tokens } from "./Tokens.tsx";
 import { Icon, Logo } from "./ui.tsx";
 
@@ -156,6 +156,7 @@ function Shell({ me, route, onSignedOut }: { me: Me; route: Route; onSignedOut()
     const created = (made: CreatedProject) => {
         setCreating(null);
         if (made.token) keepFreshToken(made.project.id, made.token.token);
+        if (made.agentToken) keepFreshAgentToken(made.project.id, made.agentToken.token);
         setProjects((cur) =>
             cur && !cur.some((p) => p.id === made.project.id) ? [...cur, made.project] : cur
         );

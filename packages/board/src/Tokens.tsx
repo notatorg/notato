@@ -46,7 +46,9 @@ export function TokenManager({
     const [name, setName] = useState("");
     const [purpose, setPurpose] = useState<"app" | "agent">("app");
     const [captureOnly, setCaptureOnly] = useState(false);
-    const [fresh, setFresh] = useState<{ token: string; projectId: string } | null>(null);
+    const [fresh, setFresh] = useState<{ token: string; projectId: string; agent: boolean } | null>(
+        null
+    );
     const [error, setError] = useState<string | null>(null);
     const [busy, setBusy] = useState(false);
 
@@ -67,7 +69,11 @@ export function TokenManager({
                 kind,
                 kind === "app" && captureOnly
             );
-            setFresh({ token: made.token, projectId: made.record.projectId });
+            setFresh({
+                token: made.token,
+                projectId: made.record.projectId,
+                agent: kind === "agent",
+            });
             setName("");
             load();
         } catch (e) {
@@ -109,6 +115,7 @@ export function TokenManager({
                 <TokenReveal
                     token={fresh.token}
                     projectId={fresh.projectId}
+                    agent={fresh.agent}
                     onDone={() => setFresh(null)}
                 />
             ) : null}
@@ -264,14 +271,19 @@ export function TokenReveal({
     projectId,
     onDone,
     connect = true,
+    agent = false,
 }: {
     token: string;
     projectId: string;
     onDone?: () => void;
+    /** An agent token for one project: shown with how to connect an agent to that project. */
+    agent?: boolean;
     /** Offer the page that shows how to connect an app with it (not on that page itself). */
     connect?: boolean;
 }) {
     const origin = window.location.origin;
+    const forAgent = projectId === "*" || agent;
+    const mcp = `${origin}/mcp${projectId === "*" ? "" : `?project=${encodeURIComponent(projectId)}`}`;
     return (
         <div className="secret" role="status">
             <p className="secret-head">
@@ -283,31 +295,33 @@ export function TokenReveal({
                 lost, make another and revoke this one.
             </p>
             <CodeBlock code={token} label="Copy the token" className="token" />
-            {projectId === "*" ? (
+            {forAgent ? (
                 <>
                     <p className="small">
-                        Connect your coding agent to every project. Claude Code:
+                        {projectId === "*"
+                            ? "Connect your coding agent to every project. Claude Code:"
+                            : "Connect your coding agent to this project. Claude Code:"}
                     </p>
                     <CodeBlock
-                        code={`claude mcp add --transport http notato ${origin}/mcp --header "Authorization: Bearer ${token}"`}
+                        code={`claude mcp add --transport http notato "${mcp}" --header "Authorization: Bearer ${token}"`}
                     />
                     <p className="small">
                         Codex, in <code>~/.codex/config.toml</code>, with the token in{" "}
                         <code>NOTATO_TOKEN</code>:
                     </p>
                     <CodeBlock
-                        code={`[mcp_servers.notato]\nurl = "${origin}/mcp"\nbearer_token_env_var = "NOTATO_TOKEN"`}
+                        code={`[mcp_servers.notato]\nurl = "${mcp}"\nbearer_token_env_var = "NOTATO_TOKEN"`}
                     />
                     <p className="small">
                         Any other agent (Cursor, Gemini CLI, Copilot…): an HTTP MCP server at{" "}
-                        <code>{origin}/mcp</code> with the header{" "}
+                        <code>{mcp}</code> with the header{" "}
                         <code>Authorization: Bearer {"<token>"}</code>.
                     </p>
                 </>
             ) : null}
-            {(connect && projectId !== "*") || onDone ? (
+            {(connect && projectId !== "*" && !agent) || onDone ? (
                 <div className="secret-actions">
-                    {connect && projectId !== "*" ? (
+                    {connect && projectId !== "*" && !agent ? (
                         <button
                             type="button"
                             onClick={() => {

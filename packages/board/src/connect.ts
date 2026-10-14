@@ -294,7 +294,7 @@ export function agentGuides(t: AgentTarget): Guide<AgentClient>[] {
     const headers = t.needsToken ? { headers: { Authorization: bearer } } : {};
     const tokenNote = t.needsToken
         ? [
-              `Put a token where it says \`${TOKEN_PLACEHOLDER}\`: an agent token (for every project) from Tokens, or one project's token to give the agent only that project.`,
+              `Put a token where it says \`${TOKEN_PLACEHOLDER}\`: an agent token from Tokens, for every project or for just one (an app's token cannot be used for MCP).`,
           ]
         : [];
 

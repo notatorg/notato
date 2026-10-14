@@ -3,8 +3,10 @@ import { createToken, getStatus, type Me } from "./api.ts";
 import { connectGuides, type Guide, type Platform } from "./connect.ts";
 import { projectHref } from "./route.ts";
 import {
+    forgetFreshAgentToken,
     forgetFreshToken,
     forgetMadeHere,
+    freshAgentToken,
     freshToken,
     KEYS,
     useRemembered,
@@ -30,11 +32,18 @@ const PLATFORMS: Platform[] = [
  */
 function ConnectApp({ me, project, name }: { me: Me; project: string; name: string }) {
     const [token, setToken] = useState(() => freshToken(project));
+    const [agentToken] = useState(() => freshAgentToken(project));
     const [platform, setPlatform] = useRemembered(KEYS.connect, PLATFORMS, "react");
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState<string | null>(null);
     // Shown once: leaving the page lets it go.
-    useEffect(() => () => void forgetFreshToken(project), [project]);
+    useEffect(
+        () => () => {
+            forgetFreshToken(project);
+            forgetFreshAgentToken(project);
+        },
+        [project]
+    );
 
     // The server's version is every SDK's (one release): the snippets that name a version use it.
     const [version, setVersion] = useState<string | undefined>();
@@ -106,6 +115,13 @@ function ConnectApp({ me, project, name }: { me: Me; project: string; name: stri
                     </div>
                 </div>
             )}
+
+            {agentToken ? (
+                <>
+                    <p className="connect-label">Your coding agent</p>
+                    <TokenReveal token={agentToken} projectId={project} agent connect={false} />
+                </>
+            ) : null}
 
             <Segmented
                 label="Platform"

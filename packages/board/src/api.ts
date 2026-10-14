@@ -131,11 +131,16 @@ export interface CreatedProject {
     project: ProjectSummary;
     /** Its first app token, on a server with logins. The plaintext exists only in this answer. */
     token?: { token: string; record: TokenInfo };
+    /** A token for a coding agent, for this project only, when one was asked for. */
+    agentToken?: { token: string; record: TokenInfo };
 }
 
 /** Admins only. A 409 means the id is taken. */
-export const createProject = (id: string, name?: string) =>
-    request<CreatedProject>("/projects", json("POST", { id, ...(name ? { name } : {}) }));
+export const createProject = (id: string, name?: string, agent = false) =>
+    request<CreatedProject>(
+        "/projects",
+        json("POST", { id, ...(name ? { name } : {}), ...(agent ? { agent: true } : {}) })
+    );
 export const renameProject = (id: string, name: string) =>
     request<ProjectSummary>(projectPath(id), json("PATCH", { name }));
 /** Deletes the project, every note in it with its screenshots and bundles, and revokes its tokens. */

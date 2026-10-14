@@ -30,6 +30,8 @@ export function NewProject({ me, projects, initialId, onClose, onCreated, onTake
     const [ownId, setOwnId] = useState(Boolean(initialId));
     const [tried, setTried] = useState(false);
     const [busy, setBusy] = useState(false);
+    /** Also a token for the coding agent, for this project only: most people connect one straight away. */
+    const [agent, setAgent] = useState(true);
     /** The server's refusal of this id (it is taken), kept until the id changes. */
     const [taken, setTaken] = useState<string | null>(null);
     const [error, setError] = useState<string | null>(null);
@@ -50,7 +52,7 @@ export function NewProject({ me, projects, initialId, onClose, onCreated, onTake
         setBusy(true);
         setError(null);
         try {
-            const made = await createProject(projectId, name.trim() || undefined);
+            const made = await createProject(projectId, name.trim() || undefined, agent);
             markMadeHere(made.project.id);
             onCreated(made);
         } catch (e) {
@@ -114,6 +116,18 @@ export function NewProject({ me, projects, initialId, onClose, onCreated, onTake
                             "What apps send to, as their project setting. Letters, digits and _ . @ -. It cannot be changed later."}
                     </span>
                 </div>
+                {me.authRequired ? (
+                    <label className="check" htmlFor={`${id}-agent`}>
+                        <input
+                            id={`${id}-agent`}
+                            type="checkbox"
+                            checked={agent}
+                            onChange={(e) => setAgent(e.target.checked)}
+                        />
+                        Also make a token for my coding agent (this project only), so it can be
+                        connected at once
+                    </label>
+                ) : null}
             </div>
             {error ? (
                 <div className="modal-status">

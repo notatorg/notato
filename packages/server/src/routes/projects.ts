@@ -18,6 +18,8 @@ import {
 const ProjectBody = z.object({
     id: z.string().regex(PROJECT_ID, "a project id is letters, digits and _ . @ - (not only dots)"),
     name: z.string().max(200).optional(),
+    /** Also make a token for a coding agent, for this project only, so the agent can be connected at once. */
+    agent: z.boolean().optional(),
 });
 
 const RenameBody = z.object({ name: z.string().min(1).max(200) });
@@ -50,7 +52,19 @@ export const projectRoutes: Routes = async ({ req, path, method, principal, matc
         // Apps on a server with logins need a token to send notes, so the first one comes with the project.
         if (!auth) return json({ project }, 201);
         const { token, record } = await auth.issueToken(created.id, `${created.name} app`);
-        return json({ project, token: { token, record: shownToken(record) } }, 201);
+        const agent = body.agent
+            ? await auth.issueToken(created.id, `${created.name} agent`, { purpose: "agent" })
+            : undefined;
+        return json(
+            {
+                project,
+                token: { token, record: shownToken(record) },
+                ...(agent
+                    ? { agentToken: { token: agent.token, record: shownToken(agent.record) } }
+                    : {}),
+            },
+            201
+        );
     }
 
     // "Does this credential reach this project?", answered without storing or reading a note: what `notato doctor`

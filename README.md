@@ -30,6 +30,8 @@ claude mcp add --transport http --scope user notato http://localhost:4747/mcp
 
 The board's **Settings › Agents** has the same line for Codex, Cursor, Gemini CLI and VS Code, and shows which agents are connected. Then put the toolbar in your app (below), or on any page with the [bookmark](#any-page-with-nothing-to-install). `npx notato --tunnel` adds a [dev tunnel](#phones-a-dev-tunnel) for phones; `npx notato --help` lists the rest. Run it again while one is running and it tells you where that one is.
 
+**Setting it up with a coding agent?** Point it at this repository's [AGENTS.md](AGENTS.md): it is the whole job, from `npx notato init` to a shared server with a project, an app token and an agent token.
+
 **In a .NET Aspire app host**, `builder.AddNotato()` (NuGet `Notato.Aspire`) runs the same with your apps, and `.WithReference(notato)` turns Notato on in each app and points it there, a production build of a Vite app included: [Notato for .NET Aspire](sdks/dotnet/src/Notato.Aspire/README.md).
 
 ## Add it to your app

@@ -18,15 +18,16 @@ Options:
       --cors-origin <url>  Allow a browser origin to call the API; repeatable ($NOTATO_CORS_ORIGINS)
       --allow-host <name>  Only answer to this Host header; repeatable ($NOTATO_ALLOWED_HOSTS)
   -c, --config <path>      Settings file (default ./notato.config.json, or $NOTATO_CONFIG); see \`notato config\`
-      --no-mcp             Refuse coding agents while this runs: /mcp and the agent tokens (for *), whatever the
+      --no-mcp             Refuse coding agents while this runs: /mcp and the agent tokens, whatever the
                            settings say. To switch them off and on as you go, use the board (Settings › Agents)
   -h, --help               Show this help
 
 The admin password comes from $NOTATO_ADMIN_PASSWORD. If it is not set, one is generated and printed once.
 
 Apps can only send notes to projects created on this server. Create a project on the board (Projects) or with
-\`notato project create <id>\` (with the same --dir), which prints its token for the app. More tokens:
-\`notato token create <project>\`, and \`notato token create "*"\` for your agent over MCP.`;
+\`notato project create <id>\` (with the same --dir), which prints a token for the app and one for your coding
+agent (this project only; --json prints both with the MCP line). More tokens: \`notato token create <project>\`, and
+\`notato token create "*" --purpose agent\` for an agent that works on every project.`;
 
 export async function runServeCommand(argv: string[], version: string): Promise<number> {
     const { values } = parseArgs({

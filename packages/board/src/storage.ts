@@ -108,6 +108,13 @@ export const keepFreshToken = (projectId: string, token: string) =>
 export const freshToken = (projectId: string) => freshTokens.get(projectId) ?? null;
 export const forgetFreshToken = (projectId: string) => freshTokens.delete(projectId);
 
+/** The same for the agent token made with a project: shown once on its Connect page. */
+const freshAgentTokens = new Map<string, string>();
+export const keepFreshAgentToken = (projectId: string, token: string) =>
+    freshAgentTokens.set(projectId, token);
+export const freshAgentToken = (projectId: string) => freshAgentTokens.get(projectId) ?? null;
+export const forgetFreshAgentToken = (projectId: string) => freshAgentTokens.delete(projectId);
+
 /** Projects made in this tab, so the page that follows can say so. */
 const madeHere = new Set<string>();
 export const markMadeHere = (projectId: string) => madeHere.add(projectId);

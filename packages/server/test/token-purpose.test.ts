@@ -179,6 +179,30 @@ describe("token purposes", () => {
         ).toBe(403);
     });
 
+    it("makes an agent token with a new project when asked, for that project only", async () => {
+        const s = await start();
+        const cookie = await adminCookie(s);
+        const made = await s.call("/projects", {
+            method: "POST",
+            headers: { cookie, "content-type": "application/json", "x-notato-board": "1" },
+            body: JSON.stringify({ id: "web", agent: true }),
+        });
+        expect(made.status).toBe(201);
+        const body = (await made.json()) as {
+            token: { token: string; record: TokenRecord };
+            agentToken: { token: string; record: TokenRecord };
+        };
+        expect(body.token.record).toMatchObject({ purpose: "app", projectId: "web" });
+        expect(body.agentToken.record).toMatchObject({ purpose: "agent", projectId: "web" });
+        expect(body.agentToken.record).not.toHaveProperty("tokenHash");
+        const plain = await s.call("/projects", {
+            method: "POST",
+            headers: { cookie, "content-type": "application/json", "x-notato-board": "1" },
+            body: JSON.stringify({ id: "plain" }),
+        });
+        expect(await plain.json()).not.toHaveProperty("agentToken");
+    });
+
     it("makes replies from an app token human whatever they claim", async () => {
         const s = await start();
         const app = await issue(s, "p");
