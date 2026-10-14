@@ -2,6 +2,7 @@ import { type FormEvent, useCallback, useEffect, useId, useState } from "react";
 import {
     createToken,
     listTokens,
+    type Me,
     type ProjectSummary,
     revokeToken,
     type TokenInfo,
@@ -15,7 +16,7 @@ import { keepFreshToken } from "./storage.ts";
 import { CodeBlock, Icon, Modal, Segmented } from "./ui.tsx";
 
 /** The Tokens page: every token on the server, and making one for a project or for an agent. */
-export function Tokens({ projects }: { projects: ProjectSummary[] | null }) {
+export function Tokens({ me, projects }: { me: Me; projects: ProjectSummary[] | null }) {
     return (
         <>
             <header className="sheet-head">
@@ -24,31 +25,37 @@ export function Tokens({ projects }: { projects: ProjectSummary[] | null }) {
                     <p>
                         App/tester tokens let people capture feedback, with optional access to read
                         and change it. Agent tokens connect coding agents through MCP. An agent
-                        token for <code>*</code>
-                        covers every project.
+                        token is restricted to the projects it is issued for.
                     </p>
                 </div>
             </header>
-            <TokenManager projects={projects} />
+            <TokenManager me={me} projects={projects} />
         </>
     );
 }
 
 /** Tokens, with making and revoking them: every one on the server, or one project's when `projectId` is given. */
 export function TokenManager({
+    me,
     projects,
     projectId,
 }: {
+    me: Me;
     projects: ProjectSummary[] | null;
     projectId?: string;
 }) {
     const id = useId();
-    const requireExpiry = useBoardExtension()?.requireTokenExpiry ?? false;
+    const extension = useBoardExtension();
+    const requireExpiry = extension?.requireTokenExpiry ?? false;
+    const [choice, setChoice] = useState("");
     const [tokens, setTokens] = useState<TokenInfo[] | null>(null);
     const [project, setProject] = useState(projectId ?? "");
     const [name, setName] = useState("");
     const [tokenType, setTokenType] = useState<"capture" | "feedback" | "agent">("capture");
     const [days, setDays] = useState(90);
+    const tokenChoices =
+        extension?.tokens?.choices?.(me, tokenType === "agent" ? "agent" : "app") ?? [];
+    const selectedChoice = tokenChoices.find((item) => item.id === choice) ?? tokenChoices[0];
     const [fresh, setFresh] = useState<{
         token: string;
         projectId: string;
@@ -70,6 +77,7 @@ export function TokenManager({
         setBusy(true);
         try {
             const made = await createToken(project, name.trim(), {
+                ...selectedChoice?.options,
                 permission: tokenType === "capture" ? "capture" : "full",
                 purpose: tokenType === "agent" ? "agent" : "app",
                 ...(days ? { expiresInDays: days } : {}),
@@ -128,6 +136,7 @@ export function TokenManager({
                     onClick={() => {
                         setError(null);
                         setTokenType("capture");
+                        setChoice("");
                         setProject(projectId ?? "");
                         setCreating(true);
                     }}
@@ -179,9 +188,11 @@ export function TokenManager({
                                             </option>
                                         );
                                     })}
-                                    <option value="*" disabled={tokenType !== "agent"}>
-                                        * All projects, for a coding agent
-                                    </option>
+                                    {extension?.tokens?.allowAllProjects !== false ? (
+                                        <option value="*" disabled={tokenType !== "agent"}>
+                                            * All projects, for a coding agent
+                                        </option>
+                                    ) : null}
                                 </select>
                             </label>
                         )}
@@ -204,13 +215,16 @@ export function TokenManager({
                                 onChange={(e) => {
                                     const next = e.target.value as typeof tokenType;
                                     setTokenType(next);
+                                    setChoice("");
                                     if (next !== "agent" && project === "*")
                                         setProject(projectId ?? "");
                                 }}
                             >
                                 <option value="capture">App/tester — capture only</option>
                                 <option value="feedback">App/tester — capture and feedback</option>
-                                <option value="agent">Agent — MCP access</option>
+                                {extension?.tokens?.canCreateAgent?.(me) !== false ? (
+                                    <option value="agent">Agent — MCP access</option>
+                                ) : null}
                             </select>
                         </label>
                         <p className="muted small" role="status">
@@ -220,6 +234,25 @@ export function TokenManager({
                                   ? "For developers and testers using the SDK. Anyone with this token can capture, read and change feedback in the selected project. MCP access is blocked."
                                   : "For apps and testers that only send new feedback. Existing notes and replies stay private. MCP access is blocked."}
                         </p>
+                        {tokenChoices.length > 1 ? (
+                            <label>
+                                Belongs to
+                                <select
+                                    aria-label="Token owner"
+                                    value={selectedChoice?.id ?? ""}
+                                    onChange={(e) => setChoice(e.target.value)}
+                                >
+                                    {tokenChoices.map((item) => (
+                                        <option key={item.id} value={item.id}>
+                                            {item.label}
+                                        </option>
+                                    ))}
+                                </select>
+                            </label>
+                        ) : null}
+                        {selectedChoice ? (
+                            <p className="muted small">{selectedChoice.description}</p>
+                        ) : null}
                         <label>
                             Lifetime
                             <select
@@ -307,6 +340,11 @@ export function TokenManager({
                                     <td>{new Date(t.createdAt).toLocaleDateString()}</td>
                                     <td>
                                         {tokenLabel(t)}
+                                        {extension?.tokens?.describe?.(t) ? (
+                                            <div className="muted small">
+                                                {extension.tokens.describe(t)}
+                                            </div>
+                                        ) : null}
                                         <br />
                                         {t.expiresAt
                                             ? new Date(t.expiresAt).toLocaleDateString()

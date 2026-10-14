@@ -27,6 +27,12 @@ export const setServerAdminPolicy = (policy?: (me: Me) => boolean) => {
     serverAdminPolicy = policy;
 };
 
+let tokenPolicy: ((me: Me) => boolean) | undefined;
+export const setTokenPolicy = (policy?: (me: Me) => boolean) => {
+    tokenPolicy = policy;
+};
+export const canManageTokens = (me: Me) => (tokenPolicy ? tokenPolicy(me) : isAdmin(me));
+
 /** Who may change things (projects, tokens, settings): anyone in dev mode, and anyone signed in on a shared server. */
 export const isAdmin = (me: Me) =>
     managePolicy ? managePolicy(me) : me.mode === "dev" || Boolean(me.username);
@@ -295,6 +301,7 @@ export const createToken = (
         purpose?: "app" | "agent";
         permission?: "capture" | "full";
         expiresInDays?: number;
+        [key: string]: unknown;
     } = {}
 ) =>
     request<{ token: string; record: TokenInfo }>(

@@ -1,5 +1,5 @@
 import { type ComponentType, createContext, type ReactNode, useContext } from "react";
-import type { Me, ProjectSummary } from "./api.ts";
+import type { Me, ProjectSummary, TokenInfo } from "./api.ts";
 import type { Route } from "./route.ts";
 import type { IconName } from "./ui.tsx";
 
@@ -48,6 +48,23 @@ export interface BoardExtension {
     canAdminServer?: (me: Me) => boolean;
     /** Who may create projects, make tokens and change settings. Default: an admin, or anyone in dev mode. */
     canManage?: (me: Me) => boolean;
+    /** Token management can be available independently of project administration. */
+    canManageTokens?: (me: Me) => boolean;
+    /** Additional token creation choices and labels supplied by a deployment; authorization remains on the server. */
+    tokens?: {
+        allowAllProjects?: boolean;
+        canCreateAgent?: (me: Me) => boolean;
+        choices?: (
+            me: Me,
+            purpose: "app" | "agent"
+        ) => Array<{
+            id: string;
+            label: string;
+            description: string;
+            options: Record<string, unknown>;
+        }>;
+        describe?: (token: TokenInfo) => string | undefined;
+    };
 }
 
 export interface ExtensionPageProps {
@@ -69,3 +86,9 @@ export interface ProjectNavProps {
 const BoardExtensionContext = createContext<BoardExtension | undefined>(undefined);
 export const BoardExtensionProvider = BoardExtensionContext.Provider;
 export const useBoardExtension = () => useContext(BoardExtensionContext);
+
+/** A signed-in account always has an identity; browser-chosen names belong to local development. */
+export function accountNameOf(me: Me, extension?: BoardExtension): string | undefined {
+    if (!me.authRequired || !me.authenticated) return undefined;
+    return extension?.accountName?.(me)?.trim() || me.username?.trim() || "Signed-in user";
+}

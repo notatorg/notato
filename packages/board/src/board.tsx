@@ -3,6 +3,7 @@ import { StrictMode, useCallback, useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import {
     type CreatedProject,
+    canManageTokens,
     getMe,
     isAdmin,
     isServerAdmin,
@@ -12,9 +13,15 @@ import {
     type ProjectSummary,
     setManagePolicy,
     setServerAdminPolicy,
+    setTokenPolicy,
     setUnauthorizedHandler,
 } from "./api.ts";
-import { type BoardExtension, BoardExtensionProvider, useBoardExtension } from "./extension.tsx";
+import {
+    accountNameOf,
+    type BoardExtension,
+    BoardExtensionProvider,
+    useBoardExtension,
+} from "./extension.tsx";
 import { Home } from "./Home.tsx";
 import { Login } from "./Login.tsx";
 import { markSeen, onLive, setSeenAccount } from "./live.ts";
@@ -31,6 +38,7 @@ import {
     keepFreshToken,
     remember,
     remembered,
+    setAccountName,
 } from "./storage.ts";
 import { Tokens } from "./Tokens.tsx";
 import { Icon, Logo } from "./ui.tsx";
@@ -54,6 +62,7 @@ function App() {
                 // Another person on this browser starts from nothing: no old tokens, no old read markers.
                 if (account.current !== key) clearAccountMemory();
                 account.current = key;
+                setAccountName(accountNameOf(next, extensionRef.current));
                 setSeenAccount(
                     next.authRequired ? next.username : undefined,
                     extensionRef.current?.accountScope?.(next)
@@ -84,7 +93,15 @@ function App() {
         return <SignIn onDone={refresh} />;
     }
     const shell = (
-        <Shell me={me} onSignedOut={() => setMe({ ...me, authenticated: false })} route={route} />
+        <Shell
+            me={me}
+            onSignedOut={() => {
+                clearAccountMemory();
+                account.current = undefined;
+                setMe({ ...me, authenticated: false });
+            }}
+            route={route}
+        />
     );
     return extension?.Frame ? (
         <extension.Frame me={me} refresh={refresh}>
@@ -276,17 +293,25 @@ function Shell({ me, route, onSignedOut }: { me: Me; route: Route; onSignedOut()
                 current={current}
                 projects={projects}
                 onNewProject={newProject}
-                onSignOut={() => (extension?.signOut ?? logout)().then(onSignedOut)}
             />
             <main className="content">
-                {route.page === "tokens" && admin && me.authRequired ? (
+                {route.page === "tokens" && canManageTokens(me) && me.authRequired ? (
                     <div className="sheet">
                         <div className="sheet-inner">
-                            <Tokens projects={projects} />
+                            <Tokens me={me} projects={projects} />
                         </div>
                     </div>
                 ) : route.page === "settings" ? (
-                    <Settings projects={projects} manageServer={isServerAdmin(me)} />
+                    <Settings
+                        projects={projects}
+                        manageServer={isServerAdmin(me)}
+                        accountName={accountNameOf(me, extension)}
+                        onSignOut={
+                            me.authRequired
+                                ? () => (extension?.signOut ?? logout)().then(onSignedOut)
+                                : undefined
+                        }
+                    />
                 ) : route.page === "ext" && extension?.pages?.[route.name] ? (
                     (() => {
                         const Page = extension.pages[route.name] as NonNullable<
@@ -340,6 +365,7 @@ export interface BoardOptions {
 /** Draws the board. The page's own script calls it with nothing; a hosted board passes its extension. */
 export function mountBoard(options: BoardOptions = {}) {
     setManagePolicy(options.extension?.canManage);
+    setTokenPolicy(options.extension?.canManageTokens);
     setServerAdminPolicy(options.extension?.canAdminServer);
     const root = options.root ?? (document.getElementById("root") as HTMLElement);
     createRoot(root).render(

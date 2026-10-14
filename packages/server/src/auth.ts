@@ -35,6 +35,8 @@ export type Principal =
     | ({
           kind: "token";
           tokenId: string;
+          /** A fixed account identity for app feedback; supplied author names cannot override it. */
+          authorName?: string;
           projectId: string | "*";
           /** Narrows even a `*` token to these projects. */
           projectIds?: string[];

@@ -165,7 +165,11 @@ async function ingest(
         if (!checked.success) throw new RequestError("invalid annotation");
         parsed = {
             ...checked.data,
-            author: { ...checked.data.author, kind: "human" },
+            author: {
+                ...checked.data.author,
+                kind: "human",
+                ...(principal.authorName ? { name: principal.authorName } : {}),
+            },
             ...(captureOnly
                 ? {
                       context: {
@@ -205,7 +209,11 @@ export const annotationRoutes: Routes = async (route, app) => {
         principal.kind === "member"
             ? { kind: "human", name: principal.name ?? principal.username }
             : principal.kind === "token" && tokenPurpose(principal) === "app"
-              ? ({ ...supplied, kind: "human" } as Author)
+              ? ({
+                    ...supplied,
+                    kind: "human",
+                    ...(principal.authorName ? { name: principal.authorName } : {}),
+                } as Author)
               : supplied;
 
     /** The note with this id, once the credential is known to reach its project; null when there is none. */

@@ -93,7 +93,7 @@ export function ProjectSettings({
                             </p>
                         </div>
                         <div className="set-body">
-                            <TokenManager projects={projects} projectId={project} />
+                            <TokenManager me={me} projects={projects} projectId={project} />
                         </div>
                     </section>
                 ) : null}

@@ -65,9 +65,9 @@ export function useRemembered<T extends string>(
 /** The name the board signs replies with, or "" for none. */
 export function boardName(): string {
     try {
-        return localStorage.getItem(KEYS.name)?.trim() ?? "";
+        return accountName ?? localStorage.getItem(KEYS.name)?.trim() ?? "";
     } catch {
-        return "";
+        return accountName ?? "";
     }
 }
 
@@ -80,6 +80,14 @@ export function setBoardName(name: string) {
     } catch {
         // kept for this visit only
     }
+    for (const fn of nameListeners) fn();
+}
+
+let accountName: string | undefined;
+
+/** The account's identity takes precedence over the local browser preference, including in API requests. */
+export function setAccountName(name: string | undefined) {
+    accountName = name;
     for (const fn of nameListeners) fn();
 }
 
@@ -123,6 +131,7 @@ export const forgetMadeHere = (projectId: string) => madeHere.delete(projectId);
 
 /** An account change must not leave the previous person's newly issued credentials in this tab. */
 export function clearAccountMemory() {
+    setAccountName(undefined);
     freshTokens.clear();
     freshAgentTokens.clear();
     madeHere.clear();

@@ -1,6 +1,6 @@
 import { useState } from "react";
-import { isAdmin, type Me, type ProjectSummary } from "./api.ts";
-import { useBoardExtension } from "./extension.tsx";
+import { canManageTokens, type Me, type ProjectSummary } from "./api.ts";
+import { accountNameOf, useBoardExtension } from "./extension.tsx";
 import { type LiveState, useLiveState, useSeenVersion } from "./live.ts";
 import { initial } from "./model.ts";
 import { ProjectNav } from "./ProjectNav.tsx";
@@ -16,7 +16,6 @@ interface Props {
     projects: ProjectSummary[] | null;
     /** Opens the new-project dialog; absent for anyone who cannot make one. */
     onNewProject?: () => void;
-    onSignOut(): void;
 }
 
 /** A project's pages, under its name at the top of the sidebar. */
@@ -41,16 +40,15 @@ const LIVE_TEXT: Record<LiveState, { label: string; title: string }> = {
  * The sidebar (a drawer on a phone): the open project's pages, every project with what it has to do, and at the
  * bottom the server's pages, the name on replies and the theme.
  */
-export function Sidebar({ me, route, current, projects, onNewProject, onSignOut }: Props) {
+export function Sidebar({ me, route, current, projects, onNewProject }: Props) {
     const live = useLiveState();
     useSeenVersion();
     const extension = useBoardExtension();
     const localName = useBoardName();
     // On a service that knows who is signed in the name is theirs, not something typed into this browser.
-    const accountName = extension?.accountName?.(me);
+    const accountName = accountNameOf(me, extension);
     const name = accountName ?? localName;
     const [draft, setDraft] = useState<string | null>(null);
-    const admin = isAdmin(me);
     const _open = route.page === "project" ? route.project : null;
     const _summary = projects?.find((p) => p.id === current);
 
@@ -100,7 +98,7 @@ export function Sidebar({ me, route, current, projects, onNewProject, onSignOut 
                         </a>
                     );
                 })}
-                {me.authRequired && admin ? (
+                {me.authRequired && canManageTokens(me) ? (
                     <a
                         className={route.page === "tokens" ? "side-link active" : "side-link"}
                         href={href({ page: "tokens" })}
@@ -160,11 +158,6 @@ export function Sidebar({ me, route, current, projects, onNewProject, onSignOut 
                         </form>
                     )}
                 </div>
-                {me.username && me.mode === "serve" ? (
-                    <button type="button" className="link sign-out" onClick={onSignOut}>
-                        Sign out {accountName ?? me.username}
-                    </button>
-                ) : null}
             </div>
         </nav>
     );
