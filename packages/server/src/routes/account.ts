@@ -73,7 +73,8 @@ export const accountRoutes: Routes<Principal | null> = async (
         });
     }
 
-    if (path === "/admin/tokens") {
+    // `/admin/tokens` is the older name: the board asks for `/tokens`, which a deployment with workspaces answers its own way.
+    if (path === "/admin/tokens" || path === "/tokens") {
         assertAdmin(principal);
         if (method === "GET") return json({ items: (await auth.listTokens()).map(shownToken) });
         if (method === "POST") {
@@ -91,7 +92,7 @@ export const accountRoutes: Routes<Principal | null> = async (
             return json({ token: issued.token, record: shownToken(issued.record) }, 201);
         }
     }
-    const tokenOne = match(/^\/admin\/tokens\/([^/]+)$/);
+    const tokenOne = match(/^\/(?:admin\/)?tokens\/([^/]+)$/);
     if (tokenOne && method === "DELETE") {
         assertAdmin(principal);
         assertBoard(req, "tokens");

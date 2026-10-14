@@ -287,8 +287,7 @@ export const exportHref = (project: string, filters: Filters) =>
 
 // ---- tokens -----------------------------------------------------------------------------------------------------
 
-export const listTokens = async () =>
-    (await request<{ items: TokenInfo[] }>("/admin/tokens")).items;
+export const listTokens = async () => (await request<{ items: TokenInfo[] }>("/tokens")).items;
 export const createToken = (
     projectId: string,
     name: string,
@@ -299,11 +298,11 @@ export const createToken = (
     } = {}
 ) =>
     request<{ token: string; record: TokenInfo }>(
-        "/admin/tokens",
+        "/tokens",
         json("POST", { projectId, name, ...options })
     );
 export const revokeToken = (id: string) =>
-    request<void>(`/admin/tokens/${encodeURIComponent(id)}`, { method: "DELETE" });
+    request<void>(`/tokens/${encodeURIComponent(id)}`, { method: "DELETE" });
 
 // ---- settings: notato.config.json, as the server shows it (webhook URLs masked, secrets never) -----------------
 
