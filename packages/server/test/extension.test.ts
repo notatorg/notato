@@ -226,7 +226,7 @@ describe("a server extension", () => {
             headers: { "x-user": "alice", "content-type": "application/json" },
             body: JSON.stringify({ target: "#x", comment: "hi", timeoutMs: 1000 }),
         });
-        expect(unnamed.status).toBe(400);
+        expect(unnamed.status).toBe(403);
         expect(((await unnamed.json()) as { error: string }).error).toContain("name a project");
         const foreign = await s.call("/relay/annotate", {
             method: "POST",

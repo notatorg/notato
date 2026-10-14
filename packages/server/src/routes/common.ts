@@ -150,7 +150,7 @@ export function onlyProject(principal: Principal, asked?: string): string | unde
         reach.length
             ? "name a project: this credential reaches several"
             : "no project is reachable",
-        reach.length ? 400 : 403
+        403
     );
 }
 
