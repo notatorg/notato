@@ -95,11 +95,37 @@ export function zip({
     });
 }
 
+/** The largest JSON body any route reads: notes and bundles come as forms and zips, not JSON. */
+const JSON_MAX = 65536;
+
 /** The body as JSON, checked against `schema`. A body that is not JSON, or not that shape, is a 400 that says why. */
 export async function readJson<T>(req: Request, schema: z.ZodType<T>): Promise<T> {
     let body: unknown;
+    if (Number(req.headers.get("content-length") ?? 0) > JSON_MAX)
+        throw new RequestError("JSON body exceeds 64 KiB", 413);
+    const reader = req.body?.getReader();
+    let source = "";
+    let size = 0;
+    const decoder = new TextDecoder();
+    if (reader) {
+        try {
+            for (;;) {
+                const chunk = await reader.read();
+                if (chunk.done) break;
+                size += chunk.value.byteLength;
+                if (size > JSON_MAX) {
+                    await reader.cancel();
+                    throw new RequestError("JSON body exceeds 64 KiB", 413);
+                }
+                source += decoder.decode(chunk.value, { stream: true });
+            }
+            source += decoder.decode();
+        } finally {
+            reader.releaseLock();
+        }
+    }
     try {
-        body = await req.json();
+        body = JSON.parse(source);
     } catch {
         throw new RequestError("body must be JSON");
     }
