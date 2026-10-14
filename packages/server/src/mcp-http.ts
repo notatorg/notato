@@ -22,6 +22,11 @@ export interface McpHttpOptions {
     auth: Pick<AuthProvider, "identify">;
     /** Checks before anything else, such as `notato dev` refusing browsers and the dev tunnel. A Response stops the request. */
     guard?: (req: Request) => Response | null;
+    /** Only a token may open MCP: a signed-in person's cookie is for the board. */
+    requireToken?: boolean;
+    /** How many sessions may be open at once, and for one credential. Defaults: 1024 and 32. */
+    maxSessions?: number;
+    maxSessionsPerCredential?: number;
     /** Why agents may not connect now (MCP turned off), or null. Sessions end at their next request while it is off. */
     refuse?: () => string | null;
     /** Whether `notato_import_bundle` may read paths on this machine: only where every caller is on it (`notato dev`). */
@@ -126,6 +131,12 @@ export function createMcpHttp(options: McpHttpOptions): {
                     -32001,
                     "an agent token is required for MCP; app tokens are for an SDK"
                 );
+            if (principal && options.requireToken && principal.kind !== "token")
+                return jsonRpcError(
+                    403,
+                    -32001,
+                    "an agent token is required for MCP; sign-in sessions are for the board"
+                );
             if (!principal)
                 return jsonRpcError(
                     401,
@@ -161,6 +172,15 @@ export function createMcpHttp(options: McpHttpOptions): {
                 );
                 return session.transport.handleRequest(req);
             }
+
+            if (
+                sessions.size >= (options.maxSessions ?? 1024) ||
+                [...sessions.values()].filter((s) => samePrincipal(s.principal, principal))
+                    .length >= (options.maxSessionsPerCredential ?? 32)
+            )
+                return jsonRpcError(429, -32001, "MCP session limit reached", {
+                    "Retry-After": "60",
+                });
 
             // Only an initialize request may open a session.
             if (req.method !== "POST")

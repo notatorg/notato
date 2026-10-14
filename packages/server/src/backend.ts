@@ -240,6 +240,17 @@ export class LocalBackend implements Backend {
     readonly bus: EventBus;
     readonly relay: RelayHub;
 
+    private assetsTurn: Promise<unknown> = Promise.resolve();
+    /**
+     * Uploads and deletions take turns, so a screenshot a new note reuses cannot be removed by a deletion that is
+     * finishing at the same moment, before the note is stored.
+     */
+    protected serialAssets<T>(work: () => Promise<T>): Promise<T> {
+        const next = this.assetsTurn.then(work, work);
+        this.assetsTurn = next.catch(() => {});
+        return next;
+    }
+
     /** An extension's hooks, if it has any. */
     readonly hooks: BackendHooks;
 
@@ -290,10 +301,18 @@ export class LocalBackend implements Backend {
      * Live annotations always start `open` with an empty thread: a client cannot pre-resolve its own note. The one thing
      * kept is the record of a person turning People only on or off before the note was sent, so the thread says who did.
      */
-    async ingest(
+    ingest(
         raw: unknown,
         files: ReadonlyMap<string, Uint8Array>,
         options: { projectId?: string; preserveLifecycle?: boolean; bundleId?: string | null } = {}
+    ): Promise<{ stored: StoredAnnotation; created: boolean }> {
+        return this.serialAssets(() => this.ingestUnlocked(raw, files, options));
+    }
+
+    private async ingestUnlocked(
+        raw: unknown,
+        files: ReadonlyMap<string, Uint8Array>,
+        options: { projectId?: string; preserveLifecycle?: boolean; bundleId?: string | null }
     ): Promise<{ stored: StoredAnnotation; created: boolean }> {
         const parsed = Annotation.safeParse(raw);
         if (!parsed.success) {
@@ -338,11 +357,17 @@ export class LocalBackend implements Backend {
         if (!annotation.screenshots || !this.config().screenshots) {
             // Screenshots are off: whatever a client sent is dropped here, so none is ever stored, whatever the page did.
             annotation = { ...annotation, screenshots: undefined };
+            await this.hooks.beforeIngest?.(annotation, 0);
         } else {
             const full = await bytesOf(annotation.screenshots.full);
             const crop = annotation.screenshots.crop
                 ? await bytesOf(annotation.screenshots.crop)
                 : undefined;
+            // Checked before anything is written, so a refused note leaves no screenshot behind.
+            await this.hooks.beforeIngest?.(
+                annotation,
+                full.bytes.byteLength + (crop?.bytes.byteLength ?? 0)
+            );
             const fullRef = await store(full);
             const cropRef = crop ? await store(crop) : undefined;
             annotation = {
@@ -366,14 +391,6 @@ export class LocalBackend implements Backend {
             annotation = { ...annotation, bundleId: options.bundleId };
         }
 
-        if (this.hooks.beforeIngest) {
-            const shots = Object.values(annotation.screenshots ?? {});
-            const bytes = (await Promise.all(shots.map((ref) => this.blobs.get(ref.id)))).reduce(
-                (sum, blob) => sum + (blob?.bytes.byteLength ?? 0),
-                0
-            );
-            await this.hooks.beforeIngest(annotation, bytes);
-        }
         let stored: StoredAnnotation;
         try {
             stored = await this.store.insertAnnotation(annotation);
@@ -430,7 +447,11 @@ export class LocalBackend implements Backend {
     }
 
     /** Deletes the project, every note in it, and the screenshots only those notes showed. */
-    async deleteProject(id: string): Promise<boolean> {
+    deleteProject(id: string): Promise<boolean> {
+        return this.serialAssets(() => this.deleteProjectUnlocked(id));
+    }
+
+    private async deleteProjectUnlocked(id: string): Promise<boolean> {
         const removed = await this.store.deleteProject(id);
         if (!removed) return false;
         for (const stored of removed) this.emit("deleted", stored, undefined, true);
@@ -444,7 +465,7 @@ export class LocalBackend implements Backend {
     }
 
     /** Deletes the bytes of screenshots no remaining note shows. */
-    private async forgetScreenshots(gone: Annotation[]) {
+    protected async forgetScreenshots(gone: Annotation[]) {
         const ids = new Set<string>();
         for (const a of gone) {
             if (a.screenshots?.full) ids.add(a.screenshots.full.id);
@@ -520,7 +541,7 @@ export class LocalBackend implements Backend {
     }
 
     /** Applies `change` to the stored annotation atomically and announces the result, with what it was before. */
-    private async mutate(
+    protected async mutate(
         id: string,
         change: (current: Annotation) => Annotation,
         type: EventType = "updated"
@@ -673,7 +694,11 @@ export class LocalBackend implements Backend {
         );
     }
 
-    async remove(id: string): Promise<boolean> {
+    remove(id: string): Promise<boolean> {
+        return this.serialAssets(() => this.removeUnlocked(id));
+    }
+
+    private async removeUnlocked(id: string): Promise<boolean> {
         const existing = await this.store.getAnnotation(id);
         if (!existing) return false;
         await this.store.deleteAnnotation(id);
@@ -848,7 +873,7 @@ export class LocalBackend implements Backend {
         return { id: ulid(), author, body, createdAt: at, ...(automatic ? { automatic } : {}) };
     }
 
-    private emit(type: EventType, stored: StoredAnnotation, before?: Annotation, bulk?: true) {
+    protected emit(type: EventType, stored: StoredAnnotation, before?: Annotation, bulk?: true) {
         const event = {
             type,
             ...(bulk ? { bulk } : {}),

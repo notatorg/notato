@@ -6,7 +6,7 @@ import { FileBlobStore } from "./blob-store.ts";
 import { CONFIG_FILE, createConfigSource, mcpRefusal } from "./config.ts";
 import { isLoopbackName } from "./cors.ts";
 import { DEFAULT_PORT } from "./dev.ts";
-import type { ServerExtension } from "./extension.ts";
+import type { Built, ServerExtension } from "./extension.ts";
 import { createApp, SERVE_LIMITS, type UiAssets } from "./http.ts";
 import { createMcpHttp } from "./mcp-http.ts";
 import { ShareLinks } from "./share.ts";
@@ -59,10 +59,12 @@ export async function runServe(options: ServeOptions): Promise<ServeRuntime> {
     const extension = options.extension;
     const context = { dir, version: options.version, log };
     const store = (await extension?.store?.(context)) ?? new SqliteStore(join(dir, "notato.db"));
-    const config = createConfigSource({
+    const blobs = (await extension?.blobs?.(context)) ?? new FileBlobStore(join(dir, "assets"));
+    const baseConfig = createConfigSource({
         file: options.configFile ?? process.env.NOTATO_CONFIG ?? join(process.cwd(), CONFIG_FILE),
         flags: options.mcp === undefined ? undefined : { mcp: options.mcp },
     });
+    const config = extension?.config?.(baseConfig, context) ?? baseConfig;
     const settings = config();
     if (settings.error)
         log(
@@ -72,18 +74,26 @@ export async function runServe(options: ServeOptions): Promise<ServeRuntime> {
         if (!settings.screenshots) log("screenshots are off, so none are stored");
         if (!settings.mcp) log(mcpRefusal(settings) ?? "MCP is off");
     }
+    const parts = { store, blobs, config };
     // On a shared server an admin creates each project (and its tokens) before an app can send to it.
-    const backend = new LocalBackend(
-        store,
-        (await extension?.blobs?.(context)) ?? new FileBlobStore(join(dir, "assets")),
-        { config, autoCreateProjects: false, hooks: extension?.hooks }
-    );
+    const backendOptions = {
+        config,
+        autoCreateProjects: false,
+        hooks: extension?.hooks?.({ ...context, ...parts }),
+    };
+    const backend =
+        extension?.backend?.({ ...context, ...parts, options: backendOptions }) ??
+        new LocalBackend(store, blobs, backendOptions);
     // A shared server is reached at its proxy's address, which only the person running it knows: NOTATO_PUBLIC_URL.
     // Without it, webhook messages carry no screenshot.
-    const share = new ShareLinks(dir, () => process.env.NOTATO_PUBLIC_URL);
+    const share =
+        extension?.share === false
+            ? undefined
+            : new ShareLinks(dir, () => process.env.NOTATO_PUBLIC_URL);
     const hooks = startWebhooks({ bus: backend.bus, config, log, share });
+
     let auth: AuthProvider;
-    if (extension?.auth) auth = await extension.auth({ ...context, store });
+    if (extension?.auth) auth = await extension.auth({ ...context, ...parts, backend });
     else {
         const builtIn = new Authenticator(store);
         auth = builtIn;
@@ -100,17 +110,23 @@ export async function runServe(options: ServeOptions): Promise<ServeRuntime> {
         }
     }
 
+    const built: Built = { backend, auth };
+    const full = { ...context, ...parts, ...built };
     const trustProxy = options.trustProxy ?? process.env.NOTATO_TRUST_PROXY === "1";
+    const http = extension?.http?.(full);
     const app = createApp({
         backend,
         mode: "serve",
         version: options.version,
         share,
         auth,
-        routes: extension?.routes?.({ ...context, backend, auth }),
-        around: extension?.around,
-        originsFor: extension?.originsFor,
-        responseHeaders: extension?.responseHeaders,
+        routes: http?.routes,
+        around: http?.around,
+        authorize: http?.authorize,
+        originsFor: http?.originsFor,
+        responseHeaders: http?.responseHeaders,
+        maxUploadBytes: http?.maxUploadBytes,
+        maxBundleBytes: http?.maxBundleBytes,
         ui: options.ui,
         trustProxy,
         corsOrigins: options.corsOrigins,
@@ -126,25 +142,28 @@ export async function runServe(options: ServeOptions): Promise<ServeRuntime> {
         auth,
         refuse: () => mcpRefusal(backend.config()),
         presence: backend.agents,
-        auditTool: extension?.auditTool,
+        ...extension?.mcp?.(full),
     });
+    const wrap = extension?.fetch?.(full);
 
     const server = Bun.serve({
         hostname: host,
         port,
         ...SERVE_LIMITS,
+        ...(http?.maxRequestBodySize ? { maxRequestBodySize: http.maxRequestBodySize } : {}),
         fetch: (req, srv) => {
             const path = new URL(req.url).pathname;
-            if (path === "/mcp") return mcp.handle(req);
-            return app(req, { ip: srv.requestIP(req)?.address });
+            const ip = trustProxy
+                ? (req.headers.get("x-forwarded-for")?.split(",").at(-1)?.trim() ??
+                  srv.requestIP(req)?.address)
+                : srv.requestIP(req)?.address;
+            const answer = () => (path === "/mcp" ? mcp.handle(req) : app(req, { ip }));
+            return wrap ? wrap(req, { ip, path }, answer) : answer();
         },
     });
 
     const stopExtension = await extension?.start?.({
-        ...context,
-        backend,
-        auth,
-        store,
+        ...full,
         host,
         port: server.port ?? port,
     });

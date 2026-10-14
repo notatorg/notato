@@ -53,29 +53,37 @@ function fakeCloud() {
             };
             return provider;
         },
-        routes: () => ({
-            public: [async ({ path }) => (path === "/ext/hello" ? json({ hello: "world" }) : null)],
-            private: [
-                async ({ path, principal }) =>
-                    path === "/ext/me" ? json({ kind: principal.kind }) : null,
-            ],
-            isPublic: (_method, path) => path === "/ext/hello",
+        http: () => ({
+            routes: {
+                public: [
+                    async ({ path }) => (path === "/ext/hello" ? json({ hello: "world" }) : null),
+                ],
+                private: [
+                    async ({ path, principal }) =>
+                        path === "/ext/me" ? json({ kind: principal.kind }) : null,
+                ],
+                isPublic: (_method, path) => path === "/ext/hello",
+            },
+            around: async ({ path, principal }, next) => {
+                if (principal?.kind === "member" && path === "/ext/locked")
+                    return json({ error: "workspace locked" }, 402);
+                events.push(`request ${path}`);
+                return next();
+            },
+            originsFor: (_req, url) =>
+                url.pathname.startsWith("/projects/a1") ? ["https://alice.example"] : [],
+            responseHeaders: () => ({ "x-extension": "fake-cloud" }),
         }),
-        around: async ({ path, principal }, next) => {
-            if (principal?.kind === "member" && path === "/ext/locked")
-                return json({ error: "workspace locked" }, 402);
-            events.push(`request ${path}`);
-            return next();
-        },
-        originsFor: (_req, url) =>
-            url.pathname.startsWith("/projects/a1") ? ["https://alice.example"] : [],
-        responseHeaders: () => ({ "x-extension": "fake-cloud" }),
-        hooks: {
+        hooks: () => ({
             beforeIngest: async (_note, bytes) => {
                 events.push(`ingest ${bytes > 0 ? "with" : "without"} screenshots`);
                 if (events.filter((e) => e.startsWith("ingest")).length > 2)
                     throw new RequestError("workspace is over its limit", 402);
             },
+        }),
+        fetch: () => async (req, _info, next) => {
+            events.push(`fetch ${new URL(req.url).pathname}`);
+            return next();
         },
         start: () => {
             events.push("start");
