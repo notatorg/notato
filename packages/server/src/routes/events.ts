@@ -119,17 +119,14 @@ export class EventStreams {
                     // in order: a revoked token or a removed member never receives another note.
                     let turn: Promise<void> = Promise.resolve();
                     const unsubscribe = backend.bus.subscribe((e) => {
-                        if (
-                            !(
-                                (projectId === "*" || e.projectId === projectId) &&
-                                allow(e.projectId)
-                            )
-                        )
-                            return;
-                        if (!stillAllowed) return enqueue(changeFrame(e));
+                        const wanted =
+                            (projectId === "*" || e.projectId === projectId) && allow(e.projectId);
+                        if (!stillAllowed) return wanted ? enqueue(changeFrame(e)) : undefined;
+                        // Any change is a moment to ask, wanted or not: a credential that was revoked, or moved to
+                        // another workspace, hears nothing more, and is let go at the next change anywhere.
                         turn = turn.then(async () => {
-                            if (await stillAllowed().catch(() => false)) enqueue(changeFrame(e));
-                            else cleanup();
+                            if (!(await stillAllowed().catch(() => false))) cleanup();
+                            else if (wanted) enqueue(changeFrame(e));
                         });
                     });
                     const ping = setInterval(() => {
