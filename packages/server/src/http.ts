@@ -5,7 +5,14 @@ import {
     cleanAgentName,
     decodeAgentProjects,
 } from "./agents.ts";
-import { type AuthProvider, LOCAL_PRINCIPAL, type Principal, UnknownProjectError } from "./auth.ts";
+import {
+    type AuthProvider,
+    accessibleProjects,
+    canAccessProject,
+    LOCAL_PRINCIPAL,
+    type Principal,
+    UnknownProjectError,
+} from "./auth.ts";
 import { type LocalBackend, RequestError } from "./backend.ts";
 import { mcpRefusal } from "./config.ts";
 import { corsHeaders, hostAllowed, parseExtraOrigins, writeOriginRejected } from "./cors.ts";
@@ -59,8 +66,18 @@ export interface AppOptions {
      */
     authorize?: (
         req: Request,
-        access: { write: boolean; projectId?: string }
+        access: { write: boolean; projectId?: string; principal: Principal | null }
     ) => Promise<Response | null>;
+    /**
+     * Wraps every request that has passed the host, origin and credential checks, with the credential known: run
+     * `next()` to answer it, or return a response of your own to stop it. For policy a deployment adds (limits, a
+     * locked account, an audit trail, metrics). Errors thrown inside are handled as the server's own are.
+     */
+    around?: (context: RequestContext, next: () => Promise<Response>) => Promise<Response>;
+    /** Browser origins allowed for this one request, on top of the server's, such as the ones a project lists. */
+    originsFor?: (req: Request, url: URL) => string[] | Promise<string[]>;
+    /** Headers added to every answer. */
+    responseHeaders?: (req: Request, path: string) => Record<string, string>;
     /** Signed links to single screenshots, for webhook messages (see share.ts). */
     share?: ShareLinks;
     /**
@@ -80,6 +97,17 @@ export interface ExtraRoutes {
     private?: Routes[];
     /** Whether a request may reach the routes without a credential (the server's own public paths always may). */
     isPublic?: (method: string, path: string) => boolean;
+}
+
+/** A request as `around` sees it. */
+export interface RequestContext {
+    req: Request;
+    url: URL;
+    path: string;
+    method: string;
+    /** Null only on the routes anyone may use. */
+    principal: Principal | null;
+    info: RequestInfo;
 }
 
 export interface RequestInfo {
@@ -177,8 +205,11 @@ export function createApp(options: AppOptions): AppHandler {
     return async (req, info = {}) => {
         const url = new URL(req.url);
         const path = url.pathname.replace(/\/+$/, "") || "/";
+        let requestOrigins = extraOrigins;
         const withCors = (res: Response) => {
-            for (const [key, value] of Object.entries(corsHeaders(req, extraOrigins)))
+            for (const [key, value] of Object.entries(corsHeaders(req, requestOrigins)))
+                res.headers.set(key, value);
+            for (const [key, value] of Object.entries(options.responseHeaders?.(req, path) ?? {}))
                 res.headers.set(key, value);
             return res;
         };
@@ -195,8 +226,10 @@ export function createApp(options: AppOptions): AppHandler {
             if (shared) return shared;
             if (!hostAllowed(req, allowedHosts))
                 return withCors(json({ error: "host not allowed" }, 403));
+            if (options.originsFor)
+                requestOrigins = [...extraOrigins, ...(await options.originsFor(req, url))];
             if (req.method === "OPTIONS") return withCors(new Response(null, { status: 204 }));
-            if (writeOriginRejected(req, extraOrigins))
+            if (writeOriginRejected(req, requestOrigins))
                 return withCors(json({ error: "origin not allowed" }, 403));
 
             const method = methodOf(req);
@@ -221,6 +254,7 @@ export function createApp(options: AppOptions): AppHandler {
                 const denied = await options.authorize(req, {
                     write: req.method !== "GET" && req.method !== "HEAD",
                     projectId: projectId === undefined ? undefined : decodePart(projectId),
+                    principal,
                 });
                 if (denied) return withCors(denied);
             }
@@ -237,17 +271,27 @@ export function createApp(options: AppOptions): AppHandler {
             }
             // The heartbeat counts only once the request has passed every check, so nobody can make a page believe an
             // agent is there.
-            if (agentId && principal)
+            if (agentId && principal) {
+                // The id is the agent's own, but only within its credential: two people's agents never share one, and
+                // an agent only ever claims projects its credential reaches.
+                const claimed = decodeAgentProjects(req.headers.get(AGENT_PROJECTS_HEADER));
                 backend.agents.touch(
-                    agentId.slice(0, 64),
+                    `${principal.kind === "token" ? principal.tokenId : principal.username}:${agentId.slice(0, 64)}`,
                     cleanAgentName(req.headers.get(AGENT_NAME_HEADER)),
-                    decodeAgentProjects(req.headers.get(AGENT_PROJECTS_HEADER))
+                    claimed?.filter((id) => canAccessProject(principal, id)) ??
+                        accessibleProjects(principal)
                 );
+            }
             const match = (pattern: RegExp): string[] | null => {
                 const found = pattern.exec(path);
                 return found ? found.slice(1).map(decodePart) : null;
             };
-            return withCors(await route({ req, url, path, method, principal, info, match }, app));
+            const answer = () => route({ req, url, path, method, principal, info, match }, app);
+            return withCors(
+                options.around
+                    ? await options.around({ req, url, path, method, principal, info }, answer)
+                    : await answer()
+            );
         } catch (error) {
             if (error instanceof RequestError)
                 return withCors(json({ error: error.message }, error.status));

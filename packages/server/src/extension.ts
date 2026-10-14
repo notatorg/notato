@@ -1,6 +1,6 @@
 import type { AuthProvider } from "./auth.ts";
 import type { BackendHooks, LocalBackend } from "./backend.ts";
-import type { ExtraRoutes } from "./http.ts";
+import type { AppOptions, ExtraRoutes } from "./http.ts";
 import type { AuthStore, BlobStore, Store } from "./storage.ts";
 
 /**
@@ -33,6 +33,15 @@ export interface ServerExtension {
     ) => ExtraRoutes;
     /** Limits and checks, run before the backend changes anything. */
     hooks?: BackendHooks;
+    /**
+     * Wraps every request once its credential is known, to stop it (a locked account, a limit), audit it or count
+     * it. See `AppOptions.around`.
+     */
+    around?: AppOptions["around"];
+    /** Browser origins allowed for one request, such as the sites a project lists. See `AppOptions.originsFor`. */
+    originsFor?: AppOptions["originsFor"];
+    /** Headers added to every answer. See `AppOptions.responseHeaders`. */
+    responseHeaders?: AppOptions["responseHeaders"];
     /**
      * Runs once the server is up (background work, a billing webhook's listener, anything with a lifetime) and returns
      * how to stop it. Called as the server stops, before the store closes.

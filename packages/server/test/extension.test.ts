@@ -61,6 +61,15 @@ function fakeCloud() {
             ],
             isPublic: (_method, path) => path === "/ext/hello",
         }),
+        around: async ({ path, principal }, next) => {
+            if (principal?.kind === "member" && path === "/ext/locked")
+                return json({ error: "workspace locked" }, 402);
+            events.push(`request ${path}`);
+            return next();
+        },
+        originsFor: (_req, url) =>
+            url.pathname.startsWith("/projects/a1") ? ["https://alice.example"] : [],
+        responseHeaders: () => ({ "x-extension": "fake-cloud" }),
         hooks: {
             beforeIngest: async (_note, bytes) => {
                 events.push(`ingest ${bytes > 0 ? "with" : "without"} screenshots`);
@@ -131,6 +140,26 @@ describe("a server extension", () => {
         });
         expect(third.status).toBe(402);
         expect(((await third.json()) as { error: string }).error).toContain("over its limit");
+    });
+
+    it("can wrap requests, allow a project's own origins and add headers", async () => {
+        const cloud = fakeCloud();
+        const s = await startServe(defer, { extension: cloud.extension });
+        await s.rt.backend.createProject("a1");
+        const locked = await s.call("/ext/locked", { headers: { "x-user": "alice" } });
+        expect(locked.status).toBe(402);
+        const me = await s.call("/ext/me", { headers: { "x-user": "alice" } });
+        expect(me.headers.get("x-extension")).toBe("fake-cloud");
+        expect(cloud.events).toContain("request /ext/me");
+        // The project's own site may make a cross-origin call; another may not.
+        const allowed = await s.call("/projects/a1/annotations", {
+            headers: { "x-user": "alice", origin: "https://alice.example" },
+        });
+        expect(allowed.headers.get("access-control-allow-origin")).toBe("https://alice.example");
+        const other = await s.call("/projects/a1/annotations", {
+            headers: { "x-user": "alice", origin: "https://evil.example" },
+        });
+        expect(other.headers.get("access-control-allow-origin")).toBeNull();
     });
 
     it("keeps an agent connected as a member to that member's projects", async () => {
