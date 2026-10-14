@@ -235,7 +235,7 @@ export function createApp(options: AppOptions): AppHandler {
             // passes the dev tunnel's gate, and answers on any host (NOTATO_PUBLIC_URL can be a proxy's own address).
             // Everything else goes on to the checks below.
             const shared = await sharedAsset(req, url, backend, options.share);
-            if (shared) return shared;
+            if (shared) return withCors(shared);
             if (!hostAllowed(req, allowedHosts))
                 return withCors(json({ error: "host not allowed" }, 403));
             if (options.originsFor)
