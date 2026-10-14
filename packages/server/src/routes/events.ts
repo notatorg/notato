@@ -1,3 +1,4 @@
+import { canAccessProject, type Principal, samePrincipal } from "../auth.ts";
 import type { LocalBackend } from "../backend.ts";
 import type { NotatoEvent } from "../events.ts";
 import { assertAccess, projectIdFrom, type Routes } from "./common.ts";
@@ -44,8 +45,18 @@ export class EventStreams {
 
     constructor(private readonly backend: LocalBackend) {}
 
-    /** A stream for one project, or for every project with `*` (the board). `agent`: the page takes annotate requests. */
-    stream(req: Request, projectId: string, agent: boolean): Response {
+    /**
+     * A stream for one project, or for every project the credential reaches with `*` (the board). `agent`: the page
+     * takes annotate requests. `stillAllowed` is asked at every ping, so a revoked token or a removed member loses a
+     * stream that is quiet, not only the next request.
+     */
+    stream(
+        req: Request,
+        projectId: string,
+        agent: boolean,
+        allow: (projectId: string) => boolean = () => true,
+        stillAllowed?: () => Promise<boolean>
+    ): Response {
         const { backend } = this;
         let cleanup = () => {};
         const stream = new ReadableStream<Uint8Array>(
@@ -84,9 +95,17 @@ export class EventStreams {
                               )
                             : () => {};
                     const unsubscribe = backend.bus.subscribe((e) => {
-                        if (projectId === "*" || e.projectId === projectId) enqueue(changeFrame(e));
+                        if ((projectId === "*" || e.projectId === projectId) && allow(e.projectId))
+                            enqueue(changeFrame(e));
                     });
-                    const ping = setInterval(() => enqueue(PING), PING_MS);
+                    const ping = setInterval(() => {
+                        enqueue(PING);
+                        if (stillAllowed)
+                            void stillAllowed().then(
+                                (ok) => ok || cleanup(),
+                                () => {}
+                            );
+                    }, PING_MS);
                     cleanup = () => {
                         cleanup = () => {};
                         this.open -= 1;
@@ -126,5 +145,21 @@ export const eventRoutes: Routes = async ({ method, principal, url, req, match }
     if (!events || method !== "GET") return null;
     const projectId = events[0] === "*" ? "*" : projectIdFrom(events[0]);
     assertAccess(principal, projectId);
-    return app.streams.stream(req, projectId, url.searchParams.get("agent") === "1");
+    const { auth } = app;
+    return app.streams.stream(
+        req,
+        projectId,
+        url.searchParams.get("agent") === "1",
+        (id) => canAccessProject(principal, id),
+        auth
+            ? async () => {
+                  const current = await auth.identify(req, url);
+                  return Boolean(
+                      current &&
+                          samePrincipal(principal, current) &&
+                          canAccessProject(current, projectId)
+                  );
+              }
+            : undefined
+    );
 };

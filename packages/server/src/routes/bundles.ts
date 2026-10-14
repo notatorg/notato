@@ -6,9 +6,9 @@ import {
     assertAccess,
     json,
     notFound,
+    onlyProject,
     projectIdFrom,
     type Routes,
-    tokenProject,
     zip,
 } from "./common.ts";
 
@@ -36,7 +36,7 @@ async function importBundle(
     if (bytes.byteLength > max) throw new RequestError(`bundle exceeds ${max} bytes`, 413);
     if (bytes.byteLength === 0) throw new RequestError("empty body: send the bundle zip");
     const result = await app.backend.importBundle(bytes, {
-        projectId: tokenProject(principal) ?? projectId,
+        projectId: onlyProject(principal, projectId),
     });
     return json(result, result.imported > 0 ? 201 : 200);
 }

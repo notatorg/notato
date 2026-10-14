@@ -11,7 +11,7 @@ import {
     SqliteStore,
 } from "../src/index.ts";
 import { annotationFixture, cleanupAfterEach, filesFor, multipart, toolText } from "./helpers.ts";
-import { startServe } from "./serve-helpers.ts";
+import { sse, startServe } from "./serve-helpers.ts";
 
 const defer = cleanupAfterEach();
 
@@ -192,6 +192,40 @@ describe("a server extension", () => {
         expect(listed).toContain("alice's note");
         expect(listed).not.toContain("bob's note");
         await client.close();
+    });
+
+    it("keeps a member's event stream and relay to their own projects", async () => {
+        const cloud = fakeCloud();
+        const s = await startServe(defer, { extension: cloud.extension });
+        for (const id of ["a1", "a2", "b1"]) await s.rt.backend.createProject(id);
+        const stream = await s.call("/projects/*/events", { headers: { "x-user": "alice" } });
+        const next = sse(stream);
+        await next("hello");
+        await s.rt.backend.ingest(
+            annotationFixture({ projectId: "b1", comment: "bob's note" }),
+            filesFor(),
+            { projectId: "b1" }
+        );
+        const mine = annotationFixture({ projectId: "a2", comment: "alice's note" });
+        await s.rt.backend.ingest(mine, filesFor(), { projectId: "a2" });
+        // Only the note in a project alice reaches comes down her stream, even though she asked for every project.
+        const seen = (await next("created")) as { annotation: { comment: string } };
+        expect(seen.annotation.comment).toBe("alice's note");
+
+        // With two projects she must say which one a relay is for.
+        const unnamed = await s.call("/relay/annotate", {
+            method: "POST",
+            headers: { "x-user": "alice", "content-type": "application/json" },
+            body: JSON.stringify({ target: "#x", comment: "hi", timeoutMs: 1000 }),
+        });
+        expect(unnamed.status).toBe(400);
+        expect(((await unnamed.json()) as { error: string }).error).toContain("name a project");
+        const foreign = await s.call("/relay/annotate", {
+            method: "POST",
+            headers: { "x-user": "alice", "content-type": "application/json" },
+            body: JSON.stringify({ projectId: "b1", target: "#x", comment: "hi", timeoutMs: 1000 }),
+        });
+        expect(foreign.status).toBe(403);
     });
 
     it("stops the extension before the store closes", async () => {

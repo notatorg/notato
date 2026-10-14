@@ -1,5 +1,11 @@
 import type { z } from "zod";
-import { type AuthProvider, canAccessProject, isAdmin, type Principal } from "../auth.ts";
+import {
+    type AuthProvider,
+    accessibleProjects,
+    canAccessProject,
+    isAdmin,
+    type Principal,
+} from "../auth.ts";
 import { type LocalBackend, RequestError } from "../backend.ts";
 import { sameOrigin } from "../cors.ts";
 import type { AppOptions, RequestInfo } from "../http.ts";
@@ -130,12 +136,31 @@ export function tokenProject(principal: Principal): string | undefined {
         : undefined;
 }
 
-/** A filter a project token cannot widen beyond its own project: naming another is refused. */
+/**
+ * The project a request is for. Asking for one the credential cannot reach is refused; leaving it out means the
+ * credential's only project, and for one that reaches several it must be named. Undefined only for a credential that
+ * reaches them all and was not told.
+ */
+export function onlyProject(principal: Principal, asked?: string): string | undefined {
+    if (asked !== undefined) assertAccess(principal, asked);
+    const reach = accessibleProjects(principal);
+    if (reach === undefined || asked !== undefined) return asked;
+    if (reach.length === 1) return reach[0];
+    throw new RequestError(
+        reach.length
+            ? "name a project: this credential reaches several"
+            : "no project is reachable",
+        reach.length ? 400 : 403
+    );
+}
+
+/** A filter a credential cannot widen beyond the projects it reaches: naming another is refused. */
 export function withinReach(principal: Principal, filter: AnnotationFilter): AnnotationFilter {
-    const own = tokenProject(principal);
-    if (own === undefined) return filter;
-    for (const asked of [filter.projectId ?? []].flat()) assertAccess(principal, asked);
-    return { ...filter, projectId: own };
+    const reach = accessibleProjects(principal);
+    if (reach === undefined) return filter;
+    const asked = [filter.projectId ?? []].flat();
+    for (const id of asked) assertAccess(principal, id);
+    return { ...filter, projectId: asked.length ? asked : reach };
 }
 
 /**
