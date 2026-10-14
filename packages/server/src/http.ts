@@ -74,6 +74,11 @@ export interface AppOptions {
      * locked account, an audit trail, metrics). Errors thrown inside are handled as the server's own are.
      */
     around?: (context: RequestContext, next: () => Promise<Response>) => Promise<Response>;
+    /**
+     * Only the origins listed (the server's own, `corsOrigins`, and `originsFor`) may call the API from a browser:
+     * loopback and private networks are not trusted. For a service on the public internet.
+     */
+    strictOrigins?: boolean;
     /** Browser origins allowed for this one request, on top of the server's, such as the ones a project lists. */
     originsFor?: (req: Request, url: URL) => string[] | Promise<string[]>;
     /** Headers added to every answer. */
@@ -207,7 +212,9 @@ export function createApp(options: AppOptions): AppHandler {
         const path = url.pathname.replace(/\/+$/, "") || "/";
         let requestOrigins = extraOrigins;
         const withCors = (res: Response) => {
-            for (const [key, value] of Object.entries(corsHeaders(req, requestOrigins)))
+            for (const [key, value] of Object.entries(
+                corsHeaders(req, requestOrigins, options.strictOrigins)
+            ))
                 res.headers.set(key, value);
             for (const [key, value] of Object.entries(options.responseHeaders?.(req, path) ?? {}))
                 res.headers.set(key, value);
@@ -229,7 +236,7 @@ export function createApp(options: AppOptions): AppHandler {
             if (options.originsFor)
                 requestOrigins = [...extraOrigins, ...(await options.originsFor(req, url))];
             if (req.method === "OPTIONS") return withCors(new Response(null, { status: 204 }));
-            if (writeOriginRejected(req, requestOrigins))
+            if (writeOriginRejected(req, requestOrigins, options.strictOrigins))
                 return withCors(json({ error: "origin not allowed" }, 403));
 
             const method = methodOf(req);

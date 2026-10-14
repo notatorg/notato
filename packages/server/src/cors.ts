@@ -33,7 +33,9 @@ export function parseExtraOrigins(value: string | undefined): string[] {
  * `NOTATO_CORS_ORIGINS`. CORS is a browser courtesy, not authentication: in serve mode every write
  * still needs a project token.
  */
-export function originAllowed(origin: string, extra: string[]): boolean {
+export function originAllowed(origin: string, extra: string[], strict = false): boolean {
+    // Strict: only what is listed. A hosted service has no "this machine" or "this network" to trust.
+    if (strict) return extra.includes(origin);
     if (extra.includes("*") || extra.includes(origin) || origin === EXTENSION_ORIGIN) return true;
     try {
         return isPrivateHost(new URL(origin).hostname);
@@ -42,9 +44,9 @@ export function originAllowed(origin: string, extra: string[]): boolean {
     }
 }
 
-export function corsHeaders(req: Request, extra: string[]): Record<string, string> {
+export function corsHeaders(req: Request, extra: string[], strict = false): Record<string, string> {
     const origin = req.headers.get("origin");
-    if (!origin || !originAllowed(origin, extra)) return {};
+    if (!origin || !originAllowed(origin, extra, strict)) return {};
     return {
         "Access-Control-Allow-Origin": origin,
         Vary: "Origin",
@@ -60,11 +62,11 @@ export function corsHeaders(req: Request, extra: string[]): Record<string, strin
  * headers alone would not stop any web page from writing to a loopback server. Reject the request
  * itself when its Origin is not allowed.
  */
-export function writeOriginRejected(req: Request, extra: string[]): boolean {
+export function writeOriginRejected(req: Request, extra: string[], strict = false): boolean {
     if (req.method === "GET" || req.method === "HEAD" || req.method === "OPTIONS") return false;
     const origin = req.headers.get("origin");
     if (origin === null) return false;
-    return !originAllowed(origin, extra) && !sameOrigin(req, origin);
+    return !originAllowed(origin, extra, strict) && !sameOrigin(req, origin);
 }
 
 /** The page that sent the request was served by this very server, like the board UI. */
