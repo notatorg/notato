@@ -1,4 +1,4 @@
-import { canAccessProject, type Principal, samePrincipal } from "../auth.ts";
+import { accessibleProjects, canAccessProject, type Principal, samePrincipal } from "../auth.ts";
 import type { LocalBackend } from "../backend.ts";
 import type { NotatoEvent } from "../events.ts";
 import { assertAccess, projectIdFrom, type Routes } from "./common.ts";
@@ -42,6 +42,24 @@ function changeFrame(e: NotatoEvent): Uint8Array {
 export class EventStreams {
     /** How many are open now. Separate from `notato_watch` waiters, which wait on the bus directly. */
     open = 0;
+    private readonly connections = new Map<symbol, { projectId: string; principal?: Principal }>();
+
+    /**
+     * Pages connected as far as this credential may know: every one for an admin, otherwise the ones for projects it
+     * reaches, and the board streams (every project) of anyone who reaches a project it does too.
+     */
+    countFor(principal: Principal): number {
+        if (principal.kind === "admin") return this.open;
+        const mine = accessibleProjects(principal);
+        return [...this.connections.values()].filter(({ projectId, principal: other }) => {
+            if (projectId !== "*") return canAccessProject(principal, projectId);
+            if (!other || other.kind === "admin") return false;
+            const theirs = accessibleProjects(other);
+            return (
+                theirs === undefined || mine === undefined || mine.some((id) => theirs.includes(id))
+            );
+        }).length;
+    }
 
     constructor(private readonly backend: LocalBackend) {}
 
@@ -55,7 +73,8 @@ export class EventStreams {
         projectId: string,
         agent: boolean,
         allow: (projectId: string) => boolean = () => true,
-        stillAllowed?: () => Promise<boolean>
+        stillAllowed?: () => Promise<boolean>,
+        principal?: Principal
     ): Response {
         const { backend } = this;
         let cleanup = () => {};
@@ -75,6 +94,8 @@ export class EventStreams {
                     };
                     const send = (event: string, data: unknown) => enqueue(frame(event, data));
                     this.open += 1;
+                    const connection = Symbol("stream");
+                    this.connections.set(connection, { projectId, principal });
                     send("hello", {
                         projectId,
                         agent: backend.agents.stateFor(projectId),
@@ -109,6 +130,7 @@ export class EventStreams {
                     cleanup = () => {
                         cleanup = () => {};
                         this.open -= 1;
+                        this.connections.delete(connection);
                         clearInterval(ping);
                         unsubscribe();
                         unwatchAgents();
@@ -160,6 +182,7 @@ export const eventRoutes: Routes = async ({ method, principal, url, req, match }
                           canAccessProject(current, projectId)
                   );
               }
-            : undefined
+            : undefined,
+        principal
     );
 };

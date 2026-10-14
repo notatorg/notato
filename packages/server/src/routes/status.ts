@@ -41,7 +41,7 @@ export const statusRoutes: Routes = async ({ req, url, path, method, principal }
             mcpUrl: options.mcpUrl,
             uptimeSec: Math.round((Date.now() - app.startedAt) / 1000),
             watchers: backend.bus.size,
-            pages: app.streams.open,
+            pages: app.streams.countFor(principal),
             agents: backend.agents.state,
             mentions: backend.mentions.list(),
             agentProjects: backend.relay.projects().filter((p) => canAccessProject(principal, p)),

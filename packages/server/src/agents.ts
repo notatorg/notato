@@ -97,8 +97,11 @@ interface Presence {
 }
 
 /** Whether an agent kept to `projects` counts for a page of `projectId` (`*` or none: the board, which shows everyone). */
-const servesProject = (projects: string[] | undefined, projectId: string | undefined) =>
-    !projectId || projectId === "*" || !projects || projects.includes(projectId);
+/** Whether an agent working on `projects` (undefined: all) serves one project, or any of several. */
+const servesProject = (projects: string[] | undefined, projectId: string | string[] | undefined) =>
+    Array.isArray(projectId)
+        ? projectId.length > 0 && (!projects || projectId.some((p) => projects.includes(p)))
+        : !projectId || projectId === "*" || !projects || projects.includes(projectId);
 
 const sameState = (a: AgentState, b: AgentState) =>
     a.connected === b.connected &&
@@ -141,7 +144,7 @@ export class AgentPresence {
     }
 
     /** The agents that work on this project. */
-    stateFor(projectId: string | undefined): AgentState {
+    stateFor(projectId: string | string[] | undefined): AgentState {
         return this.compute(projectId);
     }
 
@@ -210,7 +213,7 @@ export class AgentPresence {
         this.listeners.clear();
     }
 
-    private compute(projectId?: string): AgentState {
+    private compute(projectId?: string | string[]): AgentState {
         const cutoff = this.now() - this.ttlMs;
         for (const [id, entry] of this.seen) if (entry.at < cutoff) this.seen.delete(id);
         if (!this.allowed()) return { connected: false, sessions: 0, watching: false, names: [] };
