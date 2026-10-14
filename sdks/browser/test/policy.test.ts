@@ -14,6 +14,22 @@ afterEach(() => {
 });
 
 describe("createPolicy", () => {
+    it("scopes the capability request to its project and keeps credentials in headers", async () => {
+        const fetchMock = answer({ screenshots: false, captureOnly: true });
+        vi.stubGlobal("fetch", fetchMock);
+        const policy = createPolicy({
+            baseUrl: "https://notes.example.com",
+            project: "team@example.com",
+            token: "notato_capture",
+        });
+        await policy.refresh();
+        expect(policy.captureOnlyNow()).toBe(true);
+        expect(fetchMock).toHaveBeenCalledWith(
+            "https://notes.example.com/config?project=team%40example.com",
+            { headers: { Authorization: "Bearer notato_capture" } }
+        );
+    });
+
     it("allows screenshots until the server says otherwise", async () => {
         vi.stubGlobal("fetch", answer({ screenshots: true }));
         const policy = createPolicy({ baseUrl: "http://localhost:4747" });

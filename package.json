@@ -1,6 +1,6 @@
 {
     "name": "notato-monorepo",
-    "version": "0.2.0",
+    "version": "0.2.1",
     "private": true,
     "type": "module",
     "workspaces": [
@@ -35,5 +35,9 @@
         "vite": "^8.3.2",
         "vite7": "npm:vite@^7.3.1",
         "vitest": "^5.0.3"
+    },
+    "notatoRelease": {
+        "scope": "web-sdk",
+        "unchangedVersion": "0.2.0"
     }
 }

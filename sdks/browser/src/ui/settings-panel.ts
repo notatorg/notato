@@ -302,16 +302,21 @@ export function createSettingsPanel(options: SettingsPanelOptions): SettingsPane
 
         void server.status().then((info) => {
             if (!el || view !== "server") return;
-            status.textContent = info
-                ? [
-                      info.version ? `Notato ${info.version}` : "",
-                      info.mode ? `${info.mode} mode` : "",
-                      info.pages !== undefined ? `${plural(info.pages, "page")} connected` : "",
-                      info.screenshots ? `screenshots ${info.screenshots}` : "",
-                  ]
-                      .filter(Boolean)
-                      .join(" · ")
-                : "The server did not answer.";
+            status.textContent =
+                info?.mode === "capture"
+                    ? "Upload only. Review submitted feedback in the Notato dashboard."
+                    : info
+                      ? [
+                            info.version ? `Notato ${info.version}` : "",
+                            info.mode ? `${info.mode} mode` : "",
+                            info.pages !== undefined
+                                ? `${plural(info.pages, "page")} connected`
+                                : "",
+                            info.screenshots ? `screenshots ${info.screenshots}` : "",
+                        ]
+                            .filter(Boolean)
+                            .join(" · ")
+                      : "The server did not answer.";
             showAgent(info?.agent);
         });
 

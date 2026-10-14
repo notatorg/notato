@@ -43,3 +43,21 @@ describe("the injected script", () => {
         expect(created.mock.calls[0]?.[0]).toMatchObject({ nonce: "s3cr3t" });
     });
 });
+
+it("reads a token attribute without placing it in the script URL", async () => {
+    const script = document.createElement("script");
+    script.src = "https://notato.test/inject.js?project=shop";
+    script.setAttribute("data-notato-token", "notato_capture_marker");
+    Object.defineProperty(document, "currentScript", { configurable: true, value: script });
+    try {
+        await import("../src/inject.ts");
+        expect(created.mock.calls[0]?.[0]).toMatchObject({
+            project: "shop",
+            server: "https://notato.test",
+            token: "notato_capture_marker",
+        });
+        expect(script.src).not.toContain("notato_capture_marker");
+    } finally {
+        Reflect.deleteProperty(document, "currentScript");
+    }
+});

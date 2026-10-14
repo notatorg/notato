@@ -1,6 +1,31 @@
 # Releasing
 
-Everything is released together, at one version: the `notato` command and server, every npm package, the Swift package, the Android libraries, the .NET MAUI package, the Docker image and the website. "SDK 0.3 works with server 0.3" is then the whole compatibility story.
+## Web SDK fixes only
+
+A web SDK release publishes only `@notato/schema`, `@notato/core`, `@notato/browser`, `@notato/react` and `@notato/angular`. The CLI/server, other SDKs, website and Docker image retain their existing published versions. The root `notatoRelease` profile identifies this as a web SDK patch: only those five packages and the browser SDK stamp advance; CLI/native versions and install instructions stay at the published version. A full `bun scripts/version.ts <version>` clears the profile and aligns every component for a full release.
+
+Work from the public developer branch. Never merge or push the private hosted repository's history to the public repository. The hosted service and account/billing implementation remain private. The SDK builder rejects a tree containing those private server modules.
+
+```bash
+# Advance only the five web package versions and browser stamp, and set
+# package.json.notatoRelease = {"scope":"web-sdk","unchangedVersion":"0.2.0"}.
+# Write the SDK-only changelog entry and align bun.lock.
+bun run check
+bun scripts/build-release.ts --web-sdks-only
+bun scripts/verify-web-sdk-release.ts
+# Test the packed artifacts in an isolated app against old local and private hosted servers.
+# Commit only the reviewed public tree, then push a web SDK tag pointing to that commit:
+git tag web-sdk-v0.2.1
+git push origin web-sdk-v0.2.1
+```
+
+[release-web-sdks.yml](.github/workflows/release-web-sdks.yml) tests, builds and verifies the five packages before publishing in dependency order. Retry publication accepts already-published packages only when their registry integrity matches the built tarball. `PUBLISH_NPM=false` performs a dry run. A `web-sdk-v*` tag does not trigger the full-release workflow.
+
+Do not use a plain `v*` tag for an SDK-only release: it starts the full release described below.
+
+## Full release
+
+A full release publishes every component at one version: the `notato` command and server, every npm package, the Swift package, the Android libraries, the .NET MAUI package, the Docker image and the website. "SDK 0.3 works with server 0.3" is then the whole compatibility story.
 
 ## A release
 

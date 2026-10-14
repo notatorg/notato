@@ -400,7 +400,7 @@ describe("notes not yet sent", () => {
         server.state.up = false;
         const notato = mount({ server: SERVER, transport: server.transport });
         const a = await notato.annotate({ target: "#pay", comment: "never mind" });
-        await settle();
+        await until(() => ui().querySelector(".pin") !== null, "the rendered pin");
         const pin = ui().querySelector(".pin") as HTMLButtonElement;
         pin.click();
         const del = ui().querySelector(".card .delete") as HTMLButtonElement;
@@ -661,5 +661,44 @@ describe("saving a note from the composer", () => {
         expect(ui().querySelector(".toast")?.textContent).toMatch(/^Could not save the note/);
         expect(pins()).toHaveLength(0);
         expect(notato.list()).toHaveLength(0);
+    });
+});
+
+describe("hosted capture-only access", () => {
+    it("uploads notes and reports connected without reading feedback, agent status or event streams", async () => {
+        const requests: string[] = [];
+        const events = vi.fn(() => {
+            throw new Error("private event stream attempted");
+        });
+        const fetcher = vi.fn(async (url: string, init?: RequestInit) => {
+            requests.push(`${init?.method ?? "GET"} ${new URL(url).pathname}`);
+            if (new URL(url).pathname === "/config")
+                return new URL(url).searchParams.get("project") === "shop"
+                    ? Response.json({ screenshots: false, captureOnly: true })
+                    : Response.json(
+                          { error: "project required for allowed origin" },
+                          { status: 403 }
+                      );
+            if (init?.method === "POST" && new URL(url).pathname === "/projects/shop/annotations") {
+                const annotation = JSON.parse((init.body as FormData).get("annotation") as string);
+                return Response.json({ annotation }, { status: 201 });
+            }
+            return Response.json({ error: "private route" }, { status: 403 });
+        });
+        const controller = mount({
+            mode: "dev",
+            server: SERVER,
+            token: "capture",
+            transport: { fetch: fetcher, events },
+        });
+        await settle();
+        await settle();
+        await controller.annotate({ target: "#pay", comment: "Hosted feedback" });
+        await until(() => requests.some((r) => r === "POST /projects/shop/annotations"));
+        expect(events).not.toHaveBeenCalled();
+        expect(
+            requests.every((r) => r === "GET /config" || r === "POST /projects/shop/annotations")
+        ).toBe(true);
+        expect(controller.list()).toHaveLength(1);
     });
 });

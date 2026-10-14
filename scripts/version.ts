@@ -1,4 +1,5 @@
-// One version for every Notato package, whatever registry it goes to: npm, SwiftPM (the git tag), Maven and NuGet.
+// Full releases align every Notato package. A web-sdk release profile advances only the web SDKs,
+// preserving the published CLI/native versions and their installation instructions.
 // The root package.json holds it; every other manifest says the same, and a release tag is that version with a v.
 //
 //   bun scripts/version.ts                  check that every manifest says the root's version
@@ -11,7 +12,7 @@
 
 import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { ROOT } from "./repo.ts";
+import { ROOT, WEB_SDK_NAMES } from "./repo.ts";
 
 /** A place a version is written: the file, and a pattern whose first group is the version. */
 export interface Stamp {
@@ -93,7 +94,35 @@ export function readStamps(): Array<{ file: string; version: string | null }> {
     });
 }
 
+/** SDK-only patches keep the CLI, native SDKs and their installation instructions at the published version. */
+export function releaseProfile(): { scope: "web-sdk"; unchangedVersion: string } | undefined {
+    const value = JSON.parse(readFileSync(join(ROOT, "package.json"), "utf8")).notatoRelease;
+    if (value === undefined) return undefined;
+    if (
+        value.scope !== "web-sdk" ||
+        typeof value.unchangedVersion !== "string" ||
+        !SEMVER.test(value.unchangedVersion)
+    )
+        throw new Error("Invalid notatoRelease profile");
+    return value;
+}
+
+export function expectedVersion(file: string): string {
+    const profile = releaseProfile();
+    if (!profile || file === "package.json" || file === "sdks/browser/src/version.ts")
+        return currentVersion();
+    if (file.endsWith("package.json")) {
+        const pkg = JSON.parse(readFileSync(join(ROOT, file), "utf8"));
+        if (WEB_SDK_NAMES.some((name) => name === pkg.name)) return currentVersion();
+    }
+    return profile.unchangedVersion;
+}
+
 function setVersion(version: string) {
+    const rootManifest = join(ROOT, "package.json");
+    const pkg = JSON.parse(readFileSync(rootManifest, "utf8"));
+    delete pkg.notatoRelease;
+    writeFileSync(rootManifest, `${JSON.stringify(pkg, null, 4)}\n`);
     for (const { file, pattern } of allStamps()) {
         const path = join(ROOT, file);
         const text = readFileSync(path, "utf8");
@@ -105,10 +134,9 @@ function setVersion(version: string) {
 }
 
 function check(): string[] {
-    const want = currentVersion();
     return readStamps()
-        .filter((s) => s.version !== want)
-        .map((s) => `${s.file} says ${s.version ?? "nothing"}, not ${want}`);
+        .filter((s) => s.version !== expectedVersion(s.file))
+        .map((s) => `${s.file} says ${s.version ?? "nothing"}, not ${expectedVersion(s.file)}`);
 }
 
 /** The changelogs every release has an entry in: everything's, and the Flutter package's, which pub.dev shows. */
@@ -128,7 +156,9 @@ export function changelogEntry(file: string, version: string): string | null {
 
 /** The changelogs with no entry for this version. */
 export function changelogsWithout(version: string): string[] {
-    return CHANGELOGS.filter((file) => !changelogEntry(file, version));
+    return (releaseProfile() ? ["CHANGELOG.md"] : CHANGELOGS).filter(
+        (file) => !changelogEntry(file, version)
+    );
 }
 
 if (import.meta.main) {
@@ -157,8 +187,11 @@ if (import.meta.main) {
     }
     const wrong = check();
     const version = currentVersion();
-    if (tag !== undefined && tag !== `v${version}`)
-        wrong.push(`the tag ${tag} is not v${version}, the version in the repository`);
+    const expectedTag = `${releaseProfile() ? "web-sdk-v" : "v"}${version}`;
+    if (tag !== undefined && tag !== expectedTag)
+        wrong.push(
+            `the tag ${tag} is not ${expectedTag}, the release scope and version in the repository`
+        );
     // A release says what is in it: its tag is refused until each changelog has an entry for it.
     if (tag !== undefined)
         for (const file of changelogsWithout(version))
@@ -172,7 +205,7 @@ if (import.meta.main) {
         const stamps = readStamps();
         const others = stamps.map((s) => s.file).filter((f) => !f.endsWith("package.json"));
         console.log(
-            `${version}: ${stamps.length} places agree (${others.join(", ")} and the package.json files)`
+            `${version}: ${stamps.length} version stamps match the release scope (${others.join(", ")} and the package.json files)`
         );
     }
 }

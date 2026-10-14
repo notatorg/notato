@@ -107,7 +107,20 @@ export function createController(props: NotatoProps): NotatoController {
     const settings = createSettings();
     const authorName = () => props.author ?? (settings.get().name || undefined);
     // What the server allows, asked before each screenshot; this page's own `screenshots` prop can only narrow it.
-    const policy = createPolicy({ baseUrl: server, token: props.token });
+    const policy = createPolicy({
+        baseUrl: server,
+        project: props.project,
+        token: props.token,
+        onCapabilities: () => {
+            if (policy.captureOnlyNow() && !destroyed) {
+                sync?.stop();
+                connection = "connected";
+                agentNames = [];
+                describeConnection();
+                void sink?.flush();
+            }
+        },
+    });
     const screenshotsOn = async () =>
         props.screenshots !== false && settings.get().screenshots && (await policy.screenshots());
     const identity = identityPlugins(props, settings);
@@ -155,6 +168,7 @@ export function createController(props: NotatoProps): NotatoController {
               project: props.project,
               token: props.token,
               store,
+              canRead: () => !policy.captureOnlyNow(),
               onState: (state) => {
                   connection = state;
                   describeConnection();
@@ -178,6 +192,7 @@ export function createController(props: NotatoProps): NotatoController {
                   token: props.token,
                   sync,
                   author: authorName,
+                  captureOnly: () => policy.captureOnlyNow(),
               })
             : undefined;
     let connection: ConnectionState = "connecting";
@@ -288,6 +303,7 @@ export function createController(props: NotatoProps): NotatoController {
     const pins = createPins({
         layer,
         records: shown,
+        captureOnly: () => policy.captureOnlyNow(),
         currentRoute,
         onDelete: (id) => void deleteAnnotation(id),
         // Asking the agent to undo a change only means something when there is a server it can read the request from.
@@ -566,7 +582,7 @@ export function createController(props: NotatoProps): NotatoController {
         popover.open({
             ...summary,
             // Versions are put in the code by the agent, which is on the other end of a server.
-            variants: Boolean(liveServer),
+            variants: Boolean(liveServer) && !policy.captureOnlyNow(),
             hint: hintNow(),
             anchor: anchorOf(sel),
             onCancel: closeDraft,
@@ -891,7 +907,7 @@ export function createController(props: NotatoProps): NotatoController {
     }
     // The server's list is read only after: so it is compared with everything this page had, and corrects it.
     const unregister = server ? addServer(server) : () => {};
-    void restore().then(() => {
+    void Promise.all([restore(), policy.refresh()]).then(() => {
         if (!destroyed) sync?.start();
     });
 

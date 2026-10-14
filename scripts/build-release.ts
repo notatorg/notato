@@ -11,7 +11,15 @@ import {
 } from "node:fs";
 import { dirname, join, relative } from "node:path";
 import { parseArgs } from "node:util";
-import { entryPoints, type Library, libraries, NODE_LIBRARIES, REPO_URL, ROOT } from "./repo.ts";
+import {
+    entryPoints,
+    type Library,
+    libraries,
+    NODE_LIBRARIES,
+    REPO_URL,
+    ROOT,
+    WEB_SDK_NAMES,
+} from "./repo.ts";
 import { currentVersion, SEMVER } from "./version.ts";
 
 /**
@@ -29,6 +37,7 @@ import { currentVersion, SEMVER } from "./version.ts";
 
 const HELP = `bun run scripts/build-release.ts [options]
 
+  --web-sdks-only     Build only schema/core/browser/React/Angular; no server, binary or extension
   --version <x.y.z>   The version to build (default: the repository's, from package.json)
   --targets <list>    all (default), host, or a comma-separated list such as bun-linux-x64,bun-darwin-arm64
   --skip-web          Do not rebuild the board UI before compiling
@@ -236,10 +245,12 @@ function fixDeclarationSpecifiers(dir: string) {
  * package.json is published with the rest), built from its own package.json: its description, dependencies (the
  * workspace ones at this version), peers, and the files it lists besides src. Its README.md goes with it.
  */
-async function buildLibraries(version: string) {
+async function buildLibraries(version: string, webOnly = false) {
     if (!existsSync(join(ROOT, "packages/schema/schema.json")))
         await run(["bun", "run", "build:schema"]);
-    const libs = libraries();
+    const libs = libraries().filter(
+        (lib) => !webOnly || WEB_SDK_NAMES.some((name) => name === lib.name)
+    );
     for (const lib of libs) {
         log(`building ${lib.name}`);
         await buildLibrary(lib, libs, version);
@@ -406,6 +417,7 @@ const { values } = parseArgs({
     options: {
         version: { type: "string" },
         targets: { type: "string", default: "all" },
+        "web-sdks-only": { type: "boolean" },
         "skip-web": { type: "boolean" },
         "skip-compile": { type: "boolean" },
         "skip-libs": { type: "boolean" },
@@ -441,10 +453,26 @@ rmSync(join(OUT, "packages"), { recursive: true, force: true });
 rmSync(join(OUT, "tarballs"), { recursive: true, force: true });
 mkdirSync(join(OUT, "packages"), { recursive: true });
 
-if (!values["skip-compile"]) await compileBinaries(targets, version, Boolean(values["skip-web"]));
-writePlatformPackages(targets, version);
-writeLauncher(version);
-if (!values["skip-libs"]) await buildLibraries(version);
-if (!values["skip-extension"]) await buildExtension(version);
+if (values["web-sdks-only"]) {
+    if (values["skip-libs"]) throw new Error("--web-sdks-only cannot be combined with --skip-libs");
+    for (const file of ["managed-auth.ts", "billing.ts", "hosted-guard.ts"])
+        if (existsSync(join(ROOT, "packages/server/src", file)))
+            throw new Error(
+                "Web SDK releases must use the public developer branch, not the private hosted branch"
+            );
+    await buildLibraries(version, true);
+    writeJson(join(OUT, "web-sdk-release.json"), { version, packages: WEB_SDK_NAMES });
+} else {
+    if (!values["skip-compile"])
+        await compileBinaries(targets, version, Boolean(values["skip-web"]));
+    writePlatformPackages(targets, version);
+    writeLauncher(version);
+    if (!values["skip-libs"]) await buildLibraries(version);
+    if (!values["skip-extension"]) await buildExtension(version);
+}
+for (const name of readdirSync(join(OUT, "packages"))) {
+    const dir = join(OUT, "packages", name);
+    cpSync(join(ROOT, "LICENSE"), join(dir, "LICENSE"));
+}
 if (!values["no-pack"]) await pack();
 console.log(`\nDone. Version ${version}; packages in ${relative(ROOT, join(OUT, "packages"))}`);

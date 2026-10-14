@@ -6,6 +6,7 @@ export interface Policy {
     screenshots(): Promise<boolean>;
     /** The last answer, without asking. For labels, where waiting would be wrong. */
     screenshotsNow(): boolean;
+    captureOnlyNow(): boolean;
     /** Asks the server now. Never throws. */
     refresh(): Promise<void>;
 }
@@ -18,8 +19,14 @@ const WAIT_MS = 1_500;
  * cannot be asked, and it enforces its own settings on whatever it is sent anyway, so this only saves taking a
  * screenshot that would be thrown away.
  */
-export function createPolicy(options: { baseUrl: string | undefined; token?: string }): Policy {
+export function createPolicy(options: {
+    baseUrl: string | undefined;
+    project?: string;
+    token?: string;
+    onCapabilities?: () => void;
+}): Policy {
     let allowed = true;
+    let captureOnly = false;
     let askedAt = 0;
     let pending: Promise<void> | undefined;
 
@@ -27,12 +34,21 @@ export function createPolicy(options: { baseUrl: string | undefined; token?: str
         if (!options.baseUrl) return Promise.resolve();
         pending ??= (async () => {
             try {
-                const res = await net.fetch(`${options.baseUrl}/config`, {
+                // Hosted CORS rules belong to the project, including this capability request.
+                const project = options.project
+                    ? `?project=${encodeURIComponent(options.project)}`
+                    : "";
+                const res = await net.fetch(`${options.baseUrl}/config${project}`, {
                     headers: authHeaders(options.token),
                 });
                 if (res.ok) {
-                    const body = (await res.json()) as { screenshots?: unknown };
+                    const body = (await res.json()) as {
+                        screenshots?: unknown;
+                        captureOnly?: unknown;
+                    };
                     if (typeof body.screenshots === "boolean") allowed = body.screenshots;
+                    captureOnly = body.captureOnly === true;
+                    options.onCapabilities?.();
                 }
             } catch {
                 // keep the last answer
@@ -47,6 +63,7 @@ export function createPolicy(options: { baseUrl: string | undefined; token?: str
     return {
         refresh,
         screenshotsNow: () => allowed,
+        captureOnlyNow: () => captureOnly,
         async screenshots() {
             if (Date.now() - askedAt > FRESH_MS) {
                 // A slow server must not hold up the annotation: stop waiting and go with what is known.

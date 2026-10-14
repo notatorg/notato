@@ -4,8 +4,15 @@ import { describe, expect, it } from "bun:test";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { PAGES } from "../site/docs.ts";
-import { libraries, REPO_URL, ROOT } from "./repo.ts";
-import { changelogsWithout, currentVersion, readStamps, SDK_STAMPS } from "./version.ts";
+import { libraries, REPO_URL, ROOT, WEB_SDK_NAMES } from "./repo.ts";
+import {
+    changelogsWithout,
+    currentVersion,
+    expectedVersion,
+    readStamps,
+    releaseProfile,
+    SDK_STAMPS,
+} from "./version.ts";
 
 const read = (file: string) => readFileSync(join(ROOT, file), "utf8");
 const dirs = (parent: string) =>
@@ -71,9 +78,27 @@ describe("every SDK", () => {
 });
 
 describe("publishing", () => {
-    it("has one version everywhere", () => {
-        const want = currentVersion();
-        for (const stamp of readStamps()) expect(stamp.version, stamp.file).toBe(want);
+    it("keeps web SDK release scope separate from the private hosted implementation", () => {
+        expect([...WEB_SDK_NAMES]).toEqual([
+            "@notato/schema",
+            "@notato/core",
+            "@notato/browser",
+            "@notato/react",
+            "@notato/angular",
+        ]);
+        for (const file of ["managed-auth.ts", "billing.ts", "hosted-guard.ts"])
+            expect(existsSync(join(ROOT, "packages/server/src", file)), file).toBe(false);
+        expect(read("LICENSE")).toContain("MIT License");
+    });
+
+    it("keeps unreleased CLI and native versions separate from the web SDK patch", () => {
+        for (const stamp of readStamps())
+            expect(stamp.version, stamp.file).toBe(expectedVersion(stamp.file));
+        const unchanged = releaseProfile()?.unchangedVersion ?? currentVersion();
+        expect(expectedVersion("packages/cli/package.json")).toBe(unchanged);
+        expect(expectedVersion("sdks/android/README.md")).toBe(unchanged);
+        expect(expectedVersion("sdks/swift/README.md")).toBe(unchanged);
+        expect(expectedVersion("sdks/browser/src/version.ts")).toBe(currentVersion());
     });
 
     it("says what is in the version in every changelog", () => {

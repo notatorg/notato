@@ -1,6 +1,15 @@
 # Changelog
 
-Every Notato package is released together, at one version: the `notato` command and server, the npm packages, the Swift package, the Android libraries, the .NET MAUI package, the Flutter package, the Docker image and the website. A release's entry here is also the top of its [GitHub release](https://github.com/notatorg/notato/releases), and a tag is refused until this file has its version.
+Full releases align every Notato package at one version: the `notato` command and server, the npm packages, the Swift package, the Android libraries, the .NET MAUI package, the Flutter package, the Docker image and the website. Web SDK patches can release independently while the CLI and native SDKs remain at their published versions. A release's entry here is also the top of its [GitHub release](https://github.com/notatorg/notato/releases), and a tag is refused until this file has its version.
+
+## 0.2.1
+
+Web SDK connection fixes. The standalone CLI and server remain at their published 0.2.0 release.
+
+- Browser, React and Angular SDKs authenticate event streams with Authorization headers, keeping tokens out of URLs.
+- Capability requests include the project ID, so explicitly allowed browser origins can connect. Capture-only credentials submit feedback without attempting private feedback reads.
+- Script injection accepts data attributes for configuration, avoiding credentials in script URLs.
+- Local development and offline capture remain supported, including using the updated SDK with local server 0.2.0.
 
 ## 0.2.0
 

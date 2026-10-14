@@ -76,3 +76,12 @@ export function libraries(): Library[] {
     for (const lib of found) visit(lib);
     return ordered;
 }
+
+/** Web packages released without publishing a new standalone server or native SDK. Dependency order matters. */
+export const WEB_SDK_NAMES = [
+    "@notato/schema",
+    "@notato/core",
+    "@notato/browser",
+    "@notato/react",
+    "@notato/angular",
+] as const;
