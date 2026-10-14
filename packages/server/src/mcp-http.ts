@@ -5,6 +5,7 @@ import type { Authenticator, Principal } from "./auth.ts";
 import type { Backend } from "./backend.ts";
 import { createMcpServer } from "./mcp.ts";
 import { ScopedBackend } from "./scoped-backend.ts";
+import { tokenPurpose } from "./storage.ts";
 
 export interface McpHttpOptions {
     backend: Backend;
@@ -107,6 +108,13 @@ export function createMcpHttp(options: McpHttpOptions): {
                 return jsonRpcError(403, -32001, off);
             }
             const principal = await options.auth.identify(req, new URL(req.url));
+            // The token an app carries is for notes; MCP is for an agent's, so a page's token cannot drive it.
+            if (principal?.kind === "token" && tokenPurpose(principal) !== "agent")
+                return jsonRpcError(
+                    403,
+                    -32001,
+                    "an agent token is required for MCP; app tokens are for an SDK"
+                );
             if (!principal)
                 return jsonRpcError(
                     401,

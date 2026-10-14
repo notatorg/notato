@@ -25,6 +25,7 @@ export interface ServerSyncOptions {
     onApplied?(change: { updated: Annotation[]; removed: string[] }): void;
     /** First wait before opening the stream again after the server refused it; doubles up to 30 seconds. */
     retryMs?: number;
+    canRead?(): boolean;
 }
 
 /** What the server says about the agents with its MCP open. */
@@ -208,6 +209,7 @@ export function createServerSync(options: ServerSyncOptions): ServerSync {
     let running: Promise<void> | undefined;
     let again: Promise<void> | undefined;
     const refresh = (): Promise<void> => {
+        if (options.canRead?.() === false) return Promise.resolve();
         if (!running) {
             running = load().finally(() => {
                 running = undefined;
@@ -266,13 +268,18 @@ export function createServerSync(options: ServerSyncOptions): ServerSync {
     };
 
     const open = () => {
+        if (options.canRead?.() === false) {
+            options.onState("connected");
+            options.onAgent?.({ connected: false, watching: false, names: [] });
+            options.onConnected?.();
+            return;
+        }
         options.onState("connecting");
-        // EventSource cannot set headers, so the token travels in the query string for this one GET.
         const query = new URLSearchParams();
         if (options.agent) query.set("agent", "1");
-        if (options.token) query.set("token", options.token);
         const stream = net.events(
-            `${base}/projects/${project}/events${query.size ? `?${query}` : ""}`
+            `${base}/projects/${project}/events${query.size ? `?${query}` : ""}`,
+            { headers: authHeaders(options.token) }
         );
         source = stream;
         stream.addEventListener("hello", (ev) => {

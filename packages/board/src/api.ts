@@ -46,7 +46,15 @@ export interface TokenInfo {
     createdAt: string;
     lastUsedAt?: string;
     revokedAt?: string;
+    /** App tokens go in an SDK; agent tokens are for MCP. Tokens made before 0.3 have neither field. */
+    purpose?: "app" | "agent";
+    permission?: "capture" | "full";
+    expiresAt?: string;
 }
+
+/** What a token is for, with the older ones that never said. */
+export const tokenKind = (t: Pick<TokenInfo, "purpose" | "permission">): "app" | "agent" =>
+    t.purpose ?? (t.permission === "capture" ? "app" : "agent");
 
 export interface ServerStatus {
     version: string;
@@ -225,10 +233,10 @@ export const exportHref = (project: string, filters: Filters) =>
 
 export const listTokens = async () =>
     (await request<{ items: TokenInfo[] }>("/admin/tokens")).items;
-export const createToken = (projectId: string, name: string) =>
+export const createToken = (projectId: string, name: string, purpose?: "app" | "agent") =>
     request<{ token: string; record: TokenInfo }>(
         "/admin/tokens",
-        json("POST", { projectId, name })
+        json("POST", { projectId, name, ...(purpose ? { purpose } : {}) })
     );
 export const revokeToken = (id: string) =>
     request<void>(`/admin/tokens/${encodeURIComponent(id)}`, { method: "DELETE" });

@@ -1,6 +1,6 @@
 import { ulid } from "ulid";
 import { sha256Hex } from "./blob-store.ts";
-import type { AuthStore, TokenRecord } from "./storage.ts";
+import { type AuthStore, assertTokenPurpose, type TokenRecord, tokenPurpose } from "./storage.ts";
 
 /**
  * Who a request is from. An admin session can do everything; a token can read and write the one project
@@ -8,7 +8,14 @@ import type { AuthStore, TokenRecord } from "./storage.ts";
  */
 export type Principal =
     | { kind: "admin"; username: string }
-    | { kind: "token"; tokenId: string; projectId: string | "*" };
+    | {
+          kind: "token";
+          tokenId: string;
+          projectId: string | "*";
+          /** `capture` can only submit new notes. */
+          permission: "capture" | "full";
+          purpose: "app" | "agent";
+      };
 
 /** Who a request is on a server without logins (`notato dev` on loopback): the person at this machine. */
 export const LOCAL_PRINCIPAL: Principal = { kind: "admin", username: "local" };
@@ -28,6 +35,13 @@ export class UnknownProjectError extends Error {
 }
 export const SESSION_COOKIE = "notato_session";
 const DAY = 24 * 60 * 60 * 1000;
+
+export interface IssueTokenOptions {
+    purpose?: "app" | "agent";
+    permission?: "capture" | "full";
+    expiresInDays?: number;
+    createdBy?: string;
+}
 
 export interface IssuedToken {
     record: TokenRecord;
@@ -149,6 +163,7 @@ export class Authenticator {
         if (!token.startsWith(TOKEN_PREFIX) && !token.startsWith(OLD_TOKEN_PREFIX)) return null;
         const record = await this.store.findToken(await sha256Hex(new TextEncoder().encode(token)));
         if (!record || record.revokedAt) return null;
+        if (record.expiresAt && record.expiresAt <= this.now().toISOString()) return null;
         // Recording use is for the admin's benefit; a failure to record must never fail the request. Once a minute is
         // plenty: an SDK paging through a project would otherwise write to the database on every page.
         const now = this.now();
@@ -156,7 +171,13 @@ export class Authenticator {
             this.touched.set(record.id, now.getTime());
             void this.store.touchToken(record.id, now.toISOString()).catch(() => {});
         }
-        return { kind: "token", tokenId: record.id, projectId: record.projectId };
+        return {
+            kind: "token",
+            tokenId: record.id,
+            projectId: record.projectId,
+            permission: record.permission ?? "full",
+            purpose: tokenPurpose(record),
+        };
     }
 
     private async identifySession(cookie: string): Promise<Principal | null> {
@@ -269,10 +290,26 @@ export class Authenticator {
         return { created: true, ...(password ? {} : { generatedPassword: chosen }) };
     }
 
-    /** Throws `UnknownProjectError` unless `projectId` is `*` or a project this server has. */
-    async issueToken(projectId: string, name: string): Promise<IssuedToken> {
+    /**
+     * Throws `UnknownProjectError` unless `projectId` is `*` or a project this server has. Without options a token
+     * is an app token for one project, and an agent token for `*`.
+     */
+    async issueToken(
+        projectId: string,
+        name: string,
+        options: IssueTokenOptions = {}
+    ): Promise<IssuedToken> {
         if (projectId !== "*" && !(await this.store.getProject(projectId)))
             throw new UnknownProjectError(projectId);
+        const permission = options.permission ?? "full";
+        const purpose = tokenPurpose({
+            purpose: options.purpose ?? (projectId === "*" ? "agent" : "app"),
+            permission,
+        });
+        assertTokenPurpose({ purpose, permission, projectId });
+        const days = options.expiresInDays;
+        if (days !== undefined && (!Number.isInteger(days) || days < 1 || days > 3650))
+            throw new Error("a token's lifetime is 1 to 3650 days");
         const token = generateSecret(TOKEN_PREFIX);
         const record: TokenRecord = {
             id: ulid(),
@@ -280,6 +317,12 @@ export class Authenticator {
             name,
             tokenHash: await sha256Hex(new TextEncoder().encode(token)),
             createdAt: this.now().toISOString(),
+            permission,
+            purpose,
+            ...(options.createdBy ? { createdBy: options.createdBy } : {}),
+            ...(days
+                ? { expiresAt: new Date(this.now().getTime() + days * DAY).toISOString() }
+                : {}),
         };
         await this.store.createToken(record);
         return { record, token };

@@ -31,6 +31,7 @@ interface ServerActionsOptions {
     sync: ServerSync;
     /** The person's name, recorded on what they change. */
     author(): string | undefined;
+    captureOnly?(): boolean;
 }
 
 /** What `GET /status` answers, as far as the toolbar reads it. */
@@ -45,9 +46,14 @@ interface StatusBody {
 export function createServerActions(options: ServerActionsOptions): ServerActions {
     const { server, token, sync } = options;
     const annotation = (id: string) => `${server}/annotations/${encodeURIComponent(id)}`;
+    const writable = () => {
+        if (options.captureOnly?.())
+            throw new Error("Review and edit submitted feedback in the Notato dashboard.");
+    };
 
     /** A request to the server as the person. Rejects with a message fit to show. */
     async function asPerson(url: string, method: string, body: Record<string, unknown>) {
+        writable();
         const since = sync.mark();
         let res: Response;
         try {
@@ -81,6 +87,7 @@ export function createServerActions(options: ServerActionsOptions): ServerAction
         setPeopleOnly: (id, on) => asPerson(annotation(id), "PATCH", { peopleOnly: on }),
 
         async remove(id) {
+            writable();
             const res = await net.fetch(annotation(id), {
                 method: "DELETE",
                 headers: authHeaders(token),
@@ -89,6 +96,7 @@ export function createServerActions(options: ServerActionsOptions): ServerAction
         },
 
         async reportRelay(requestId, outcome) {
+            writable();
             await net.fetch(`${server}/relay/${encodeURIComponent(requestId)}/result`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json", ...authHeaders(token) },
@@ -97,6 +105,8 @@ export function createServerActions(options: ServerActionsOptions): ServerAction
         },
 
         async status() {
+            if (options.captureOnly?.())
+                return { mode: "capture", agent: { connected: false, watching: false } };
             try {
                 const res = await net.fetch(`${server}/status`, { headers: authHeaders(token) });
                 if (!res.ok) return null;

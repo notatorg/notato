@@ -15,7 +15,7 @@ import type {
     UserRecord,
 } from "./storage.ts";
 
-const SCHEMA_VERSION = 5;
+const SCHEMA_VERSION = 6;
 
 /** The statuses a project's `open` count includes: work still waiting for someone. */
 const WAITING = new Set<Status>(["open", "variant_chosen", "revert_requested"]);
@@ -167,6 +167,7 @@ export class SqliteStore implements Store, AuthStore {
         SELECT project_id, project_id, MIN(created_at) FROM tokens WHERE project_id != '*' GROUP BY project_id`);
         }
         if (current < 5) this.addDerivedColumns();
+        if (current < 6) this.addTokenPurposes();
         // A project's notes in order, a page at a time: the board, every SDK and every agent page through them.
         this.db.run(
             "CREATE INDEX IF NOT EXISTS idx_annotations_project_seq ON annotations (project_id, seq)"
@@ -191,6 +192,17 @@ export class SqliteStore implements Store, AuthStore {
         this.db.run("INSERT OR REPLACE INTO meta (key, value) VALUES ('schema_version', ?)", [
             String(SCHEMA_VERSION),
         ]);
+    }
+
+    /** Schema 6: what a token is for, and when it stops working. Earlier tokens keep working as they were. */
+    private addTokenPurposes() {
+        const have = new Set(
+            (this.db.query("PRAGMA table_info(tokens)").all() as Array<{ name: string }>).map(
+                (c) => c.name
+            )
+        );
+        for (const name of ["permission", "purpose", "expires_at", "created_by"])
+            if (!have.has(name)) this.db.run(`ALTER TABLE tokens ADD COLUMN ${name} TEXT`);
     }
 
     /** Schema 5: the derived columns, filled in from every note already stored. */
@@ -544,15 +556,29 @@ export class SqliteStore implements Store, AuthStore {
             createdAt: row.created_at as string,
             ...(row.last_used_at ? { lastUsedAt: row.last_used_at } : {}),
             ...(row.revoked_at ? { revokedAt: row.revoked_at } : {}),
+            ...(row.permission ? { permission: row.permission as "capture" | "full" } : {}),
+            ...(row.purpose ? { purpose: row.purpose as "app" | "agent" } : {}),
+            ...(row.expires_at ? { expiresAt: row.expires_at } : {}),
+            ...(row.created_by ? { createdBy: row.created_by } : {}),
         };
     }
 
     async createToken(token: TokenRecord): Promise<void> {
         this.db
             .query(
-                "INSERT INTO tokens (id, project_id, name, token_hash, created_at) VALUES (?, ?, ?, ?, ?)"
+                "INSERT INTO tokens (id, project_id, name, token_hash, created_at, permission, purpose, expires_at, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
             )
-            .run(token.id, token.projectId, token.name, token.tokenHash, token.createdAt);
+            .run(
+                token.id,
+                token.projectId,
+                token.name,
+                token.tokenHash,
+                token.createdAt,
+                token.permission ?? null,
+                token.purpose ?? null,
+                token.expiresAt ?? null,
+                token.createdBy ?? null
+            );
     }
 
     async findToken(tokenHash: string): Promise<TokenRecord | null> {

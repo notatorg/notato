@@ -110,8 +110,8 @@ describe("MCP over streamable HTTP", () => {
 
     it("confines a project token's MCP session to that project", async () => {
         const s = await start();
-        const alpha = await issue(s, "alpha");
-        const beta = await issue(s, "beta");
+        const alpha = await issue(s, "alpha", "test", { purpose: "agent" });
+        const beta = await issue(s, "beta", "test", { purpose: "agent" });
         await post(s, alpha, "alpha", { comment: "alpha only" });
         const other = (await post(s, beta, "beta", { comment: "beta only" })).a;
 

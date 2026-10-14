@@ -25,6 +25,7 @@ export const statusRoutes: Routes = async ({ req, url, path, method, principal }
         // agent is connected, for the page to say so.
         return json({
             screenshots: backend.config().screenshots,
+            captureOnly: principal.kind === "token" && principal.permission === "capture",
             agent: backend.agents.stateFor(url.searchParams.get("project") ?? undefined),
             mentions: backend.mentions.list(),
         });

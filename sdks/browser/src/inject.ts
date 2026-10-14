@@ -48,7 +48,7 @@ function start() {
         const fromConfig = config[key];
         if (typeof fromConfig === "string" && fromConfig) return fromConfig;
         if (typeof fromConfig === "boolean") return fromConfig ? "1" : "";
-        return query?.get(key) || undefined;
+        return script?.getAttribute(`data-notato-${key}`) || query?.get(key) || undefined;
     };
 
     const server = (pick("server") ?? from?.origin)?.replace(/\/$/, "");

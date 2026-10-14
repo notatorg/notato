@@ -1,5 +1,6 @@
 import { z } from "zod";
-import type { Principal } from "../auth.ts";
+import { type Principal, UnknownProjectError } from "../auth.ts";
+import { RequestError } from "../backend.ts";
 import { PROJECT_ID, type TokenRecord } from "../storage.ts";
 import {
     assertAdmin,
@@ -20,6 +21,9 @@ const LoginBody = z.object({
 const TokenBody = z.object({
     projectId: z.union([z.literal("*"), z.string().regex(PROJECT_ID)]),
     name: z.string().trim().min(1).max(100),
+    purpose: z.enum(["app", "agent"]).optional(),
+    permission: z.enum(["capture", "full"]).optional(),
+    expiresInDays: z.number().int().min(1).max(3650).optional(),
 });
 
 /** A token record as it is shown: everything but the hash of the token. */
@@ -72,9 +76,17 @@ export const accountRoutes: Routes<Principal | null> = async (
         if (method === "GET") return json({ items: (await auth.listTokens()).map(shownToken) });
         if (method === "POST") {
             assertBoard(req, "tokens");
-            const { projectId, name } = await readJson(req, TokenBody);
-            const { token, record } = await auth.issueToken(projectId, name);
-            return json({ token, record: shownToken(record) }, 201);
+            const { projectId, name, ...options } = await readJson(req, TokenBody);
+            const issued = await auth
+                .issueToken(projectId, name, {
+                    ...options,
+                    createdBy: principal?.kind === "admin" ? principal.username : undefined,
+                })
+                .catch((error) => {
+                    if (error instanceof UnknownProjectError) throw error;
+                    throw new RequestError(error instanceof Error ? error.message : "bad token");
+                });
+            return json({ token: issued.token, record: shownToken(issued.record) }, 201);
         }
     }
     const tokenOne = match(/^\/admin\/tokens\/([^/]+)$/);

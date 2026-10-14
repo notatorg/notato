@@ -1,3 +1,5 @@
+import { authenticatedEvents } from "./event-stream.ts";
+
 /** A server-sent events stream, as much of `EventSource` as the SDK uses. */
 export interface EventStream {
     addEventListener(type: string, listener: (event: MessageEvent<string>) => void): void;
@@ -17,13 +19,16 @@ export const STREAM_CLOSED = 2;
  */
 export interface Transport {
     fetch(input: string, init?: RequestInit): Promise<Response>;
-    events(url: string): EventStream;
+    events(url: string, init?: { headers?: HeadersInit }): EventStream;
 }
 
 const browser = (): Transport => ({
     // Looked up at the time of each call, so a page that replaces `fetch` later is still obeyed.
     fetch: (input, init) => globalThis.fetch(input, init),
-    events: (url) => new EventSource(url) as unknown as EventStream,
+    events: (url, init) =>
+        new Headers(init?.headers).has("Authorization")
+            ? authenticatedEvents(url, init?.headers ?? {})
+            : (new EventSource(url) as unknown as EventStream),
 });
 
 let current: Transport = browser();
@@ -36,7 +41,7 @@ export function setTransport(transport?: Partial<Transport>): void {
 /** What the SDK's own requests go through. */
 export const net: Transport = {
     fetch: (input, init) => current.fetch(input, init),
-    events: (url) => current.events(url),
+    events: (url, init) => current.events(url, init),
 };
 
 /** The Notato servers the SDK on this page talks to, by base URL. */

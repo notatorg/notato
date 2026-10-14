@@ -31,6 +31,7 @@ export interface CardState {
 
 /** What a card can ask for on a note. Each is left out where it cannot be done now. */
 export interface CardActions {
+    captureOnly?(): boolean;
     /** Called when the person confirms deleting an annotation from its card. */
     onDelete?(id: string): void;
     /**
@@ -175,6 +176,7 @@ const FIELD_STATE = {
  * it: their text, their caret and their focus are kept.
  */
 export function drawCard(draw: CardDraw, actions: CardActions): void {
+    if (actions.captureOnly?.()) actions = { refusal: actions.refusal };
     const { card, state } = draw;
     const fields = [
         ...card.querySelectorAll<HTMLInputElement | HTMLTextAreaElement>("[data-field]"),

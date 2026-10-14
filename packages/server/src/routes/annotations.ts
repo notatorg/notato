@@ -1,10 +1,10 @@
 import { DETAILS, parseDetail, renderAnnotation, renderAnnotations } from "@notato/core";
-import { Author, SafeId, Severity, Status, Variants } from "@notato/schema";
+import { Annotation, Author, SafeId, Severity, Status, Variants } from "@notato/schema";
 import { z } from "zod";
 import { canAccessProject, type Principal } from "../auth.ts";
 import { type LocalBackend, RequestError, TEXT_MAX } from "../backend.ts";
 import { filterFromQuery } from "../query.ts";
-import type { AnnotationFilter, StoredAnnotation } from "../storage.ts";
+import { type AnnotationFilter, type StoredAnnotation, tokenPurpose } from "../storage.ts";
 import {
     type AppContext,
     assertAccess,
@@ -106,7 +106,12 @@ function detailFrom(query: URLSearchParams) {
  * `POST /projects/:id/annotations`: a note as an SDK sends it, multipart with the annotation as JSON in `annotation`
  * and each screenshot's bytes as a file named `asset:<id>`.
  */
-async function ingest(req: Request, projectId: string, app: AppContext): Promise<Response> {
+async function ingest(
+    req: Request,
+    projectId: string,
+    app: AppContext,
+    principal: Principal
+): Promise<Response> {
     const max = app.limits.upload;
     if (!(req.headers.get("content-type") ?? "").startsWith("multipart/form-data")) {
         throw new RequestError(
@@ -137,7 +142,37 @@ async function ingest(req: Request, projectId: string, app: AppContext): Promise
             files.set(key.slice("asset:".length), new Uint8Array(await entry.arrayBuffer()));
         }
     }
+    const captureOnly = principal.kind === "token" && principal.permission === "capture";
+    if (principal.kind === "token" && tokenPurpose(principal) === "app") {
+        // A page cannot say it is an agent, and a capture-only page cannot say much else about itself.
+        const checked = Annotation.safeParse(parsed);
+        if (!checked.success) throw new RequestError("invalid annotation");
+        parsed = {
+            ...checked.data,
+            author: { ...checked.data.author, kind: "human" },
+            ...(captureOnly
+                ? {
+                      context: {
+                          ...checked.data.context,
+                          notatoCaptureSource: "unverified app feedback",
+                      },
+                  }
+                : {}),
+        };
+        if (captureOnly) {
+            // Retrying an existing id must never disclose another person's stored feedback.
+            if (await app.backend.get(checked.data.id))
+                throw new RequestError("annotation id already exists", 409);
+            for (const ref of [checked.data.screenshots?.full, checked.data.screenshots?.crop])
+                if (ref && !files.has(ref.id))
+                    throw new RequestError("capture tokens must supply screenshot bytes");
+        }
+    }
     const { stored, created } = await app.backend.ingest(parsed, files, { projectId });
+    if (captureOnly)
+        return created
+            ? json({ seq: 0, annotation: stored.annotation }, 201)
+            : json({ error: "annotation id already exists" }, 409);
     return json(stored, created ? 201 : 200);
 }
 
@@ -149,6 +184,11 @@ export const annotationRoutes: Routes = async (route, app) => {
     const { req, url, path, method, principal, match } = route;
     const { backend } = app;
     const query = url.searchParams;
+    /** An app's token vouches for a person, never for an agent: whatever a page says, its replies are human. */
+    const author = (supplied?: Author): Author | undefined =>
+        principal.kind === "token" && tokenPurpose(principal) === "app"
+            ? ({ ...supplied, kind: "human" } as Author)
+            : supplied;
 
     /** The note with this id, once the credential is known to reach its project; null when there is none. */
     const annotation = async (id: string | undefined) => {
@@ -161,7 +201,7 @@ export const annotationRoutes: Routes = async (route, app) => {
     if (inProject) {
         const projectId = projectIdFrom(inProject[0]);
         assertAccess(principal, projectId);
-        if (method === "POST") return ingest(req, projectId, app);
+        if (method === "POST") return ingest(req, projectId, app, principal);
         if (method === "GET")
             return json(await page(backend, filterFromQuery(query, projectId), query));
     }
@@ -230,7 +270,7 @@ export const annotationRoutes: Routes = async (route, app) => {
                     note: change.status ? change.note : undefined,
                     peopleOnly: change.peopleOnly,
                 },
-                change.author
+                author(change.author)
             );
             return updated ? json(updated) : notFound();
         }
@@ -244,7 +284,7 @@ export const annotationRoutes: Routes = async (route, app) => {
         const existing = await annotation(id);
         const body = await readJson(req, ReplyBody);
         const updated = existing
-            ? await backend.reply(id, body.body, body.author, { aside: body.aside })
+            ? await backend.reply(id, body.body, author(body.author), { aside: body.aside })
             : null;
         return updated ? json(updated, 201) : notFound();
     }
@@ -254,8 +294,8 @@ export const annotationRoutes: Routes = async (route, app) => {
     if (variants && method === "PUT") {
         const id = variants[0] ?? "";
         const existing = await annotation(id);
-        const { author, ...offer } = await readJson(req, OfferBody);
-        const updated = existing ? await backend.offerVariants(id, offer, author) : null;
+        const { author: supplied, ...offer } = await readJson(req, OfferBody);
+        const updated = existing ? await backend.offerVariants(id, offer, author(supplied)) : null;
         return updated ? json(updated) : notFound();
     }
     const choose = match(/^\/annotations\/([^/]+)\/variants\/choose$/);
@@ -264,7 +304,7 @@ export const annotationRoutes: Routes = async (route, app) => {
         const existing = await annotation(id);
         const body = await readJson(req, ChooseBody);
         const updated = existing
-            ? await backend.chooseVariant(id, body.name, body.note, body.author)
+            ? await backend.chooseVariant(id, body.name, body.note, author(body.author))
             : null;
         return updated ? json(updated) : notFound();
     }

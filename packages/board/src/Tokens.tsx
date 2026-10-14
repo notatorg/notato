@@ -5,6 +5,7 @@ import {
     type ProjectSummary,
     revokeToken,
     type TokenInfo,
+    tokenKind,
 } from "./api.ts";
 import { projectName } from "./model.ts";
 import { go, projectHref } from "./route.ts";
@@ -19,9 +20,10 @@ export function Tokens({ projects }: { projects: ProjectSummary[] | null }) {
                 <div>
                     <h1>Tokens</h1>
                     <p>
-                        A token for one project lets an app's SDK send and read that project's
-                        notes. A token for <code>*</code> lets your coding agent read and answer all
-                        of them over MCP.
+                        An app token goes in an SDK and lets that app send and read one project's
+                        notes. An agent token lets your coding agent read and answer notes over MCP,
+                        for one project or, with <code>*</code>, all of them. An app token cannot
+                        use MCP.
                     </p>
                 </div>
             </header>
@@ -42,6 +44,7 @@ export function TokenManager({
     const [tokens, setTokens] = useState<TokenInfo[] | null>(null);
     const [project, setProject] = useState(projectId ?? "");
     const [name, setName] = useState("");
+    const [purpose, setPurpose] = useState<"app" | "agent">("app");
     const [fresh, setFresh] = useState<{ token: string; projectId: string } | null>(null);
     const [error, setError] = useState<string | null>(null);
     const [busy, setBusy] = useState(false);
@@ -56,7 +59,11 @@ export function TokenManager({
         setError(null);
         setBusy(true);
         try {
-            const made = await createToken(project, name.trim());
+            const made = await createToken(
+                project,
+                name.trim(),
+                project === "*" ? "agent" : purpose
+            );
             setFresh({ token: made.token, projectId: made.record.projectId });
             setName("");
             load();
@@ -128,6 +135,19 @@ export function TokenManager({
                         </select>
                     </label>
                 )}
+                {project === "*" ? null : (
+                    <label htmlFor={`${id}-purpose`}>
+                        For
+                        <select
+                            id={`${id}-purpose`}
+                            value={purpose}
+                            onChange={(e) => setPurpose(e.target.value as "app" | "agent")}
+                        >
+                            <option value="app">An app's SDK</option>
+                            <option value="agent">A coding agent (MCP)</option>
+                        </select>
+                    </label>
+                )}
                 <label htmlFor={`${id}-name`}>
                     Name
                     <input
@@ -172,6 +192,7 @@ export function TokenManager({
                             <tr>
                                 <th>Name</th>
                                 {projectId ? null : <th>Project</th>}
+                                <th>For</th>
                                 <th>Created</th>
                                 <th>Last used</th>
                                 <th />
@@ -190,6 +211,7 @@ export function TokenManager({
                                             ) : null}
                                         </td>
                                     )}
+                                    <td>{tokenKind(t) === "app" ? "App" : "Agent"}</td>
                                     <td>{new Date(t.createdAt).toLocaleDateString()}</td>
                                     <td>
                                         {t.lastUsedAt

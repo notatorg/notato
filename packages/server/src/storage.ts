@@ -147,6 +147,31 @@ export interface TokenRecord {
     createdAt: string;
     lastUsedAt?: string;
     revokedAt?: string;
+    /** Absent on tokens made before 0.3: full feedback access. Capture permission only submits new feedback. */
+    permission?: "capture" | "full";
+    /** App/tester credentials never authenticate MCP. Agent credentials always have full feedback access. */
+    purpose?: "app" | "agent";
+    expiresAt?: string;
+    createdBy?: string;
+}
+
+/**
+ * What a token is for. An app token goes in an SDK and must name one project; an agent token is for MCP and the
+ * API. Tokens made before 0.3 have neither field: capture-only ones are for apps, the rest keep working as agents.
+ */
+export function tokenPurpose(token: Pick<TokenRecord, "purpose" | "permission">): "app" | "agent" {
+    return token.purpose ?? (token.permission === "capture" ? "app" : "agent");
+}
+
+/** Throws a message fit for the person who asked for the token if its purpose, permission and project disagree. */
+export function assertTokenPurpose(
+    token: Pick<TokenRecord, "purpose" | "permission" | "projectId">
+): void {
+    const purpose = tokenPurpose(token);
+    if (purpose === "app" && token.projectId === "*")
+        throw new Error("app tokens must name one project");
+    if (purpose === "agent" && token.permission === "capture")
+        throw new Error("agent tokens need read and write access to feedback");
 }
 
 /** Accounts, sessions and API tokens for serve mode. Kept apart from `Store` so each can move independently. */
