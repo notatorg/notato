@@ -1,8 +1,9 @@
-import { type FormEvent, useState } from "react";
+import { type FormEvent, type ReactNode, useState } from "react";
 import { login } from "./api.ts";
 import { Logo } from "./ui.tsx";
 
-export function Login({ onDone }: { onDone(): void }) {
+/** The sign-in form. `alternate` is shown beneath it: another way in, from a deployment that has one. */
+export function Login({ onDone, alternate }: { onDone(): void; alternate?: ReactNode }) {
     const [username, setUsername] = useState("admin");
     const [password, setPassword] = useState("");
     const [error, setError] = useState<string | null>(null);
@@ -53,6 +54,7 @@ export function Login({ onDone }: { onDone(): void }) {
             <button type="submit" className="primary" disabled={busy || !password}>
                 Sign in
             </button>
+            {alternate}
         </form>
     );
 }

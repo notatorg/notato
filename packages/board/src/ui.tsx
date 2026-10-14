@@ -14,6 +14,7 @@ const paths = {
     trash: "M3 6h18M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2",
     more: "M5 12h.01M12 12h.01M19 12h.01",
     back: "M15 18l-6-6 6-6",
+    chevrons: "M8 9l4-4 4 4M8 15l4 4 4-4",
     menu: "M4 6h16M4 12h16M4 18h16",
     chat: "M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12Z",
     external: "M14 4h6v6m0-6-9 9M19 14v6H4V5h6",
