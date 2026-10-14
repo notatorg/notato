@@ -258,6 +258,51 @@ export function createApp(options: AppOptions): AppHandler {
                 });
                 if (denied) return withCors(denied);
             }
+            if (principal?.kind === "token" && principal.permission === "capture") {
+                // A capture-only token is for a page that sends notes and nothing else: it reads nothing back, so a
+                // token in a page's source cannot be used to read the feedback of everyone who tested it.
+                if (path === "/config" && method === "GET") {
+                    const project = url.searchParams.get("project");
+                    if (project && !canAccessProject(principal, project))
+                        return withCors(json({ error: "project access denied" }, 403));
+                    return withCors(
+                        json({
+                            screenshots: backend.config().screenshots,
+                            mentions: [],
+                            agent: { connected: false, watching: false, sessions: 0 },
+                            captureOnly: true,
+                        })
+                    );
+                }
+                if (
+                    !(
+                        method === "POST" &&
+                        /^\/projects\/[^/]+\/(annotations|connection)$/.test(path)
+                    ) &&
+                    path !== "/health"
+                )
+                    return withCors(
+                        json(
+                            {
+                                error: "capture tokens can only send new notes; sign in to the board to read them",
+                            },
+                            403
+                        )
+                    );
+                if (req.headers.has(AGENT_HEADER))
+                    return withCors(json({ error: "capture tokens cannot act as agents" }, 403));
+            }
+            if (
+                principal?.kind === "token" &&
+                principal.purpose === "app" &&
+                (req.headers.has(AGENT_HEADER) ||
+                    path === "/relay/annotate" ||
+                    path === "/annotations/handed" ||
+                    (/\/events$/.test(path) && url.searchParams.get("agent") === "1"))
+            )
+                return withCors(
+                    json({ error: "an agent token is required for agent operations" }, 403)
+                );
             // With MCP off, agents are refused here too: an attached notato dev (an agent's MCP on another process, which
             // names itself on every request) and, on a shared server, the agent tokens issued for every project. Its
             // health check still answers, so an attached process stays attached instead of trying to take over.

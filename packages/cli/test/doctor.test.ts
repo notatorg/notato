@@ -214,6 +214,33 @@ describe("doctor against a shared server", () => {
         expect(by(checks, "End to end")).toBeUndefined();
     });
 
+    it("checks a token that can only send notes without storing or reading anything", async () => {
+        const { rt, url } = await serve();
+        await rt.backend.createProject("checkout-web");
+        const page = (await rt.auth.issueToken("checkout-web", "page", { permission: "capture" }))
+            .token;
+        const checks = await runDoctor({
+            server: url,
+            token: page,
+            project: "checkout-web",
+            ...noAgents,
+        });
+        expect(by(checks, "Capture connection")).toMatchObject({ status: "ok" });
+        expect(by(checks, "End to end")).toBeUndefined();
+        expect(await rt.backend.list()).toEqual([]);
+        // It has to be told the project, and a wrong one is refused.
+        expect(
+            by(await runDoctor({ server: url, token: page, ...noAgents }), "Capture connection")
+                ?.status
+        ).toBe("fail");
+        expect(
+            by(
+                await runDoctor({ server: url, token: page, project: "elsewhere", ...noAgents }),
+                "Capture connection"
+            )?.status
+        ).toBe("fail");
+    });
+
     it("passes with a * token, and with a project token for the right project", async () => {
         const { rt, url } = await serve();
         const all = (await rt.auth.issueToken("*", "agent")).token;

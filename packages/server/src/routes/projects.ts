@@ -1,7 +1,7 @@
 import { z } from "zod";
-import { canAccessProject } from "../auth.ts";
+import { canAccessProject, UnknownProjectError } from "../auth.ts";
 import type { LocalBackend } from "../backend.ts";
-import { PROJECT_ID } from "../storage.ts";
+import { PROJECT_ID, tokenPurpose } from "../storage.ts";
 import { shownToken } from "./account.ts";
 import {
     assertAccess,
@@ -51,6 +51,21 @@ export const projectRoutes: Routes = async ({ req, path, method, principal, matc
         if (!auth) return json({ project }, 201);
         const { token, record } = await auth.issueToken(created.id, `${created.name} app`);
         return json({ project, token: { token, record: shownToken(record) } }, 201);
+    }
+
+    // "Does this credential reach this project?", answered without storing or reading a note: what `notato doctor`
+    // asks of a token that can only send.
+    const connection = match(/^\/projects\/([^/]+)\/connection$/);
+    if (connection && method === "POST") {
+        const id = projectIdFrom(connection[0]);
+        assertAccess(principal, id);
+        if (!(await backend.store.getProject(id))) throw new UnknownProjectError(id);
+        return json({
+            ok: true,
+            projectId: id,
+            captureOnly: principal.kind === "token" && principal.permission === "capture",
+            ...(principal.kind === "token" ? { tokenPurpose: tokenPurpose(principal) } : {}),
+        });
     }
 
     const one = match(/^\/projects\/([^/]+)$/);

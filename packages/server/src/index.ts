@@ -1,6 +1,7 @@
 export * from "./agents.ts";
 export * from "./auth.ts";
 export * from "./backend.ts";
+export * from "./backup.ts";
 export * from "./blob-store.ts";
 export * from "./config.ts";
 export * from "./cors.ts";

@@ -114,6 +114,61 @@ describe("token purposes", () => {
         ).toMatchObject({ captureOnly: true });
     });
 
+    it("lets a capture-only token send notes and check its connection, and nothing else", async () => {
+        const s = await start();
+        await s.rt.backend.createProject("p");
+        const token = (
+            (await (
+                await rawToken(s, { projectId: "p", name: "page", permission: "capture" })
+            ).json()) as { token: string }
+        ).token;
+        const call = (path: string, init: RequestInit = {}) =>
+            s.call(path, { ...init, headers: { ...bearer(token), ...(init.headers ?? {}) } });
+        const note = annotationFixture({ projectId: "p" });
+        await call("/projects/p/annotations", {
+            method: "POST",
+            body: multipart(note, filesFor()),
+        });
+        expect(
+            await (await call("/projects/p/connection", { method: "POST" })).json()
+        ).toMatchObject({
+            ok: true,
+            projectId: "p",
+            captureOnly: true,
+            tokenPurpose: "app",
+        });
+        for (const path of [
+            "/projects/p/annotations",
+            `/annotations/${note.id}`,
+            "/projects/p/events",
+            "/projects",
+            "/status",
+        ])
+            expect((await call(path)).status).toBe(403);
+        expect(
+            (await call("/projects/p/events", { headers: { "x-notato-agent": "x" } })).status
+        ).toBe(403);
+    });
+
+    it("keeps an app token away from agent operations", async () => {
+        const s = await start();
+        const app = await issue(s, "p");
+        const agent = await issue(s, "p", "agent", { purpose: "agent" });
+        const events = (token: string) =>
+            s.call("/projects/p/events?agent=1", { headers: bearer(token) });
+        expect((await events(app)).status).toBe(403);
+        expect((await events(agent)).status).toBe(200);
+        expect(
+            (
+                await s.call("/annotations/handed", {
+                    method: "POST",
+                    headers: { ...bearer(app), "content-type": "application/json" },
+                    body: JSON.stringify({ entries: [] }),
+                })
+            ).status
+        ).toBe(403);
+    });
+
     it("makes replies from an app token human whatever they claim", async () => {
         const s = await start();
         const app = await issue(s, "p");
