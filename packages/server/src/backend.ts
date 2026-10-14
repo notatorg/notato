@@ -427,10 +427,18 @@ export class LocalBackend implements Backend {
         });
     }
 
-    /** Null when a project with that id already exists. */
-    async createProject(id: string, name?: string): Promise<ProjectRecord | null> {
+    /**
+     * Null when a project with that id already exists. `extra` is what a deployment's own store keeps on a project
+     * (the workspace it belongs to), handed to it as it is.
+     */
+    async createProject(
+        id: string,
+        name?: string,
+        extra: Record<string, unknown> = {}
+    ): Promise<ProjectRecord | null> {
         assertProjectId(id);
-        const record = {
+        const record: ProjectRecord = {
+            ...extra,
             id,
             name: cleanProjectName(name) || id,
             createdAt: new Date().toISOString(),
