@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="robots" content="noindex">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'self' {{waitlistOrigin}}; base-uri 'none'; form-action 'none'">
+  <meta name="referrer" content="no-referrer">
+  <title>Notato Cloud — Request beta access</title>
+  <meta name="description" content="Join the waitlist for Notato Cloud's closed beta.">
+  <link rel="icon" href="../notato.png">
+  <link rel="stylesheet" href="../base.css">
+  <link rel="stylesheet" href="waitlist.css">
+</head>
+<body data-waitlist-endpoint="{{waitlistEndpoint}}">
+  <main class="waitlist">
+    <a class="brand" href="../"><img src="../notato.png" alt="" width="42" height="42"><span>Notato</span></a>
+    <header>
+      <p class="eyebrow">Notato Cloud · Closed beta</p>
+      <h1>Your feedback, together.</h1>
+      <p>A hosted home for your app's notes, screenshots and conversations with your team and coding agents.</p>
+      <p>We're inviting a small group of developers and teams while we test and improve the service. Beta access is free, with usage limits. Invitations go out in small batches.</p>
+    </header>
+    <section class="waitlist-card" aria-labelledby="request-title">
+      <h2 id="request-title">Request beta access</h2>
+      <form data-waitlist>
+        <fieldset>
+          <label>Email<input type="email" name="email" autocomplete="email" maxlength="254" required></label>
+          <label><span>Your framework or SDK <span class="optional">(optional)</span></span>
+            <select name="sdk">
+              <option value="">Choose one</option>
+              <option>React</option><option>Angular</option><option>Browser / JavaScript</option>
+              <option>Swift</option><option>Android</option><option>.NET MAUI</option>
+              <option>Flutter</option><option>React Native</option><option>Other</option>
+            </select>
+          </label>
+          <label><span>What would you like to use it for? <span class="optional">(optional)</span></span>
+            <textarea name="useCase" rows="3" maxlength="1200"></textarea>
+          </label>
+          <div class="honeypot" aria-hidden="true">
+            <label>Website<input name="website" tabindex="-1" autocomplete="off" maxlength="300"></label>
+          </div>
+          <p class="privacy">We'll use these details to review your request and contact you about beta access. Please leave passwords, tokens and customer data out of your message.</p>
+          <button type="submit" class="btn btn-tab">Join the waitlist</button>
+        </fieldset>
+      </form>
+      <p id="waitlist-status" role="status" tabindex="-1" hidden></p>
+      <noscript>Please enable JavaScript to request beta access.</noscript>
+    </section>
+    <footer><a href="../">Back to Notato</a><a href="../docs/index.html">Use Notato locally</a></footer>
+  </main>
+  <script type="module" src="form.js"></script>
+</body>
+</html>

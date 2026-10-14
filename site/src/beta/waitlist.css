@@ -1,0 +1,90 @@
+.waitlist {
+    max-width: 640px;
+    margin: 0 auto;
+    padding: 40px 20px;
+    display: grid;
+    gap: 28px;
+}
+.waitlist header,
+.waitlist fieldset {
+    display: grid;
+    gap: 18px;
+}
+.waitlist h1 {
+    font-size: clamp(30px, 7vw, 48px);
+    line-height: 1.1;
+}
+.waitlist .eyebrow,
+.waitlist .optional,
+.waitlist .privacy {
+    color: var(--ink-3);
+    font-size: 13px;
+}
+.waitlist-card {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 16px;
+    padding: 24px;
+    display: grid;
+    gap: 20px;
+    min-width: 0;
+}
+.waitlist fieldset {
+    border: 0;
+    padding: 0;
+    margin: 0;
+    min-width: 0;
+}
+.waitlist label {
+    display: grid;
+    gap: 8px;
+}
+.waitlist input,
+.waitlist textarea,
+.waitlist select {
+    width: 100%;
+    min-width: 0;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 12px;
+    background: var(--surface-2);
+    color: var(--ink);
+    font: inherit;
+}
+.waitlist input:focus-visible,
+.waitlist textarea:focus-visible,
+.waitlist select:focus-visible {
+    outline: 2px solid var(--tab);
+    outline-offset: 2px;
+}
+.waitlist textarea {
+    resize: vertical;
+}
+.waitlist .btn {
+    width: 100%;
+}
+.waitlist .btn:disabled {
+    opacity: 0.55;
+    cursor: wait;
+}
+.waitlist footer {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 18px;
+}
+.waitlist footer a {
+    color: var(--tab);
+}
+.honeypot {
+    position: absolute;
+    left: -10000px;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+}
+.waitlist [hidden] {
+    display: none;
+}
+#waitlist-status {
+    overflow-wrap: anywhere;
+}
