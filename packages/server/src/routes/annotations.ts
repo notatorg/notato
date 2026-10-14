@@ -149,6 +149,15 @@ async function ingest(
             files.set(key.slice("asset:".length), new Uint8Array(await entry.arrayBuffer()));
         }
     }
+    if (principal.kind === "member") {
+        // Signed in, a person is who the account says, whatever the note claims.
+        const checked = Annotation.safeParse(parsed);
+        if (checked.success)
+            parsed = {
+                ...checked.data,
+                author: { kind: "human", name: principal.name ?? principal.username },
+            };
+    }
     const captureOnly = principal.kind === "token" && principal.permission === "capture";
     if (principal.kind === "token" && tokenPurpose(principal) === "app") {
         // A page cannot say it is an agent, and a capture-only page cannot say much else about itself.
@@ -193,9 +202,11 @@ export const annotationRoutes: Routes = async (route, app) => {
     const query = url.searchParams;
     /** An app's token vouches for a person, never for an agent: whatever a page says, its replies are human. */
     const author = (supplied?: Author): Author | undefined =>
-        principal.kind === "token" && tokenPurpose(principal) === "app"
-            ? ({ ...supplied, kind: "human" } as Author)
-            : supplied;
+        principal.kind === "member"
+            ? { kind: "human", name: principal.name ?? principal.username }
+            : principal.kind === "token" && tokenPurpose(principal) === "app"
+              ? ({ ...supplied, kind: "human" } as Author)
+              : supplied;
 
     /** The note with this id, once the credential is known to reach its project; null when there is none. */
     const annotation = async (id: string | undefined) => {
@@ -347,7 +358,8 @@ async function screenshot(id: string, principal: Principal, app: AppContext): Pr
         headers: {
             "Content-Type": asset.mime,
             // Private behind a login: the ids are unguessable hashes, but the image is still someone's.
-            "Cache-Control": `${app.auth ? "private" : "public"}, max-age=31536000, immutable`,
+            // Behind a login the browser does not keep it: signing out must leave nothing readable on the machine.
+            "Cache-Control": app.auth ? "private, no-store" : "public, max-age=31536000, immutable",
             "X-Content-Type-Options": "nosniff",
             "Content-Security-Policy": "default-src 'none'",
         },
