@@ -201,6 +201,11 @@ export interface AuthStore {
 
 /** Content-addressed binary storage for screenshots. Ids are the sha-256 of the bytes. */
 export interface BlobStore {
+    /** Pages of what is stored, for clearing out screenshots no note shows. `cursor` is the store's own. */
+    list?(
+        cursor?: string,
+        limit?: number
+    ): Promise<{ items: Array<{ id: string; createdAt: string }>; cursor?: string }>;
     put(bytes: Uint8Array): Promise<{ id: string; size: number }>;
     get(id: string): Promise<{ bytes: Uint8Array; mime: string } | null>;
     /** Forgets the bytes; false when there were none. */

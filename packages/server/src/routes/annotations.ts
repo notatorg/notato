@@ -1,7 +1,7 @@
 import { DETAILS, parseDetail, renderAnnotation, renderAnnotations } from "@notato/core";
 import { Annotation, Author, SafeId, Severity, Status, Variants } from "@notato/schema";
 import { z } from "zod";
-import { canAccessProject, type Principal } from "../auth.ts";
+import { canAccessProject, type Principal, samePrincipal } from "../auth.ts";
 import { type LocalBackend, RequestError, TEXT_MAX } from "../backend.ts";
 import { filterFromQuery } from "../query.ts";
 import { type AnnotationFilter, type StoredAnnotation, tokenPurpose } from "../storage.ts";
@@ -267,7 +267,24 @@ export const annotationRoutes: Routes = async (route, app) => {
         const timeout = Number.isFinite(asked)
             ? Math.min(Math.max(0, asked), WAIT_MAX_MS)
             : WAIT_DEFAULT_MS;
-        return json({ ready: await backend.waitForNew(filter, timeout, req.signal) });
+        const ready = await backend.waitForNew(filter, timeout, req.signal);
+        if (app.auth) {
+            // A wait can outlast a token or a membership: ask again before saying there is something to read.
+            const current = await app.auth.identify(req, url);
+            if (!current || !samePrincipal(principal, current))
+                throw new RequestError("authentication required", 401);
+            return json({
+                ready:
+                    ready &&
+                    (
+                        await backend.list({
+                            ...withinReach(current, filterFromQuery(query)),
+                            limit: 1,
+                        })
+                    ).length > 0,
+            });
+        }
+        return json({ ready });
     }
 
     const one = match(/^\/annotations\/([^/]+)$/);

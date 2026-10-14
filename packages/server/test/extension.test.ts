@@ -21,7 +21,7 @@ const defer = cleanupAfterEach();
  */
 function fakeCloud() {
     const events: string[] = [];
-    const reach: Record<string, string[]> = { alice: ["a1", "a2"], bob: ["b1"] };
+    const reach: Record<string, string[]> = { alice: ["a1", "a2"], bob: ["b1"], carol: ["a1"] };
     let store: SqliteStore | undefined;
     const extension: ServerExtension = {
         name: "fake-cloud",
@@ -42,6 +42,7 @@ function fakeCloud() {
                             username: who,
                             projectIds: reach[who] ?? [],
                             scope: `workspace-${who}`,
+                            ...(who === "carol" ? { locked: true } : {}),
                         } satisfies Principal;
                     return inner.identify(req, url);
                 },
@@ -234,6 +235,29 @@ describe("a server extension", () => {
             body: JSON.stringify({ projectId: "b1", target: "#x", comment: "hi", timeoutMs: 1000 }),
         });
         expect(foreign.status).toBe(403);
+    });
+
+    it("tells a suspended credential why, on MCP and everywhere else, and lists nothing for it", async () => {
+        const cloud = fakeCloud();
+        const s = await startServe(defer, { extension: cloud.extension });
+        await s.rt.backend.createProject("a1");
+        const mcp = await s.call("/mcp", {
+            method: "POST",
+            headers: {
+                "x-user": "carol",
+                "content-type": "application/json",
+                accept: "application/json, text/event-stream",
+            },
+            body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "initialize", params: {} }),
+        });
+        expect(mcp.status).toBe(402);
+        const projects = (await (
+            await s.call("/projects", { headers: { "x-user": "carol" } })
+        ).json()) as { items: unknown[] };
+        expect(projects.items).toEqual([]);
+        expect(
+            (await s.call("/projects/a1/annotations", { headers: { "x-user": "carol" } })).status
+        ).toBe(403);
     });
 
     it("stops the extension before the store closes", async () => {

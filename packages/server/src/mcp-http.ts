@@ -124,6 +124,17 @@ export function createMcpHttp(options: McpHttpOptions): {
                 return jsonRpcError(403, -32001, off);
             }
             const principal = await options.auth.identify(req, new URL(req.url));
+            // Valid, but suspended (an unpaid workspace, say): say so, and end any session it has open.
+            if (principal && principal.kind !== "admin" && principal.locked) {
+                const open = sessions.get(req.headers.get("mcp-session-id") ?? "");
+                if (open && samePrincipal(open.principal, principal))
+                    await open.transport.close().catch(() => {});
+                return jsonRpcError(
+                    402,
+                    -32001,
+                    "access is suspended for this account: sign in to the board to put it right"
+                );
+            }
             // The token an app carries is for notes; MCP is for an agent's, so a page's token cannot drive it.
             if (principal?.kind === "token" && tokenPurpose(principal) !== "agent")
                 return jsonRpcError(
