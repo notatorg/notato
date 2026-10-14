@@ -9,6 +9,7 @@ import { useEffect, useState } from "react";
 //   #/p/<project>/settings   its name, tokens, and deleting it (admin)
 //   #/tokens                 tokens (serve mode, admin)
 //   #/settings               settings and webhooks (admin)
+//   #/x/<page>[/<rest>]      a page an extension adds
 
 export type Tab = "inbox" | "activity" | "overview" | "connect" | "settings";
 const TABS: readonly string[] = ["activity", "overview", "connect", "settings"];
@@ -17,6 +18,7 @@ export type Route =
     | { page: "home" }
     | { page: "tokens" }
     | { page: "settings" }
+    | { page: "ext"; name: string; rest: string }
     | { page: "project"; project: string; tab: Tab; selected?: string };
 
 const decode = (s: string) => {
@@ -31,6 +33,8 @@ export function parseRoute(hash: string): Route {
     const path = hash.replace(/^#/, "").replace(/\/+$/, "") || "/";
     if (path === "/tokens") return { page: "tokens" };
     if (path === "/settings") return { page: "settings" };
+    const ext = /^\/x\/([^/]+)(?:\/(.*))?$/.exec(path);
+    if (ext?.[1]) return { page: "ext", name: decode(ext[1]), rest: decode(ext[2] ?? "") };
     const project = /^\/p\/([^/]+)(?:\/(.*))?$/.exec(path);
     if (project?.[1]) {
         const name = decode(project[1]);
@@ -52,6 +56,8 @@ export function href(route: Route): string {
             return "#/tokens";
         case "settings":
             return "#/settings";
+        case "ext":
+            return `#/x/${encodeURIComponent(route.name)}${route.rest ? `/${route.rest}` : ""}`;
         case "project": {
             const base = `#/p/${encodeURIComponent(route.project)}`;
             if (route.selected) return `${base}/a/${encodeURIComponent(route.selected)}`;

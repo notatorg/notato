@@ -7,6 +7,7 @@ import {
     type ProjectSummary,
     renameProject,
 } from "./api.ts";
+import { useBoardExtension } from "./extension.tsx";
 import { plural, projectName } from "./model.ts";
 import { projectHref } from "./route.ts";
 import { TokenManager } from "./Tokens.tsx";
@@ -33,6 +34,7 @@ export function ProjectSettings({
     onDeleted,
 }: Props) {
     const name = projectName(summary, project);
+    const extension = useBoardExtension();
     return (
         <div className="sheet">
             <div className="sheet-inner settings">
@@ -94,6 +96,10 @@ export function ProjectSettings({
                             <TokenManager projects={projects} projectId={project} />
                         </div>
                     </section>
+                ) : null}
+
+                {extension?.ProjectSettingsExtra ? (
+                    <extension.ProjectSettingsExtra me={me} projectId={project} />
                 ) : null}
 
                 <DeleteProject

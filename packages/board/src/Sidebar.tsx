@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { isAdmin, type Me, type ProjectSummary } from "./api.ts";
+import { useBoardExtension } from "./extension.tsx";
 import { hasUnseen, type LiveState, useLiveState, useSeenVersion } from "./live.ts";
 import { initial, projectName, todoOf } from "./model.ts";
 import { href, projectHref, type Route, type Tab } from "./route.ts";
@@ -46,6 +47,7 @@ export function Sidebar({ me, route, current, projects, onNewProject, onSignOut 
     const [query, setQuery] = useState("");
     const [draft, setDraft] = useState<string | null>(null);
     const admin = isAdmin(me);
+    const extension = useBoardExtension();
     const open = route.page === "project" ? route.project : null;
     const summary = projects?.find((p) => p.id === current);
 
@@ -68,6 +70,8 @@ export function Sidebar({ me, route, current, projects, onNewProject, onSignOut 
                     title={LIVE_TEXT[live].title}
                 />
             </div>
+
+            {extension?.SidebarTop ? <extension.SidebarTop me={me} /> : null}
 
             {current ? (
                 <>
@@ -175,6 +179,21 @@ export function Sidebar({ me, route, current, projects, onNewProject, onSignOut 
             </ul>
 
             <div className="side-foot">
+                {extension?.nav?.map((item) => {
+                    const target = href({ page: "ext", name: item.page, rest: "" });
+                    const on = route.page === "ext" && route.name === item.page;
+                    return (
+                        <a
+                            key={item.page}
+                            className={on ? "side-link active" : "side-link"}
+                            href={target}
+                            aria-current={on ? "page" : undefined}
+                        >
+                            {item.icon ? <Icon name={item.icon} /> : null}
+                            {item.label}
+                        </a>
+                    );
+                })}
                 {me.authRequired && admin ? (
                     <a
                         className={route.page === "tokens" ? "side-link active" : "side-link"}

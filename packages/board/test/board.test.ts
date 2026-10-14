@@ -316,6 +316,8 @@ describe("routes", () => {
             { page: "project", project: "x", tab: "overview" },
             { page: "project", project: "x", tab: "connect" },
             { page: "project", project: "x@y.z", tab: "settings" },
+            { page: "ext", name: "billing", rest: "" },
+            { page: "ext", name: "workspace", rest: "members/invite" },
         ] as const;
         for (const r of routes) expect(parseRoute(href(r))).toEqual(r);
     });

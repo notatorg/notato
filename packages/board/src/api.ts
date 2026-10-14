@@ -11,10 +11,19 @@ export interface Me {
     authenticated: boolean;
     username?: string;
     projectId?: string;
+    /** Whatever an extension's own `/auth/me` adds. */
+    [key: string]: unknown;
 }
 
+let managePolicy: ((me: Me) => boolean) | undefined;
+/** An extension's say on who may change things; the board's own rule applies without one. */
+export const setManagePolicy = (policy?: (me: Me) => boolean) => {
+    managePolicy = policy;
+};
+
 /** Who may change things (projects, tokens, settings): anyone in dev mode, and anyone signed in on a shared server. */
-export const isAdmin = (me: Me) => me.mode === "dev" || Boolean(me.username);
+export const isAdmin = (me: Me) =>
+    managePolicy ? managePolicy(me) : me.mode === "dev" || Boolean(me.username);
 
 export interface ProjectSummary {
     id: string;

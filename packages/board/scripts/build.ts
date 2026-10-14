@@ -3,12 +3,13 @@ import {
     mkdirSync,
     readdirSync,
     readFileSync,
+    renameSync,
     rmSync,
     statSync,
     watch,
     writeFileSync,
 } from "node:fs";
-import { dirname, join, relative, resolve } from "node:path";
+import { basename, dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 // Bundles the board UI into dist/, which a server run from source serves.
@@ -18,6 +19,8 @@ import { fileURLToPath } from "node:url";
 //                    this; `--stub` puts the committed stub back afterwards)
 //   --outdir <dir>   build somewhere else and leave dist/ and the generated list alone: a server started with
 //                    NOTATO_WEB_DIST=<dir> serves that board, so a change can be tried beside a running server
+//   --html <file>    build from another page than this package's index.html, such as a hosted board's, whose script
+//                    calls `mountBoard({ extension })` from "@notato/board"
 //   --watch          build again whenever something under src/ (or the page script) changes
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -28,6 +31,13 @@ if (outdirAt >= 0 && (!outdir || outdir.startsWith("--"))) {
     console.error("--outdir needs a folder");
     process.exit(1);
 }
+const htmlAt = args.indexOf("--html");
+const html = htmlAt >= 0 ? args[htmlAt + 1] : undefined;
+if (htmlAt >= 0 && (!html || html.startsWith("--"))) {
+    console.error("--html needs a file");
+    process.exit(1);
+}
+const page = html ? resolve(html) : join(root, "index.html");
 const dist = outdir ? resolve(outdir) : join(root, "dist");
 const generated = join(root, "../server/src/web-assets.generated.ts");
 
@@ -62,7 +72,7 @@ async function build(): Promise<boolean> {
     mkdirSync(dist, { recursive: true });
 
     const result = await Bun.build({
-        entrypoints: [join(root, "index.html")],
+        entrypoints: [page],
         outdir: dist,
         minify: true,
         // Without this React ships its development build, which is several times larger.
@@ -81,6 +91,10 @@ async function build(): Promise<boolean> {
         for (const log of result.logs) console.error(log);
         return false;
     }
+
+    // The server serves the page as index.html, whatever another page was called.
+    if (basename(page) !== "index.html")
+        renameSync(join(dist, basename(page)), join(dist, "index.html"));
 
     // Every font src/fonts.css names, from the @fontsource-variable package it comes from, into dist/fonts.
     mkdirSync(join(dist, "fonts"), { recursive: true });
@@ -177,5 +191,5 @@ const again = (file: string | null) => {
 for (const dir of [join(root, "src"), join(root, "../../sdks/browser/src")]) {
     watch(dir, { recursive: true }, (_event, file) => again(file));
 }
-watch(join(root, "index.html"), () => again("index.html"));
+watch(page, () => again("index.html"));
 console.log("watching src/ for changes (Ctrl+C to stop)");
