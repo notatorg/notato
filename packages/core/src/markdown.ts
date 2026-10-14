@@ -216,6 +216,12 @@ const animationLine = (e: AnimationEntry) => {
 };
 
 /** What was offered to choose between, and what was chosen. */
+function linksLine(links: NonNullable<Annotation["links"]>): string {
+    return inline(
+        `Links: ${links.map((l) => `${l.plugin}${l.ref ? ` ${l.ref}` : ""} <${l.url}>`).join(" · ")}`
+    );
+}
+
 function variantsLine(v: NonNullable<Annotation["variants"]>): string {
     const options = v.options
         .map((o) => (o.summary ? `${o.name} (${clip(o.summary, 80)})` : o.name))
@@ -311,6 +317,7 @@ export function renderAnnotation(note: Annotation, options: RenderOptions = {}):
         // A quote ends at a blank line; without one, the next line would be read as part of it.
         ...(comment.length > 1 ? [""] : []),
         ...(a.variants ? [variantsLine(a.variants)] : []),
+        ...(a.links?.length ? [linksLine(a.links)] : []),
         `Target (${a.target.kind}, ${a.target.identity.length} element${a.target.identity.length === 1 ? "" : "s"}):`,
     ];
     a.target.identity.forEach((i, n) => {

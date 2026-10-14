@@ -10,6 +10,7 @@ import {
 import {
     Annotation,
     type Author,
+    ExternalLink,
     type Severity,
     type Status,
     type VariantOption,
@@ -353,6 +354,8 @@ export class LocalBackend implements Backend {
         if (!options.preserveLifecycle) {
             annotation = {
                 ...annotation,
+                // Where a note went is for integrations to say, not the app that sent it.
+                links: undefined,
                 status: "open",
                 thread: annotation.thread.filter(
                     (r) => r.automatic && r.peopleOnly !== undefined && r.author.kind === "human"
@@ -529,6 +532,30 @@ export class LocalBackend implements Backend {
         });
         if (updated) this.emit(type, updated, before);
         return updated;
+    }
+
+    /**
+     * Records where this note went in another system. The same plugin and address twice is one link, so an integration
+     * that retries does not repeat itself. Null when there is no such note.
+     */
+    async addLink(
+        id: string,
+        link: { plugin: string; url: string; ref?: string; title?: string }
+    ): Promise<StoredAnnotation | null> {
+        const parsed = ExternalLink.safeParse({ ...link, createdAt: new Date().toISOString() });
+        if (!parsed.success) {
+            const issue = parsed.error.issues[0];
+            throw new RequestError(
+                `invalid link: ${issue?.path.join(".") || "(root)"}: ${issue?.message}`
+            );
+        }
+        const current = await this.store.getAnnotation(id);
+        if (!current) return null;
+        const links = current.annotation.links ?? [];
+        if (links.some((l) => l.plugin === parsed.data.plugin && l.url === parsed.data.url))
+            return current;
+        if (links.length >= 20) throw new RequestError("a note can have at most 20 links", 409);
+        return this.mutate(id, (a) => ({ ...a, links: [...(a.links ?? []), parsed.data] }));
     }
 
     async offerVariants(

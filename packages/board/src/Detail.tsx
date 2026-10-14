@@ -353,6 +353,25 @@ export function Detail({ annotation: a, project, detail, hidden, onChange, onDel
                         onPick={(name) => run(() => chooseVariant(a.id, name, note), taking)}
                     />
                 ) : null}
+                {a.links?.length ? (
+                    <section className="links">
+                        <h3>Linked</h3>
+                        <ul>
+                            {a.links.map((l) => (
+                                <li key={`${l.plugin}:${l.url}`}>
+                                    <a href={l.url} target="_blank" rel="noopener noreferrer">
+                                        {l.title ?? l.ref ?? l.url}
+                                    </a>
+                                    <span className="muted small">
+                                        {" "}
+                                        · {l.plugin}
+                                        {l.ref && l.title ? ` ${l.ref}` : ""}
+                                    </span>
+                                </li>
+                            ))}
+                        </ul>
+                    </section>
+                ) : null}
                 <Thread annotation={a} />
                 <MoreFacts annotation={a} />
             </div>

@@ -40,6 +40,13 @@ const ReplyBody = z.object({
     aside: z.boolean().optional(),
 });
 
+const LinkBody = z.object({
+    plugin: z.string().regex(/^[a-z][\w-]{0,31}$/),
+    url: z.string().max(2000),
+    ref: z.string().max(200).optional(),
+    title: z.string().max(300).optional(),
+});
+
 const OfferBody = z
     .object({
         group: Variants.shape.group,
@@ -307,6 +314,21 @@ export const annotationRoutes: Routes = async (route, app) => {
             ? await backend.chooseVariant(id, body.name, body.note, author(body.author))
             : null;
         return updated ? json(updated) : notFound();
+    }
+
+    // Where the note went in another system: for an integration or an agent to say, never for an app's own token.
+    const links = match(/^\/annotations\/([^/]+)\/links$/);
+    if (links && method === "POST") {
+        if (principal.kind === "token" && tokenPurpose(principal) === "app")
+            throw new RequestError(
+                "an agent token or a signed-in person is required to add a link",
+                403
+            );
+        const id = links[0] ?? "";
+        const existing = await annotation(id);
+        const body = await readJson(req, LinkBody);
+        const updated = existing ? await backend.addLink(id, body) : null;
+        return updated ? json(updated, 201) : notFound();
     }
 
     const asset = match(/^\/assets\/([^/]+)$/);

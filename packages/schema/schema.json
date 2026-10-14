@@ -542,6 +542,40 @@
         },
         "peopleOnly": {
           "type": "boolean"
+        },
+        "links": {
+          "maxItems": 20,
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "plugin": {
+                "type": "string",
+                "pattern": "^[a-z][\\w-]{0,31}$"
+              },
+              "url": {
+                "type": "string",
+                "maxLength": 2000
+              },
+              "ref": {
+                "type": "string",
+                "maxLength": 200
+              },
+              "title": {
+                "type": "string",
+                "maxLength": 300
+              },
+              "createdAt": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "plugin",
+              "url",
+              "createdAt"
+            ],
+            "additionalProperties": false
+          }
         }
       },
       "required": [
@@ -1408,6 +1442,40 @@
               },
               "peopleOnly": {
                 "type": "boolean"
+              },
+              "links": {
+                "maxItems": 20,
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "plugin": {
+                      "type": "string",
+                      "pattern": "^[a-z][\\w-]{0,31}$"
+                    },
+                    "url": {
+                      "type": "string",
+                      "maxLength": 2000
+                    },
+                    "ref": {
+                      "type": "string",
+                      "maxLength": 200
+                    },
+                    "title": {
+                      "type": "string",
+                      "maxLength": 300
+                    },
+                    "createdAt": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "plugin",
+                    "url",
+                    "createdAt"
+                  ],
+                  "additionalProperties": false
+                }
               }
             },
             "required": [
