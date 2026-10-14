@@ -5,13 +5,17 @@ import { isSecure, json, type Routes } from "./common.ts";
 
 /** The board's own page may load only what the server itself serves, and may not be framed. */
 const BOARD_CSP =
-    "default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'";
+    "default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; connect-src 'self'; object-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'";
 
 /**
  * A file of the board: the page itself (`/`), revalidated every time, or one of its hashed scripts, styles and fonts
  * (`/ui/*`), cached for good. Null when there is no board or no such file.
  */
-async function boardFile(ui: UiAssets, path: string): Promise<Response | null> {
+async function boardFile(
+    ui: UiAssets,
+    path: string,
+    csp: string = BOARD_CSP
+): Promise<Response | null> {
     const file = path === "/" ? "index.html" : path.slice("/ui/".length);
     if (file.includes("..") || file.startsWith("/")) return null;
     const found = await ui.lookup(file);
@@ -24,7 +28,7 @@ async function boardFile(ui: UiAssets, path: string): Promise<Response | null> {
             "X-Content-Type-Options": "nosniff",
             ...(shell
                 ? {
-                      "Content-Security-Policy": BOARD_CSP,
+                      "Content-Security-Policy": csp,
                       "X-Frame-Options": "DENY",
                       "Referrer-Policy": "no-referrer",
                   }
@@ -71,6 +75,7 @@ export const pageRoutes: Routes<Principal | null> = async (
             }
         );
     }
-    if (options.ui && (path === "/" || path.startsWith("/ui/"))) return boardFile(options.ui, path);
+    if (options.ui && (path === "/" || path.startsWith("/ui/")))
+        return boardFile(options.ui, path, options.boardCsp?.(BOARD_CSP) ?? BOARD_CSP);
     return null;
 };

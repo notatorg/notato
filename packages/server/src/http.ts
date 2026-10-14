@@ -81,6 +81,11 @@ export interface AppOptions {
     strictOrigins?: boolean;
     /** Browser origins allowed for this one request, on top of the server's, such as the ones a project lists. */
     originsFor?: (req: Request, url: URL) => string[] | Promise<string[]>;
+    /**
+     * The Content-Security-Policy the board is served with, given the server's own: for a deployment whose board
+     * talks to another origin (a sign-in provider) or loads a script from one.
+     */
+    boardCsp?: (base: string) => string;
     /** Headers added to every answer. */
     responseHeaders?: (req: Request, path: string) => Record<string, string>;
     /** Signed links to single screenshots, for webhook messages (see share.ts). */

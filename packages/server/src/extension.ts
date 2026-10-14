@@ -78,6 +78,7 @@ export interface ExtensionHttp
         | "maxBundleBytes"
         | "authorize"
         | "strictOrigins"
+        | "boardCsp"
     > {
     routes?: ExtraRoutes;
     /** The largest body the server reads at all, in bytes. */

@@ -127,6 +127,7 @@ export async function runServe(options: ServeOptions): Promise<ServeRuntime> {
         authorize: http?.authorize,
         originsFor: http?.originsFor,
         strictOrigins: http?.strictOrigins,
+        boardCsp: http?.boardCsp,
         responseHeaders: http?.responseHeaders,
         maxUploadBytes: http?.maxUploadBytes,
         maxBundleBytes: http?.maxBundleBytes,
