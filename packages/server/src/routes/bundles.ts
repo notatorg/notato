@@ -1,4 +1,4 @@
-import type { Principal } from "../auth.ts";
+import { accessibleProjects, type Principal } from "../auth.ts";
 import { RequestError } from "../backend.ts";
 import { filterFromQuery } from "../query.ts";
 import {
@@ -6,7 +6,6 @@ import {
     assertAccess,
     json,
     notFound,
-    onlyProject,
     projectIdFrom,
     type Routes,
     zip,
@@ -35,9 +34,14 @@ async function importBundle(
     }
     if (bytes.byteLength > max) throw new RequestError(`bundle exceeds ${max} bytes`, 413);
     if (bytes.byteLength === 0) throw new RequestError("empty body: send the bundle zip");
-    const result = await app.backend.importBundle(bytes, {
-        projectId: onlyProject(principal, projectId),
-    });
+    // A credential that reaches only some projects imports into the one it names; a token for one project into its own.
+    const own =
+        principal.kind === "token" && principal.projectId !== "*" ? principal.projectId : undefined;
+    const target = own ?? projectId;
+    if (accessibleProjects(principal) !== undefined && !target)
+        throw new RequestError("import a bundle with POST /projects/<id>/bundles", 403);
+    if (target) assertAccess(principal, target);
+    const result = await app.backend.importBundle(bytes, { projectId: target });
     return json(result, result.imported > 0 ? 201 : 200);
 }
 

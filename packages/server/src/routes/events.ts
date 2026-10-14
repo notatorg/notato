@@ -115,9 +115,22 @@ export class EventStreams {
                                   send("annotate-request", request)
                               )
                             : () => {};
+                    // With a way to ask whether the credential still stands, each change is checked before it is sent,
+                    // in order: a revoked token or a removed member never receives another note.
+                    let turn: Promise<void> = Promise.resolve();
                     const unsubscribe = backend.bus.subscribe((e) => {
-                        if ((projectId === "*" || e.projectId === projectId) && allow(e.projectId))
-                            enqueue(changeFrame(e));
+                        if (
+                            !(
+                                (projectId === "*" || e.projectId === projectId) &&
+                                allow(e.projectId)
+                            )
+                        )
+                            return;
+                        if (!stillAllowed) return enqueue(changeFrame(e));
+                        turn = turn.then(async () => {
+                            if (await stillAllowed().catch(() => false)) enqueue(changeFrame(e));
+                            else cleanup();
+                        });
                     });
                     const ping = setInterval(() => {
                         enqueue(PING);

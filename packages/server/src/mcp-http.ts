@@ -215,7 +215,15 @@ export function createMcpHttp(options: McpHttpOptions): {
                 allowImportPaths: options.allowImportPaths ?? false,
                 maxWaitSeconds: options.maxWaitSeconds ?? MAX_WAIT_SECONDS,
                 refuse: options.refuse,
-                projects,
+                // Only what the agent asked for, or the one project of a project token. What a wider credential
+                // reaches is asked of the backend on every call, so a project added during the session is there.
+                projects:
+                    asked ??
+                    (principal.kind === "token" &&
+                    principal.projectId !== "*" &&
+                    !principal.projectIds
+                        ? [principal.projectId]
+                        : undefined),
                 onClient: (name) => {
                     const session = sessions.get(transport.sessionId ?? "");
                     if (session) session.name = name;
