@@ -5,12 +5,7 @@ import {
     cleanAgentName,
     decodeAgentProjects,
 } from "./agents.ts";
-import {
-    type Authenticator,
-    LOCAL_PRINCIPAL,
-    type Principal,
-    UnknownProjectError,
-} from "./auth.ts";
+import { type AuthProvider, LOCAL_PRINCIPAL, type Principal, UnknownProjectError } from "./auth.ts";
 import { type LocalBackend, RequestError } from "./backend.ts";
 import { mcpRefusal } from "./config.ts";
 import { corsHeaders, hostAllowed, parseExtraOrigins, writeOriginRejected } from "./cors.ts";
@@ -45,7 +40,7 @@ export interface AppOptions {
      * Accounts and tokens. Without it the server is open, which is only safe on loopback (dev mode). With it,
      * every route except `/health`, `/auth/*` and the UI shell needs a session or a token.
      */
-    auth?: Authenticator;
+    auth?: AuthProvider;
     /** The board UI, served at `/` and `/ui/*`. */
     ui?: UiAssets | null;
     /** Extra allowed browser origins, on top of loopback, private networks and the server's own origin. */
@@ -73,6 +68,18 @@ export interface AppOptions {
      * the tunnel. Unset on a shared server, where it is the board's own address.
      */
     mcpUrl?: string;
+    /** Routes an extension adds to the server's own (see `ServerExtension`). */
+    routes?: ExtraRoutes;
+}
+
+/** What an extension adds to the routes: tried before the server's own, so one can replace a built-in route. */
+export interface ExtraRoutes {
+    /** Routes anyone may reach, credentials or not. List the paths in `isPublic` too. */
+    public?: Array<Routes<Principal | null>>;
+    /** Routes for a credential the server has identified. */
+    private?: Routes[];
+    /** Whether a request may reach the routes without a credential (the server's own public paths always may). */
+    isPublic?: (method: string, path: string) => boolean;
 }
 
 export interface RequestInfo {
@@ -133,13 +140,14 @@ const methodOf = (req: Request) =>
 
 /** Tries the public routes, then (once there is someone to answer to) the rest; 404 when none answers. */
 async function route(request: RouteRequest<Principal | null>, app: AppContext): Promise<Response> {
-    for (const routes of PUBLIC_ROUTES) {
+    const extra = app.options.routes;
+    for (const routes of [...(extra?.public ?? []), ...PUBLIC_ROUTES]) {
         const answered = await routes(request, app);
         if (answered) return answered;
     }
     const { principal } = request;
     if (!principal) throw new RequestError("authentication required", 401);
-    for (const routes of ROUTES) {
+    for (const routes of [...(extra?.private ?? []), ...ROUTES]) {
         const answered = await routes({ ...request, principal }, app);
         if (answered) return answered;
     }
@@ -196,7 +204,11 @@ export function createApp(options: AppOptions): AppHandler {
             let principal: Principal | null = LOCAL_PRINCIPAL;
             if (auth) {
                 principal = await auth.identify(req, url);
-                if (!principal && !isPublic(method, path)) {
+                if (
+                    !principal &&
+                    !isPublic(method, path) &&
+                    !options.routes?.isPublic?.(method, path)
+                ) {
                     return withCors(
                         json({ error: "authentication required" }, 401, {
                             "WWW-Authenticate": "Bearer",
@@ -216,7 +228,9 @@ export function createApp(options: AppOptions): AppHandler {
             // names itself on every request) and, on a shared server, the agent tokens issued for every project. Its
             // health check still answers, so an attached process stays attached instead of trying to take over.
             const agentId = req.headers.get(AGENT_HEADER);
-            const agentToken = principal?.kind === "token" && principal.projectId === "*";
+            const agentToken =
+                principal?.kind === "token" &&
+                (principal.purpose === "agent" || principal.projectId === "*");
             if ((agentId || agentToken) && path !== "/health") {
                 const off = mcpRefusal(backend.config());
                 if (off) return withCors(json({ error: off }, 403));

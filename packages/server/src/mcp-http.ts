@@ -1,8 +1,14 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import { type AgentPresence, parseProjects } from "./agents.ts";
-import type { Authenticator, Principal } from "./auth.ts";
-import type { Backend } from "./backend.ts";
+import {
+    type AuthProvider,
+    accessibleProjects,
+    canAccessProject,
+    type Principal,
+    samePrincipal,
+} from "./auth.ts";
+import { type Backend, RequestError } from "./backend.ts";
 import { createMcpServer } from "./mcp.ts";
 import { ScopedBackend } from "./scoped-backend.ts";
 import { tokenPurpose } from "./storage.ts";
@@ -11,7 +17,7 @@ export interface McpHttpOptions {
     backend: Backend;
     version: string;
     /** Who a request is from. `notato dev` has no logins: everything that passes `guard` is the local user. */
-    auth: Pick<Authenticator, "identify">;
+    auth: Pick<AuthProvider, "identify">;
     /** Checks before anything else, such as `notato dev` refusing browsers and the dev tunnel. A Response stops the request. */
     guard?: (req: Request) => Response | null;
     /** Why agents may not connect now (MCP turned off), or null. Sessions end at their next request while it is off. */
@@ -37,6 +43,8 @@ interface Session {
     name?: string;
     /** The projects its agent works on (`/mcp?project=`, or its token's); undefined for every project. */
     projects?: string[];
+    /** What `/mcp?project=` asked for, before narrowing by what the credential reaches. */
+    requestedProjects?: string[];
 }
 
 /** How long a quiet session still counts as an agent being there (a client that went away without saying so). */
@@ -58,12 +66,6 @@ export const jsonRpcError = (
         status,
         headers: { "Content-Type": "application/json", ...headers },
     });
-
-const samePrincipal = (a: Principal, b: Principal) =>
-    a.kind === b.kind &&
-    (a.kind === "admin"
-        ? a.username === (b as typeof a).username
-        : a.tokenId === (b as typeof a).tokenId);
 
 /**
  * `/mcp`: the streamable HTTP transport, one session per client. A token for one project gets tools that
@@ -90,9 +92,16 @@ export function createMcpHttp(options: McpHttpOptions): {
     }, SWEEP_MS);
     sweep.unref?.();
 
-    const backendFor = (principal: Principal): Backend =>
-        principal.kind === "token" && principal.projectId !== "*"
-            ? new ScopedBackend(options.backend, principal.projectId)
+    // A credential that reaches only some projects gets tools that see only those, asked again on every call so a
+    // revoked token or a removed member stops working inside a session that is already open.
+    const backendFor = (principal: Principal, req: Request): Backend =>
+        accessibleProjects(principal) !== undefined
+            ? new ScopedBackend(options.backend, async () => {
+                  const current = await options.auth.identify(req, new URL(req.url));
+                  if (!current || !samePrincipal(principal, current))
+                      throw new RequestError("credential access revoked", 403);
+                  return accessibleProjects(current) ?? [];
+              })
             : options.backend;
 
     return {
@@ -133,6 +142,15 @@ export function createMcpHttp(options: McpHttpOptions): {
                 if (!samePrincipal(session.principal, principal))
                     return jsonRpcError(403, -32001, "this session belongs to another credential");
                 session.lastUsed = Date.now();
+                // What the credential reaches may have changed since the session began: follow it.
+                const projects =
+                    session.requestedProjects?.filter((id) => canAccessProject(principal, id)) ??
+                    accessibleProjects(principal);
+                if (projects?.join("\n") !== session.projects?.join("\n")) {
+                    session.release?.();
+                    session.release = undefined;
+                    session.projects = projects;
+                }
                 // Back after being quiet: there again.
                 session.release ??= options.presence?.hold(
                     `mcp:${sessionId}`,
@@ -148,10 +166,10 @@ export function createMcpHttp(options: McpHttpOptions): {
             const presenceId = () => `mcp:${transport.sessionId}`;
             // Several repositories can share a server: `/mcp?project=web` keeps an agent to its own (a project token
             // already is).
-            const projects =
-                principal.kind === "token" && principal.projectId !== "*"
-                    ? [principal.projectId]
-                    : parseProjects(new URL(req.url).searchParams.getAll("project"));
+            const asked = parseProjects(new URL(req.url).searchParams.getAll("project"));
+            if (asked?.some((project) => !canAccessProject(principal, project)))
+                return jsonRpcError(403, -32001, "project access denied");
+            const projects = asked ?? accessibleProjects(principal);
             const transport = new WebStandardStreamableHTTPServerTransport({
                 sessionIdGenerator: () => crypto.randomUUID(),
                 onsessioninitialized: (id) => {
@@ -161,13 +179,14 @@ export function createMcpHttp(options: McpHttpOptions): {
                         principal,
                         lastUsed: Date.now(),
                         projects,
+                        requestedProjects: asked,
                         // An agent with the MCP open is there, watching or not, as one on `notato dev` is.
                         release: options.presence?.hold(presenceId(), undefined, projects),
                     });
                 },
             });
             const server = createMcpServer({
-                backend: backendFor(principal),
+                backend: backendFor(principal, req),
                 version: options.version,
                 allowImportPaths: options.allowImportPaths ?? false,
                 maxWaitSeconds: options.maxWaitSeconds ?? MAX_WAIT_SECONDS,

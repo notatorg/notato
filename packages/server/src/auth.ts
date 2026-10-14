@@ -3,19 +3,71 @@ import { sha256Hex } from "./blob-store.ts";
 import { type AuthStore, assertTokenPurpose, type TokenRecord, tokenPurpose } from "./storage.ts";
 
 /**
+ * What an extension may add to a signed-in person or a token, so routes it supplies can read it back typed:
+ * `declare module "@notato/server" { interface PrincipalExtras { workspaceId?: string } }`. The server itself
+ * only ever compares `scope`.
+ */
+export interface PrincipalExtras {
+    /**
+     * An opaque tenant or context the credential is acting in. An event stream or MCP session is closed when the
+     * same person turns up in another scope, so switching one never reuses what the previous one opened.
+     */
+    scope?: string;
+}
+
+/**
  * Who a request is from. An admin session can do everything; a token can read and write the one project
- * it was issued for, or every project when issued for `*` (an agent or MCP connection).
+ * it was issued for, or every project when issued for `*` (an agent or MCP connection). A member is a signed-in
+ * person who is not an admin, and who reaches only the projects an extension's accounts give them: the built-in
+ * accounts make none, so on a plain server there are admins and tokens.
  */
 export type Principal =
-    | { kind: "admin"; username: string }
-    | {
+    | ({ kind: "admin"; username: string } & PrincipalExtras)
+    | ({
+          kind: "member";
+          username: string;
+          /** The projects this person reaches, and no others. */
+          projectIds: string[];
+          name?: string;
+          /** Valid, but suspended: nothing is reachable until it is lifted (an unpaid workspace, say). */
+          locked?: boolean;
+      } & PrincipalExtras)
+    | ({
           kind: "token";
           tokenId: string;
           projectId: string | "*";
-          /** `capture` can only submit new notes. */
-          permission: "capture" | "full";
-          purpose: "app" | "agent";
-      };
+          /** Narrows even a `*` token to these projects. */
+          projectIds?: string[];
+          /** `capture` can only submit new notes. Absent on tokens made before 0.3: full access. */
+          permission?: "capture" | "full";
+          /** Absent on tokens made before 0.3, which can be used for both an app and an agent. */
+          purpose?: "app" | "agent";
+          locked?: boolean;
+      } & PrincipalExtras);
+
+/**
+ * What the server asks of whatever knows its accounts and tokens. `Authenticator` is the built-in one, with an
+ * admin login and project tokens in the data folder; an extension can supply its own.
+ */
+export interface AuthProvider {
+    readonly store: AuthStore;
+    /** Null for anonymous or invalid credentials. */
+    identify(req: Request, url: URL): Promise<Principal | null>;
+    login(
+        username: string,
+        password: string,
+        clientKey: string,
+        secure?: boolean
+    ): Promise<
+        | { ok: true; cookie: string }
+        | { ok: false; status: 401 | 429; error: string; retryAfter?: number }
+    >;
+    /** The `Set-Cookie` value that signs the request's session out. */
+    logout(req: Request, secure?: boolean): Promise<string>;
+    issueToken(projectId: string, name: string, options?: IssueTokenOptions): Promise<IssuedToken>;
+    listTokens(): Promise<TokenRecord[]>;
+    revokeToken(id: string): Promise<boolean>;
+}
 
 /** Who a request is on a server without logins (`notato dev` on loopback): the person at this machine. */
 export const LOCAL_PRINCIPAL: Principal = { kind: "admin", username: "local" };
@@ -49,10 +101,34 @@ export interface IssuedToken {
     token: string;
 }
 
-/** Admins and `*` tokens see everything; any other token only its own project. */
+/**
+ * Admins and `*` tokens see everything; any other token only its own project; a member the projects they were
+ * given. `*` asks for a stream across every project the credential has, and access to each is checked separately.
+ */
 export function canAccessProject(principal: Principal, projectId: string): boolean {
     if (principal.kind === "admin") return true;
+    if (principal.locked) return false;
+    if (principal.kind === "member")
+        return projectId === "*" || principal.projectIds.includes(projectId);
+    if (principal.projectIds && projectId !== "*") return principal.projectIds.includes(projectId);
     return principal.projectId === "*" || principal.projectId === projectId;
+}
+
+/** The projects a credential reaches, or undefined for all of them. An empty list is no project at all. */
+export function accessibleProjects(principal: Principal): string[] | undefined {
+    if (principal.kind === "admin") return undefined;
+    if (principal.locked) return [];
+    if (principal.kind === "member") return principal.projectIds;
+    return (
+        principal.projectIds ?? (principal.projectId === "*" ? undefined : [principal.projectId])
+    );
+}
+
+/** Whether two requests are the same credential in the same scope, so a stream or session may carry on. */
+export function samePrincipal(a: Principal, b: Principal): boolean {
+    if (a.kind !== b.kind || a.scope !== b.scope) return false;
+    if (a.kind === "token") return a.tokenId === (b as typeof a).tokenId;
+    return a.username === (b as typeof a).username;
 }
 
 export function isAdmin(principal: Principal): boolean {
@@ -123,7 +199,7 @@ export interface AuthenticatorOptions {
     now?: () => Date;
 }
 
-export class Authenticator {
+export class Authenticator implements AuthProvider {
     private readonly ttl: number;
     private readonly limiter: LoginLimiter;
     private readonly now: () => Date;
@@ -175,8 +251,8 @@ export class Authenticator {
             kind: "token",
             tokenId: record.id,
             projectId: record.projectId,
-            permission: record.permission ?? "full",
-            purpose: tokenPurpose(record),
+            ...(record.permission ? { permission: record.permission } : {}),
+            ...(record.purpose ? { purpose: record.purpose } : {}),
         };
     }
 

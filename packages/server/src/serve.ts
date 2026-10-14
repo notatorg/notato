@@ -1,15 +1,17 @@
 import { mkdirSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { Authenticator } from "./auth.ts";
+import { Authenticator, type AuthProvider } from "./auth.ts";
 import { LocalBackend } from "./backend.ts";
 import { FileBlobStore } from "./blob-store.ts";
 import { CONFIG_FILE, createConfigSource, mcpRefusal } from "./config.ts";
 import { isLoopbackName } from "./cors.ts";
 import { DEFAULT_PORT } from "./dev.ts";
+import type { ServerExtension } from "./extension.ts";
 import { createApp, SERVE_LIMITS, type UiAssets } from "./http.ts";
 import { createMcpHttp } from "./mcp-http.ts";
 import { ShareLinks } from "./share.ts";
 import { SqliteStore } from "./sqlite-store.ts";
+import type { AuthStore, Store } from "./storage.ts";
 import { startWebhooks } from "./webhooks.ts";
 
 export interface ServeOptions {
@@ -33,14 +35,16 @@ export interface ServeOptions {
     configFile?: string;
     /** `--no-mcp`: refuse agents whatever the config file says, for as long as this process runs. */
     mcp?: boolean;
+    /** What a deployment adds or replaces: its store, accounts, routes and limits. A plain server has none. */
+    extension?: ServerExtension;
 }
 
 export interface ServeRuntime {
     readonly host: string;
     readonly port: number;
     readonly backend: LocalBackend;
-    readonly auth: Authenticator;
-    readonly store: SqliteStore;
+    readonly auth: AuthProvider;
+    readonly store: Store & AuthStore;
     stop(): Promise<void>;
 }
 
@@ -52,7 +56,9 @@ export async function runServe(options: ServeOptions): Promise<ServeRuntime> {
     const log = options.log ?? ((message: string) => console.error(`[notato] ${message}`));
 
     mkdirSync(dir, { recursive: true });
-    const store = new SqliteStore(join(dir, "notato.db"));
+    const extension = options.extension;
+    const context = { dir, version: options.version, log };
+    const store = (await extension?.store?.(context)) ?? new SqliteStore(join(dir, "notato.db"));
     const config = createConfigSource({
         file: options.configFile ?? process.env.NOTATO_CONFIG ?? join(process.cwd(), CONFIG_FILE),
         flags: options.mcp === undefined ? undefined : { mcp: options.mcp },
@@ -67,26 +73,31 @@ export async function runServe(options: ServeOptions): Promise<ServeRuntime> {
         if (!settings.mcp) log(mcpRefusal(settings) ?? "MCP is off");
     }
     // On a shared server an admin creates each project (and its tokens) before an app can send to it.
-    const backend = new LocalBackend(store, new FileBlobStore(join(dir, "assets")), {
-        config,
-        autoCreateProjects: false,
-    });
+    const backend = new LocalBackend(
+        store,
+        (await extension?.blobs?.(context)) ?? new FileBlobStore(join(dir, "assets")),
+        { config, autoCreateProjects: false, hooks: extension?.hooks }
+    );
     // A shared server is reached at its proxy's address, which only the person running it knows: NOTATO_PUBLIC_URL.
     // Without it, webhook messages carry no screenshot.
     const share = new ShareLinks(dir, () => process.env.NOTATO_PUBLIC_URL);
     const hooks = startWebhooks({ bus: backend.bus, config, log, share });
-    const auth = new Authenticator(store);
-
-    const adminUser = options.adminUser ?? process.env.NOTATO_ADMIN_USER ?? "admin";
-    const admin = await auth.ensureAdmin(
-        adminUser,
-        options.adminPassword ?? process.env.NOTATO_ADMIN_PASSWORD
-    );
-    if (admin.generatedPassword) {
-        log(
-            `created the admin account "${adminUser}" with the password ${admin.generatedPassword}`
+    let auth: AuthProvider;
+    if (extension?.auth) auth = await extension.auth({ ...context, store });
+    else {
+        const builtIn = new Authenticator(store);
+        auth = builtIn;
+        const adminUser = options.adminUser ?? process.env.NOTATO_ADMIN_USER ?? "admin";
+        const admin = await builtIn.ensureAdmin(
+            adminUser,
+            options.adminPassword ?? process.env.NOTATO_ADMIN_PASSWORD
         );
-        log("this is shown once; set NOTATO_ADMIN_PASSWORD to choose your own");
+        if (admin.generatedPassword) {
+            log(
+                `created the admin account "${adminUser}" with the password ${admin.generatedPassword}`
+            );
+            log("this is shown once; set NOTATO_ADMIN_PASSWORD to choose your own");
+        }
     }
 
     const trustProxy = options.trustProxy ?? process.env.NOTATO_TRUST_PROXY === "1";
@@ -96,6 +107,7 @@ export async function runServe(options: ServeOptions): Promise<ServeRuntime> {
         version: options.version,
         share,
         auth,
+        routes: extension?.routes?.({ ...context, backend, auth }),
         ui: options.ui,
         trustProxy,
         corsOrigins: options.corsOrigins,
@@ -124,6 +136,15 @@ export async function runServe(options: ServeOptions): Promise<ServeRuntime> {
         },
     });
 
+    const stopExtension = await extension?.start?.({
+        ...context,
+        backend,
+        auth,
+        store,
+        host,
+        port: server.port ?? port,
+    });
+
     log(`serving on http://${host}:${server.port} (data in ${dir})`);
     if (!isLoopbackName(host) && !trustProxy) {
         log(
@@ -141,7 +162,8 @@ export async function runServe(options: ServeOptions): Promise<ServeRuntime> {
             hooks.stop();
             await mcp.close();
             server.stop(true);
-            store.close();
+            await stopExtension?.();
+            await store.close();
         },
     };
 }

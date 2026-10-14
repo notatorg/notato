@@ -165,7 +165,19 @@ export function matchesFilter(stored: StoredAnnotation, f: AnnotationFilter): bo
     return true;
 }
 
+/**
+ * Where an extension steps in on what the backend does. Each runs before the change is made, and throwing a
+ * `RequestError` refuses it with that message and status (402 for a limit reached, say).
+ */
+export interface BackendHooks {
+    /** A new note is about to be stored. `assetBytes` is the size of its screenshots. */
+    beforeIngest?(annotation: Annotation, assetBytes: number): void | Promise<void>;
+    /** A project is about to be created through `createProject`. */
+    beforeCreateProject?(project: ProjectRecord): void | Promise<void>;
+}
+
 export interface LocalBackendOptions {
+    hooks?: BackendHooks;
     /** The settings in force (see `notato config`). Read on every use, so a change applies without a restart. */
     config?: ConfigSource;
     /**
@@ -227,11 +239,15 @@ export class LocalBackend implements Backend {
     readonly bus: EventBus;
     readonly relay: RelayHub;
 
+    /** An extension's hooks, if it has any. */
+    readonly hooks: BackendHooks;
+
     constructor(
         readonly store: Store,
         readonly blobs: BlobStore,
         options: LocalBackendOptions = {}
     ) {
+        this.hooks = options.hooks ?? {};
         this.config = options.config ?? defaultConfig;
         this.autoCreateProjects = options.autoCreateProjects ?? true;
         this.bus = options.bus ?? new EventBus();
@@ -347,6 +363,14 @@ export class LocalBackend implements Backend {
             annotation = { ...annotation, bundleId: options.bundleId };
         }
 
+        if (this.hooks.beforeIngest) {
+            const shots = Object.values(annotation.screenshots ?? {});
+            const bytes = (await Promise.all(shots.map((ref) => this.blobs.get(ref.id)))).reduce(
+                (sum, blob) => sum + (blob?.bytes.byteLength ?? 0),
+                0
+            );
+            await this.hooks.beforeIngest(annotation, bytes);
+        }
         let stored: StoredAnnotation;
         try {
             stored = await this.store.insertAnnotation(annotation);
@@ -392,6 +416,7 @@ export class LocalBackend implements Backend {
             name: cleanProjectName(name) || id,
             createdAt: new Date().toISOString(),
         };
+        await this.hooks.beforeCreateProject?.(record);
         return (await this.store.createProject(record)) ? record : null;
     }
 

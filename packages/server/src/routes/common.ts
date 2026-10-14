@@ -1,5 +1,5 @@
 import type { z } from "zod";
-import { type Authenticator, canAccessProject, isAdmin, type Principal } from "../auth.ts";
+import { type AuthProvider, canAccessProject, isAdmin, type Principal } from "../auth.ts";
 import { type LocalBackend, RequestError } from "../backend.ts";
 import { sameOrigin } from "../cors.ts";
 import type { AppOptions, RequestInfo } from "../http.ts";
@@ -13,7 +13,7 @@ import type { EventStreams } from "./events.ts";
 export interface AppContext {
     backend: LocalBackend;
     /** Accounts and tokens. Absent on a server without logins (`notato dev`). */
-    auth?: Authenticator;
+    auth?: AuthProvider;
     options: AppOptions;
     /** The largest upload each kind of request may carry, in bytes. */
     limits: { upload: number; bundle: number };

@@ -42,7 +42,9 @@ export const accountRoutes: Routes<Principal | null> = async (
             mode: options.mode,
             authRequired: Boolean(auth),
             authenticated: Boolean(principal),
-            ...(principal?.kind === "admin" ? { username: principal.username } : {}),
+            ...(principal?.kind === "admin" || principal?.kind === "member"
+                ? { username: principal.username }
+                : {}),
             ...(principal?.kind === "token" ? { projectId: principal.projectId } : {}),
         });
     }
