@@ -27,7 +27,14 @@ const settingLabel = (name: string) => SETTING_LABELS[name] ?? name;
 const POLL_MS = 5000;
 
 /** The server's settings (the same file `notato config` edits), its webhooks, and this browser's own preferences. */
-export function Settings({ projects }: { projects: ProjectSummary[] | null }) {
+export function Settings({
+    projects,
+    manageServer = true,
+}: {
+    projects: ProjectSummary[] | null;
+    /** False for someone who may not see or change the server's own settings: they get this browser's preferences. */
+    manageServer?: boolean;
+}) {
     const [view, setView] = useState<SettingsView | null>(null);
     const [status, setStatus] = useState<ServerStatus | null>(null);
     const [error, setError] = useState<string | null>(null);
@@ -39,6 +46,7 @@ export function Settings({ projects }: { projects: ProjectSummary[] | null }) {
     const [testing, setTesting] = useState<WebhookView | null>(null);
 
     useEffect(() => {
+        if (!manageServer) return;
         getSettings().then(
             (v) => {
                 setView(v);
@@ -53,7 +61,7 @@ export function Settings({ projects }: { projects: ProjectSummary[] | null }) {
             getSettings().then(setView, () => {});
         }, POLL_MS);
         return () => clearInterval(timer);
-    }, []);
+    }, [manageServer]);
 
     /** Runs a change and shows the settings it answers with; a refusal (a stale copy, a broken file) is shown instead. */
     const change = async (key: string, fn: () => Promise<SettingsView>) => {
@@ -98,6 +106,22 @@ export function Settings({ projects }: { projects: ProjectSummary[] | null }) {
             </div>
         </header>
     );
+
+    if (!manageServer) {
+        return (
+            <div className="sheet">
+                <div className="sheet-inner settings">
+                    <header className="sheet-head">
+                        <div>
+                            <h1>Settings</h1>
+                            <p>Preferences for this browser.</p>
+                        </div>
+                    </header>
+                    <BrowserPreferences />
+                </div>
+            </div>
+        );
+    }
 
     if (!view) {
         return (

@@ -5,11 +5,13 @@ import {
     type CreatedProject,
     getMe,
     isAdmin,
+    isServerAdmin,
     listProjects,
     logout,
     type Me,
     type ProjectSummary,
     setManagePolicy,
+    setServerAdminPolicy,
     setUnauthorizedHandler,
 } from "./api.ts";
 import { type BoardExtension, BoardExtensionProvider, useBoardExtension } from "./extension.tsx";
@@ -207,8 +209,8 @@ function Shell({ me, route, onSignedOut }: { me: Me; route: Route; onSignedOut()
                             <Tokens projects={projects} />
                         </div>
                     </div>
-                ) : route.page === "settings" && admin ? (
-                    <Settings projects={projects} />
+                ) : route.page === "settings" ? (
+                    <Settings projects={projects} manageServer={isServerAdmin(me)} />
                 ) : route.page === "ext" && extension?.pages?.[route.name] ? (
                     (() => {
                         const Page = extension.pages[route.name] as NonNullable<
@@ -261,6 +263,7 @@ export interface BoardOptions {
 /** Draws the board. The page's own script calls it with nothing; a hosted board passes its extension. */
 export function mountBoard(options: BoardOptions = {}) {
     setManagePolicy(options.extension?.canManage);
+    setServerAdminPolicy(options.extension?.canAdminServer);
     const root = options.root ?? (document.getElementById("root") as HTMLElement);
     createRoot(root).render(
         <StrictMode>

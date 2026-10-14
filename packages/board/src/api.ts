@@ -21,9 +21,18 @@ export const setManagePolicy = (policy?: (me: Me) => boolean) => {
     managePolicy = policy;
 };
 
+let serverAdminPolicy: ((me: Me) => boolean) | undefined;
+/** An extension's say on who may see and change the server's own settings (its webhooks, its agents setting). */
+export const setServerAdminPolicy = (policy?: (me: Me) => boolean) => {
+    serverAdminPolicy = policy;
+};
+
 /** Who may change things (projects, tokens, settings): anyone in dev mode, and anyone signed in on a shared server. */
 export const isAdmin = (me: Me) =>
     managePolicy ? managePolicy(me) : me.mode === "dev" || Boolean(me.username);
+
+/** Who may see and change the server's own settings: whoever manages it, unless an extension says otherwise. */
+export const isServerAdmin = (me: Me) => (serverAdminPolicy ? serverAdminPolicy(me) : isAdmin(me));
 
 export interface ProjectSummary {
     id: string;

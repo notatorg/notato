@@ -73,110 +73,131 @@ export function Sidebar({ me, route, current, projects, onNewProject, onSignOut 
 
             {extension?.SidebarTop ? <extension.SidebarTop me={me} /> : null}
 
-            {current ? (
-                <>
-                    <div className="side-label side-project-name" title={current}>
-                        {projectName(summary, current)}
-                    </div>
-                    {VIEWS.filter((v) => admin || !v.admin).map((v) => {
-                        const on =
-                            open === current && route.page === "project" && route.tab === v.tab;
-                        const todo = v.tab === "inbox" && summary ? todoOf(summary) : 0;
-                        return (
-                            <a
-                                key={v.tab}
-                                className={on ? "side-link active" : "side-link"}
-                                href={projectHref(current, v.tab)}
-                                aria-current={on ? "page" : undefined}
-                            >
-                                <Icon name={v.icon} />
-                                {v.label}
-                                {todo ? (
-                                    <span className="badge" title={`${todo} to do`}>
-                                        {todo}
-                                    </span>
-                                ) : null}
-                            </a>
-                        );
-                    })}
-                </>
-            ) : null}
-
-            <div className="side-label side-section">
-                Projects
-                <a className={route.page === "home" ? "see-all active" : "see-all"} href="#/">
-                    See all
-                </a>
-                {onNewProject ? (
-                    <button
-                        type="button"
-                        className="icon-button side-add"
-                        aria-label="New project"
-                        title="New project"
-                        onClick={() => onNewProject()}
-                    >
-                        <Icon name="plus" size={15} />
-                    </button>
-                ) : null}
-            </div>
-            {projects && projects.length >= FIND_FROM ? (
-                <input
-                    className="side-search"
-                    type="search"
-                    placeholder="Find a project"
-                    value={query}
-                    onChange={(e) => setQuery(e.target.value)}
-                    aria-label="Find a project"
+            {extension?.ProjectNav ? (
+                <extension.ProjectNav
+                    me={me}
+                    route={route}
+                    current={current}
+                    projects={projects}
+                    onNewProject={onNewProject}
                 />
-            ) : null}
-            <ul className="side-projects">
-                {projects === null ? <li className="muted side-note">Loading…</li> : null}
-                {projects?.length === 0 ? (
-                    <li className="side-note">
-                        <span className="muted">No projects yet</span>
+            ) : (
+                <>
+                    {current ? (
+                        <>
+                            <div className="side-label side-project-name" title={current}>
+                                {projectName(summary, current)}
+                            </div>
+                            {VIEWS.filter((v) => admin || !v.admin).map((v) => {
+                                const on =
+                                    open === current &&
+                                    route.page === "project" &&
+                                    route.tab === v.tab;
+                                const todo = v.tab === "inbox" && summary ? todoOf(summary) : 0;
+                                return (
+                                    <a
+                                        key={v.tab}
+                                        className={on ? "side-link active" : "side-link"}
+                                        href={projectHref(current, v.tab)}
+                                        aria-current={on ? "page" : undefined}
+                                    >
+                                        <Icon name={v.icon} />
+                                        {v.label}
+                                        {todo ? (
+                                            <span className="badge" title={`${todo} to do`}>
+                                                {todo}
+                                            </span>
+                                        ) : null}
+                                    </a>
+                                );
+                            })}
+                        </>
+                    ) : null}
+
+                    <div className="side-label side-section">
+                        Projects
+                        <a
+                            className={route.page === "home" ? "see-all active" : "see-all"}
+                            href="#/"
+                        >
+                            See all
+                        </a>
                         {onNewProject ? (
-                            <button type="button" className="link" onClick={() => onNewProject()}>
-                                Make one
+                            <button
+                                type="button"
+                                className="icon-button side-add"
+                                aria-label="New project"
+                                title="New project"
+                                onClick={() => onNewProject()}
+                            >
+                                <Icon name="plus" size={15} />
                             </button>
                         ) : null}
-                    </li>
-                ) : null}
-                {shown.map((p) => {
-                    const on = p.id === open;
-                    const unseen = !on && hasUnseen(p.id, p.lastActivityAt);
-                    const todo = todoOf(p);
-                    const label = projectName(p, p.id);
-                    return (
-                        <li key={p.id}>
-                            <a
-                                className={on ? "side-project active" : "side-project"}
-                                href={projectHref(
-                                    p.id,
-                                    route.page === "project" && route.tab !== "connect"
-                                        ? route.tab
-                                        : "inbox"
-                                )}
-                                aria-current={on ? "page" : undefined}
-                                title={label === p.id ? p.id : `${label} (${p.id})`}
-                            >
-                                <ProjectMark name={label} active={on} />
-                                <span className="side-name">{label}</span>
-                                {unseen ? (
-                                    <span
-                                        className="unseen"
-                                        title="New activity since you last looked"
-                                    />
+                    </div>
+                    {projects && projects.length >= FIND_FROM ? (
+                        <input
+                            className="side-search"
+                            type="search"
+                            placeholder="Find a project"
+                            value={query}
+                            onChange={(e) => setQuery(e.target.value)}
+                            aria-label="Find a project"
+                        />
+                    ) : null}
+                    <ul className="side-projects">
+                        {projects === null ? <li className="muted side-note">Loading…</li> : null}
+                        {projects?.length === 0 ? (
+                            <li className="side-note">
+                                <span className="muted">No projects yet</span>
+                                {onNewProject ? (
+                                    <button
+                                        type="button"
+                                        className="link"
+                                        onClick={() => onNewProject()}
+                                    >
+                                        Make one
+                                    </button>
                                 ) : null}
-                                {todo ? (
-                                    <span className="side-count" title={`${todo} to do`}>
-                                        {todo}
-                                    </span>
-                                ) : null}
-                            </a>
-                        </li>
-                    );
-                })}
-            </ul>
+                            </li>
+                        ) : null}
+                        {shown.map((p) => {
+                            const on = p.id === open;
+                            const unseen = !on && hasUnseen(p.id, p.lastActivityAt);
+                            const todo = todoOf(p);
+                            const label = projectName(p, p.id);
+                            return (
+                                <li key={p.id}>
+                                    <a
+                                        className={on ? "side-project active" : "side-project"}
+                                        href={projectHref(
+                                            p.id,
+                                            route.page === "project" && route.tab !== "connect"
+                                                ? route.tab
+                                                : "inbox"
+                                        )}
+                                        aria-current={on ? "page" : undefined}
+                                        title={label === p.id ? p.id : `${label} (${p.id})`}
+                                    >
+                                        <ProjectMark name={label} active={on} />
+                                        <span className="side-name">{label}</span>
+                                        {unseen ? (
+                                            <span
+                                                className="unseen"
+                                                title="New activity since you last looked"
+                                            />
+                                        ) : null}
+                                        {todo ? (
+                                            <span className="side-count" title={`${todo} to do`}>
+                                                {todo}
+                                            </span>
+                                        ) : null}
+                                    </a>
+                                </li>
+                            );
+                        })}
+                    </ul>
+                </>
+            )}
 
             <div className="side-foot">
                 {extension?.nav?.map((item) => {
@@ -203,15 +224,13 @@ export function Sidebar({ me, route, current, projects, onNewProject, onSignOut 
                         Tokens
                     </a>
                 ) : null}
-                {admin ? (
-                    <a
-                        className={route.page === "settings" ? "side-link active" : "side-link"}
-                        href={href({ page: "settings" })}
-                    >
-                        <Icon name="gear" />
-                        Settings
-                    </a>
-                ) : null}
+                <a
+                    className={route.page === "settings" ? "side-link active" : "side-link"}
+                    href={href({ page: "settings" })}
+                >
+                    <Icon name="gear" />
+                    Settings
+                </a>
                 <div className="name-card">
                     <span className="name-initial" aria-hidden="true">
                         {initial(name)}
