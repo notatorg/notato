@@ -77,6 +77,7 @@ export interface ExtensionHttp
         | "maxUploadBytes"
         | "maxBundleBytes"
         | "authorize"
+        | "strictOrigins"
     > {
     routes?: ExtraRoutes;
     /** The largest body the server reads at all, in bytes. */
