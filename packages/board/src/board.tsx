@@ -50,7 +50,13 @@ function App() {
     const shell = (
         <Shell me={me} onSignedOut={() => setMe({ ...me, authenticated: false })} route={route} />
     );
-    return extension?.Frame ? <extension.Frame me={me}>{shell}</extension.Frame> : shell;
+    return extension?.Frame ? (
+        <extension.Frame me={me} refresh={refresh}>
+            {shell}
+        </extension.Frame>
+    ) : (
+        shell
+    );
 }
 
 /** A burst of changes (an import, an agent working through a list) reloads the counts once it settles, or every 2 s. */
@@ -192,7 +198,7 @@ function Shell({ me, route, onSignedOut }: { me: Me; route: Route; onSignedOut()
                 current={current}
                 projects={projects}
                 onNewProject={newProject}
-                onSignOut={() => logout().then(onSignedOut)}
+                onSignOut={() => (extension?.signOut ?? logout)().then(onSignedOut)}
             />
             <main className="content">
                 {route.page === "tokens" && admin && me.authRequired ? (

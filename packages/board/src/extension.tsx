@@ -14,7 +14,7 @@ export interface BoardExtension {
      * Wraps the signed-in board: for providers, or a gate that stands in for the board (a payment wall) by not
      * rendering its children.
      */
-    Frame?: ComponentType<{ me: Me; children: ReactNode }>;
+    Frame?: ComponentType<{ me: Me; refresh(): void; children: ReactNode }>;
     /** Pages of its own, at `#/x/<key>` (anything after the key is `rest`). */
     pages?: Record<string, ComponentType<ExtensionPageProps>>;
     /** Links the sidebar shows beneath its own: they lead to `#/x/<page>`. */
@@ -23,6 +23,8 @@ export interface BoardExtension {
     SidebarTop?: ComponentType<{ me: Me }>;
     /** Shown at the end of a project's settings. */
     ProjectSettingsExtra?: ComponentType<{ me: Me; projectId: string }>;
+    /** Signs the person out of whatever the extension signed them in to, before the server forgets the session. */
+    signOut?: () => Promise<void>;
     /** Who may create projects, make tokens and change settings. Default: an admin, or anyone in dev mode. */
     canManage?: (me: Me) => boolean;
 }
