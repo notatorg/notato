@@ -1,6 +1,6 @@
 # @notato/react
 
-For hosted Notato, use version **0.2.1 or later**. Published 0.2.0 predates authenticated event streams and project-scoped capability requests. Create an **App/tester** token for the SDK; **Agent** tokens are for MCP.
+For hosted Notato, use version **0.3.0 or later**. Published 0.2.0 predates authenticated event streams and project-scoped capability requests. Create an **App/tester** token for the SDK; **Agent** tokens are for MCP.
 
 Notato for React: render `<Notato />` once and people can pin notes to elements of your running app. The notes, with screenshots, the React component and its source file, reach your coding agent (Claude Code, Codex, Cursor and others) over MCP through a Notato server.
 

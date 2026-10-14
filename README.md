@@ -386,6 +386,30 @@ docker run -p 4747:4747 -v notato:/data -e NOTATO_ADMIN_PASSWORD=… ghcr.io/not
 | `NOTATO_MCP`                                  | `off` refuses agents whatever the file says. See [MCP over HTTP](#mcp-tools)                                             |
 | `NOTATO_PROJECT`                              | `notato dev`: the projects this agent works on, comma-separated. See [Several repositories](#mcp-tools)                  |
 
+## Building on Notato
+
+The server is a library as well as a command. `runServe` takes a **`ServerExtension`**, which is how a hosted product (Notato Cloud is one) is built on the same server instead of a copy of it: annotations, MCP, relay, webhooks and the event streams are the server's own, and the extension brings what differs.
+
+```ts
+import { json, runServe, type ServerExtension } from "@notato/server";
+
+const extension: ServerExtension = {
+    name: "my-deployment",
+    store: ({ dir }) => new MyPostgresStore(url),   // notes, projects and accounts
+    blobs: () => new MyObjectStore(bucket),          // screenshots
+    auth: ({ store }) => new MyAccounts(store),      // who is signed in: admins, members, tokens
+    routes: () => ({ private: [billingRoutes], public: [webhookRoute], isPublic: (_m, p) => p === "/stripe" }),
+    hooks: { beforeIngest: (note, bytes) => checkQuota(note, bytes) },   // throw a RequestError to refuse
+    around: (request, next) => audit(request, next), // wraps every request once its credential is known
+    start: (runtime) => startWorkers(runtime),       // returns how to stop them
+};
+await runServe({ version, extension });
+```
+
+- **Accounts.** A credential is an `admin`, a `token`, or a `member`: a signed-in person who reaches only the `projectIds` your accounts give them. Whatever you return from `identify` is enforced by every route, event stream and MCP session, which see only those projects and end when the credential stops being valid.
+- **The board.** It draws itself through `mountBoard({ extension })`: a `BoardExtension` can replace the sign-in, wrap the signed-in board, add pages at `#/x/<page>`, sidebar links, a slot above the project list and a section in project settings. Build one from your own page with `bun packages/board/scripts/build.ts --html your.html`, and serve it with `NOTATO_WEB_DIST`.
+- **From a checkout.** `@notato/server` and `@notato/board` are not published to npm: use this repository as a git submodule or a workspace and import them by path. A server with no extension behaves exactly as before.
+
 ## SDK props
 
 | Prop                                                                                        |                                                                                                                                                                         |

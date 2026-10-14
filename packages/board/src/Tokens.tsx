@@ -45,6 +45,7 @@ export function TokenManager({
     const [project, setProject] = useState(projectId ?? "");
     const [name, setName] = useState("");
     const [purpose, setPurpose] = useState<"app" | "agent">("app");
+    const [captureOnly, setCaptureOnly] = useState(false);
     const [fresh, setFresh] = useState<{ token: string; projectId: string } | null>(null);
     const [error, setError] = useState<string | null>(null);
     const [busy, setBusy] = useState(false);
@@ -59,10 +60,12 @@ export function TokenManager({
         setError(null);
         setBusy(true);
         try {
+            const kind = project === "*" ? "agent" : purpose;
             const made = await createToken(
                 project,
                 name.trim(),
-                project === "*" ? "agent" : purpose
+                kind,
+                kind === "app" && captureOnly
             );
             setFresh({ token: made.token, projectId: made.record.projectId });
             setName("");
@@ -148,6 +151,17 @@ export function TokenManager({
                         </select>
                     </label>
                 )}
+                {project !== "*" && purpose === "app" ? (
+                    <label htmlFor={`${id}-capture`} className="check">
+                        <input
+                            id={`${id}-capture`}
+                            type="checkbox"
+                            checked={captureOnly}
+                            onChange={(e) => setCaptureOnly(e.target.checked)}
+                        />
+                        Send only: the app can send notes but never read them back
+                    </label>
+                ) : null}
                 <label htmlFor={`${id}-name`}>
                     Name
                     <input
@@ -211,7 +225,10 @@ export function TokenManager({
                                             ) : null}
                                         </td>
                                     )}
-                                    <td>{tokenKind(t) === "app" ? "App" : "Agent"}</td>
+                                    <td>
+                                        {tokenKind(t) === "app" ? "App" : "Agent"}
+                                        {t.permission === "capture" ? " (send only)" : ""}
+                                    </td>
                                     <td>{new Date(t.createdAt).toLocaleDateString()}</td>
                                     <td>
                                         {t.lastUsedAt

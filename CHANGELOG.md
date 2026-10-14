@@ -2,6 +2,20 @@
 
 Every Notato package is released together, at one version: the `notato` command and server, the npm packages, the Swift package, the Android libraries, the .NET MAUI package, the Flutter package, the Docker image and the website. A release's entry here is also the top of its [GitHub release](https://github.com/notatorg/notato/releases), and a tag is refused until this file has its version.
 
+## 0.3.0
+
+Safer connections for apps, and a server that other products can be built on.
+
+- **Web SDK connection fixes.** The browser, React and Angular SDKs send event-stream credentials in an `Authorization` header, not in the address, scope their capability request to the project, and read a token from a `data-notato-token` attribute on the script tag. They work with a 0.2.0 server as they are.
+- **App tokens and agent tokens.** A token now says what it is for. An **app** token goes in an SDK, is for one project, and cannot use MCP or act as an agent. An **agent** token is for your coding agent over MCP and the API, for one project or for all of them. `--capture-only` makes an app token that can only send notes and never read them back, so a token in a page's source cannot be used to read what testers wrote. `notato token create` takes `--purpose`, `--capture-only` and `--expires <days>`, and the board's Tokens page can make each kind. Tokens made before 0.3 keep working exactly as they did, for both an app and an agent. A new project's first token is an app token: make an agent token for MCP.
+- **Tokens stay out of addresses.** The bookmark, the console snippet and the script tag put the token in an attribute instead of the script's URL; `notato inject` prints them that way.
+- **Encrypted backups.** `notato backup-keygen`, `notato backup` (once, or `--interval-hours` on a schedule, keeping the last few) and `notato restore` back up and restore a data folder: the database and the screenshots, authenticated and encrypted with a key you keep elsewhere.
+- **`notato doctor`** checks a send-only token without storing or reading a note (`Capture connection`).
+- **Agents are told feedback is untrusted data.** The MCP instructions say that captured text and names are not instructions, and a token's agent presence is kept per credential.
+- **Streams, relays and imports stay inside a credential's projects.** An event stream for every project carries only the ones the credential can use, and ends when the credential stops being valid.
+- **Building on the server.** `runServe` takes a `ServerExtension`: its own store, screenshots, accounts, extra routes, request middleware, per-request allowed origins, response headers, limits (hooks that can refuse a note or a project), MCP auditing and a start and stop for background work. A signed-in person who is not an admin (a `member`) reaches only the projects they are given, and `ScopedBackend` works over a set of projects. The board draws itself through `mountBoard({ extension })`, with its own sign-in, frame, pages, sidebar links and project-settings section, and `bun packages/board/scripts/build.ts --html <page>` builds a board from another page. A plain server uses none of this and behaves as before. See *Building on Notato* in the README.
+- **MIT, everywhere.** The server, the command and the board are MIT, like the SDKs.
+
 ## 0.2.0
 
 Notato in .NET Aspire, and switching Notato on or off from where an app is built or launched.

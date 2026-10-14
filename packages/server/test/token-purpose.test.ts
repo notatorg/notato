@@ -154,10 +154,20 @@ describe("token purposes", () => {
         const s = await start();
         const app = await issue(s, "p");
         const agent = await issue(s, "p", "agent", { purpose: "agent" });
-        const events = (token: string) =>
-            s.call("/projects/p/events?agent=1", { headers: bearer(token) });
-        expect((await events(app)).status).toBe(403);
-        expect((await events(agent)).status).toBe(200);
+        const relay = (token: string) =>
+            s.call("/relay/annotate", {
+                method: "POST",
+                headers: { ...bearer(token), "content-type": "application/json" },
+                body: JSON.stringify({
+                    projectId: "p",
+                    target: "#x",
+                    comment: "c",
+                    timeoutMs: 1000,
+                }),
+            });
+        expect((await relay(app)).status).toBe(403);
+        // No page is connected, which is as far as an agent token gets.
+        expect((await relay(agent)).status).toBe(409);
         expect(
             (
                 await s.call("/annotations/handed", {

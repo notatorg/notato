@@ -242,10 +242,20 @@ export const exportHref = (project: string, filters: Filters) =>
 
 export const listTokens = async () =>
     (await request<{ items: TokenInfo[] }>("/admin/tokens")).items;
-export const createToken = (projectId: string, name: string, purpose?: "app" | "agent") =>
+export const createToken = (
+    projectId: string,
+    name: string,
+    purpose?: "app" | "agent",
+    captureOnly = false
+) =>
     request<{ token: string; record: TokenInfo }>(
         "/admin/tokens",
-        json("POST", { projectId, name, ...(purpose ? { purpose } : {}) })
+        json("POST", {
+            projectId,
+            name,
+            ...(purpose ? { purpose } : {}),
+            ...(captureOnly ? { permission: "capture" } : {}),
+        })
     );
 export const revokeToken = (id: string) =>
     request<void>(`/admin/tokens/${encodeURIComponent(id)}`, { method: "DELETE" });

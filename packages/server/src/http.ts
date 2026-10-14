@@ -295,10 +295,11 @@ export function createApp(options: AppOptions): AppHandler {
             if (
                 principal?.kind === "token" &&
                 principal.purpose === "app" &&
+                // The agent's side of the relay and of watching. A page in agent mode answering requests (its event
+                // stream with agent=1, and its results) is the app's side, and an app token may do that.
                 (req.headers.has(AGENT_HEADER) ||
                     path === "/relay/annotate" ||
-                    path === "/annotations/handed" ||
-                    (/\/events$/.test(path) && url.searchParams.get("agent") === "1"))
+                    path === "/annotations/handed")
             )
                 return withCors(
                     json({ error: "an agent token is required for agent operations" }, 403)
