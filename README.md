@@ -164,13 +164,15 @@ The server serves a board at its own address (`http://localhost:4747` in dev mod
 
 **Projects.** On `notato dev` a project appears with its first note: nothing to set up. You can also create one first with **New project** on the board, which shows how to connect each kind of app to it. On a [shared server](#shared-server) an admin creates every project first: that is what hands out its token, and a note for a project the server does not have is refused, so a typo or a stray app cannot start one. Renaming a project changes only the name people see; deleting one removes its notes, their screenshots and its tokens.
 
-- **The sidebar** lists every project with what is still to do, and a dot when something happened since you last looked. **All projects** shows a card for each, most recently active first.
+- **The sidebar's project switcher** moves between projects, shows their to-do and unread counts, and offers **New project**. With eight or more projects it has a search box. The sidebar's Inbox, Activity and Overview links follow the selected project. The logo returns to **All projects**, with a card for each, most recently active first.
 - **Inbox**, per project: the notes on the left, the one you open on the right with its screenshot, where it is in the code, the conversation with the agent, and the buttons to reply, resolve, reopen, dismiss, ask for a revert or pick a version. **To do**, **Done**, **Dismissed** and **All** split it by status; search looks through the notes, the replies, the pages, the selectors and the components; **Filter** narrows it by page, person, severity, intent, author or bundle; it sorts by recent activity, age or severity and groups by page, status, person or severity. Notes with something new since your last visit are marked.
 - **Activity**: everything said in the project, newest first, a day at a time.
 - **Overview**: what is to do and done, new notes a day for the last 30 days, the typical time to a first reply, the pages with the most to do and who is giving feedback. Every row opens the inbox on that slice.
-- **Settings** (for whoever can administer the server: anyone on this machine in dev mode, the admin in serve mode): whether agents can connect, with the MCP address and how to connect each agent (see [MCP over HTTP](#mcp-tools)), screenshots on or off, the webhooks (see [Webhooks](#webhooks)), your name on replies and how much a Markdown copy says. Server settings go in `notato.config.json`, the file `notato config` edits, and apply at once. Only the board itself can change them: a request from an app's page is refused, so a page cannot point a webhook somewhere.
+- **Tokens** (an admin on a shared server): create and revoke app/tester or agent tokens, choose their project and expiry, and copy the connection details when a token is created. A project's settings show just its tokens. A token's value is shown once.
+- **Connect** has a guide for each SDK and a **Check the connection** section: the exact project id, live versus bundled capture, environment overrides (including Aspire), and the right token for an SDK or an agent.
+- **Settings** (for whoever can administer the server: anyone on this machine in dev mode, the admin in serve mode): whether agents can connect, with the MCP address and how to connect each agent (see [MCP over HTTP](#mcp-tools)), screenshots on or off and the webhooks (see [Webhooks](#webhooks)). Server settings go in `notato.config.json`, the file `notato config` edits, and apply at once. Only the board itself can change them: a request from an app's page is refused, so a page cannot point a webhook somewhere. Browser preferences here hold your name on replies, Markdown detail and the light or dark theme.
 
-It updates as things happen. Keys in the inbox: `j`/`k` (or the arrows) move, `/` searches, `r` replies, Cmd/Ctrl+Enter sends, Esc closes. Every note has its own link (`#/p/<project>/a/<id>`). **Replying as**, at the foot of the sidebar (or in Settings), sets the name your replies carry (kept in this browser). On a phone the projects are a drawer and a note opens over the list.
+It updates as things happen. Keys in the inbox: `j`/`k` (or the arrows) move, `/` searches, `r` replies, Cmd/Ctrl+Enter sends, Esc closes. Every note has its own link (`#/p/<project>/a/<id>`). The name at the foot of the sidebar (or in Settings) sets the name your replies carry, kept in this browser. Dialogs keep keyboard focus inside until closed. On a phone the sidebar is a drawer and a note opens over the list.
 
 ## Copy as Markdown, and export
 
@@ -366,7 +368,7 @@ NOTATO_ADMIN_PASSWORD=… npx notato serve --host 0.0.0.0 --trust-proxy
 
 Put a TLS-terminating reverse proxy in front. It serves the board UI at `/` (sign in as `admin`), the API, and **MCP over HTTP at `/mcp`**.
 
-- **Projects come first.** Create each one on the board (**New project**) or with `npx notato project create <id>`. Either way you get the project's first token (`notato_…`, shown once) and, on the board, what to paste into each kind of app. Apps can only send to projects that exist: anything else is answered `404` with how to create it.
+- **Projects come first.** Create each one on the board (**New project**) or with `npx notato project create <id>`. The CLI makes an app token and an agent token (`notato_…`, shown once); add `--json` for both tokens and the MCP connection details in a machine-readable result. The board's **Also make a token for my coding agent** checkbox is on by default, and its connection guide shows what to paste into each kind of app and agent. Apps can only send to projects that exist: anything else is answered `404` with how to create it.
 - **More tokens** are made in the board (the project's settings, or Tokens) or with `npx notato token create <project>`. Tokens have a purpose. An **app** token goes in an SDK, is for one project, and cannot use MCP; add `--capture-only` for a page that should only be able to send notes, never read them back. An **agent** token is for your coding agent over MCP, for one project or `*` for all of them (`--purpose agent`). `--expires <days>` makes a token stop working on its own. Tokens made before 0.3 keep working as they did. Deleting a project stops its tokens working.
 - Give the SDK `server` and `token`. Connect an agent to `https://notato.example.com/mcp` with an agent token in the header `Authorization: Bearer notato_…` (Settings › Agents on the board has the line for each agent). Turning agents off (`--no-mcp`, or Settings) closes `/mcp` and refuses agent tokens, while apps keep sending. Claude Code:
   `claude mcp add --transport http notato https://notato.example.com/mcp --header "Authorization: Bearer notato_…"`. Codex: `url = "https://notato.example.com/mcp"` and `bearer_token_env_var = "NOTATO_TOKEN"` under `[mcp_servers.notato]` in `~/.codex/config.toml`.
@@ -402,7 +404,7 @@ const extension: ServerExtension = {
     hooks: ({ store }) => ({ beforeIngest: (note, bytes) => checkQuota(store, note, bytes) }), // throw a RequestError to refuse
     auth: ({ store }) => new MyAccounts(store),       // who is signed in: admins, members, tokens
     http: ({ backend, auth }) => ({
-        routes: { private: [billingRoutes], public: [webhookRoute], isPublic: (_m, p) => p === "/stripe" },
+        routes: { private: [extraRoutes], public: [callbackRoute], isPublic: (_m, p) => p === "/callback" },
         around: (request, next) => audit(request, next),   // wraps every request once its credential is known
     }),
     mcp: () => ({ requireToken: true, maxSessions: 128 }),
@@ -411,10 +413,24 @@ const extension: ServerExtension = {
 await runServe({ version, extension });
 ```
 
+The extension's parts are made in stages. Later stages receive the parts already made:
 
-- **Accounts.** A credential is an `admin`, a `token`, or a `member`: a signed-in person who reaches only the `projectIds` your accounts give them. Whatever you return from `identify` is enforced by every route, event stream and MCP session, which see only those projects and end when the credential stops being valid.
-- **The board.** It draws itself through `mountBoard({ extension })`: a `BoardExtension` can replace the sign-in, wrap the signed-in board, add pages at `#/x/<page>`, sidebar links, a slot above the project list and a section in project settings. Build one from your own page with `bun packages/board/scripts/build.ts --html your.html`, and serve it with `NOTATO_WEB_DIST`.
-- **From a checkout.** `@notato/server` and `@notato/board` are not published to npm: use this repository as a git submodule or a workspace and import them by path. A server with no extension behaves exactly as before.
+| Part             | What it supplies                                                                                                          |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| `store`, `blobs` | Records and accounts through `Store & AuthStore`, and screenshots through `BlobStore`; the defaults are SQLite and files  |
+| `config`         | A `ConfigSource` wrapping the settings file                                                                               |
+| `hooks`          | Checks before backend changes, such as refusing a note or project that would exceed a limit                               |
+| `backend`        | An optional `LocalBackend` subclass, made with the assembled store, blobs, config and hooks                               |
+| `auth`           | An `AuthProvider`; replacing it also takes over account creation from the built-in admin login                            |
+| `http`           | Extra routes, authorization, middleware, allowed origins per request, response headers, CSP and upload limits             |
+| `mcp`            | Session limits, a guard, a token requirement and tool auditing                                                            |
+| `fetch`          | A wrapper around every request, including MCP, before the HTTP handlers                                                   |
+| `start`          | Background work after the server starts, returning an optional stop function run before the store closes                  |
+
+- **Accounts.** A credential is an `admin`, a `token`, or a `member`: a signed-in person who reaches only the `projectIds` your accounts give them. The core's routes, event streams and MCP sessions enforce that scope and end streams and sessions when the credential stops being valid. Extra routes must apply their own authorization checks. Set `share: false` to omit signed screenshot links from webhooks when screenshots must stay behind authentication.
+- **The board's screens.** `mountBoard({ extension })` takes a `BoardExtension`: `Login` replaces sign-in, `Frame` wraps or gates the signed-in board, `pages` adds routes at `#/x/<page>`, and `nav` links to them. `SidebarTop` adds a slot above the project's navigation, `ProjectNav` can replace that navigation, and `ProjectSettingsExtra` adds a section to project settings. `signOut` ends the extension's session.
+- **The board's account behavior.** `readState.markRead` persists read markers for the signed-in account; `accountScope` separates its browser read markers by an additional scope; `accountName` supplies its name. `automaticProjectIds` omits the id field when the server generates ids, and `requireTokenExpiry` removes the no-expiry choice. `canManage` controls project and token management, while `canAdminServer` controls the server's own settings independently.
+- **From a checkout.** `@notato/server` and `@notato/board` are not published to npm: use this repository as a git submodule or a workspace. Build a board from your own page with `bun packages/board/scripts/build.ts --html your.html`, and serve it with `NOTATO_WEB_DIST`. A server with no extension keeps the SQLite store, local files and existing dev and shared-server behavior. Extension checks are in [`packages/server/test/extension.test.ts`](packages/server/test/extension.test.ts).
 
 ## SDK props
 

@@ -149,6 +149,14 @@ export const PAGES: Page[] = [
         ],
     },
     {
+        slug: "extensions",
+        group: "Reference",
+        title: "Building on Notato",
+        summary: "Extend the server and board with your own storage, accounts and screens.",
+        file: "README.md",
+        sections: ["Building on Notato"],
+    },
+    {
         slug: "limits",
         group: "Reference",
         title: "Known limits",
