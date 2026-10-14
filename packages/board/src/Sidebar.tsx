@@ -162,7 +162,7 @@ export function Sidebar({ me, route, current, projects, onNewProject, onSignOut 
                 </div>
                 {me.username && me.mode === "serve" ? (
                     <button type="button" className="link sign-out" onClick={onSignOut}>
-                        Sign out {me.username}
+                        Sign out {accountName ?? me.username}
                     </button>
                 ) : null}
             </div>
