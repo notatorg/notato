@@ -538,7 +538,7 @@ function AccountSection({ name, onSignOut }: { name?: string; onSignOut?: () => 
                         <strong>Your name on replies</strong>
                         <span className="muted small">Provided by your signed-in account.</span>
                     </div>
-                    <span>{name}</span>
+                    <span className="account-name">{name}</span>
                 </div>
                 <button
                     type="button"
