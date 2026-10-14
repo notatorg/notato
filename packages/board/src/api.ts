@@ -96,16 +96,34 @@ export const setUnauthorizedHandler = (fn: () => void) => {
 /** The session is over (it expired, or the person signed out elsewhere): back to signing in. */
 export const signedOut = () => onUnauthorized();
 
-async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
-    const res = await fetch(path, { credentials: "same-origin", ...init });
+/** An extension's ear on failed answers: a 402 that says a workspace needs putting right, say. */
+let onFailure: (status: number, body: Record<string, unknown> | null) => void = () => {};
+export const setFailureHandler = (
+    fn: (status: number, body: Record<string, unknown> | null) => void
+) => {
+    onFailure = fn;
+};
+
+/** Asks the server, as the board: the header says so, which a server that guards its cookie asks for. */
+export async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
+    const headers = new Headers(init.headers);
+    headers.set("X-Notato-Board", "1");
+    const res = await fetch(path, { credentials: "same-origin", ...init, headers });
     if (res.status === 401 && !path.startsWith("/auth/login")) onUnauthorized();
     if (res.status === 204) return undefined as T;
-    const body = (await res.json().catch(() => null)) as { error?: string } | null;
-    if (!res.ok) throw new ApiError(body?.error ?? `request failed (${res.status})`, res.status);
+    const body = (await res.json().catch(() => null)) as
+        | (Record<string, unknown> & {
+              error?: string;
+          })
+        | null;
+    if (!res.ok) {
+        onFailure(res.status, body);
+        throw new ApiError(body?.error ?? `request failed (${res.status})`, res.status);
+    }
     return body as T;
 }
 
-const json = (method: string, body: unknown): RequestInit => ({
+export const json = (method: string, body: unknown): RequestInit => ({
     method,
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),

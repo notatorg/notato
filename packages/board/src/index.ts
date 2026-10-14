@@ -2,5 +2,7 @@
 export * from "./api.ts";
 export { type BoardOptions, mountBoard } from "./board.tsx";
 export * from "./extension.tsx";
+export { Login } from "./Login.tsx";
 export { go, href, projectHref, type Route, useRoute } from "./route.ts";
-export { Icon, type IconName, Logo } from "./ui.tsx";
+export * from "./storage.ts";
+export * from "./ui.tsx";
