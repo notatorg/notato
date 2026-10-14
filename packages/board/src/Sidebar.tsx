@@ -1,11 +1,12 @@
 import { useState } from "react";
 import { isAdmin, type Me, type ProjectSummary } from "./api.ts";
 import { useBoardExtension } from "./extension.tsx";
-import { hasUnseen, type LiveState, useLiveState, useSeenVersion } from "./live.ts";
-import { initial, projectName, todoOf } from "./model.ts";
-import { href, projectHref, type Route, type Tab } from "./route.ts";
+import { type LiveState, useLiveState, useSeenVersion } from "./live.ts";
+import { initial } from "./model.ts";
+import { ProjectNav } from "./ProjectNav.tsx";
+import { href, type Route, type Tab } from "./route.ts";
 import { setBoardName, useBoardName } from "./storage.ts";
-import { Icon, type IconName, Logo, ProjectMark, ThemeSwitch } from "./ui.tsx";
+import { Icon, type IconName, Logo, ThemeSwitch } from "./ui.tsx";
 
 interface Props {
     me: Me;
@@ -19,7 +20,7 @@ interface Props {
 }
 
 /** A project's pages, under its name at the top of the sidebar. */
-const VIEWS: Array<{ tab: Tab; label: string; icon: IconName; admin?: boolean }> = [
+const _VIEWS: Array<{ tab: Tab; label: string; icon: IconName; admin?: boolean }> = [
     { tab: "inbox", label: "Inbox", icon: "inbox" },
     { tab: "activity", label: "Activity", icon: "activity" },
     { tab: "overview", label: "Overview", icon: "chart" },
@@ -27,7 +28,7 @@ const VIEWS: Array<{ tab: Tab; label: string; icon: IconName; admin?: boolean }>
 ];
 
 /** Past this many projects, the sidebar offers a box to find one. */
-const FIND_FROM = 8;
+const _FIND_FROM = 8;
 
 /** The dot by the logo, as it reads to a screen reader and on hover. */
 const LIVE_TEXT: Record<LiveState, { label: string; title: string }> = {
@@ -43,18 +44,15 @@ const LIVE_TEXT: Record<LiveState, { label: string; title: string }> = {
 export function Sidebar({ me, route, current, projects, onNewProject, onSignOut }: Props) {
     const live = useLiveState();
     useSeenVersion();
-    const name = useBoardName();
-    const [query, setQuery] = useState("");
+    const extension = useBoardExtension();
+    const localName = useBoardName();
+    // On a service that knows who is signed in the name is theirs, not something typed into this browser.
+    const accountName = extension?.accountName?.(me);
+    const name = accountName ?? localName;
     const [draft, setDraft] = useState<string | null>(null);
     const admin = isAdmin(me);
-    const extension = useBoardExtension();
-    const open = route.page === "project" ? route.project : null;
-    const summary = projects?.find((p) => p.id === current);
-
-    const q = query.trim().toLowerCase();
-    const shown = (projects ?? []).filter(
-        (p) => p.id.toLowerCase().includes(q) || projectName(p, p.id).toLowerCase().includes(q)
-    );
+    const _open = route.page === "project" ? route.project : null;
+    const _summary = projects?.find((p) => p.id === current);
 
     return (
         <nav className="sidebar" aria-label="Notato">
@@ -73,131 +71,18 @@ export function Sidebar({ me, route, current, projects, onNewProject, onSignOut 
 
             {extension?.SidebarTop ? <extension.SidebarTop me={me} /> : null}
 
-            {extension?.ProjectNav ? (
-                <extension.ProjectNav
-                    me={me}
-                    route={route}
-                    current={current}
-                    projects={projects}
-                    onNewProject={onNewProject}
-                />
-            ) : (
-                <>
-                    {current ? (
-                        <>
-                            <div className="side-label side-project-name" title={current}>
-                                {projectName(summary, current)}
-                            </div>
-                            {VIEWS.filter((v) => admin || !v.admin).map((v) => {
-                                const on =
-                                    open === current &&
-                                    route.page === "project" &&
-                                    route.tab === v.tab;
-                                const todo = v.tab === "inbox" && summary ? todoOf(summary) : 0;
-                                return (
-                                    <a
-                                        key={v.tab}
-                                        className={on ? "side-link active" : "side-link"}
-                                        href={projectHref(current, v.tab)}
-                                        aria-current={on ? "page" : undefined}
-                                    >
-                                        <Icon name={v.icon} />
-                                        {v.label}
-                                        {todo ? (
-                                            <span className="badge" title={`${todo} to do`}>
-                                                {todo}
-                                            </span>
-                                        ) : null}
-                                    </a>
-                                );
-                            })}
-                        </>
-                    ) : null}
-
-                    <div className="side-label side-section">
-                        Projects
-                        <a
-                            className={route.page === "home" ? "see-all active" : "see-all"}
-                            href="#/"
-                        >
-                            See all
-                        </a>
-                        {onNewProject ? (
-                            <button
-                                type="button"
-                                className="icon-button side-add"
-                                aria-label="New project"
-                                title="New project"
-                                onClick={() => onNewProject()}
-                            >
-                                <Icon name="plus" size={15} />
-                            </button>
-                        ) : null}
-                    </div>
-                    {projects && projects.length >= FIND_FROM ? (
-                        <input
-                            className="side-search"
-                            type="search"
-                            placeholder="Find a project"
-                            value={query}
-                            onChange={(e) => setQuery(e.target.value)}
-                            aria-label="Find a project"
-                        />
-                    ) : null}
-                    <ul className="side-projects">
-                        {projects === null ? <li className="muted side-note">Loading…</li> : null}
-                        {projects?.length === 0 ? (
-                            <li className="side-note">
-                                <span className="muted">No projects yet</span>
-                                {onNewProject ? (
-                                    <button
-                                        type="button"
-                                        className="link"
-                                        onClick={() => onNewProject()}
-                                    >
-                                        Make one
-                                    </button>
-                                ) : null}
-                            </li>
-                        ) : null}
-                        {shown.map((p) => {
-                            const on = p.id === open;
-                            const unseen = !on && hasUnseen(p.id, p.lastActivityAt);
-                            const todo = todoOf(p);
-                            const label = projectName(p, p.id);
-                            return (
-                                <li key={p.id}>
-                                    <a
-                                        className={on ? "side-project active" : "side-project"}
-                                        href={projectHref(
-                                            p.id,
-                                            route.page === "project" && route.tab !== "connect"
-                                                ? route.tab
-                                                : "inbox"
-                                        )}
-                                        aria-current={on ? "page" : undefined}
-                                        title={label === p.id ? p.id : `${label} (${p.id})`}
-                                    >
-                                        <ProjectMark name={label} active={on} />
-                                        <span className="side-name">{label}</span>
-                                        {unseen ? (
-                                            <span
-                                                className="unseen"
-                                                title="New activity since you last looked"
-                                            />
-                                        ) : null}
-                                        {todo ? (
-                                            <span className="side-count" title={`${todo} to do`}>
-                                                {todo}
-                                            </span>
-                                        ) : null}
-                                    </a>
-                                </li>
-                            );
-                        })}
-                    </ul>
-                </>
-            )}
+            {(() => {
+                const Nav = extension?.ProjectNav ?? ProjectNav;
+                return (
+                    <Nav
+                        me={me}
+                        route={route}
+                        current={current}
+                        projects={projects}
+                        onNewProject={onNewProject}
+                    />
+                );
+            })()}
 
             <div className="side-foot">
                 {extension?.nav?.map((item) => {
@@ -238,13 +123,15 @@ export function Sidebar({ me, route, current, projects, onNewProject, onSignOut 
                     {draft === null ? (
                         <div className="name-text">
                             <span className="name-value">{name || "Anonymous"}</span>
-                            <button
-                                type="button"
-                                className="name-change"
-                                onClick={() => setDraft(name)}
-                            >
-                                {name ? "Change name" : "Add your name"}
-                            </button>
+                            {accountName === undefined ? (
+                                <button
+                                    type="button"
+                                    className="name-change"
+                                    onClick={() => setDraft(name)}
+                                >
+                                    {name ? "Change name" : "Add your name"}
+                                </button>
+                            ) : null}
                         </div>
                     ) : (
                         <form

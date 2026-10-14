@@ -119,7 +119,12 @@ function ConnectApp({ me, project, name }: { me: Me; project: string; name: stri
             {agentToken ? (
                 <>
                     <p className="connect-label">Your coding agent</p>
-                    <TokenReveal token={agentToken} projectId={project} agent connect={false} />
+                    <TokenReveal
+                        token={agentToken}
+                        projectId={project}
+                        purpose="agent"
+                        connect={false}
+                    />
                 </>
             ) : null}
 
@@ -131,6 +136,38 @@ function ConnectApp({ me, project, name }: { me: Me; project: string; name: stri
                 options={guides.map((g) => ({ id: g.id, label: g.label }))}
             />
             {guide ? <GuideView guide={guide} /> : null}
+            <details className="connect-checks">
+                <summary>Check the connection</summary>
+                <ol>
+                    <li>Use the project id shown here, spelled exactly as it is.</li>
+                    <li>
+                        Use <code>mode="dev"</code> for notes to upload at once. Test mode sends a
+                        packaged bundle.
+                    </li>
+                    <li>
+                        Check the server and project the app really uses in the toolbar's Settings.
+                        Vite's <code>VITE_NOTATO_SERVER</code> overrides the component's server,
+                        including values set by Aspire.
+                    </li>
+                    {needsToken ? (
+                        <li>
+                            Use an app token for the SDK and a separate agent token for coding
+                            agents.
+                        </li>
+                    ) : null}
+                </ol>
+                {needsToken ? (
+                    <>
+                        <p className="muted small">
+                            With the app token in <code>NOTATO_TOKEN</code>, this checks access
+                            without creating a note:
+                        </p>
+                        <CodeBlock
+                            code={`npx notato doctor --server "${window.location.origin}" --project "${project}" --no-agents`}
+                        />
+                    </>
+                ) : null}
+            </details>
         </div>
     );
 }

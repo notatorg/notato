@@ -19,6 +19,8 @@
 .note-num {
     font-size: 13px;
     color: var(--muted);
+    flex: none;
+    white-space: nowrap;
 }
 .sev-select {
     height: 26px;
@@ -44,6 +46,18 @@
     box-shadow: none;
     background: var(--warn-bg);
     color: var(--warn);
+}
+.detail-head .pill,
+.detail-head .tag,
+.detail-head .sev-select {
+    display: inline-flex;
+    align-items: center;
+    height: 30px;
+    padding: 0 10px;
+    border-radius: 9px;
+    font-size: 12px;
+    line-height: 1;
+    white-space: nowrap;
 }
 .flash {
     font-size: 12.5px;

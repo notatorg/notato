@@ -44,6 +44,8 @@ button.modal-shade:hover:not(:disabled) {
 }
 .modal-head h2 {
     font-size: 19px;
+    min-width: 0;
+    overflow-wrap: anywhere;
 }
 .modal-foot {
     border-top: 1px solid var(--line);

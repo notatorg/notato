@@ -31,6 +31,19 @@ export interface BoardExtension {
     ProjectSettingsExtra?: ComponentType<{ me: Me; projectId: string }>;
     /** Signs the person out of whatever the extension signed them in to, before the server forgets the session. */
     signOut?: () => Promise<void>;
+    /**
+     * Keeps what each signed-in account has read on the server rather than in this browser: the board then shows each
+     * project's unread notes for that account, and saves what it has seen through `markRead`.
+     */
+    readState?: { markRead(project: string, at: string): Promise<ProjectSummary> };
+    /** The signed-in person's own name, where the service keeps one: it then replaces the name typed into the board. */
+    accountName?: (me: Me) => string | undefined;
+    /** Whether the server makes a new project's id itself, so the board does not ask for one. */
+    automaticProjectIds?: boolean;
+    /** What, besides the username, keeps one account's board memory apart from another's (a workspace). */
+    accountScope?: (me: Me) => string | undefined;
+    /** Whether every token must expire (a hosted service): the Tokens page then leaves out "No expiry". */
+    requireTokenExpiry?: boolean;
     /** Who may see and change the server's own settings. Default: whoever may manage. Others get their browser's. */
     canAdminServer?: (me: Me) => boolean;
     /** Who may create projects, make tokens and change settings. Default: an admin, or anyone in dev mode. */

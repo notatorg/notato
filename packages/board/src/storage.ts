@@ -120,3 +120,10 @@ const madeHere = new Set<string>();
 export const markMadeHere = (projectId: string) => madeHere.add(projectId);
 export const wasMadeHere = (projectId: string) => madeHere.has(projectId);
 export const forgetMadeHere = (projectId: string) => madeHere.delete(projectId);
+
+/** An account change must not leave the previous person's newly issued credentials in this tab. */
+export function clearAccountMemory() {
+    freshTokens.clear();
+    freshAgentTokens.clear();
+    madeHere.clear();
+}

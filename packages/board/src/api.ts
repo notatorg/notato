@@ -44,6 +44,9 @@ export interface ProjectSummary {
     /** Absent from servers older than the multi-project board. */
     statuses?: Partial<Record<Status, number>>;
     lastActivityAt?: string;
+    /** When the signed-in account last looked at the project, and the notes it has not seen: on servers that keep that. */
+    readAt?: string;
+    unread?: number;
 }
 
 export interface BundleRecord {
@@ -71,8 +74,16 @@ export interface TokenInfo {
 }
 
 /** What a token is for, with the older ones that never said. */
-export const tokenKind = (t: Pick<TokenInfo, "purpose" | "permission">): "app" | "agent" =>
-    t.purpose ?? (t.permission === "capture" ? "app" : "agent");
+export const tokenPurpose = (token: Pick<TokenInfo, "purpose" | "permission">): "app" | "agent" =>
+    token.purpose ?? (token.permission === "capture" ? "app" : "agent");
+export const tokenKind = tokenPurpose;
+/** What a token may do, in words. */
+export const tokenLabel = (token: Pick<TokenInfo, "purpose" | "permission">) =>
+    tokenPurpose(token) === "agent"
+        ? "Agent · MCP"
+        : token.permission === "capture"
+          ? "App/tester · Capture only"
+          : "App/tester · Capture and feedback";
 
 export interface ServerStatus {
     version: string;
@@ -163,10 +174,14 @@ export interface CreatedProject {
 }
 
 /** Admins only. A 409 means the id is taken. */
-export const createProject = (id: string, name?: string, agent = false) =>
+export const createProject = (id: string | undefined, name?: string, agent = false) =>
     request<CreatedProject>(
         "/projects",
-        json("POST", { id, ...(name ? { name } : {}), ...(agent ? { agent: true } : {}) })
+        json("POST", {
+            ...(id ? { id } : {}),
+            ...(name ? { name } : {}),
+            ...(agent ? { agent: true } : {}),
+        })
     );
 export const renameProject = (id: string, name: string) =>
     request<ProjectSummary>(projectPath(id), json("PATCH", { name }));
@@ -277,17 +292,15 @@ export const listTokens = async () =>
 export const createToken = (
     projectId: string,
     name: string,
-    purpose?: "app" | "agent",
-    captureOnly = false
+    options: {
+        purpose?: "app" | "agent";
+        permission?: "capture" | "full";
+        expiresInDays?: number;
+    } = {}
 ) =>
     request<{ token: string; record: TokenInfo }>(
         "/admin/tokens",
-        json("POST", {
-            projectId,
-            name,
-            ...(purpose ? { purpose } : {}),
-            ...(captureOnly ? { permission: "capture" } : {}),
-        })
+        json("POST", { projectId, name, ...options })
     );
 export const revokeToken = (id: string) =>
     request<void>(`/admin/tokens/${encodeURIComponent(id)}`, { method: "DELETE" });

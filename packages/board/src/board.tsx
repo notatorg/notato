@@ -17,14 +17,21 @@ import {
 import { type BoardExtension, BoardExtensionProvider, useBoardExtension } from "./extension.tsx";
 import { Home } from "./Home.tsx";
 import { Login } from "./Login.tsx";
-import { markSeen, onLive } from "./live.ts";
+import { markSeen, onLive, setSeenAccount } from "./live.ts";
 import { byActivity, countsMayChange, lastActivity, projectName, withActivity } from "./model.ts";
 import { NewProject } from "./NewProject.tsx";
 import { Project } from "./Project.tsx";
 import { go, projectHref, type Route, useRoute } from "./route.ts";
 import { Settings } from "./Settings.tsx";
 import { Sidebar } from "./Sidebar.tsx";
-import { KEYS, keepFreshAgentToken, keepFreshToken, remember, remembered } from "./storage.ts";
+import {
+    clearAccountMemory,
+    KEYS,
+    keepFreshAgentToken,
+    keepFreshToken,
+    remember,
+    remembered,
+} from "./storage.ts";
 import { Tokens } from "./Tokens.tsx";
 import { Icon, Logo } from "./ui.tsx";
 
@@ -35,11 +42,38 @@ function App() {
     const route = useRoute();
     const extension = useBoardExtension();
 
+    const account = useRef<string | undefined>(undefined);
+    const refreshes = useRef(0);
     const refresh = useCallback(() => {
-        getMe().then(setMe, (e: Error) => setError(e.message));
+        const load = ++refreshes.current;
+        getMe().then(
+            (next) => {
+                // Only the latest answer counts: an earlier one can arrive after it.
+                if (load !== refreshes.current) return;
+                const key = next.authenticated ? (next.username ?? "local") : undefined;
+                // Another person on this browser starts from nothing: no old tokens, no old read markers.
+                if (account.current !== key) clearAccountMemory();
+                account.current = key;
+                setSeenAccount(
+                    next.authRequired ? next.username : undefined,
+                    extensionRef.current?.accountScope?.(next)
+                );
+                setError(null);
+                setMe(next);
+            },
+            (e: Error) => {
+                if (load === refreshes.current) setError(e.message);
+            }
+        );
     }, []);
+    const extensionRef = useRef(extension);
+    extensionRef.current = extension;
     useEffect(() => {
-        setUnauthorizedHandler(() => setMe((m) => (m ? { ...m, authenticated: false } : m)));
+        setUnauthorizedHandler(() => {
+            account.current = undefined;
+            clearAccountMemory();
+            setMe((m) => (m ? { ...m, authenticated: false } : m));
+        });
         refresh();
     }, [refresh]);
 
@@ -146,10 +180,52 @@ function Shell({ me, route, onSignedOut }: { me: Me; route: Route; onSignedOut()
             remember(KEYS.project, open);
         }
     }, [open, openName]);
-    // Looking at a project is seeing what the server says happened in it last.
+    const readState = extension?.readState;
+    const reading = useRef(new Map<string, string>());
+    const active = useRef(true);
     useEffect(() => {
-        if (open) markSeen(open, openSummary?.lastActivityAt);
-    }, [open, openSummary?.lastActivityAt]);
+        active.current = true;
+        return () => {
+            active.current = false;
+        };
+    }, []);
+    // Looking at a project is seeing what the server says happened in it last: kept in this browser, or (where the
+    // server keeps read state per account) saved to the server once what was loaded has been on screen a moment.
+    useEffect(() => {
+        if (open && !readState) markSeen(open, openSummary?.lastActivityAt);
+    }, [open, openSummary?.lastActivityAt, readState]);
+    const viewed = useCallback(
+        (id: string, at: string) => {
+            if (!readState) return;
+            const before = reading.current.get(id);
+            if (before && Date.parse(before) >= Date.parse(at)) return;
+            reading.current.set(id, at);
+            readState.markRead(id, at).then(
+                (summary) => {
+                    if (!active.current) return;
+                    markSeen(id, summary.readAt);
+                    // A newer request can answer first; never replace it with an older read marker.
+                    setProjects(
+                        (items) =>
+                            items?.map((p) =>
+                                p.id === id &&
+                                (!p.readAt ||
+                                    Date.parse(p.readAt) <= Date.parse(summary.readAt ?? ""))
+                                    ? { ...p, readAt: summary.readAt }
+                                    : p
+                            ) ?? items
+                    );
+                    reloadSoon();
+                },
+                (e: Error) => {
+                    if (!active.current) return;
+                    if (reading.current.get(id) === at) reading.current.delete(id);
+                    setError(`Could not save read state: ${e.message}`);
+                }
+            );
+        },
+        [readState, reloadSoon]
+    );
 
     /** The project the sidebar's Inbox, Activity and Overview lead to: the open one, else the last one looked at. */
     const current =
@@ -230,6 +306,7 @@ function Shell({ me, route, onSignedOut }: { me: Me; route: Route; onSignedOut()
                         selected={route.selected}
                         onNewProject={newProject}
                         onProjectsChanged={reloadSoon}
+                        onViewed={viewed}
                         onRenamed={loadProjects}
                         onDeleted={() => {
                             loadProjects();
