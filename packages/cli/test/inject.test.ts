@@ -16,14 +16,15 @@ describe("notato inject", () => {
         const r = runInject(["--project", "shop", "--token", "notato_abc"], {
             NOTATO_PORT: "5050",
         });
-        expect(r.stdout).toContain(
-            "http://127.0.0.1:5050/bookmarklet?project=shop&token=notato_abc"
-        );
-        expect(r.stdout).toContain("inject.js?project=shop&token=notato_abc");
+        expect(r.stdout).toContain("http://127.0.0.1:5050/bookmarklet?project=shop");
+        expect(r.stdout).not.toContain("inject.js?project=shop&token=");
+        expect(r.stdout).toContain('data-notato-token="notato_abc"');
         expect(r.stdout).toContain('as project "shop"');
         const other = runInject(["--server", "http://192.168.1.5:4747/"], {});
         expect(other.stdout).toContain("http://192.168.1.5:4747/bookmarklet");
-        expect(runInject([], { NOTATO_TOKEN: "notato_env" }).stdout).toContain("token=notato_env");
+        expect(runInject([], { NOTATO_TOKEN: "notato_env" }).stdout).toContain(
+            'data-notato-token="notato_env"'
+        );
     });
 
     it("says what is wrong with a project id or a server address, as a usage error", () => {

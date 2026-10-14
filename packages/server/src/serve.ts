@@ -126,6 +126,7 @@ export async function runServe(options: ServeOptions): Promise<ServeRuntime> {
         auth,
         refuse: () => mcpRefusal(backend.config()),
         presence: backend.agents,
+        auditTool: extension?.auditTool,
     });
 
     const server = Bun.serve({

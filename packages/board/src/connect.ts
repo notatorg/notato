@@ -73,8 +73,8 @@ export function connectGuides(t: ConnectTarget): Guide[] {
     const port = localPort(server) ?? "4747";
     const adbReverse = `adb reverse tcp:${port} tcp:${port}`;
     // Tokens are URL-safe as they are (base64url), and so are project ids.
-    const bookmarkPage = `/bookmarklet?project=${p}${token && t.token ? `&token=${t.token}` : ""}`;
-    const script = `${server}/inject.js?project=${p}${token ? `&token=${token}` : ""}`;
+    const bookmarkPage = `/bookmarklet?project=${p}`;
+    const script = `<script src="${server}/inject.js?project=${p}"${token ? ` data-notato-token="${token}"` : ""}></script>`;
 
     const react: Guide = {
         id: "react",
@@ -187,15 +187,15 @@ export function connectGuides(t: ConnectTarget): Guide[] {
             },
             {
                 text: "Or put this in the page's HTML while you work on it:",
-                code: `<script src="${script}"></script>`,
+                code: script,
             },
         ],
         notes: [
             "Nothing to install or rebuild: it is the same toolbar as the SDK, for any framework or none.",
             "Pages on this computer and on local networks work as they are. Another site needs the server started with `--cors-origin <its origin>`, or the browser extension.",
-            ...(token && !t.token
+            ...(token
                 ? [
-                      `Add \`&token=<the token>\` to the bookmark page's address, as the script tag has it.`,
+                      "The bookmark page sets up a bookmark for the project only. For a server that needs a token, use the script tag, or `npx notato inject --token <the token>`, which prints a bookmark with it.",
                   ]
                 : []),
         ],

@@ -1,6 +1,7 @@
 import type { AuthProvider } from "./auth.ts";
 import type { BackendHooks, LocalBackend } from "./backend.ts";
 import type { AppOptions, ExtraRoutes } from "./http.ts";
+import type { McpHttpOptions } from "./mcp-http.ts";
 import type { AuthStore, BlobStore, Store } from "./storage.ts";
 
 /**
@@ -42,6 +43,8 @@ export interface ServerExtension {
     originsFor?: AppOptions["originsFor"];
     /** Headers added to every answer. See `AppOptions.responseHeaders`. */
     responseHeaders?: AppOptions["responseHeaders"];
+    /** Called as each MCP tool starts, with its credential. See `McpHttpOptions.auditTool`. */
+    auditTool?: McpHttpOptions["auditTool"];
     /**
      * Runs once the server is up (background work, a billing webhook's listener, anything with a lifetime) and returns
      * how to stop it. Called as the server stops, before the store closes.

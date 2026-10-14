@@ -1,5 +1,5 @@
 import { parseArgs } from "node:util";
-import { bookmarklet, consoleSnippet, scriptUrl } from "@notato/server";
+import { bookmarklet, consoleSnippet, scriptTag } from "@notato/server";
 import { localServer, PROJECT_ID } from "../options.ts";
 import { type CommandOutput, print } from "../output.ts";
 
@@ -44,7 +44,6 @@ export function runInject(
         const options = { project, token: values.token ?? env.NOTATO_TOKEN };
         const page = new URL("/bookmarklet", server);
         if (project) page.searchParams.set("project", project);
-        if (options.token) page.searchParams.set("token", options.token);
         return {
             code: 0,
             stderr: "",
@@ -58,9 +57,9 @@ export function runInject(
                 `   ${consoleSnippet(server, options)}`,
                 "",
                 "3. Or add a script tag to the page's HTML while you work on it:",
-                `   <script src="${scriptUrl(server, options)}"></script>`,
+                `   ${scriptTag(server, options)}`,
                 "",
-                "The bookmark itself, to paste into a bookmark's address field:",
+                "The bookmark itself, to paste into a bookmark's address field (it carries the token, which the page above does not):",
                 `   ${bookmarklet(server, options)}`,
                 "",
                 `Notes go to ${server}${project ? ` as project "${project}"` : ", each page's own host and port as its project"}.`,

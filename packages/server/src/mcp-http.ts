@@ -14,6 +14,8 @@ import { ScopedBackend } from "./scoped-backend.ts";
 import { tokenPurpose } from "./storage.ts";
 
 export interface McpHttpOptions {
+    /** See `McpOptions.auditTool`. The credential is the one the session was opened with. */
+    auditTool?: (principal: Principal, name: string) => Promise<(failed: boolean) => Promise<void>>;
     backend: Backend;
     version: string;
     /** Who a request is from. `notato dev` has no logins: everything that passes `guard` is the local user. */
@@ -185,7 +187,9 @@ export function createMcpHttp(options: McpHttpOptions): {
                     });
                 },
             });
+            const audit = options.auditTool;
             const server = createMcpServer({
+                ...(audit ? { auditTool: (name: string) => audit(principal, name) } : {}),
                 backend: backendFor(principal, req),
                 version: options.version,
                 allowImportPaths: options.allowImportPaths ?? false,

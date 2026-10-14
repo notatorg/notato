@@ -4,6 +4,7 @@ import {
     bookmarkletPage,
     consoleSnippet,
     injectSource,
+    scriptTag,
     scriptUrl,
 } from "../src/index.ts";
 import { makeApp } from "./helpers.ts";
@@ -44,8 +45,12 @@ describe("GET /inject.js", () => {
 describe("the addresses it is loaded from", () => {
     it("scriptUrl adds only what was asked for", () => {
         expect(scriptUrl("http://localhost:4747")).toBe("http://localhost:4747/inject.js");
+        // The token is an attribute of the tag, never part of the address.
         expect(scriptUrl("http://localhost:4747/", { project: "shop", token: "notato_abc" })).toBe(
-            "http://localhost:4747/inject.js?project=shop&token=notato_abc"
+            "http://localhost:4747/inject.js?project=shop"
+        );
+        expect(scriptTag("http://localhost:4747", { project: "shop", token: "notato_abc" })).toBe(
+            '<script src="http://localhost:4747/inject.js?project=shop" data-notato-token="notato_abc"></script>'
         );
     });
 
