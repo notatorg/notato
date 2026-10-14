@@ -354,6 +354,7 @@ export class LocalBackend implements Backend {
             const { id } = await this.blobs.put(bytes);
             return { ...ref, id, mime };
         };
+        let assetBytes = 0;
         if (!annotation.screenshots || !this.config().screenshots) {
             // Screenshots are off: whatever a client sent is dropped here, so none is ever stored, whatever the page did.
             annotation = { ...annotation, screenshots: undefined };
@@ -364,10 +365,8 @@ export class LocalBackend implements Backend {
                 ? await bytesOf(annotation.screenshots.crop)
                 : undefined;
             // Checked before anything is written, so a refused note leaves no screenshot behind.
-            await this.hooks.beforeIngest?.(
-                annotation,
-                full.bytes.byteLength + (crop?.bytes.byteLength ?? 0)
-            );
+            assetBytes = full.bytes.byteLength + (crop?.bytes.byteLength ?? 0);
+            await this.hooks.beforeIngest?.(annotation, assetBytes);
             const fullRef = await store(full);
             const cropRef = crop ? await store(crop) : undefined;
             annotation = {
@@ -393,7 +392,7 @@ export class LocalBackend implements Backend {
 
         let stored: StoredAnnotation;
         try {
-            stored = await this.store.insertAnnotation(annotation);
+            stored = await this.store.insertAnnotation(annotation, assetBytes);
         } catch (error) {
             // The same note sent twice at once: the other request stored it first.
             const raced = await this.store.getAnnotation(annotation.id);

@@ -94,7 +94,11 @@ export interface ProjectSummary {
  * resolves synchronously underneath.
  */
 export interface Store {
-    insertAnnotation(annotation: Annotation): Promise<StoredAnnotation>;
+    /**
+     * Stores a new note. `assetBytes` is the size of its screenshots, for a store that keeps account of what each
+     * project or customer holds; the built-in ones ignore it.
+     */
+    insertAnnotation(annotation: Annotation, assetBytes?: number): Promise<StoredAnnotation>;
     getAnnotation(id: string): Promise<StoredAnnotation | null>;
     listAnnotations(filter?: AnnotationFilter): Promise<StoredAnnotation[]>;
     /** Applies `mutate` to the stored annotation atomically. Returns null when the id is unknown. */
