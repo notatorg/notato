@@ -150,6 +150,36 @@ async function build() {
         throw new Error("live.js did not build");
     }
 
+    // A provider-independent public form. Its collection endpoint is deployment configuration, never a secret.
+    const destination = process.env.NOTATO_WAITLIST_ENDPOINT ?? "";
+    const endpoint = destination ? new URL(destination) : null;
+    if (
+        endpoint &&
+        (endpoint.protocol !== "https:" ||
+            endpoint.username ||
+            endpoint.password ||
+            endpoint.search ||
+            endpoint.hash)
+    )
+        throw new Error("NOTATO_WAITLIST_ENDPOINT must be a plain HTTPS endpoint");
+    const escapeAttribute = (value: string) =>
+        value.replaceAll("&", "&amp;").replaceAll('"', "&quot;").replaceAll("<", "&lt;");
+    const beta = join(dist, "beta/index.html");
+    writeFileSync(
+        beta,
+        readFileSync(beta, "utf8")
+            .replaceAll("{{waitlistEndpoint}}", escapeAttribute(endpoint?.href ?? ""))
+            .replaceAll("{{waitlistOrigin}}", escapeAttribute(endpoint?.origin ?? ""))
+    );
+    const form = await Bun.build({
+        entrypoints: [join(src, "beta/form.ts")],
+        outdir: join(dist, "beta"),
+        minify: true,
+        target: "browser",
+        format: "esm",
+    });
+    if (!form.success) throw new Error("waitlist form did not build");
+
     // The docs pages, made from the READMEs.
     const docs = buildDocs(dist);
 
