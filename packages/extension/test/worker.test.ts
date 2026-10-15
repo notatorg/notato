@@ -197,6 +197,73 @@ describe("the worker's requests", () => {
         expect(seen[1]?.url).toBe("http://localhost:4747/projects/p/annotations?limit=500");
     });
 
+    it("sends on only the headers the toolbar sends: none that make it an agent, or bring a credential", async () => {
+        const seen: Headers[] = [];
+        const w = worker(
+            async (_url, init) => {
+                seen.push(new Headers(init?.headers));
+                return Response.json({});
+            },
+            { ...SITE, token: "notato_site" }
+        );
+        await w.handle("https://app.example", {
+            kind: "fetch",
+            url: "http://localhost:4747/annotations/a1",
+            init: {
+                method: "POST",
+                headers: [
+                    ["content-type", "application/json"],
+                    ["accept", "application/json"],
+                    ["x-http-method-override", "PATCH"],
+                    ["x-notato-agent", "agent-1"],
+                    ["x-notato-agent-name", "Claude Code"],
+                    ["x-notato-agent-projects", "p"],
+                    ["x-notato-token", "notato_page"],
+                    ["cookie", "session=1"],
+                    ["x-forwarded-for", "127.0.0.1"],
+                    ["origin", "chrome-extension://abcdefghijklmnopabcdefghijklmnop"],
+                ],
+                body: { type: "text", text: "{}" },
+            },
+        });
+        expect([...(seen[0] ?? new Headers()).entries()].sort()).toEqual([
+            ["accept", "application/json"],
+            ["authorization", "Bearer notato_site"],
+            ["content-type", "application/json"],
+            ["x-http-method-override", "PATCH"],
+        ]);
+    });
+
+    it("sends on only the query the toolbar puts in each address, and only this site's project in it", async () => {
+        const seen: string[] = [];
+        const w = worker(async (url) => {
+            seen.push(url);
+            return Response.json({});
+        });
+        const ask = (path: string) =>
+            w.handle("https://app.example", {
+                kind: "fetch",
+                url: `http://localhost:4747${path}`,
+                init: {},
+            });
+        // As the SDK writes them: kept, as written.
+        await ask("/projects/p/annotations?limit=500&afterSeq=3&status=open,acknowledged");
+        await ask("/config?project=p");
+        // With what a script on the page adds.
+        await ask("/projects/p/annotations?limit=500&project=other&token=t&by=Ana");
+        await ask("/config?project=other&project=p");
+        await ask("/status?project=other");
+        await ask("/projects/p/markdown?detail=full&agent=1");
+        expect(seen).toEqual([
+            "http://localhost:4747/projects/p/annotations?limit=500&afterSeq=3&status=open,acknowledged",
+            "http://localhost:4747/config?project=p",
+            "http://localhost:4747/projects/p/annotations?limit=500",
+            "http://localhost:4747/config?project=p",
+            "http://localhost:4747/status",
+            "http://localhost:4747/projects/p/markdown?detail=full",
+        ]);
+    });
+
     it("the server's status reaches the page with only what the toolbar shows, not every project", async () => {
         const full = {
             ok: true,
@@ -273,6 +340,26 @@ describe("the worker's requests", () => {
             throw new Error("refused");
         }).handle("", { kind: "ping", server: "http://localhost:4747" });
         expect(down.ok).toBe(false);
+    });
+});
+
+describe("a page's settings, from the worker", () => {
+    it("are its own site's, without the token, and only while the site is on", async () => {
+        const w = worker(async () => new Response(""), {
+            ...SITE,
+            token: "notato_site",
+            author: "Ana",
+        });
+        expect(await w.pageConfig("https://app.example")).toEqual({
+            enabled: true,
+            server: "http://localhost:4747",
+            project: "p",
+            author: "Ana",
+        });
+        expect(await w.pageConfig("https://other.example")).toBeNull();
+        expect(await w.pageConfig("")).toBeNull();
+        const off = worker(async () => new Response(""), { ...SITE, enabled: false, token: "t" });
+        expect(await off.pageConfig("https://app.example")).toBeNull();
     });
 });
 
@@ -376,11 +463,27 @@ describe("the worker's streams", () => {
         );
         const t = port();
         w.stream("https://app.example", t.p);
-        t.begin("http://localhost:4747/projects/p/events?agent=1&token=notato_page");
+        t.begin("http://localhost:4747/projects/p/events?fields=summary&token=notato_page");
         await tick();
-        expect(seen[0]?.url).toBe("http://localhost:4747/projects/p/events?agent=1");
+        expect(seen[0]?.url).toBe("http://localhost:4747/projects/p/events?fields=summary");
         expect(seen[0]?.headers.get("authorization")).toBe("Bearer notato_site");
         expect(seen[0]?.headers.get("accept")).toBe("text/event-stream");
+        t.hangUp();
+    });
+
+    it("is never opened as the agent's, which would send the page the agent's requests to make notes", async () => {
+        const seen: string[] = [];
+        const w = worker(async (url) => {
+            seen.push(url);
+            return new Response(new ReadableStream<Uint8Array>({ start() {} }), {
+                headers: { "content-type": "text/event-stream" },
+            });
+        });
+        const t = port();
+        w.stream("https://app.example", t.p);
+        t.begin("http://localhost:4747/projects/p/events?agent=1&fields=summary&agent=1");
+        await tick();
+        expect(seen).toEqual(["http://localhost:4747/projects/p/events?fields=summary"]);
         t.hangUp();
     });
 

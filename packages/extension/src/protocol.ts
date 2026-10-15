@@ -198,18 +198,27 @@ const ID = "[A-Za-z0-9_-]{1,128}";
  * What the toolbar asks of the server, by method and by path under the server's own address: `{project}` is only ever
  * this site's project. Nothing else, not the settings, the webhooks, the tokens, the list of projects, another
  * project's notes or the relay (the extension runs the toolbar in dev mode, which never uses it). A site with no server
- * gets none of it.
+ * gets none of it. `query` is what the toolbar puts in the address there, and is all of the query that is sent.
  */
-const ROUTES: Array<{ methods: string[]; path: RegExp }> = [
-    { methods: ["GET"], path: /^\/(health|config|status|auth\/me)$/ },
-    { methods: ["GET", "POST"], path: /^\/projects\/\{project\}\/annotations$/ },
-    { methods: ["GET"], path: /^\/projects\/\{project\}\/(events|markdown|export)$/ },
+const ROUTES: Array<{ methods: string[]; path: RegExp; query?: string[] }> = [
+    { methods: ["GET"], path: /^\/(health|status|auth\/me)$/ },
+    // `project` only ever names this site's project (see `forwardedUrl`).
+    { methods: ["GET"], path: /^\/config$/, query: ["project"] },
+    {
+        methods: ["GET", "POST"],
+        path: /^\/projects\/\{project\}\/annotations$/,
+        query: ["limit", "afterSeq", "status"],
+    },
+    // Not `agent`, which makes the page the one an agent's `notato_annotate` requests go to: a dev-mode toolbar never is.
+    { methods: ["GET"], path: /^\/projects\/\{project\}\/events$/, query: ["fields"] },
+    { methods: ["GET"], path: /^\/projects\/\{project\}\/markdown$/, query: ["detail"] },
+    { methods: ["GET"], path: /^\/projects\/\{project\}\/export$/ },
     { methods: ["POST"], path: /^\/projects\/\{project\}\/bundles$/ },
     // `/annotations/wait` is the server's long poll across every project, not an annotation.
     { methods: ["GET", "PATCH", "DELETE"], path: new RegExp(`^/annotations/(?!wait$)${ID}$`) },
     { methods: ["POST"], path: new RegExp(`^/annotations/${ID}/(replies|variants/choose)$`) },
     { methods: ["GET", "PUT"], path: new RegExp(`^/annotations/${ID}/variants$`) },
-    { methods: ["GET"], path: new RegExp(`^/annotations/${ID}/markdown$`) },
+    { methods: ["GET"], path: new RegExp(`^/annotations/${ID}/markdown$`), query: ["detail"] },
     { methods: ["GET"], path: new RegExp(`^/assets/${ID}$`) },
 ];
 
@@ -253,17 +262,46 @@ export function allowedRequest(
     url: string,
     method: string
 ): boolean {
-    if (site.noServer) return false;
+    return routeOf(site, origin, url, method) !== null;
+}
+
+/**
+ * The address the extension sends for a request `allowedRequest` allows (null for any other), with only the query the
+ * toolbar puts there. Anything else a script on the page adds is left off rather than sent with the site's token: an
+ * `agent=1` on the events, a `token`, another project's name.
+ */
+export function forwardedUrl(
+    site: SiteConfig,
+    origin: string,
+    url: string,
+    method: string
+): string | null {
+    const route = routeOf(site, origin, url, method);
+    if (!route) return null;
+    const target = new URL(url);
+    const project = projectOf(site, origin);
+    const asked = [...target.searchParams];
+    const kept = asked.filter(
+        ([key, value]) => route.query?.includes(key) && (key !== "project" || value === project)
+    );
+    // Written again only when something is left off, so what is kept goes as the page wrote it.
+    if (kept.length !== asked.length) target.search = new URLSearchParams(kept).toString();
+    return target.href;
+}
+
+/** Which of `ROUTES` a request is, for a page of `origin`; null when it is none of them. */
+function routeOf(site: SiteConfig, origin: string, url: string, method: string) {
+    if (site.noServer) return null;
     const path = apiPath(site.server, url);
-    if (path === null) return false;
+    if (path === null) return null;
     // The project is compared decoded, as the server reads it, so no encoding of another name can pass for it.
     const project = /^\/projects\/([^/]+)\//.exec(path)?.[1];
-    if (project !== undefined && decoded(project) !== projectOf(site, origin)) return false;
+    if (project !== undefined && decoded(project) !== projectOf(site, origin)) return null;
     const shape =
         project === undefined
             ? path
             : `/projects/{project}${path.slice(`/projects/${project}`.length)}`;
-    return ROUTES.some((route) => route.methods.includes(method) && route.path.test(shape));
+    return ROUTES.find((route) => route.methods.includes(method) && route.path.test(shape)) ?? null;
 }
 
 const decoded = (segment: string): string | null => {
@@ -360,6 +398,13 @@ export type ToBackground =
     | { kind: "ping"; server: string };
 
 export type BackgroundReply = { ok: true; response: WireResponse } | { ok: false; message: string };
+
+/**
+ * From the relay to the background worker: its page's settings. The relay cannot read the extension's storage, which
+ * holds every site's token, so the worker answers, for the site the browser says asked, with a `PageConfig`, or null
+ * when that site is not on.
+ */
+export type ConfigRequest = { kind: "config" };
 
 /** Over the long-lived connection for a stream: first the URL, then what the background says. */
 export type StreamStart = { url: string };

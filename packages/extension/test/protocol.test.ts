@@ -6,6 +6,7 @@ import {
     decodeResponse,
     encodeInit,
     encodeResponse,
+    forwardedUrl,
     fromBase64,
     projectFor,
     projectOf,
@@ -337,6 +338,66 @@ describe("what the extension will fetch for a page", () => {
                 "GET"
             )
         ).toBe(false);
+    });
+});
+
+describe("the address the extension sends for a page", () => {
+    const server = "http://localhost:4747";
+    const ORIGIN = "https://app.example.com";
+    const site: SiteConfig = { enabled: true, server, project: "shop" };
+    const sent = (method: string, path: string, over: Partial<SiteConfig> = {}) =>
+        forwardedUrl({ ...site, ...over }, ORIGIN, `${server}${path}`, method);
+
+    it("is the toolbar's own address as written, query and all", () => {
+        for (const [method, path] of [
+            ["GET", "/config?project=shop"],
+            ["GET", "/projects/shop/annotations?limit=200&afterSeq=12&status=open,acknowledged"],
+            ["GET", "/projects/shop/events?fields=summary"],
+            ["GET", "/projects/%73hop/annotations?limit=1"],
+            ["POST", "/projects/shop/annotations"],
+            ["PATCH", "/annotations/01ABC"],
+            ["GET", "/annotations/01ABC/markdown?detail=full"],
+        ] as const)
+            expect(sent(method, path), `${method} ${path}`).toBe(`${server}${path}`);
+    });
+
+    it("leaves off whatever else is in the query: the agent's stream, a token, other filters", () => {
+        for (const [method, path, kept] of [
+            ["GET", "/projects/shop/events?agent=1", "/projects/shop/events"],
+            [
+                "GET",
+                "/projects/shop/events?fields=summary&agent=1",
+                "/projects/shop/events?fields=summary",
+            ],
+            ["GET", "/projects/shop/events?AGENT=1&agent=", "/projects/shop/events"],
+            ["GET", "/health?token=notato_page", "/health"],
+            ["GET", "/status?project=other", "/status"],
+            [
+                "GET",
+                "/projects/shop/annotations?limit=5&by=Ana&unhanded=1",
+                "/projects/shop/annotations?limit=5",
+            ],
+            ["POST", "/annotations/01ABC/replies?agent=1", "/annotations/01ABC/replies"],
+            ["GET", `/assets/${"a".repeat(64)}?view=full`, `/assets/${"a".repeat(64)}`],
+        ] as const)
+            expect(sent(method, path), `${method} ${path}`).toBe(`${server}${kept}`);
+    });
+
+    it("names no project but the site's own", () => {
+        expect(sent("GET", "/config?project=other")).toBe(`${server}/config`);
+        expect(sent("GET", "/config?project=other&project=shop")).toBe(
+            `${server}/config?project=shop`
+        );
+        expect(sent("GET", "/config?project=app.example.com", { project: "" })).toBe(
+            `${server}/config?project=app.example.com`
+        );
+    });
+
+    it("is nothing for a request the extension does not make", () => {
+        expect(sent("GET", "/projects/other/annotations")).toBeNull();
+        expect(sent("POST", "/relay/annotate")).toBeNull();
+        expect(sent("GET", "/health", { noServer: true })).toBeNull();
+        expect(forwardedUrl(site, ORIGIN, "http://evil.example/health", "GET")).toBeNull();
     });
 });
 

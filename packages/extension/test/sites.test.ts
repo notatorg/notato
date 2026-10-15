@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import {
     annotatable,
+    closeToContentScripts,
     defaultConfig,
     injectNow,
     loadSites,
@@ -21,12 +22,14 @@ interface Registered {
 }
 
 let stored: Record<string, unknown>;
+let accessLevels: unknown[];
 let registered: Registered[];
 let injected: Array<Record<string, unknown>>;
 const original = (globalThis as { chrome?: unknown }).chrome;
 
 beforeEach(() => {
     stored = {};
+    accessLevels = [];
     registered = [];
     injected = [];
     (globalThis as { chrome?: unknown }).chrome = {
@@ -34,6 +37,9 @@ beforeEach(() => {
             local: {
                 get: async (key: string) => (key in stored ? { [key]: stored[key] } : {}),
                 set: async (values: Record<string, unknown>) => Object.assign(stored, values),
+                setAccessLevel: async (options: unknown) => {
+                    accessLevels.push(options);
+                },
             },
         },
         scripting: {
@@ -106,6 +112,13 @@ describe("a site's settings", () => {
         expect(Object.keys(sites).sort()).toEqual(["https://a.example", "https://b.example"]);
         expect(sites["https://a.example"]?.project).toBe("a2");
         expect(sites["https://b.example"]?.enabled).toBe(false);
+    });
+});
+
+describe("who can read them", () => {
+    it("the extension's own pages and its worker, and no content script: not the relay, though it is one", async () => {
+        await closeToContentScripts();
+        expect(accessLevels).toEqual([{ accessLevel: "TRUSTED_CONTEXTS" }]);
     });
 });
 
