@@ -47,7 +47,7 @@ The board's **Settings › Agents** has the same line for Codex, Cursor, Gemini 
 | SwiftUI and UIKit, iOS 17 and later            | `Notato` (Swift package)                              | [Notato for SwiftUI](sdks/swift/README.md)                              |
 | Jetpack Compose and Views, Android 7 and later | `dev.notato:notato-android`, `notato-compose` (Maven) | [Notato for Android](sdks/android/README.md)                            |
 | .NET MAUI, .NET 10 and later                   | `Notato.Maui` (NuGet)                                 | [Notato for .NET MAUI](sdks/dotnet/README.md)                           |
-| Apps run by an Aspire app host             | `Notato.Aspire` (NuGet), with the app's own SDK       | [Notato for Aspire](sdks/dotnet/src/Notato.Aspire/README.md)       |
+| Apps run by an Aspire app host                 | `Notato.Aspire` (NuGet), with the app's own SDK       | [Notato for Aspire](sdks/dotnet/src/Notato.Aspire/README.md)            |
 | React Native 0.76 and later, Expo or bare      | `@notato/react-native` (npm)                          | [Notato for React Native](sdks/react-native/README.md)                  |
 | Flutter 3.32 and later                         | `notato` (pub.dev)                                    | [Notato for Flutter](sdks/flutter/README.md)                            |
 
