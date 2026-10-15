@@ -1,7 +1,13 @@
-import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { parseArgs } from "node:util";
-import { Authenticator, FileBlobStore, LocalBackend, SqliteStore } from "@notato/server";
+import {
+    Authenticator,
+    databaseIn,
+    ensureDataDir,
+    FileBlobStore,
+    LocalBackend,
+    SqliteStore,
+} from "@notato/server";
 import { dataDir, localServer, PROJECT_ID } from "../options.ts";
 import { isInteractive, terminalConfirm } from "../terminal.ts";
 
@@ -66,8 +72,8 @@ export async function runProjectCommand(
     const project = id as string;
 
     const dir = dataDir(values.dir);
-    mkdirSync(dir, { recursive: true });
-    const store = new SqliteStore(join(dir, "notato.db"));
+    ensureDataDir(dir);
+    const store = new SqliteStore(databaseIn(dir));
     const backend = new LocalBackend(store, new FileBlobStore(join(dir, "assets")));
     const auth = new Authenticator(store);
     try {

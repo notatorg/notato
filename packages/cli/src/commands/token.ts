@@ -1,7 +1,12 @@
-import { mkdirSync } from "node:fs";
-import { join } from "node:path";
 import { parseArgs } from "node:util";
-import { Authenticator, SqliteStore, tokenPurpose, UnknownProjectError } from "@notato/server";
+import {
+    Authenticator,
+    databaseIn,
+    ensureDataDir,
+    SqliteStore,
+    tokenPurpose,
+    UnknownProjectError,
+} from "@notato/server";
 import { dataDir, PROJECT_ID } from "../options.ts";
 
 const HELP = `notato token
@@ -48,8 +53,8 @@ export async function runTokenCommand(argv: string[]): Promise<number> {
         throw new Error(`unknown token command "${action}"\n\n${HELP}`);
 
     const dir = dataDir(values.dir);
-    mkdirSync(dir, { recursive: true });
-    const store = new SqliteStore(join(dir, "notato.db"));
+    ensureDataDir(dir);
+    const store = new SqliteStore(databaseIn(dir));
     const auth = new Authenticator(store);
     try {
         if (action === "create") {

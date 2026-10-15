@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, spyOn } from "bun:test";
-import { existsSync } from "node:fs";
+import { existsSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { Authenticator, runServe, type ServeRuntime, SqliteStore } from "@notato/server";
 import { runProjectCommand } from "../src/commands/project.ts";
@@ -222,5 +222,22 @@ describe("notato token", () => {
             'unknown token command "crate"'
         );
         expect(existsSync(dir)).toBe(false);
+    });
+});
+
+// File modes mean nothing on Windows.
+describe.skipIf(process.platform === "win32")("the data directory the CLI makes", () => {
+    const modeOf = (path: string) => statSync(path).mode & 0o777;
+
+    it("is readable by this user only, with its database, whichever command makes it", async () => {
+        const byProject = join(tmp(), "data");
+        expect(await runProjectCommand(["create", "shop", "-d", byProject])).toBe(0);
+        expect(modeOf(byProject)).toBe(0o700);
+        expect(modeOf(join(byProject, "notato.db"))).toBe(0o600);
+
+        const byToken = join(tmp(), "data");
+        expect(await runTokenCommand(["list", "-d", byToken])).toBe(0);
+        expect(modeOf(byToken)).toBe(0o700);
+        expect(modeOf(join(byToken, "notato.db"))).toBe(0o600);
     });
 });

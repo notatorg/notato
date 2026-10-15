@@ -1,11 +1,10 @@
-import { mkdirSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { Authenticator, type AuthProvider } from "./auth.ts";
 import { LocalBackend } from "./backend.ts";
 import { FileBlobStore } from "./blob-store.ts";
 import { CONFIG_FILE, createConfigSource, mcpRefusal } from "./config.ts";
 import { isLoopbackName } from "./cors.ts";
-import { DEFAULT_PORT } from "./dev.ts";
+import { DEFAULT_PORT, databaseIn, ensureDataDir } from "./dev.ts";
 import type { Built, ServerExtension } from "./extension.ts";
 import { createApp, SERVE_LIMITS, type UiAssets } from "./http.ts";
 import { createMcpHttp } from "./mcp-http.ts";
@@ -57,10 +56,10 @@ export async function runServe(options: ServeOptions): Promise<ServeRuntime> {
     const dir = resolve(options.dir ?? process.env.NOTATO_DIR ?? join(process.cwd(), ".notato"));
     const log = options.log ?? ((message: string) => console.error(`[notato] ${message}`));
 
-    mkdirSync(dir, { recursive: true });
+    ensureDataDir(dir);
     const extension = options.extension;
     const context = { dir, version: options.version, log };
-    const store = (await extension?.store?.(context)) ?? new SqliteStore(join(dir, "notato.db"));
+    const store = (await extension?.store?.(context)) ?? new SqliteStore(databaseIn(dir));
     const blobs = (await extension?.blobs?.(context)) ?? new FileBlobStore(join(dir, "assets"));
     const baseConfig = createConfigSource({
         file: options.configFile ?? process.env.NOTATO_CONFIG ?? join(process.cwd(), CONFIG_FILE),
