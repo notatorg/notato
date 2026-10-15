@@ -10,11 +10,30 @@ import 'storage.dart';
 Future<NotatoStorage?> openStorage(String project) async {
   try {
     final base = await getApplicationSupportDirectory();
-    final root = Directory('${base.path}/notato/${projectFolder(project)}');
+    final root = Directory('${notesFolder(base).path}/${projectFolder(project)}');
     Directory('${root.path}/shots').createSync(recursive: true);
     return FileStorage(root);
   } catch (_) {
     return null;
+  }
+}
+
+/// Where the notes go: `notato` in the support folder, except on Android, where that folder (the app's files) is in
+/// Google's backups and a tester's screenshots must not be. There it is the no-backup folder beside it, the app's data
+/// folder's `no_backup` (`Context.getNoBackupFilesDir()`), and notes an earlier version kept move there.
+Directory notesFolder(Directory support) {
+  final kept = Directory('${support.path}/notato');
+  if (!Platform.isAndroid || !support.path.endsWith('/files')) return kept;
+  final noBackup = Directory('${support.parent.path}/no_backup/notato');
+  try {
+    if (kept.existsSync() && !noBackup.existsSync()) {
+      noBackup.parent.createSync(recursive: true);
+      kept.renameSync(noBackup.path);
+    }
+    return noBackup;
+  } catch (_) {
+    // Left where they were: kept, if backed up.
+    return kept;
   }
 }
 

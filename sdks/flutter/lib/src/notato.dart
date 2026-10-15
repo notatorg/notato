@@ -87,6 +87,7 @@ class Notato extends StatefulWidget {
     this.mode = NotatoMode.dev,
     this.server,
     this.token,
+    this.allowTokenInRelease = false,
     this.appName,
     this.appVersion,
     this.author,
@@ -120,8 +121,14 @@ class Notato extends StatefulWidget {
   /// declares (`--dart-define=NOTATO_SERVER=…`) wins over it.
   final String? server;
 
-  /// A project token (`notato_…`), for a shared server (`notato serve`).
+  /// A project token (`notato_…`), for a shared server (`notato serve`). Sent from debug builds only, unless
+  /// [allowTokenInRelease] says otherwise.
   final String? token;
+
+  /// Send [token] from a profile or release build too. Only for a capture-only project token, which sends notes and
+  /// reads nothing back (`notato token create shop --purpose app --capture-only`): whoever has the app has the token. A
+  /// dev tunnel's device token, and any token for a dev tunnel, is never sent from such a build.
+  final bool allowTokenInRelease;
 
   /// The app's name, recorded on every note. Default: `Flutter app`.
   final String? appName;
@@ -147,7 +154,9 @@ class Notato extends StatefulWidget {
   /// The corner the toolbar starts in. People can drag it; where they leave it is remembered.
   final NotatoPosition toolbarPosition;
 
-  /// Take screenshots. A server with screenshots off drops them either way.
+  /// Take screenshots. With a server set (test mode's too), none is taken until it has said it takes them, and a server
+  /// with screenshots off wins either way. Android's `FLAG_SECURE` cannot be seen from here: wrap a screen the app
+  /// keeps out of screenshots in `NotatoMask`, which covers it in Notato's.
   final bool screenshots;
 
   /// Cover text fields in screenshots and leave their values out of notes. Default: on in test and agent mode. Password
@@ -265,6 +274,7 @@ class _NotatoState extends State<Notato> with WidgetsBindingObserver implements 
     mode: widget.mode,
     server: readsServer ? declarations.server ?? widget.server : widget.server,
     token: widget.token,
+    allowTokenInRelease: widget.allowTokenInRelease,
     appName: widget.appName,
     appVersion: widget.appVersion,
     author: widget.author,
@@ -414,9 +424,11 @@ class _NotatoState extends State<Notato> with WidgetsBindingObserver implements 
       plainTaken?.call();
     }
 
+    // Whether the server takes them, asked again first when its last answer is a few seconds old.
+    final allowed = await runtime.screenshotsAllowed();
     final boundary = _shotKey.currentContext?.findRenderObject();
     final app = _appBox;
-    if (!mounted || !runtime.screenshotsOn || boundary is! RenderRepaintBoundary || app == null) {
+    if (!mounted || !allowed || boundary is! RenderRepaintBoundary || app == null) {
       tell();
       return (full: null, crop: null);
     }

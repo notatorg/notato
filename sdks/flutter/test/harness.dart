@@ -29,6 +29,13 @@ class FakeServer {
   /// Notes cannot be sent (the rest still answers).
   var notesOffline = false;
 
+  /// `/config` cannot be reached (the rest still answers), or says screenshots are off.
+  var configOffline = false;
+  var screenshotsOff = false;
+
+  /// The app's token is capture-only: it may ask `/config` and send new notes, and is refused everything else.
+  var captureOnly = false;
+
   /// Notes are taken, and answered with something that is not a note.
   var garble = false;
 
@@ -40,6 +47,14 @@ class FakeServer {
     final path = request.url.path;
     calls.add('${request.method} $path');
     if (offline) throw const Unreachable();
+    final sending = request.method == 'POST' && path.endsWith('/annotations');
+    if (captureOnly && path != '/config' && !sending) {
+      final refused = http.Response(
+        '{"error":"capture tokens can only send new notes; sign in to the board to read them"}',
+        403,
+      );
+      return http.StreamedResponse(Stream.value(refused.bodyBytes), refused.statusCode);
+    }
     if (path.endsWith('/events')) {
       return http.StreamedResponse(events.stream.map(utf8.encode), 200, headers: {'content-type': 'text/event-stream'});
     }
@@ -70,7 +85,15 @@ class FakeServer {
         200,
       );
     } else if (path == '/config') {
-      response = http.Response(jsonEncode({'screenshots': true, 'derivedScreenshots': derivedScreenshots}), 200);
+      if (configOffline) throw const Unreachable();
+      response = http.Response(
+        jsonEncode({
+          'screenshots': !screenshotsOff,
+          'derivedScreenshots': derivedScreenshots,
+          if (captureOnly) 'captureOnly': true,
+        }),
+        200,
+      );
     } else if (path.startsWith('/relay/')) {
       relayed.add((jsonDecode(utf8.decode(body)) as Map).cast<String, Object?>());
       response = http.Response('{}', 200);

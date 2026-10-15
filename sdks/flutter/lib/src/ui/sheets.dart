@@ -423,7 +423,7 @@ class _SettingsSheetState extends State<SettingsSheet> {
                   title: 'Screenshots',
                   hint: runtime.serverScreenshots
                       ? 'Each note takes one of the screen'
-                      : 'The server has them turned off',
+                      : 'Off until the server says it takes them',
                   value: _screenshots,
                   onChanged: (v) => setState(() => _screenshots = v),
                 ),
@@ -584,6 +584,9 @@ class _ThreadEntry extends StatelessWidget {
 
 const _keptHere = 'Kept on this device. Package it from the menu to share it.';
 
+/// A note sent with a capture-only token, which this app can neither read back nor change.
+const _sentOnly = 'Sent. Its replies and status are on the Notato board.';
+
 /// A note's card: its status, comment and thread; People only, a reply or an aside; revert, cancel or delete.
 class NoteCard extends StatefulWidget {
   const NoteCard({
@@ -661,7 +664,9 @@ class _NoteCardState extends State<NoteCard> {
     final record = widget.record;
     final a = record.annotation;
     final status = record.status;
-    final live = runtime.hasServer && !record.pending;
+    // Sent with a capture-only token: the server took it, and replying, reverting and deleting are the board's.
+    final sentOnly = runtime.captureOnly && !record.pending;
+    final live = runtime.hasServer && !record.pending && !sentOnly;
     final author = a['author'] as Map? ?? const {};
     final byline = [
       author['name'] as String? ?? (author['kind'] == 'agent' ? 'An agent' : null),
@@ -718,7 +723,7 @@ class _NoteCardState extends State<NoteCard> {
             );
           },
         ),
-      ] else
+      ] else if (!sentOnly)
         SheetButton(
           'Delete',
           kind: ButtonKind.danger,
@@ -776,13 +781,17 @@ class _NoteCardState extends State<NoteCard> {
                     style: TextStyle(fontSize: 12.5, color: runtime.hasServer ? statusColor('acknowledged') : p.muted),
                   ),
                 ],
+                if (sentOnly) ...[
+                  const SizedBox(height: 8),
+                  Text(_sentOnly, style: TextStyle(fontSize: 12.5, color: p.muted)),
+                ],
                 const SizedBox(height: 12),
                 FlagToggle(
                   key: const ValueKey('NotatoNotePeopleOnly'),
                   title: PeopleOnlyCopy.title,
                   hint: PeopleOnlyCopy.hint,
                   value: _asked ?? record.peopleOnly,
-                  onChanged: _asked == null ? _setPeopleOnly : null,
+                  onChanged: _asked == null && !sentOnly ? _setPeopleOnly : null,
                 ),
                 for (final reply in thread.length > 4 ? thread.sublist(thread.length - 4) : thread) ...[
                   const SizedBox(height: 8),
