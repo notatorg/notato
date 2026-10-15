@@ -119,3 +119,6 @@ internal const val ASIDE_HINT = "Just for people: the agent won't see this reply
 
 /** A note's card with no server to send it to (test mode): where the note is, and how it leaves. */
 internal const val KEPT_HERE = "Kept on this device. Package it from the menu to share it."
+
+/** A sent note's card when the app's token can only send notes (capture-only): where the rest of it happens. */
+internal const val SENT_ONLY = "Sent. This app can only send notes: read, answer and change them on the board."

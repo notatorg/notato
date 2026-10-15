@@ -1,5 +1,6 @@
 package dev.notato.android.internal
 
+import android.os.SystemClock
 import android.util.Log
 import dev.notato.android.AnnotateOptions
 import dev.notato.android.NotatoConnection
@@ -9,6 +10,7 @@ import dev.notato.android.model.Annotation
 import dev.notato.android.model.Author
 import dev.notato.android.model.RelayResult
 import dev.notato.android.model.Status
+import dev.notato.android.model.StoredAnnotation
 import dev.notato.android.net.NotatoClient
 import dev.notato.android.net.NotatoServerException
 import kotlinx.coroutines.CancellationException
@@ -22,6 +24,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import java.io.File
 
 /** How sending a note went, and what to tell the person (null: nothing to say). */
@@ -31,9 +34,10 @@ internal class SendResult(val outcome: SendOutcome, val message: String?)
  * The notes Notato knows of, kept in step with the server. Notes made here are kept on the device ([store]) until the
  * server has them; the server's are read when it connects and followed over its event stream after that; and what the
  * person does to a note (a reply, People only, a revert, a delete) goes through here. Main thread only, as the
- * [controller] it belongs to.
+ * [controller] it belongs to. [formerBase] is where earlier versions kept the notes: what is left there is moved to
+ * [storeBase] when the notes are read.
  */
-internal class NoteSync(private val controller: Controller, private val storeBase: File, project: String) {
+internal class NoteSync(private val controller: Controller, private val storeBase: File, project: String, private val formerBase: File? = null) {
     val notes = NoteBook()
 
     /** Counts changes to [notes], so a list from the server can tell what changed here after it was asked for. */
@@ -75,11 +79,22 @@ internal class NoteSync(private val controller: Controller, private val storeBas
     var retrying = false
         private set
 
-    /** Whether the server takes screenshots; it says so when it connects. */
-    var serverScreenshots = true
-        private set
-    var serverDerivedScreenshots = false
-        private set
+    /** What the server allows, as it last said: asked when Notato connects, and again before a screenshot. */
+    private var policy = ServerPolicy()
+    private var asking: Job? = null
+
+    /**
+     * Whether the server takes screenshots: true with no server to ask, and null while the server has not said (they
+     * are not taken until it has).
+     */
+    val serverScreenshots: Boolean? get() = if (controller.server == null) true else policy.screenshots
+    val serverDerivedScreenshots: Boolean get() = policy.derivedScreenshots
+
+    /**
+     * This app's token can only send notes (a capture-only token): it cannot follow the project's notes, read them,
+     * reply, or upload a package, so Notato sends what is made here and nothing more.
+     */
+    val captureOnly: Boolean get() = policy.captureOnly
 
     private val scope get() = controller.scope
     private val me get() = Author.human(controller.authorName)
@@ -116,27 +131,35 @@ internal class NoteSync(private val controller: Controller, private val storeBas
         val store = store
         record.sending = true
         val stored = try {
-            client.post(record.annotation, record.assets ?: emptyMap())
+            client.post(record.annotation, record.assets ?: emptyMap()).also { heardFrom(null) }
         } catch (error: CancellationException) {
             throw error
         } catch (error: NotatoServerException) {
-            val outcome = outcomeOf(error)
-            return when {
-                outcome == SendOutcome.REFUSED -> {
-                    record.error = error.message
-                    record.held = null
-                    Log.w(TAG, "The Notato server refused a note: ${error.message}")
-                    controller.publish()
-                    SendResult(outcome, "The server refused it: ${error.message}")
+            if (captureOnly && error.status == 409) {
+                // A capture-only token is told only that the id is taken (never what the server has under it): this is
+                // a note sent again after the answer to sending it was lost. The server has it.
+                heardFrom(null)
+                StoredAnnotation(annotation = record.annotation)
+            } else {
+                heardFrom(error)
+                val outcome = outcomeOf(error)
+                return when {
+                    outcome == SendOutcome.REFUSED -> {
+                        record.error = error.message
+                        record.held = null
+                        Log.w(TAG, "The Notato server refused a note: ${error.message}")
+                        controller.publish()
+                        SendResult(outcome, "The server refused it: ${error.message}")
+                    }
+                    error.status != 0 -> {
+                        // The server is there but not taking it now (a project it does not have, a token it does not
+                        // know): what it said goes on the note, which stays queued for the next connect.
+                        record.held = error.message
+                        controller.publish()
+                        SendResult(outcome, "Saved, not sent: ${error.message}")
+                    }
+                    else -> SendResult(outcome, NOT_REACHABLE)
                 }
-                error.status != 0 -> {
-                    // The server is there but not taking it now (a project it does not have, a token it does not
-                    // know): what it said goes on the note, which stays queued for the next connect.
-                    record.held = error.message
-                    controller.publish()
-                    SendResult(outcome, "Saved, not sent: ${error.message}")
-                }
-                else -> SendResult(outcome, NOT_REACHABLE)
             }
         } catch (error: Exception) {
             Log.w(TAG, "Notato could not send a note", error)
@@ -163,6 +186,21 @@ internal class NoteSync(private val controller: Controller, private val storeBas
         return SendResult(SendOutcome.SENT, null)
     }
 
+    /**
+     * With a capture-only token there is no event stream to say whether the server is there: each send says so instead
+     * ([error] is why it failed, null when the server took it).
+     */
+    private fun heardFrom(error: NotatoServerException?) {
+        if (!captureOnly) return
+        when {
+            error == null -> if (connection != NotatoConnection.CONNECTED) setConnection(NotatoConnection.CONNECTED, null)
+            // This one note refused for good (malformed, too big) says nothing about the connection.
+            error.refused -> Unit
+            error.permanent -> setConnection(NotatoConnection.REFUSED, error.message)
+            else -> setConnection(NotatoConnection.OFFLINE, error.message)
+        }
+    }
+
     /** Sends what is queued, oldest first: one refused note never holds up the rest. */
     private suspend fun flush() = sendQueue(notes.queue()) { send(it).outcome }
 
@@ -171,7 +209,12 @@ internal class NoteSync(private val controller: Controller, private val storeBas
         if (loaded) return
         loaded = true
         val store = store
-        val items = withContext(Dispatchers.IO) { store.load() }
+        val former = formerBase
+        val items = withContext(Dispatchers.IO) {
+            // Notes an earlier version kept where backups reach: moved first, so they are read with the rest.
+            if (former != null) moveStore(former, storeBase)
+            store.load()
+        }
         // Reconfigured for another project while this one's notes were read: they are not that project's.
         if (store !== this.store) return
         for (item in items) {
@@ -194,9 +237,12 @@ internal class NoteSync(private val controller: Controller, private val storeBas
 
     /** Connects to the server (again), or says there is none: notes stay on the device. */
     fun restart() {
-        serverDerivedScreenshots = false
         job?.cancel()
         job = null
+        // An ask still on its way answers the policy it was asked for, not this one: let go of, not cancelled.
+        asking = null
+        // What the server allows is asked again (it may be another server now): until it answers, no screenshots.
+        policy = ServerPolicy()
         failure = null
         failureDetail = null
         retrying = false
@@ -207,6 +253,8 @@ internal class NoteSync(private val controller: Controller, private val storeBas
         val c = client
         if (!controller.hasServer || c == null) {
             setConnection(NotatoConnection.LOCAL, if (controller.mode == NotatoMode.TEST) null else "No server is set: notes stay on this device.")
+            // Test mode with a server: notes stay here until packaged, but whether it takes screenshots still counts.
+            if (c != null) ask(c)
             return
         }
         job = scope.launch {
@@ -215,6 +263,13 @@ internal class NoteSync(private val controller: Controller, private val storeBas
             var delayMs = FIRST_RETRY_MS
             while (isActive) {
                 setConnection(NotatoConnection.CONNECTING, null)
+                // What the server allows comes first: whether it takes screenshots, and whether this app's token may
+                // read anything back at all.
+                ask(c).join()
+                if (captureOnly) {
+                    sendOnly()
+                    continue
+                }
                 try {
                     // Decoded on the thread that reads the stream: the main thread only applies what came.
                     val events = c.events(controller.config.project, agent = controller.mode == NotatoMode.AGENT)
@@ -299,18 +354,54 @@ internal class NoteSync(private val controller: Controller, private val storeBas
     }
 
     /**
+     * Asks the server what it allows (`/config`), one ask at a time: whoever needs the answer waits for it, and one that
+     * stops waiting (a screenshot that cannot wait long) does not stop the asking. Never fails: a server that does not
+     * answer leaves what it said last, or nothing, which keeps screenshots off.
+     */
+    private fun ask(c: NotatoClient): Job = asking?.takeIf { it.isActive } ?: scope.launch {
+        // Answered into the policy it was asked for: a restart meanwhile starts another, which this does not touch.
+        val policy = policy
+        try {
+            policy.answered(c.config(controller.config.project), SystemClock.uptimeMillis())
+        } catch (error: CancellationException) {
+            throw error
+        } catch (_: Exception) {
+            policy.unanswered(SystemClock.uptimeMillis())
+        }
+    }.also { asking = it }
+
+    /**
+     * Whether the server lets a screenshot be taken now. What it said is asked again when it is more than a few seconds
+     * old, waiting a moment at most (a slow server must not hold the note up). With no server there is no one to ask;
+     * with one that has not said, the answer is no.
+     */
+    suspend fun screenshotsAllowed(): Boolean {
+        if (controller.server == null) return true
+        val c = client ?: return false
+        if (policy.stale(SystemClock.uptimeMillis())) withTimeoutOrNull(ASK_WAIT_MS) { ask(c).join() }
+        return serverScreenshots == true
+    }
+
+    /**
+     * A capture-only token sends notes and reads nothing back: there is no event stream to follow and no list to read,
+     * and asking for them would only be refused. What is queued here is sent straight away, then looked at again every
+     * few seconds while Notato is on; each send says whether the server can be reached.
+     */
+    private suspend fun sendOnly() {
+        setConnection(NotatoConnection.CONNECTED, null)
+        while (captureOnly) {
+            flush()
+            delay(LAST_RETRY_MS)
+        }
+    }
+
+    /**
      * Connected: the server's settings, then the notes queued here sent, then the project's list read (which has
      * them by then, rather than missing them until the next connect).
      */
     private suspend fun catchUp(c: NotatoClient) {
         try {
-            serverScreenshots = try {
-                val capabilities = c.config()
-                serverDerivedScreenshots = capabilities.derivedScreenshots
-                capabilities.screenshots
-            } catch (_: NotatoServerException) {
-                serverScreenshots
-            }
+            ask(c).join()
             flush()
             reload(c)
         } catch (error: CancellationException) {
@@ -379,7 +470,12 @@ internal class NoteSync(private val controller: Controller, private val storeBas
 
     // ---- acting on a note, as the person --------------------------------------------------------------------------
 
-    private fun connected(): NotatoClient = client?.takeIf { controller.hasServer } ?: throw IllegalStateException("Not connected to a Notato server.")
+    private fun connected(): NotatoClient {
+        val c = client?.takeIf { controller.hasServer } ?: throw IllegalStateException("Not connected to a Notato server.")
+        // As the browser SDK says: the token can send notes, and the rest is done on the board.
+        check(!captureOnly) { "This app's token can only send notes: read, answer and change them on the board." }
+        return c
+    }
 
     /** Replies as the person; an [aside] is for the people on the thread, and kept from the agent. */
     suspend fun reply(id: String, text: String, aside: Boolean = false) = upsert(connected().reply(id, text, me, aside).annotation)
@@ -418,6 +514,10 @@ internal class NoteSync(private val controller: Controller, private val storeBas
         record.peopleOnlyChanged = false
         if (wanted == null) return
         val c = client?.takeIf { controller.hasServer } ?: return
+        if (captureOnly) {
+            Log.w(TAG, "Notato could not turn People only ${if (wanted) "on" else "off"} on the server: this app's token can only send notes. Change it on the board.")
+            return
+        }
         scope.launch {
             try {
                 upsert(c.setPeopleOnly(server.id, wanted, me).annotation)
@@ -452,6 +552,9 @@ internal class NoteSync(private val controller: Controller, private val storeBas
         /** The first wait before trying the server again, doubled each failed try up to the last. */
         const val FIRST_RETRY_MS = 1_000L
         const val LAST_RETRY_MS = 10_000L
+
+        /** How long a screenshot waits, at most, for the server to say whether it takes them. */
+        const val ASK_WAIT_MS = 1_500L
 
         const val NOT_REACHABLE = "Saved. It's sent when the server can be reached."
     }

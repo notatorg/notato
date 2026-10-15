@@ -20,7 +20,8 @@ public enum class ToolbarCorner { BOTTOM_END, BOTTOM_START, TOP_END, TOP_START }
 
 /**
  * Settings for Notato. Set them in code, or (with no code at all) as `<meta-data android:name="notato.project" …>` in
- * the manifest, with `debug.notato.*` system properties over either (`adb shell setprop debug.notato.server …`).
+ * the manifest, with `debug.notato.*` system properties over either in a debuggable build (`adb shell setprop
+ * debug.notato.server …`).
  * Choices made at runtime (on or off, the toolbar, a name, a server typed in) are remembered on the device and win over
  * these until reset.
  */
@@ -69,6 +70,11 @@ public data class NotatoConfig(
     val composeSourceInfo: Boolean = true,
     /** The scale screenshots are stored at, at most, in pixels per dp. Phones are 2.6x to 3.5x; 2x is plenty. */
     val maxScreenshotScale: Double = 2.0,
+    /**
+     * Take screenshots of windows the app marked secure (`FLAG_SECURE`: a one-time code, card entry) too. Off (the
+     * default), a note made on one has no screenshot.
+     */
+    val captureSecureWindows: Boolean = false,
 ) {
     public companion object {
         /** What `notato dev` listens on. On an emulator, `adb reverse tcp:4747 tcp:4747` makes it localhost there too. */
@@ -165,6 +171,7 @@ public data class NotatoConfig(
                 logLimit = string("loglimit")?.toIntOrNull() ?: 50,
                 composeSourceInfo = bool("composesourceinfo") ?: true,
                 maxScreenshotScale = string("maxscreenshotscale")?.toDoubleOrNull() ?: 2.0,
+                captureSecureWindows = bool("capturesecurewindows") ?: false,
             )
         }
     }

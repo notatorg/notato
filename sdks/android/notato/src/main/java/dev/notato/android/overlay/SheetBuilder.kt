@@ -120,8 +120,10 @@ internal class SheetBuilder(private val controller: Controller, private val sess
         val status = inset(ui.text(null, 12.5f, Ui.DANGER)).apply { visibility = View.GONE }
         var replyField: EditText? = null
         var asideSwitch: Switch? = null
+        // A capture-only token sends notes and nothing else: what the server has is read, answered and changed on the board.
+        val sentOnly = controller.hasServer && !record.pending && sync.captureOnly
         // People only, for the note and its thread: through the server for a note it has, here for one still waiting.
-        if (record.pending || controller.hasServer) {
+        if (record.pending || (controller.hasServer && !sentOnly)) {
             val (row, switch) = ui.toggleRow(PEOPLE_ONLY, PEOPLE_ONLY_HINT, a.peopleOnly == true)
             var undoing = false
             switch.setOnCheckedChangeListener { view, on ->
@@ -174,7 +176,10 @@ internal class SheetBuilder(private val controller: Controller, private val sess
         }
         SheetCopy.earlier(a.thread.size)?.let { rows += ui.text(it, 12f, ui.cardMuted) }
         val buttons = mutableListOf<View>()
-        if (controller.hasServer && !record.pending) {
+        if (sentOnly) {
+            // No reply, revert or delete: the server would refuse each. Close is the header's ×.
+            rows += ui.text(SENT_ONLY, 12.5f, ui.cardMuted)
+        } else if (controller.hasServer && !record.pending) {
             val reply = ui.field(if (a.status == Status.RESOLVED) "Reply, or say what was wrong" else "Reply").apply { setText(draft) }
             // An aside: this one reply is for the people on the thread. Off again for the next reply.
             val (asideRow, asideToggle) = ui.toggleRow(ASIDE, ASIDE_HINT, aside)
@@ -221,7 +226,7 @@ internal class SheetBuilder(private val controller: Controller, private val sess
 
     /** Everything the menu shows: it is built again when this changes. */
     private fun menuState(): List<Any?> = listOf(
-        controller.mode, controller.serverHost, controller.hasServer, sync.connection, sync.failure, sync.retrying,
+        controller.mode, controller.serverHost, controller.hasServer, sync.connection, sync.failure, sync.retrying, sync.captureOnly,
         controller.pinsVisible, controller.recordsOnRoute(session).size, sync.notes.size, controller.pendingCount, controller.shakeAvailable,
     )
 
@@ -385,7 +390,12 @@ internal class SheetBuilder(private val controller: Controller, private val sess
         val serverError = inset(ui.text(null, 12.5f, Ui.DANGER)).apply { visibility = View.GONE }
         val (shotsRow, screenshots) = ui.switchRow(
             Icon.CAMERA, "Screenshots",
-            if (sync.serverScreenshots) "Each note takes one of the screen" else "The server has them turned off",
+            when (sync.serverScreenshots) {
+                true -> "Each note takes one of the screen"
+                false -> "The server has them turned off"
+                // None are taken until the server says it takes them.
+                null -> "Off until the server says it takes them"
+            },
             controller.screenshotsWanted,
         )
         val body = ui.column(14,

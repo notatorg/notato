@@ -113,6 +113,9 @@ internal object BundleWriter {
     }
 }
 
+/** A note as a package carries it when the server has screenshots off: without them, and without their files. */
+internal fun LocalAnnotation.withoutScreenshots(): LocalAnnotation = LocalAnnotation(annotation.copy(screenshots = null), emptyMap())
+
 /** The folder in the app's cache that packages are written to, and that Notato's FileProvider shares from. */
 private const val PACKAGE_FOLDER = "notato"
 

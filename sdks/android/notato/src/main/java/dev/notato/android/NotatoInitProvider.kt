@@ -9,7 +9,8 @@ import android.net.Uri
 /**
  * Starts Notato before `Application.onCreate` when the manifest has `notato.project` meta-data, so an app can take
  * Notato with no code: add it as a `debugImplementation` dependency and the meta-data. Apps that start it in code are
- * unaffected (with no `notato.project` this does nothing).
+ * unaffected (with no `notato.project` this does nothing). A `debug.notato.project` system property starts it too, but
+ * only in a debuggable build: in any other, system properties are not read at all.
  */
 internal class NotatoInitProvider : ContentProvider() {
     override fun onCreate(): Boolean {

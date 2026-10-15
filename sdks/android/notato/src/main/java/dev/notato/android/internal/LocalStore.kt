@@ -58,6 +58,45 @@ internal object SafeIds {
 }
 
 /**
+ * Moves the notes kept in [from] to [to], note by note, each project's into its own folder there: earlier versions kept
+ * them in `filesDir`, which Auto Backup and device transfers copy, and they belong in `noBackupFilesDir`, which they do
+ * not. A note already in [to] is the newer copy, and the one in [from] goes. One that cannot be moved stays where it
+ * is (said in the log) and is tried again next time; nothing that resolves outside [from] is touched. Call it off the
+ * main thread.
+ */
+internal fun moveStore(from: File, to: File) {
+    val projects = from.listFiles() ?: return
+    for (project in projects) {
+        if (!project.isDirectory || !SafeIds.inside(project, from)) continue
+        val target = File(to, project.name)
+        for (note in project.listFiles() ?: emptyArray()) {
+            if (!SafeIds.inside(note, from)) continue
+            val moved = File(target, note.name)
+            try {
+                if (!moved.exists()) {
+                    target.mkdirs()
+                    // A rename within the app's own storage. Where that cannot be done, a copy beside it first, renamed
+                    // into place once whole: a copy cut short is never taken for the note.
+                    if (!note.renameTo(moved)) {
+                        val copy = File(target, note.name + ".moving")
+                        copy.deleteRecursively()
+                        if (!note.copyRecursively(copy) || !copy.renameTo(moved)) {
+                            copy.deleteRecursively()
+                            throw IOException("Could not move ${note.path}")
+                        }
+                    }
+                }
+                note.deleteRecursively()
+            } catch (error: Exception) {
+                Log.w(TAG, "Notato could not move the note kept in ${note.name} out of the backed-up folder; it is tried again next time.", error)
+            }
+        }
+        project.delete() // Only when it is empty now.
+    }
+    from.delete()
+}
+
+/**
  * Notes made on this device, on disk until the server has them: a note made while the server is down still reaches
  * the agent later, and a tester's notes survive a restart until they are packaged. One folder per note under the
  * project's folder in [base], its screenshots first and `annotation.json` last, each written whole or not at all.

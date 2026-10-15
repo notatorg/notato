@@ -218,8 +218,12 @@ internal class NotatoClient(baseUrl: String, token: String?) {
 
     private fun json(value: String) = BytesBody(value.toByteArray(Charsets.UTF_8), "application/json")
 
-    suspend fun config(): ServerConfig = withContext(Dispatchers.IO) {
-        decode(ServerConfig.serializer(), request("GET", "/config"))
+    /**
+     * What the server allows ([project]'s, as the browser SDK asks): whether it takes screenshots, and whether this app's
+     * token can only send notes.
+     */
+    suspend fun config(project: String? = null): ServerConfig = withContext(Dispatchers.IO) {
+        decode(ServerConfig.serializer(), request("GET", "/config" + (project?.let { "?project=${segment(it)}" } ?: "")))
     }
 
     /** Sends an annotation, its screenshots read from [assets] as they go. Safe to repeat: the server keeps the first copy of an id. */

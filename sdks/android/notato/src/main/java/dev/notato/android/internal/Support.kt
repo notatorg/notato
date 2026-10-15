@@ -41,3 +41,18 @@ internal object Time {
 
 internal fun sha256(bytes: ByteArray): String =
     MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) }
+
+/**
+ * A request's address as a note records it: without the query string and fragment, and without a `user:password@`
+ * before the host. Each routinely carries a credential.
+ */
+internal fun recordedUrl(url: String): String {
+    val bare = url.substringBefore('#').substringBefore('?')
+    val scheme = bare.indexOf("://")
+    if (scheme < 0) return bare
+    val host = scheme + 3
+    val path = bare.indexOf('/', host).let { if (it < 0) bare.length else it }
+    // The last @ before the path: a password may have one of its own.
+    val at = bare.lastIndexOf('@', path - 1)
+    return if (at >= host) bare.substring(0, host) + bare.substring(at + 1) else bare
+}

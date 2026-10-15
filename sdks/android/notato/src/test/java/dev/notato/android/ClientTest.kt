@@ -15,6 +15,7 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
 import org.junit.Test
@@ -269,6 +270,27 @@ class ClientTest {
         assertEquals(404, error.status)
         assertEquals(why, error.message)
         assertEquals(SendOutcome.HELD, outcomeOf(error))
+    }
+
+    @Test
+    fun theServerSaysWhatItAllowsForTheProject() = runBlocking {
+        val base = serve { request, out ->
+            if (request.target == "/config?project=android-sample") {
+                out.reply(200, "{\"screenshots\":false,\"derivedScreenshots\":true,\"captureOnly\":true,\"mentions\":[]}")
+            } else {
+                out.reply(200, "{}")
+            }
+        }
+        val client = NotatoClient(base, null)
+        val config = client.config("android-sample")
+        assertEquals(false, config.screenshots)
+        assertTrue(config.derivedScreenshots)
+        assertTrue(config.captureOnly)
+        // A server that does not say whether it takes screenshots has not said yes.
+        val silent = client.config()
+        assertEquals(null, silent.screenshots)
+        assertFalse(silent.captureOnly)
+        assertEquals(listOf("GET /config?project=android-sample", "GET /config"), seen)
     }
 
     @Test

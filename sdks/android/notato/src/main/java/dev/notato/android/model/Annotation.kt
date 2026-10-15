@@ -234,8 +234,12 @@ internal data class StoredAnnotation(val seq: Long = 0, val annotation: Annotati
 @Serializable
 internal data class AnnotationList(val items: List<StoredAnnotation> = emptyList(), val next: Long? = null)
 
+/**
+ * What the server allows (`GET /config`). [screenshots] is null when it does not say, which is not taken for yes; with
+ * [captureOnly], this app's token can send notes and nothing else (no event stream, no list, no bundles).
+ */
 @Serializable
-internal data class ServerConfig(val screenshots: Boolean = true, val derivedScreenshots: Boolean = false)
+internal data class ServerConfig(val screenshots: Boolean? = null, val derivedScreenshots: Boolean = false, val captureOnly: Boolean = false)
 
 @Serializable
 internal data class ErrorBody(val error: String? = null)
@@ -280,7 +284,7 @@ internal data class LogEntry(val level: String, val message: String, val at: Str
 public data class NetworkEntry(
     /** `GET`, `POST`, … */
     val method: String,
-    /** The address. Its query string and fragment are left out when it is recorded: they routinely carry tokens. */
+    /** The address. Its query string, fragment and any `user:password@` are left out when it is recorded: they routinely carry tokens. */
     val url: String,
     /** The response's status code, or 0 when there was none. */
     val status: Int,
