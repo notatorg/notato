@@ -2,12 +2,7 @@ import type { Author, Status } from "@notato/schema";
 import type { AssetBytes, Backend, ImportResult, VariantOffer } from "./backend.ts";
 import { RequestError } from "./backend.ts";
 import type { RelayArgs, RelayResult } from "./relay.ts";
-import {
-    type AnnotationFilter,
-    type HandedEntry,
-    inProjects,
-    type StoredAnnotation,
-} from "./storage.ts";
+import { type AnnotationFilter, type HandedEntry, inProjects } from "./storage.ts";
 
 /** The projects a view reaches: fixed ones, or a function asked on every call so a change applies at once. */
 export type ProjectScope = string | string[] | (() => Promise<string[]>);
@@ -66,6 +61,10 @@ export class ScopedBackend implements Backend {
         )
             return null;
         return this.inner.asset(id);
+    }
+
+    async screenshot(id: string, view: "crop" | "thumbnail"): Promise<AssetBytes | null> {
+        return (await this.get(id)) ? (this.inner.screenshot?.(id, view) ?? null) : null;
     }
 
     async setStatus(id: string, status: Status, note?: string, author?: Author) {

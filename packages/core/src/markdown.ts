@@ -1,5 +1,6 @@
 import type { Annotation } from "@notato/schema";
 import { agentView } from "./agent-view.ts";
+import { screenshotCrop } from "./screenshot.ts";
 
 /**
  * How much of an annotation to write out. `compact` is a line, for scanning. `standard` is what a person or an agent
@@ -398,9 +399,14 @@ export function renderAnnotation(note: Annotation, options: RenderOptions = {}):
                 w: number;
                 h: number;
             }>;
+            const region = screenshotCrop(a);
             lines.push(
                 `Screenshots: ${refs.map((r) => `${r.w}×${r.h} ${r.id.slice(0, 12)}`).join(", ")}`
             );
+            if (region)
+                lines.push(
+                    `Target crop: ${region.w}×${region.h} at ${region.x},${region.y}, derived from the full screenshot.`
+                );
         }
         lines.push(
             "Identity (as captured):",

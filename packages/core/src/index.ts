@@ -5,4 +5,5 @@ export * from "./markdown.ts";
 export * from "./memory-store.ts";
 export * from "./mentions.ts";
 export * from "./pipeline.ts";
+export * from "./screenshot.ts";
 export * from "./types.ts";

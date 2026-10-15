@@ -14,6 +14,7 @@ internal sealed record AnnotationList
 
 internal sealed record ServerConfig
 {
+    public bool DerivedScreenshots { get; init; }
     public bool Screenshots { get; init; } = true;
 
     /// <summary>Whether an agent has Notato's MCP open. Absent from older servers.</summary>

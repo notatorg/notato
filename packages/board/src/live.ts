@@ -73,7 +73,7 @@ export function createLive(options: LiveOptions) {
 
     const open = () => {
         if (source || retry !== null || users === 0) return;
-        const stream = options.open("/projects/*/events");
+        const stream = options.open("/projects/*/events?fields=summary");
         source = stream;
         const forward = (type: LiveEvent["type"]) => (ev: Event) => {
             try {

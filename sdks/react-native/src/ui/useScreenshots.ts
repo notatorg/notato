@@ -3,6 +3,7 @@ import type { View } from "react-native";
 import { shootRaw } from "../capture.ts";
 import type { NotatoController } from "../controller.ts";
 import { currentContainer, type Picked } from "../inspect.ts";
+import { readShot } from "../png.ts";
 import { serial } from "../serial.ts";
 import { maskedUnder, measure } from "../tree.ts";
 import { overlaps, type Point, type Rect, toRect } from "./geometry.ts";
@@ -92,6 +93,18 @@ export function useScreenshots(options: {
             // The crop is the view on its own, without the covers: left out when something private is in it.
             const coveredHere =
                 around || picked.element.private || covers.some((c) => overlaps(c, rect));
+            if (full && notato.derivedScreenshots && !coveredHere) {
+                const dims = readShot(full)?.ref;
+                if (dims) {
+                    const sx = dims.w / size.width,
+                        sy = dims.h / size.height;
+                    const x = Math.max(0, Math.floor(rect.x * sx)),
+                        y = Math.max(0, Math.floor(rect.y * sy));
+                    const w = Math.min(dims.w - x, Math.max(1, Math.round(rect.w * sx)));
+                    const h = Math.min(dims.h - y, Math.max(1, Math.round(rect.h * sy)));
+                    if (w > 0 && h > 0) return { full: { ...full, cropRect: { x, y, w, h } } };
+                }
+            }
             const crop =
                 full && !coveredHere
                     ? await shootRaw(picked.view, `${id}-crop`, picked.frame, max)

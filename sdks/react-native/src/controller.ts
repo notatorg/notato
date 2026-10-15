@@ -210,6 +210,10 @@ export class NotatoController {
     private problem?: string;
     private agents: string[] = [];
     private serverScreenshots = true;
+    private serverDerivedScreenshots = false;
+    get derivedScreenshots(): boolean {
+        return this.hasServer && this.serverDerivedScreenshots;
+    }
     private snapshot: NotatoState;
     private readonly listeners = new Set<() => void>();
 
@@ -953,6 +957,7 @@ export class NotatoController {
 
     /** Opens a fresh connection to the server, or says there is none. */
     private restartSync() {
+        this.serverDerivedScreenshots = false;
         this.closeStream();
         const conn = this.connectionInfo;
         if (!this.enabled || !conn || !this.hasServer) {
@@ -1011,6 +1016,7 @@ export class NotatoController {
                         typeof config?.screenshots === "boolean"
                     ) {
                         this.serverScreenshots = config.screenshots;
+                        this.serverDerivedScreenshots = config.derivedScreenshots === true;
                     }
                 } catch {
                     // the screenshots stay as they were

@@ -530,13 +530,16 @@ internal class Controller(
         val shots = shot.screen?.takeIf { screenshotsOn }?.let { screen ->
             screen.use {
                 withContext(Dispatchers.Default) {
-                    ScreenshotComposer.compose(screen, listOf(element.bounds), pin, masks, config.maxScreenshotScale)
+                    ScreenshotComposer.compose(screen, listOf(element.bounds), pin, masks, config.maxScreenshotScale, sync.serverDerivedScreenshots && hasServer)
                 }
             }
         }
         val context = linkedMapOf<String, JsonElement>(
             "android" to NotatoJson.encodeToJsonElement(AndroidContext.serializer(), DeviceInfo.context(session.activity, element)),
-            "screenshot" to buildJsonObject { put("pin", pin) },
+            "screenshot" to buildJsonObject {
+                put("pin", pin)
+                shots?.cropRect?.let { rect -> put("cropRect", buildJsonObject { rect.forEach { (key, value) -> put(key, value) } }) }
+            },
         )
         if (config.captureLogs) {
             val logs = withContext(Dispatchers.IO) { LogRecorder.recent(config.logLimit, startedAt) }

@@ -24,6 +24,7 @@ class FakeServer {
 
   /// Nothing can be reached.
   var offline = false;
+  var derivedScreenshots = false;
 
   /// Notes cannot be sent (the rest still answers).
   var notesOffline = false;
@@ -69,7 +70,7 @@ class FakeServer {
         200,
       );
     } else if (path == '/config') {
-      response = http.Response('{"screenshots":true}', 200);
+      response = http.Response(jsonEncode({'screenshots': true, 'derivedScreenshots': derivedScreenshots}), 200);
     } else if (path.startsWith('/relay/')) {
       relayed.add((jsonDecode(utf8.decode(body)) as Map).cast<String, Object?>());
       response = http.Response('{}', 200);

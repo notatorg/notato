@@ -427,6 +427,31 @@ class _NotatoState extends State<Notato> with WidgetsBindingObserver implements 
     ui.Image? plain;
     ui.Image? outlined;
     try {
+      if (runtime.derivedScreenshots) {
+        setState(() => _capturing = (rect: rect, pin: pin, covers: covers));
+        await WidgetsBinding.instance.endOfFrame;
+        final captured = grab(boundary, ratio);
+        tell();
+        outlined = await captured;
+        if (!mounted || outlined == null) return (full: null, crop: null);
+        final area = Rect.fromLTRB(
+          rect.left * ratio,
+          rect.top * ratio,
+          rect.right * ratio,
+          rect.bottom * ratio,
+        ).inflate(2 * ratio).intersect(Rect.fromLTWH(0, 0, outlined.width.toDouble(), outlined.height.toDouble()));
+        Map<String, int>? cropRect;
+        if (!area.isEmpty) {
+          final x = area.left.floor(), y = area.top.floor();
+          cropRect = {
+            'x': x,
+            'y': y,
+            'w': math.min(outlined.width - x, math.max(1, area.width.round())),
+            'h': math.min(outlined.height - y, math.max(1, area.height.round())),
+          };
+        }
+        return (full: await pngOf(outlined, '$id-full', cropRect: cropRect), crop: null);
+      }
       // The screen as it is already drawn will do, unless covers or an outline must come off it first.
       final redraw = covers.isNotEmpty || _selection != null || !kDebugMode || boundary.debugNeedsPaint;
       setState(() => _capturing = (rect: Rect.zero, pin: pin, covers: covers));

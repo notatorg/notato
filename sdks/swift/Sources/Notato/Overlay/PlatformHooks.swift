@@ -556,8 +556,9 @@ final class PlatformHooks {
         if let screen = selection.screen, notato.screenshotsOn {
             // Covered where things were when the picture was taken, not where they are now.
             let maxScale = configuration.maxScreenshotScale
+            let derived = notato.hasServer && notato.serverDerivedScreenshots
             drawing = Task.detached(priority: .userInitiated) {
-                ScreenshotComposer.compose(screen, targets: targets, pin: pin, maxScale: maxScale)
+                ScreenshotComposer.compose(screen, targets: targets, pin: pin, maxScale: maxScale, derivedCrops: derived)
             }
         }
         let identity = selection.elements.map {
@@ -600,6 +601,9 @@ final class PlatformHooks {
         if shots != nil || console?.isEmpty == false {
             var finished = record.annotation
             finished.screenshots = shots?.refs
+            if let crop = shots?.cropRect {
+                finished.context["screenshot"] = .object(["pin": .number(Double(pin)), "cropRect": .object(["x": .number(crop.x), "y": .number(crop.y), "w": .number(crop.w), "h": .number(crop.h)])])
+            }
             if let console, !console.isEmpty { finished.context["console"] = .from(console) }
             record.annotation = finished
         }

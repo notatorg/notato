@@ -1,6 +1,6 @@
 # Screenshot storage
 
-New browser and mobile captures prefer WebP at quality 85 (0.85 in the browser), but keep PNG whenever it is smaller. Compression runs after privacy masks and annotations have been drawn. It does not reduce existing capture dimensions, remove the crop, or change the privacy rules. WebP is lossy, so fine text and edges can differ slightly from PNG.
+New browser and mobile captures prefer WebP at quality 85 (0.85 in the browser), but keep PNG whenever it is smaller. Compression runs after privacy masks and annotations have been drawn. It does not reduce full capture dimensions or change the privacy rules. WebP is lossy, so fine text and edges can differ slightly from PNG.
 
 A missing or failed encoder falls back to PNG. Native encoders receive freshly rendered pixels and do not copy camera metadata. The reference's `mime`, upload media type and bundle filename describe the bytes actually sent. The server already accepts both formats; there is no protocol migration or minimum server upgrade for WebP.
 
@@ -32,10 +32,22 @@ These are examples, not promised savings. A small flat crop can be smaller as PN
 
 ## Other storage and transfer controls
 
-- Screenshots are content-addressed by the server, so identical bytes share one stored asset. The full screenshot and crop remain independently addressable.
-- SDK note lists use `?fields=summary`; the store projects those rows before they leave the database. The list retains screenshot metadata, while full diagnostics and agent steps are fetched only when requested. This reduces read payloads, not the size of the stored diagnostic record.
+- Screenshots are content-addressed by the server, so identical bytes share one stored asset. Full screenshots, crops and thumbnails have independent content hashes; identical bytes share one object. Legacy screenshots remain readable.
+- SDK and board note lists and event streams use `?fields=summary`; the store projects those rows before they leave the database. The list retains screenshot metadata, while full diagnostics and agent steps are fetched only when requested. This reduces read payloads, not the size of the stored diagnostic record.
 - Local queues keep compressed bytes rather than an extra uncompressed copy. Bundles avoid deflating already-compressed images again.
 - Existing screenshot switches and capture-size limits still apply. Turn screenshots off when only text is needed.
 - Removing a note or project cleans up only assets that no remaining record references. A shared asset must not disappear because one note is deleted.
 
-Retention, quotas and backups belong to the operator's storage policy. This change does not expire notes, lower plan allowances, or reduce backup coverage. Thumbnails, an optional crop-only mode, and transcoding older PNGs could save more, but need separate product decisions and migration work.
+Retention, quotas and backups belong to the operator's storage policy. This change does not expire notes, lower plan allowances, or reduce backup coverage. An optional crop-only mode and transcoding older PNGs would need separate product decisions and migration work.
+
+## One upload, reusable crop
+
+When `/config` advertises `derivedScreenshots: true`, live SDK captures upload the full masked screenshot and store a pixel rectangle at `context.screenshot.cropRect`. They skip the second full-resolution image capture/encode/upload. Old servers, test mode and offline bundles continue to receive real crop assets, so this is a negotiated optimisation rather than a required protocol upgrade.
+
+The server generates the full-size WebP crop and a WebP thumbnail fitting inside 240×160 pixels, once, from bytes already in the upload. They are stored as `screenshots.crop` and `screenshots.thumbnail`. Opening an inbox downloads only thumbnails; a cold agent crop request downloads the stored crop rather than the original and does no image processing. Keeping a small compressed crop is usually cheaper than repeatedly transferring originals or spending server CPU reconstructing crops. Both derivative sizes count towards storage accounting and follow the existing reference checks, deletion and backup paths. Failed derivative generation never discards a valid note.
+
+The board loads previews in the inbox and full diagnostics only when a note is opened. In detail, a canvas draws the crop from the already-loaded full image; it makes no second crop request. MCP sends full and crop images by default; explicit crop-only requests read the stored crop. Authenticated `GET /annotations/:id/screenshot?view=thumbnail|crop` uses fixed presets and checks access to the live note before reading any cached bytes. Responses remain private with no browser/CDN caching.
+
+A missing legacy thumbnail or crop can be reconstructed on demand. Such fallback views are held only in process RAM, for 60 seconds with an 8 MiB/128-entry budget. Rendering is serial, with at most eight pending distinct views, 25 MiB input and 16 million pixel limits. The renderer uses Bun's built-in image codec and a PNG pixel bridge, so the compiled CLI needs no system image tools or native Node addons. A source Bun runtime without `Bun.Image` advertises no support; SDKs retain the legacy path. Render failures fall back to existing images where available. Cached bytes can survive deletion until their TTL, but every request requires a live authorised note reference.
+
+For the same dashboard fixture, a 720×480 full-resolution crop was 16,910 bytes; its 240×160 preview was 2,642 bytes (84.4% smaller). The thumbnail adds 2,642 stored bytes, but an inbox fetch uses that instead of the 16,910-byte crop or 46,536-byte original. The SDK avoids uploading the crop; the full-size crop remains stored for agent delivery. Actual savings depend on the image and crop size. Existing screenshots are never rewritten automatically.

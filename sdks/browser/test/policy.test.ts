@@ -14,6 +14,17 @@ afterEach(() => {
 });
 
 describe("createPolicy", () => {
+    it("uses derived crops only after explicit capability confirmation", async () => {
+        const fetchMock = answer({ screenshots: true, derivedScreenshots: true });
+        vi.stubGlobal("fetch", fetchMock);
+        const policy = createPolicy({ baseUrl: "http://localhost:4799" });
+        expect(policy.derivedScreenshotsNow()).toBe(false);
+        await policy.refresh();
+        expect(policy.derivedScreenshotsNow()).toBe(true);
+        vi.stubGlobal("fetch", answer({ screenshots: true }));
+        await policy.refresh();
+        expect(policy.derivedScreenshotsNow()).toBe(false);
+    });
     it("scopes the capability request to its project and keeps credentials in headers", async () => {
         const fetchMock = answer({ screenshots: false, captureOnly: true });
         vi.stubGlobal("fetch", fetchMock);

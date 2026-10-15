@@ -8,6 +8,7 @@ extension Notato {
     /// (Re)opens the connection to the server, or says why there is none. Called on start, on a settings change and on
     /// Retry; the previous connection is closed first.
     func restartSync() {
+        serverDerivedScreenshots = false
         syncTask?.cancel()
         syncTask = nil
         guard isEnabled, let configuration else { return }
@@ -83,7 +84,10 @@ extension Notato {
         switch event.event {
         case "hello":
             setConnection(.connected, nil)
-            serverScreenshots = (try? await client.config())?.screenshots ?? serverScreenshots
+            if let config = try? await client.config() {
+                serverScreenshots = config.screenshots ?? serverScreenshots
+                serverDerivedScreenshots = config.derivedScreenshots == true
+            }
             // The notes made while away go first, so the list read next has them.
             let held = await flush()
             await reload(client)

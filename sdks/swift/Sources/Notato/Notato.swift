@@ -79,6 +79,7 @@ public final class Notato {
     @ObservationIgnored var launch = LaunchEnvironment([:])
     /// Whether the server takes screenshots: one that has them off wins over the configuration.
     var serverScreenshots = true
+    var serverDerivedScreenshots = false
     /// Why the configuration cannot be used, when it cannot: Notato stays off.
     var problem: String?
 

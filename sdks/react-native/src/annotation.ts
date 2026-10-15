@@ -156,7 +156,13 @@ export function buildAnnotation(input: NoteInput): Annotation {
             : {}),
         ...(input.steps?.length ? { steps: input.steps } : {}),
         context: {
-            screenshot: { method: "native", pin: input.pin },
+            screenshot: {
+                method: "native",
+                pin: input.pin,
+                ...(input.screenshots?.full.cropRect
+                    ? { cropRect: input.screenshots.full.cropRect }
+                    : {}),
+            },
             reactNative: {
                 os: device.os,
                 osVersion: device.osVersion,

@@ -275,7 +275,7 @@ export function createServerSync(options: ServerSyncOptions): ServerSync {
             return;
         }
         options.onState("connecting");
-        const query = new URLSearchParams();
+        const query = new URLSearchParams({ fields: "summary" });
         if (options.agent) query.set("agent", "1");
         const stream = net.events(
             `${base}/projects/${project}/events${query.size ? `?${query}` : ""}`,

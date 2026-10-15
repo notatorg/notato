@@ -239,7 +239,9 @@ export const Annotation = z.object({
 
     // evidence
     /** `full` has the target outlined. Absent when screenshots are turned off (see `notato config`). */
-    screenshots: z.object({ full: AssetRef, crop: AssetRef.optional() }).optional(),
+    screenshots: z
+        .object({ full: AssetRef, crop: AssetRef.optional(), thumbnail: AssetRef.optional() })
+        .optional(),
     /** Agent mode only. */
     steps: z.array(AgentStep).optional(),
     /** Keyed by plugin id, e.g. { console: [...], network: [...] }. The core never interprets it. */

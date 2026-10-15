@@ -1,7 +1,15 @@
 import type { AssetRef } from "@notato/schema";
 
 /** A screenshot as it is sent and kept, with its actual media type. */
+export interface CropRect {
+    x: number;
+    y: number;
+    w: number;
+    h: number;
+}
+
 export interface Shot {
+    cropRect?: CropRect;
     bytes: Uint8Array;
     ref: AssetRef;
 }
@@ -11,6 +19,7 @@ export interface Shot {
  * the JavaScript thread, left until the note is sent, so it is never done while the composer comes in.
  */
 export interface RawShot {
+    cropRect?: CropRect;
     id: string;
     data: string;
 }
@@ -135,6 +144,7 @@ export function readShot(raw: RawShot | undefined): Shot | undefined {
     return dims && dims.w > 0 && dims.h > 0
         ? {
               bytes,
+              ...(raw.cropRect ? { cropRect: raw.cropRect } : {}),
               ref: { id: raw.id, mime: webp ? "image/webp" : "image/png", w: dims.w, h: dims.h },
           }
         : undefined;

@@ -204,20 +204,27 @@ const PAGE = 500;
  * starts (`next`) while there is one, so this pages until a page has no `next`. Throws if any page fails: a part of
  * the list must never be taken for all of it.
  */
-export async function listAnnotations(project: string): Promise<Annotation[]> {
+export async function listAnnotations(project: string, summary = false): Promise<Annotation[]> {
     const out: Annotation[] = [];
     let after = 0;
     for (;;) {
         const page = await request<{
             items: Array<{ seq: number; annotation: Annotation }>;
             next?: number;
-        }>(`${projectPath(project)}/annotations?limit=${PAGE}&afterSeq=${after}`);
+        }>(
+            `${projectPath(project)}/annotations?limit=${PAGE}&afterSeq=${after}${summary ? "&fields=summary" : ""}`
+        );
         for (const item of page.items) out.push(item.annotation);
         // A server older than paging never sends `next`: its one page is the whole list.
         if (page.next === undefined || page.next <= after) return out;
         after = page.next;
     }
 }
+
+export const getAnnotation = (id: string, signal?: AbortSignal) =>
+    request<{ annotation: Annotation }>(annotationPath(id), { signal }).then(
+        (item) => item.annotation
+    );
 
 /** Whoever is using the board, as the author of what it writes in a thread. */
 const me = (): Author => {

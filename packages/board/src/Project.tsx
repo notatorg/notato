@@ -110,7 +110,7 @@ export function Project(props: Props) {
     const load = useCallback(() => {
         const n = ++loads.current;
         heard.current ??= new Map();
-        listAnnotations(project).then(
+        listAnnotations(project, true).then(
             (items) => {
                 // An earlier load answering late is older than the one still to come.
                 if (n !== loads.current) return;
@@ -212,7 +212,12 @@ export function Project(props: Props) {
     /** Exactly what the inbox shows, in its order, as the same Markdown `notato export` writes. */
     const copyShown = async () => {
         try {
-            await copyText(renderAnnotations(shown, { detail, title: `Feedback for ${project}` }));
+            const records = detail === "compact" ? shown : await listAnnotations(project);
+            const full = new Map(records.map((a) => [a.id, a]));
+            const selected = shown.map((a) => full.get(a.id) ?? a);
+            await copyText(
+                renderAnnotations(selected, { detail, title: `Feedback for ${project}` })
+            );
             setNotice(`Copied ${plural(shown.length, "annotation")} as Markdown (${detail}).`);
         } catch (e) {
             setNotice(e instanceof Error ? e.message : "Could not copy.");

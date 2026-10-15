@@ -305,6 +305,7 @@ struct AnnotationList: Codable, Sendable {
 }
 
 struct ServerConfig: Codable, Sendable {
+    var derivedScreenshots: Bool?
     var screenshots: Bool?
 }
 

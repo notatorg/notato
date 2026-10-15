@@ -185,7 +185,11 @@ async function ingest(
             // Retrying an existing id must never disclose another person's stored feedback.
             if (await app.backend.get(checked.data.id))
                 throw new RequestError("annotation id already exists", 409);
-            for (const ref of [checked.data.screenshots?.full, checked.data.screenshots?.crop])
+            for (const ref of [
+                checked.data.screenshots?.full,
+                checked.data.screenshots?.crop,
+                checked.data.screenshots?.thumbnail,
+            ])
                 if (ref && !files.has(ref.id))
                     throw new RequestError("capture tokens must supply screenshot bytes");
         }
@@ -367,6 +371,29 @@ export const annotationRoutes: Routes = async (route, app) => {
         const body = await readJson(req, LinkBody);
         const updated = existing ? await backend.addLink(id, body) : null;
         return updated ? json(updated, 201) : notFound();
+    }
+
+    const view = match(/^\/annotations\/([^/]+)\/screenshot$/);
+    if (view && method === "GET") {
+        const kind = query.get("view");
+        if (kind !== "crop" && kind !== "thumbnail")
+            throw new RequestError("unknown screenshot view");
+        const stored = await annotation(view[0]);
+        if (!stored) return notFound();
+        try {
+            const image = await backend.screenshot(stored.annotation.id, kind);
+            if (!image) return notFound();
+            return new Response(image.bytes as BodyInit, {
+                headers: {
+                    "Content-Type": image.mime,
+                    "Cache-Control": "private, no-store",
+                    "X-Content-Type-Options": "nosniff",
+                    "Content-Security-Policy": "default-src 'none'",
+                },
+            });
+        } catch {
+            throw new RequestError("screenshot view temporarily unavailable", 503);
+        }
     }
 
     const asset = match(/^\/assets\/([^/]+)$/);

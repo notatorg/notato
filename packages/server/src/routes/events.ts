@@ -1,3 +1,4 @@
+import { annotationSummary } from "@notato/core";
 import { accessibleProjects, canAccessProject, type Principal, samePrincipal } from "../auth.ts";
 import type { LocalBackend } from "../backend.ts";
 import type { NotatoEvent } from "../events.ts";
@@ -19,18 +20,20 @@ const BUFFER_BYTES = 64 * 1024;
  * a large note, and serialising it once per listener would multiply that.
  */
 const framed = new WeakMap<NotatoEvent, Uint8Array>();
-function changeFrame(e: NotatoEvent): Uint8Array {
-    let bytes = framed.get(e);
+const summaries = new WeakMap<NotatoEvent, Uint8Array>();
+function changeFrame(e: NotatoEvent, summary = false): Uint8Array {
+    const cache = summary ? summaries : framed;
+    let bytes = cache.get(e);
     if (!bytes) {
         bytes = frame(e.type, {
             id: e.id,
             projectId: e.projectId,
             seq: e.seq,
-            annotation: e.annotation,
+            annotation: e.annotation && summary ? annotationSummary(e.annotation) : e.annotation,
             // What a change changed from, so a board can tell a status change without remembering.
             ...(e.previous ? { previous: e.previous } : {}),
         });
-        framed.set(e, bytes);
+        cache.set(e, bytes);
     }
     return bytes;
 }
@@ -74,7 +77,8 @@ export class EventStreams {
         agent: boolean,
         allow: (projectId: string) => boolean = () => true,
         stillAllowed?: () => Promise<boolean>,
-        principal?: Principal
+        principal?: Principal,
+        summary = false
     ): Response {
         const { backend } = this;
         let cleanup = () => {};
@@ -121,12 +125,13 @@ export class EventStreams {
                     const unsubscribe = backend.bus.subscribe((e) => {
                         const wanted =
                             (projectId === "*" || e.projectId === projectId) && allow(e.projectId);
-                        if (!stillAllowed) return wanted ? enqueue(changeFrame(e)) : undefined;
+                        if (!stillAllowed)
+                            return wanted ? enqueue(changeFrame(e, summary)) : undefined;
                         // Any change is a moment to ask, wanted or not: a credential that was revoked, or moved to
                         // another workspace, hears nothing more, and is let go at the next change anywhere.
                         turn = turn.then(async () => {
                             if (!(await stillAllowed().catch(() => false))) cleanup();
-                            else if (wanted) enqueue(changeFrame(e));
+                            else if (wanted) enqueue(changeFrame(e, summary));
                         });
                     });
                     const ping = setInterval(() => {
@@ -193,6 +198,7 @@ export const eventRoutes: Routes = async ({ method, principal, url, req, match }
                   );
               }
             : undefined,
-        principal
+        principal,
+        url.searchParams.get("fields") === "summary"
     );
 };

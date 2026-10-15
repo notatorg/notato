@@ -223,7 +223,11 @@ export const relayResult = (c: Connection, requestId: string, result: RelayResul
 
 /** What the server says before anything is captured: whether it takes screenshots. */
 export const getConfig = (c: Connection) =>
-    call<{ screenshots?: boolean }>(c, "GET", `/config?project=${segment(c.project)}`);
+    call<{ screenshots?: boolean; derivedScreenshots?: boolean }>(
+        c,
+        "GET",
+        `/config?project=${segment(c.project)}`
+    );
 
 export const uploadBundle = (c: Connection, zip: Uint8Array) =>
     call<{ bundleId: string; imported: number }>(
@@ -296,7 +300,7 @@ export function followEvents(
         };
         req.open(
             "GET",
-            `${c.server}/projects/${segment(c.project)}/events${agent ? "?agent=1" : ""}`
+            `${c.server}/projects/${segment(c.project)}/events?fields=summary${agent ? "&agent=1" : ""}`
         );
         req.setRequestHeader("Accept", "text/event-stream");
         for (const [name, value] of Object.entries(auth(c))) req.setRequestHeader(name, value);

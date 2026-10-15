@@ -284,6 +284,7 @@ export function Inbox(props: Props) {
             <section className="card detail-col" aria-label="Note">
                 {current ? (
                     <Detail
+                        loadDetails
                         key={current.id}
                         annotation={current}
                         project={project}
@@ -395,7 +396,16 @@ const Row = memo(function Row({
             </span>
             {crop ? (
                 <span className="row-thumb">
-                    <img src={assetHref(crop.id)} alt="" loading="lazy" />
+                    <img
+                        src={`/annotations/${encodeURIComponent(a.id)}/screenshot?view=thumbnail`}
+                        alt=""
+                        loading="lazy"
+                        onError={(event) => {
+                            const fallback = assetHref(crop.id);
+                            if (!event.currentTarget.src.endsWith(fallback))
+                                event.currentTarget.src = fallback;
+                        }}
+                    />
                     <span className="tape" aria-hidden="true" />
                 </span>
             ) : null}

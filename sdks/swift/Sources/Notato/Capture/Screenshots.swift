@@ -8,6 +8,7 @@ typealias CapturedScreen = Captured<UIImage>
 struct ComposedScreenshots: Sendable {
     let refs: Screenshots
     let assets: [String: Data]
+    let cropRect: PageRect?
 }
 
 @MainActor
@@ -38,7 +39,7 @@ enum ScreenshotComposer {
     private static let cropPadding: CGFloat = 24
 
     /// The two pictures, covered where `screen` says: what was private when it was taken.
-    static func compose(_ screen: CapturedScreen, targets: [CGRect], pin: Int?, maxScale: Double) -> ComposedScreenshots? {
+    static func compose(_ screen: CapturedScreen, targets: [CGRect], pin: Int?, maxScale: Double, derivedCrops: Bool = false) -> ComposedScreenshots? {
         let masks = screen.covers
         let scale = max(1, min(screen.picture.scale, CGFloat(maxScale)))
         let format = UIGraphicsImageRendererFormat()
@@ -63,10 +64,16 @@ enum ScreenshotComposer {
         var refs = Screenshots(full: AssetRef(id: Hash.sha256(full.bytes), mime: full.mime,
                                               w: Int((screen.size.width * scale).rounded()), h: Int((screen.size.height * scale).rounded())))
         var assets = [refs.full.id: full.bytes]
+        var cropRect: PageRect?
 
         if let union = targets.dropFirst().reduce(targets.first, { $0?.union($1) }) {
             let area = union.insetBy(dx: -cropPadding, dy: -cropPadding).intersection(bounds)
             if area.width >= 4, area.height >= 4 {
+                if derivedCrops {
+                    let x = max(0, Int((area.minX * scale).rounded(.down)))
+                    let y = max(0, Int((area.minY * scale).rounded(.down)))
+                    cropRect = PageRect(x: Double(x), y: Double(y), w: Double(min(image.width - x, max(1, Int((area.width * scale).rounded())))), h: Double(min(image.height - y, max(1, Int((area.height * scale).rounded())))))
+                } else {
                 let cropImage = UIGraphicsImageRenderer(size: area.size, format: format).image { renderer in
                     draw(renderer.cgContext, offset: area.origin)
                 }
@@ -75,9 +82,10 @@ enum ScreenshotComposer {
                     refs.crop = ref
                     assets[ref.id] = crop.bytes
                 }
+                }
             }
         }
-        return ComposedScreenshots(refs: refs, assets: assets)
+        return ComposedScreenshots(refs: refs, assets: assets, cropRect: cropRect)
     }
 
     private static func drawPin(_ number: Int, at target: CGRect) {

@@ -135,9 +135,14 @@ it("backs up a live WAL database and referenced screenshots, authenticates befor
     const bytes = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10, 1, 2, 3]);
     const blobs = new FileBlobStore(join(dir, "assets"));
     const ref = await blobs.put(bytes);
+    const previewBytes = new Uint8Array([...bytes, 7]);
+    const preview = await blobs.put(previewBytes);
     const note = annotationFixture({
         projectId: "test",
-        screenshots: { full: { ...ref, mime: "image/png", w: 1, h: 1 } },
+        screenshots: {
+            full: { ...ref, mime: "image/png", w: 1, h: 1 },
+            thumbnail: { ...preview, mime: "image/png", w: 1, h: 1 },
+        },
     });
     await store.insertAnnotation(note);
     writeFileSync(join(dir, "notato.config.json"), JSON.stringify({ screenshots: "on" }), {
@@ -154,6 +159,9 @@ it("backs up a live WAL database and referenced screenshots, authenticates befor
     defer(() => restoredStore.close());
     expect((await restoredStore.getAnnotation(note.id))?.annotation.comment).toBe(note.comment);
     expect((await new FileBlobStore(join(restored, "assets")).get(ref.id))?.bytes).toEqual(bytes);
+    expect((await new FileBlobStore(join(restored, "assets")).get(preview.id))?.bytes).toEqual(
+        previewBytes
+    );
     expect(readFileSync(join(restored, "notato.config.json"), "utf8")).toContain('"on"');
     expect(() => restoreLocal({ file, dir: restored, key })).toThrow("new, empty");
     const damaged = readFileSync(file);

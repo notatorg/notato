@@ -10,6 +10,7 @@ import 'package:notato/src/serial.dart';
 import 'package:notato/src/tree.dart';
 
 import 'harness.dart';
+import 'helpers.dart';
 import 'shop.dart';
 
 void main() {
@@ -34,6 +35,24 @@ void main() {
     expect((await compressScreenshot(png, 160, 240, encoder: (_, _, _) async => webp)).mime, 'image/png');
     expect((await compressScreenshot(png, 320, 480, encoder: (_, _, _) async => Uint8List(200))).mime, 'image/png');
   });
+  testWidgets('a capable server gets one masked capture and crop coordinates', (tester) async {
+    final server = FakeServer()..derivedScreenshots = true;
+    await tester.pumpWidget(app(server, screenshots: true));
+    await settle(tester);
+    server.hello();
+    await settle(tester);
+    final note = await drive(tester, notato.annotate('#add-to-basket', 'One image'));
+    final shots = note['screenshots'] as Map;
+    expect(shots.containsKey('crop'), isFalse);
+    expect(server.files, hasLength(1));
+    final crop = ((note['context'] as Map)['screenshot'] as Map)['cropRect'] as Map;
+    expect(crop['w'], greaterThan(0));
+    expect(crop['h'], greaterThan(0));
+    final validation = await tester.runAsync(() => validate('annotation', note));
+    expect(validation?.ok, isTrue, reason: validation?.output);
+    await unmount(tester);
+  });
+
   testWidgets('photographs the app, and a part of it', (tester) async {
     final key = GlobalKey();
     await tester.pumpWidget(

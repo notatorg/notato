@@ -8,6 +8,8 @@ Notato puts a small toolbar in the web or mobile app you are building. Click an 
 
 <p align="center"><img src="assets/loop.png" alt="A checkout page whose pay button has just turned into a green Place order button with a resolved pin, beside the coding agent's terminal: it received the note “Make it green and say Place order” with the button's file and line, edited PayButton.tsx, committed the change and resolved the note" width="900" /></p>
 
+Screenshots prefer WebP when it is smaller. Compatible servers receive one full image plus crop coordinates, generate the compressed crop and tiny inbox thumbnail once, and serve each view at the size needed. The board loads diagnostics on demand. [Screenshot storage and compatibility](docs/screenshot-storage.md).
+
 Every piece of feedback is an **annotation**: an element, a note and screenshots. Nothing is recorded between annotations, so it is a feedback loop for building, not analytics or session replay.
 
 | Mode      | Who annotates               | Where it goes                                              |

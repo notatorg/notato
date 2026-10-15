@@ -9,12 +9,14 @@ class Shot {
     required this.width,
     required this.height,
     this.mime = 'image/png',
+    this.cropRect,
   });
   final String id;
   final List<int> bytes;
   final int width;
   final int height;
   final String mime;
+  final Map<String, int>? cropRect;
 
   Map<String, Object?> get ref => {'id': id, 'mime': mime, 'w': width, 'h': height};
 }
@@ -150,7 +152,7 @@ Map<String, Object?> buildAnnotation({
     if (full != null) 'screenshots': {'full': full.ref, if (crop != null) 'crop': crop.ref},
     if (steps != null && steps.isNotEmpty) 'steps': steps,
     'context': {
-      'screenshot': {'method': 'native', 'pin': pin},
+      'screenshot': {'method': 'native', 'pin': pin, if (full?.cropRect != null) 'cropRect': full!.cropRect},
       'flutter': {'os': device.os, 'osVersion': device.osVersion, 'dart': ?device.dart},
       if (console != null && console.isNotEmpty) 'console': console,
       if (network != null && network.isNotEmpty) 'network': network,

@@ -55,13 +55,18 @@ export function identityPlugins(props: NotatoProps, settings: SettingsStore): Id
 export function capturePlugins(
     props: NotatoProps,
     /** Asked before each screenshot: whether one may be taken now. */
-    screenshotsOn: () => Promise<boolean>
+    screenshotsOn: () => Promise<boolean>,
+    derivedScreenshots: () => boolean = () => false
 ): CapturePlugin[] {
     const mode = props.mode ?? "dev";
     return mergePlugins<CapturePlugin>(
         [
             routePlugin({ hash: props.hashRoutes ?? false }),
-            screenshotPlugin({ maskInputs: props.maskInputs, enabled: screenshotsOn }),
+            screenshotPlugin({
+                maskInputs: props.maskInputs,
+                enabled: screenshotsOn,
+                derivedCrops: derivedScreenshots,
+            }),
             animationsPlugin(),
             // An agent's annotation says how it got there; people do not need that recorded.
             ...(mode === "agent"

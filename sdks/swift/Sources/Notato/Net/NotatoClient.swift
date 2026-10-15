@@ -209,7 +209,7 @@ final class NotatoClient: Sendable {
     /// Follows the project's event stream until cancelled or the connection drops: `hello` first, then `created`,
     /// `updated`, `replied`, `deleted`, and (with `agent`) `annotate-request`.
     func events(project: String, agent: Bool) -> AsyncThrowingStream<ServerSentEvent, Error> {
-        var stream = request("GET", "/projects/\(Self.segment(project))/events\(agent ? "?agent=1" : "")")
+        var stream = request("GET", "/projects/\(Self.segment(project))/events?fields=summary\(agent ? "&agent=1" : "")")
         stream.timeoutInterval = 60
         stream.setValue("text/event-stream", forHTTPHeaderField: "Accept")
         let request = stream

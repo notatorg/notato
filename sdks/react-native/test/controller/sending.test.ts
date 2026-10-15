@@ -5,6 +5,16 @@ import { memoryStorage } from "../../src/storage.ts";
 import { fakeHost, fakeServer, holdSends, settle, start } from "./harness.ts";
 
 describe("sending a note", () => {
+    it("requires explicit crop capability and forgets it when the server changes", async () => {
+        const server = fakeServer();
+        server.transport.config = async () => ({ screenshots: true, derivedScreenshots: true });
+        const { notato } = start({ project: "shop" }, server);
+        expect(notato.derivedScreenshots).toBe(false);
+        await server.hello();
+        expect(notato.derivedScreenshots).toBe(true);
+        notato.saveSettings({ name: "", screenshots: true, server: "http://localhost:4798" });
+        expect(notato.derivedScreenshots).toBe(false);
+    });
     it("sends it with its screenshot, and takes the server's copy", async () => {
         const { notato, server } = start({ project: "shop" });
         await server.hello();

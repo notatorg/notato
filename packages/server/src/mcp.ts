@@ -225,6 +225,17 @@ export function createMcpServer(options: McpOptions): McpServer {
                     mimeType: ref.mime,
                 });
         }
+        if ((which === "both" || which === "crop") && shots && !shots.crop && backend.screenshot) {
+            const image = await backend
+                .screenshot(stored.annotation.id, "crop")
+                .catch(async () => (which === "crop" ? backend.asset(shots.full.id) : null));
+            if (image)
+                out.push({
+                    type: "image",
+                    data: Buffer.from(image.bytes).toString("base64"),
+                    mimeType: image.mime,
+                });
+        }
         return out;
     }
 

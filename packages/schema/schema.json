@@ -437,6 +437,42 @@
                 "h"
               ],
               "additionalProperties": false
+            },
+            "thumbnail": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9_-]{1,128}$"
+                },
+                "mime": {
+                  "type": "string",
+                  "enum": [
+                    "image/png",
+                    "image/webp"
+                  ]
+                },
+                "w": {
+                  "type": "integer",
+                  "exclusiveMinimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "h": {
+                  "type": "integer",
+                  "exclusiveMinimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "path": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "mime",
+                "w",
+                "h"
+              ],
+              "additionalProperties": false
             }
           },
           "required": [
@@ -1303,6 +1339,42 @@
                     "additionalProperties": false
                   },
                   "crop": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string",
+                        "pattern": "^[A-Za-z0-9_-]{1,128}$"
+                      },
+                      "mime": {
+                        "type": "string",
+                        "enum": [
+                          "image/png",
+                          "image/webp"
+                        ]
+                      },
+                      "w": {
+                        "type": "integer",
+                        "exclusiveMinimum": 0,
+                        "maximum": 9007199254740991
+                      },
+                      "h": {
+                        "type": "integer",
+                        "exclusiveMinimum": 0,
+                        "maximum": 9007199254740991
+                      },
+                      "path": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "mime",
+                      "w",
+                      "h"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "thumbnail": {
                     "type": "object",
                     "properties": {
                       "id": {

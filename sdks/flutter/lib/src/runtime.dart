@@ -137,6 +137,8 @@ class NotatoRuntime extends ChangeNotifier implements NotatoController {
   String? _problem;
   List<String> _agents = const [];
   bool _serverScreenshots = true;
+  bool _serverDerivedScreenshots = false;
+  bool get derivedScreenshots => hasServer && _serverDerivedScreenshots;
 
   // ---- what the app and the overlay read ------------------------------------------------------------------------
 
@@ -694,6 +696,7 @@ class NotatoRuntime extends ChangeNotifier implements NotatoController {
   // ---- the server: live updates over server-sent events ------------------------------------------------------------
 
   void _restartSync() {
+    _serverDerivedScreenshots = false;
     _generation++;
     _follower?.cancel();
     _follower = null;
@@ -748,8 +751,11 @@ class NotatoRuntime extends ChangeNotifier implements NotatoController {
         _agents = _agentNames(data['agent']);
         notifyListeners();
         try {
-          final screenshots = await client.screenshots();
-          if (generation == _generation && screenshots != null) _serverScreenshots = screenshots;
+          final config = await client.capabilities();
+          if (generation == _generation) {
+            if (config['screenshots'] is bool) _serverScreenshots = config['screenshots'] as bool;
+            _serverDerivedScreenshots = config['derivedScreenshots'] == true;
+          }
         } catch (_) {
           // the screenshots stay as they were
         }

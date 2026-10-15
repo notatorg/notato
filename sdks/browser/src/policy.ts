@@ -7,6 +7,7 @@ export interface Policy {
     /** The last answer, without asking. For labels, where waiting would be wrong. */
     screenshotsNow(): boolean;
     captureOnlyNow(): boolean;
+    derivedScreenshotsNow(): boolean;
     /** Asks the server now. Never throws. */
     refresh(): Promise<void>;
 }
@@ -27,6 +28,7 @@ export function createPolicy(options: {
 }): Policy {
     let allowed = true;
     let captureOnly = false;
+    let derived = false;
     let askedAt = 0;
     let pending: Promise<void> | undefined;
 
@@ -45,9 +47,11 @@ export function createPolicy(options: {
                     const body = (await res.json()) as {
                         screenshots?: unknown;
                         captureOnly?: unknown;
+                        derivedScreenshots?: unknown;
                     };
                     if (typeof body.screenshots === "boolean") allowed = body.screenshots;
                     captureOnly = body.captureOnly === true;
+                    derived = body.derivedScreenshots === true;
                     options.onCapabilities?.();
                 }
             } catch {
@@ -64,6 +68,7 @@ export function createPolicy(options: {
         refresh,
         screenshotsNow: () => allowed,
         captureOnlyNow: () => captureOnly,
+        derivedScreenshotsNow: () => derived,
         async screenshots() {
             if (Date.now() - askedAt > FRESH_MS) {
                 // A slow server must not hold up the annotation: stop waiting and go with what is known.

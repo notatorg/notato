@@ -292,7 +292,7 @@ internal class NotatoClient(baseUrl: String, token: String?) {
      */
     fun events(project: String, agent: Boolean): Flow<ServerSentEvent> = flow {
         val connection = try {
-            open("GET", "/projects/${segment(project)}/events${if (agent) "?agent=1" else ""}", timeoutMs = 45_000)
+            open("GET", "/projects/${segment(project)}/events?fields=summary${if (agent) "&agent=1" else ""}", timeoutMs = 45_000)
         } catch (error: Exception) {
             throw unreachable(error)
         }

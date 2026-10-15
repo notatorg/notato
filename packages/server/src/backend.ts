@@ -5,6 +5,7 @@ import {
     buildBundle,
     PEOPLE_ONLY_TEXT,
     readBundle,
+    screenshotCrop,
     streamBundle,
 } from "@notato/core";
 import {
@@ -19,8 +20,10 @@ import {
 import { ulid } from "ulid";
 import { AgentPresence } from "./agents.ts";
 import { UnknownProjectError } from "./auth.ts";
+import { sha256Hex } from "./blob-store.ts";
 import { type ConfigSource, defaultConfig } from "./config.ts";
 import { EventBus, type EventType } from "./events.ts";
+import { ImageViews } from "./image-views.ts";
 import { MentionRegistry } from "./mentions.ts";
 import { type RelayArgs, RelayHub, type RelayResult } from "./relay.ts";
 import {
@@ -68,6 +71,7 @@ export interface Backend {
     /** Records follow-ups as delivered to an agent, so another session (or a restart) is not handed them again. */
     markHanded(entries: HandedEntry[]): Promise<void>;
     asset(id: string): Promise<AssetBytes | null>;
+    screenshot?(id: string, view: "crop" | "thumbnail"): Promise<AssetBytes | null>;
     setStatus(
         id: string,
         status: Status,
@@ -253,6 +257,10 @@ export class LocalBackend implements Backend {
 
     /** An extension's hooks, if it has any. */
     readonly hooks: BackendHooks;
+    private readonly imageViews: ImageViews;
+    get derivedScreenshots() {
+        return this.imageViews.supported;
+    }
 
     constructor(
         readonly store: Store,
@@ -260,6 +268,7 @@ export class LocalBackend implements Backend {
         options: LocalBackendOptions = {}
     ) {
         this.hooks = options.hooks ?? {};
+        this.imageViews = new ImageViews((id) => this.asset(id));
         this.config = options.config ?? defaultConfig;
         this.autoCreateProjects = options.autoCreateProjects ?? true;
         this.bus = options.bus ?? new EventBus();
@@ -292,6 +301,18 @@ export class LocalBackend implements Backend {
 
     asset(id: string) {
         return this.blobs.get(id);
+    }
+
+    async screenshot(id: string, view: "crop" | "thumbnail"): Promise<AssetBytes | null> {
+        const stored = await this.get(id);
+        const shots = stored?.annotation.screenshots;
+        if (!shots || !stored) return null;
+        const crop = screenshotCrop(stored.annotation);
+        if (view === "thumbnail" && shots.thumbnail) return this.asset(shots.thumbnail.id);
+        if (view === "crop" && shots.crop) return this.asset(shots.crop.id);
+        if (view === "crop" && !crop) return null;
+        const source = crop ? shots.full : (shots.crop ?? shots.full);
+        return this.imageViews.get(source.id, crop, view === "thumbnail");
     }
 
     /**
@@ -361,17 +382,59 @@ export class LocalBackend implements Backend {
             await this.hooks.beforeIngest?.(annotation, 0);
         } else {
             const full = await bytesOf(annotation.screenshots.full);
-            const crop = annotation.screenshots.crop
+            let crop = annotation.screenshots.crop
                 ? await bytesOf(annotation.screenshots.crop)
                 : undefined;
+            let thumbnail = annotation.screenshots.thumbnail
+                ? await bytesOf(annotation.screenshots.thumbnail)
+                : undefined;
+            const region = screenshotCrop(annotation);
+            const derived = async (image: typeof full, box: typeof region, small: boolean) => {
+                const output = await this.imageViews.get(
+                    await sha256Hex(image.bytes),
+                    box,
+                    small,
+                    image
+                );
+                if (!output) return undefined;
+                const dimensions = await new Bun.Image(output.bytes).metadata();
+                return {
+                    ref: {
+                        id: "derived",
+                        mime: "image/webp" as const,
+                        w: dimensions.width,
+                        h: dimensions.height,
+                    },
+                    bytes: output.bytes,
+                    mime: "image/webp" as const,
+                };
+            };
+            if (this.imageViews.supported) {
+                try {
+                    // Generate once from bytes already in the upload. Cold crop reads must never re-download the original.
+                    if (!crop && region) crop = await derived(full, region, false);
+                    if (!thumbnail)
+                        thumbnail = await derived(crop ?? full, crop ? undefined : region, true);
+                } catch {
+                    // A preview is optional: corrupt/oversized images or a busy encoder cannot discard the note.
+                }
+            }
             // Checked before anything is written, so a refused note leaves no screenshot behind.
-            assetBytes = full.bytes.byteLength + (crop?.bytes.byteLength ?? 0);
+            assetBytes =
+                full.bytes.byteLength +
+                (crop?.bytes.byteLength ?? 0) +
+                (thumbnail?.bytes.byteLength ?? 0);
             await this.hooks.beforeIngest?.(annotation, assetBytes);
             const fullRef = await store(full);
             const cropRef = crop ? await store(crop) : undefined;
+            const thumbnailRef = thumbnail ? await store(thumbnail) : undefined;
             annotation = {
                 ...annotation,
-                screenshots: { full: fullRef, ...(cropRef ? { crop: cropRef } : {}) },
+                screenshots: {
+                    full: fullRef,
+                    ...(cropRef ? { crop: cropRef } : {}),
+                    ...(thumbnailRef ? { thumbnail: thumbnailRef } : {}),
+                },
             };
         }
 
@@ -475,8 +538,7 @@ export class LocalBackend implements Backend {
     protected async forgetScreenshots(gone: Annotation[]) {
         const ids = new Set<string>();
         for (const a of gone) {
-            if (a.screenshots?.full) ids.add(a.screenshots.full.id);
-            if (a.screenshots?.crop) ids.add(a.screenshots.crop.id);
+            for (const ref of Object.values(a.screenshots ?? {})) if (ref) ids.add(ref.id);
         }
         for (const id of ids) {
             if ((await this.store.projectsWithAsset(id)).length === 0) await this.blobs.delete(id);

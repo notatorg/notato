@@ -1,4 +1,5 @@
 import type { CapturePlugin, DraftAnnotation } from "@notato/core";
+import type { AssetRef } from "@notato/schema";
 import { domToCanvas } from "modern-screenshot";
 import { EDITABLE, MASK_ATTR, ROOT_ATTR } from "../attributes.ts";
 import { messageOf } from "../text.ts";
@@ -26,6 +27,8 @@ export interface ScreenshotOptions {
     /** `auto` uses WebP when it is smaller than PNG, with PNG as a fallback. */
     format?: "auto" | "png";
     outlineColor?: string;
+    /** Store crop coordinates instead of another image, only when the server advertises support. */
+    derivedCrops?: () => boolean;
 }
 
 interface Box {
@@ -250,33 +253,42 @@ export function screenshotPlugin(options: ScreenshotOptions = {}): CapturePlugin
             const f = canvas.width / vw;
             const primary = boxes[0] as Box;
             const crop = cropBox(boxes.length > 1 ? union(boxes) : primary, cropPadding, vw, vh);
-            const cropCanvas = document.createElement("canvas");
-            cropCanvas.width = Math.max(1, Math.round(crop.w * f));
-            cropCanvas.height = Math.max(1, Math.round(crop.h * f));
-            cropCanvas
-                .getContext("2d")
-                ?.drawImage(
-                    canvas,
-                    crop.x * f,
-                    crop.y * f,
-                    crop.w * f,
-                    crop.h * f,
-                    0,
-                    0,
-                    cropCanvas.width,
-                    cropCanvas.height
-                );
-
+            const derived = options.derivedCrops?.() === true;
+            const x = Math.min(canvas.width - 1, Math.max(0, Math.floor(crop.x * f)));
+            const y = Math.min(canvas.height - 1, Math.max(0, Math.floor(crop.y * f)));
+            const cropRect = {
+                x,
+                y,
+                w: Math.min(canvas.width - x, Math.max(1, Math.round(crop.w * f))),
+                h: Math.min(canvas.height - y, Math.max(1, Math.round(crop.h * f))),
+            };
+            let cropRef: AssetRef | undefined;
+            if (!derived) {
+                const cropCanvas = document.createElement("canvas");
+                cropCanvas.width = cropRect.w;
+                cropCanvas.height = cropRect.h;
+                cropCanvas
+                    .getContext("2d")
+                    ?.drawImage(
+                        canvas,
+                        cropRect.x,
+                        cropRect.y,
+                        cropRect.w,
+                        cropRect.h,
+                        0,
+                        0,
+                        cropRect.w,
+                        cropRect.h
+                    );
+                cropRef = await draft.putAsset(await encodeScreenshot(cropCanvas, encoding), {
+                    w: cropRect.w,
+                    h: cropRect.h,
+                });
+            }
             drawOutline(canvas, boxes, draft.number, f, outlineColor);
-
-            const [fullBlob, cropBlob] = await Promise.all([
-                encodeScreenshot(canvas, encoding),
-                encodeScreenshot(cropCanvas, encoding),
-            ]);
-            const full = await draft.putAsset(fullBlob, { w: canvas.width, h: canvas.height });
-            const cropRef = await draft.putAsset(cropBlob, {
-                w: cropCanvas.width,
-                h: cropCanvas.height,
+            const full = await draft.putAsset(await encodeScreenshot(canvas, encoding), {
+                w: canvas.width,
+                h: canvas.height,
             });
 
             return {
@@ -285,6 +297,7 @@ export function screenshotPlugin(options: ScreenshotOptions = {}): CapturePlugin
                     screenshot: {
                         method,
                         pin: draft.number,
+                        ...(derived ? { cropRect } : {}),
                         ...(error ? { error } : {}),
                         ...(shot.frames ? { frames: shot.frames } : {}),
                         ...(shot.frameErrors ? { frameErrors: shot.frameErrors } : {}),

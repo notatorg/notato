@@ -78,6 +78,8 @@ internal class NoteSync(private val controller: Controller, private val storeBas
     /** Whether the server takes screenshots; it says so when it connects. */
     var serverScreenshots = true
         private set
+    var serverDerivedScreenshots = false
+        private set
 
     private val scope get() = controller.scope
     private val me get() = Author.human(controller.authorName)
@@ -192,6 +194,7 @@ internal class NoteSync(private val controller: Controller, private val storeBas
 
     /** Connects to the server (again), or says there is none: notes stay on the device. */
     fun restart() {
+        serverDerivedScreenshots = false
         job?.cancel()
         job = null
         failure = null
@@ -302,7 +305,9 @@ internal class NoteSync(private val controller: Controller, private val storeBas
     private suspend fun catchUp(c: NotatoClient) {
         try {
             serverScreenshots = try {
-                c.config().screenshots
+                val capabilities = c.config()
+                serverDerivedScreenshots = capabilities.derivedScreenshots
+                capabilities.screenshots
             } catch (_: NotatoServerException) {
                 serverScreenshots
             }

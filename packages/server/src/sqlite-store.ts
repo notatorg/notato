@@ -187,6 +187,9 @@ export class SqliteStore implements Store, AuthStore {
             "CREATE INDEX IF NOT EXISTS idx_annotations_full_shot ON annotations (json_extract(json, '$.screenshots.full.id'))"
         );
         this.db.run(
+            "CREATE INDEX IF NOT EXISTS idx_annotations_thumbnail_shot ON annotations (json_extract(json, '$.screenshots.thumbnail.id'))"
+        );
+        this.db.run(
             "CREATE INDEX IF NOT EXISTS idx_annotations_crop_shot ON annotations (json_extract(json, '$.screenshots.crop.id'))"
         );
         this.db.run("INSERT OR REPLACE INTO meta (key, value) VALUES ('schema_version', ?)", [
@@ -449,7 +452,7 @@ export class SqliteStore implements Store, AuthStore {
             this.db
                 .query(
                     `SELECT DISTINCT project_id AS id FROM annotations
-         WHERE json_extract(json, '$.screenshots.full.id') = ?1 OR json_extract(json, '$.screenshots.crop.id') = ?1`
+         WHERE json_extract(json, '$.screenshots.full.id') = ?1 OR json_extract(json, '$.screenshots.crop.id') = ?1 OR json_extract(json, '$.screenshots.thumbnail.id') = ?1`
                 )
                 .all(assetId) as Array<{ id: string }>
         ).map((r) => r.id);

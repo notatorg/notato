@@ -97,6 +97,7 @@ const multipart = (id: string, project: string, comment: string) => {
             bundleId: null,
             comment,
             screenshots: { full: { id: "a".repeat(64), mime: "image/png", w: 1, h: 1 } },
+            context: { screenshot: { cropRect: { x: 0, y: 0, w: 1, h: 1 } } },
         })
     );
     form.set(
@@ -187,8 +188,29 @@ await step("notato serve: embedded UI, login, tokens, annotations", async () => 
     });
     assert(posted.status === 201, `posting answered ${posted.status}: ${await posted.text()}`);
     const back = (await (await fetch(`${base}/annotations/smoke-1`, { headers })).json()) as {
-        annotation: { comment: string };
+        annotation: {
+            comment: string;
+            screenshots?: { crop?: { id: string }; thumbnail?: { id: string } };
+        };
     };
+    assert(
+        back.annotation.screenshots?.crop && back.annotation.screenshots.thumbnail,
+        "compiled binary did not generate stored derivatives"
+    );
+    for (const view of ["crop", "thumbnail"]) {
+        const image = await fetch(`${base}/annotations/smoke-1/screenshot?view=${view}`, {
+            headers,
+        });
+        assert(
+            image.status === 200 && image.headers.get("content-type") === "image/webp",
+            `${view} is not a WebP image`
+        );
+        const bytes = new Uint8Array(await image.arrayBuffer());
+        assert(
+            new TextDecoder().decode(bytes.subarray(0, 4)) === "RIFF",
+            `${view} image bytes are invalid`
+        );
+    }
     assert(back.annotation.comment === "from the smoke test", "annotation did not read back");
     assert(
         (await fetch(`${base}/projects/other/annotations`, { headers })).status === 403,

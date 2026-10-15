@@ -148,7 +148,8 @@ internal sealed partial class NotatoController
                 // Where the private parts were when the picture was taken, not where they are now.
                 IReadOnlyList<Rect> masks = screen.Masks;
                 double maxScale = options.MaxScreenshotScale;
-                shots = await Task.Run(() => ScreenshotComposer.Compose(screen, rects, pin, masks, maxScale));
+                bool derivedCrops = HasServer && _serverDerivedScreenshots;
+                shots = await Task.Run(() => ScreenshotComposer.Compose(screen, rects, pin, masks, maxScale, derivedCrops));
             }
         }
         finally
@@ -181,7 +182,7 @@ internal sealed partial class NotatoController
             Intent = intent,
             Screenshots = shots?.Refs,
             Steps = steps,
-            Context = ContextFor(session, elements[0], pin, options),
+            Context = ContextFor(session, elements[0], pin, options, shots?.CropRect),
             Status = Statuses.Open,
             Thread = [],
             PeopleOnly = PeopleOnlyToggle.Flag(peopleOnly),
@@ -206,12 +207,12 @@ internal sealed partial class NotatoController
     /// A note's <c>context</c>: the app and device (<c>maui</c>), its pin's number, and the app's recent log and HTTP
     /// requests when there are any.
     /// </summary>
-    private Dictionary<string, JsonElement> ContextFor(OverlaySession session, VisualElement element, int pin, NotatoOptions options)
+    private Dictionary<string, JsonElement> ContextFor(OverlaySession session, VisualElement element, int pin, NotatoOptions options, PageRect? cropRect = null)
     {
         Dictionary<string, JsonElement> context = new()
         {
             ["maui"] = JsonSerializer.SerializeToElement(AppContextInfo.Describe(session.Window, element, _inspector.Sources), ContextJson.Default.MauiContextInfo),
-            ["screenshot"] = JsonSerializer.SerializeToElement(new PinContext { Pin = pin }, ContextJson.Default.PinContext),
+            ["screenshot"] = JsonSerializer.SerializeToElement(new PinContext { Pin = pin, CropRect = cropRect }, ContextJson.Default.PinContext),
         };
         if (options.CaptureLogs)
         {

@@ -1,7 +1,15 @@
 import { type Detail as DetailLevel, pinNumber, renderAnnotation } from "@notato/core";
 import type { Annotation, Severity, Status } from "@notato/schema";
-import { type KeyboardEvent, useLayoutEffect, useRef, useState } from "react";
-import { chooseVariant, remove, reply, setPeopleOnly, setSeverity, setStatus } from "./api.ts";
+import { type KeyboardEvent, useEffect, useLayoutEffect, useRef, useState } from "react";
+import {
+    chooseVariant,
+    getAnnotation,
+    remove,
+    reply,
+    setPeopleOnly,
+    setSeverity,
+    setStatus,
+} from "./api.ts";
 import {
     authorName,
     capitalise,
@@ -20,6 +28,7 @@ import { copyText, FLASH_MS, Icon, StatusPill, When } from "./ui.tsx";
 
 interface Props {
     annotation: Annotation;
+    loadDetails?: boolean;
     project: string;
     /** How much to write when this is copied as Markdown. */
     detail: DetailLevel;
@@ -67,7 +76,46 @@ const REPLY_MAX_HEIGHT = 160;
 type Look = "primary" | "tonal" | "ghost";
 
 /** One note, open beside the inbox: everything it recorded, its thread, and the reply box and status buttons. */
-export function Detail({ annotation: a, project, detail, hidden, onChange, onDeleted }: Props) {
+export function Detail(props: Props) {
+    const [loaded, setLoaded] = useState<Annotation | null>(null);
+    const [error, setError] = useState<string | null>(null);
+    const [attempt, retry] = useState(0);
+    const id = props.annotation.id;
+    useEffect(() => {
+        if (!props.loadDetails) return;
+        const request = new AbortController();
+        setLoaded(null);
+        setError(null);
+        getAnnotation(id, request.signal).then(
+            (a) => {
+                if (!request.signal.aborted) setLoaded(a);
+            },
+            (e) => {
+                if (!request.signal.aborted)
+                    setError(e instanceof Error ? e.message : "Could not load the note.");
+            }
+        );
+        return () => request.abort(`Note request ${attempt} cancelled`);
+    }, [id, props.loadDetails, attempt]);
+    if (props.loadDetails && loaded?.id !== id)
+        return (
+            <div className="empty">
+                <p role={error ? "alert" : "status"}>{error ?? "Loading note…"}</p>
+                {error ? (
+                    <button type="button" onClick={() => retry((n) => n + 1)}>
+                        Try again
+                    </button>
+                ) : null}
+            </div>
+        );
+    const annotation =
+        props.loadDetails && loaded
+            ? { ...props.annotation, context: loaded.context, steps: loaded.steps }
+            : props.annotation;
+    return <LoadedDetail {...props} annotation={annotation} />;
+}
+
+function LoadedDetail({ annotation: a, project, detail, hidden, onChange, onDeleted }: Props) {
     const [text, setText] = useState("");
     /** The next reply goes as an aside: for the people on the thread, not the agent. */
     const [aside, setAside] = useState(false);

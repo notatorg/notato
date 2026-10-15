@@ -17,7 +17,7 @@ import dev.notato.android.overlay.Ui
 import java.io.ByteArrayOutputStream
 
 /** The two pictures a note carries: the window with the target outlined, and a crop around it, by asset id. */
-internal class ComposedScreenshots(val refs: Screenshots, val assets: Map<String, ByteArray>)
+internal class ComposedScreenshots(val refs: Screenshots, val assets: Map<String, ByteArray>, val cropRect: Map<String, Int>? = null)
 
 /** Draws the outline, the pin number and the masks onto a captured window, and cuts the crop. */
 internal object ScreenshotComposer {
@@ -26,7 +26,7 @@ internal object ScreenshotComposer {
     private const val CROP_PADDING_DP = 24f
 
     /** [targets] and [masks] are in window pixels, the capture's own space. */
-    fun compose(screen: CapturedScreen, targets: List<Box>, pin: Int?, masks: List<Box>, maxScale: Double): ComposedScreenshots {
+    fun compose(screen: CapturedScreen, targets: List<Box>, pin: Int?, masks: List<Box>, maxScale: Double, derivedCrops: Boolean = false): ComposedScreenshots {
         val source = screen.bitmap
         // Stored at no more than maxScale pixels per dp: a 3.5x phone does not need a 3.5x picture to be read.
         val factor = minOf(1.0, maxScale / screen.density).toFloat()
@@ -52,6 +52,7 @@ internal object ScreenshotComposer {
             for (t in targets) drawRect(t.rect().apply { inset(dp, dp) }, strokePaint)
         }
         var crop: Bitmap? = null
+        var cropRect: Map<String, Int>? = null
         if (targets.isNotEmpty()) {
             val union = targets.drop(1).fold(targets.first()) { acc, b -> acc.union(b) }.rect()
             val pad = CROP_PADDING_DP * dp
@@ -60,7 +61,10 @@ internal object ScreenshotComposer {
                 (union.right + pad).toInt().coerceAtMost(width), (union.bottom + pad).toInt().coerceAtMost(height),
             )
             // A copy of that part (the picture is mutable, so never the picture itself): the pin drawn next is not in it.
-            if (area.width() >= 4 && area.height() >= 4) crop = Bitmap.createBitmap(full, area.left, area.top, area.width(), area.height())
+            if (area.width() >= 4 && area.height() >= 4) {
+                if (derivedCrops) cropRect = mapOf("x" to area.left, "y" to area.top, "w" to area.width(), "h" to area.height())
+                else crop = Bitmap.createBitmap(full, area.left, area.top, area.width(), area.height())
+            }
         }
         if (pin != null && targets.isNotEmpty()) drawPin(canvas, targets.first().rect(), pin, dp)
         val (fullBytes, fullMime) = encode(full)
@@ -73,7 +77,7 @@ internal object ScreenshotComposer {
             assets[refs.crop!!.id] = cropBytes
             crop.recycle()
         }
-        return ComposedScreenshots(refs, assets)
+        return ComposedScreenshots(refs, assets, cropRect)
     }
 
     private fun drawPin(canvas: Canvas, target: RectF, number: Int, dp: Float) {

@@ -137,6 +137,18 @@ export class RemoteBackend implements Backend {
         };
     }
 
+    async screenshot(id: string, view: "crop" | "thumbnail"): Promise<AssetBytes | null> {
+        const res = await this.request(
+            `/annotations/${encodeURIComponent(id)}/screenshot?view=${view}`
+        );
+        if (res.status === 404) return null;
+        if (!res.ok) throw new RemoteError(`server answered ${res.status}`, res.status);
+        return {
+            bytes: new Uint8Array(await res.arrayBuffer()),
+            mime: res.headers.get("content-type") ?? "image/webp",
+        };
+    }
+
     async setStatus(id: string, status: Status, note?: string, author?: Author) {
         const stored = await this.json<StoredAnnotation>(`/annotations/${encodeURIComponent(id)}`, {
             method: "PATCH",

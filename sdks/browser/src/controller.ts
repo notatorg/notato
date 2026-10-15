@@ -241,7 +241,11 @@ export function createController(props: NotatoProps): NotatoController {
         appVersion: props.appVersion,
         author: () => ({ kind: "human", name: authorName() }),
         identity,
-        capture: capturePlugins(props, screenshotsOn),
+        capture: capturePlugins(
+            props,
+            screenshotsOn,
+            () => Boolean(liveServer) && policy.derivedScreenshotsNow()
+        ),
         sinks,
         // The URL as recorded: what reaches the agent, webhooks and bundles. Secrets in it are blanked out.
         locate: () => ({ url: redactUrl(window.location.href), route: currentRoute() }),

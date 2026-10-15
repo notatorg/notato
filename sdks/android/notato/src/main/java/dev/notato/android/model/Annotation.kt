@@ -235,7 +235,7 @@ internal data class StoredAnnotation(val seq: Long = 0, val annotation: Annotati
 internal data class AnnotationList(val items: List<StoredAnnotation> = emptyList(), val next: Long? = null)
 
 @Serializable
-internal data class ServerConfig(val screenshots: Boolean = true)
+internal data class ServerConfig(val screenshots: Boolean = true, val derivedScreenshots: Boolean = false)
 
 @Serializable
 internal data class ErrorBody(val error: String? = null)

@@ -36,6 +36,7 @@ internal sealed record MauiContextInfo
 
 internal sealed record PinContext
 {
+    public PageRect? CropRect { get; init; }
     public int Pin { get; init; }
 }
 

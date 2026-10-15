@@ -32,6 +32,7 @@ internal sealed partial class NotatoController
     /// <summary>The menu's Retry is under way.</summary>
     private bool _retrying;
     private bool _serverScreenshots = true;
+    private bool _serverDerivedScreenshots;
     private List<MentionInfo> _mentions = [];
     private AgentState _agentState = new();
 
@@ -130,6 +131,7 @@ internal sealed partial class NotatoController
 
     private void StopSync()
     {
+        _serverDerivedScreenshots = false;
         _sync?.Cancel();
         _sync?.Dispose();
         _sync = null;
@@ -268,6 +270,7 @@ internal sealed partial class NotatoController
             DispatchFor(token, () =>
             {
                 _serverScreenshots = config.Screenshots;
+                _serverDerivedScreenshots = config.DerivedScreenshots;
                 SetMentions(config.Mentions, config.Agent);
             });
         }

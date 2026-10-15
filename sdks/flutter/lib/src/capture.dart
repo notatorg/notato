@@ -18,7 +18,7 @@ Future<ui.Image?> grab(RenderRepaintBoundary boundary, double pixelRatio) async 
 /// A compressed image, or part of it (`crop`, in image pixels). Prefers WebP, with PNG for unsupported encoders or smaller files.
 /// The image stays the caller's to dispose of;
 /// what is made on the way is disposed of here.
-Future<Shot?> pngOf(ui.Image image, String id, {Rect? crop}) async {
+Future<Shot?> pngOf(ui.Image image, String id, {Rect? crop, Map<String, int>? cropRect}) async {
   var out = image;
   if (crop != null) {
     final src = crop.intersect(Offset.zero & Size(image.width.toDouble(), image.height.toDouble()));
@@ -37,7 +37,14 @@ Future<Shot?> pngOf(ui.Image image, String id, {Rect? crop}) async {
     if (data == null) return null;
     final png = data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes);
     final encoded = await compressScreenshot(png, out.width, out.height);
-    return Shot(id: id, bytes: encoded.bytes, width: out.width, height: out.height, mime: encoded.mime);
+    return Shot(
+      id: id,
+      bytes: encoded.bytes,
+      width: out.width,
+      height: out.height,
+      mime: encoded.mime,
+      cropRect: cropRect,
+    );
   } finally {
     if (!identical(out, image)) out.dispose();
   }
