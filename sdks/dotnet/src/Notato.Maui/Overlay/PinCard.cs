@@ -12,6 +12,9 @@ internal sealed class PinCard : ContentView
     /// <summary>A note's card with no server to send it to (test mode): where the note is, and how it leaves.</summary>
     public const string KeptHere = "Kept on this device. Package it from the menu to share it.";
 
+    /// <summary>A note sent with a capture-only token, which this app can neither read back nor change.</summary>
+    public const string SentOnly = "Sent. Its replies and status are on the Notato board.";
+
     /// <summary>How many of the thread's latest entries the card shows; the board has them all.</summary>
     public const int ThreadShown = 4;
 
@@ -87,12 +90,20 @@ internal sealed class PinCard : ContentView
             rows.Children.Add(Ui.Text(state, 12.5, Ui.NotSent));
         }
 
+        // Sent with a capture-only token: the server took it, and the board is where it goes on from here.
+        bool sentOnly = controller.CaptureOnly && !record.Pending;
+        if (sentOnly)
+        {
+            rows.Children.Add(Ui.Text(SentOnly, 12.5, Ui.CardMuted));
+        }
+
         Label status = Ui.Text(null, 12.5, Ui.Danger);
         status.IsVisible = false;
         status.Margin = new Thickness(4, 0);
 
         // People only, for the note as it is now: anyone on the thread can turn it on or off, and the thread records it.
         (Grid peopleOnlyRow, Switch peopleOnly) = Ui.SwitchRow(PeopleOnlyToggle.Label, PeopleOnlyToggle.Hint, PeopleOnlyToggle.IsOn(a), "NotatoPeopleOnly");
+        peopleOnly.IsEnabled = !sentOnly;
         bool puttingBack = false;
         peopleOnly.Toggled += async (_, e) =>
         {
@@ -155,8 +166,9 @@ internal sealed class PinCard : ContentView
         }
 
         // ---- the buttons: what can be done with it now -------------------------------------------------------------
+        // A note sent with a capture-only token gets none: replying, reverting and deleting are the board's.
         List<Border> actions = [];
-        if (controller.HasServer && !record.Pending)
+        if (controller.HasServer && !record.Pending && !sentOnly)
         {
             Entry reply = Fields.Text(null, a.Status == Statuses.Resolved ? "Reply, or say what was wrong" : "Reply");
             reply.AutomationId = "NotatoReply";
@@ -197,7 +209,7 @@ internal sealed class PinCard : ContentView
             send.AutomationId = "NotatoSendReply";
             actions.Add(send);
         }
-        else
+        else if (!sentOnly)
         {
             actions.Add(Ui.SheetButton("Delete", () => _ = Run(() => controller.DeleteAsync(a.Id), "Note deleted"), Ui.SheetButtonKind.Danger));
         }

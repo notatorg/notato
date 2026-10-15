@@ -336,9 +336,53 @@ internal sealed partial class NotatoController : INotato, IDisposable
             _records.Clear();
         }
 
-        LocalStore store = new(Path.Combine(SafeAppData(), "notato"), Options.Project, _logger);
+        LocalStore store = new(NotesFolder(), Options.Project, _logger);
         UseLocalStore(store, Options.Project);
         return store;
+    }
+
+    /// <summary>
+    /// Where the notes kept on the device go, out of the device's backups: a tester's screenshots must not end up in
+    /// iCloud or Google's. Android's no-backup folder (notes an earlier version kept in the app's data folder move
+    /// there); on iOS and Mac Catalyst, the app's data folder marked to be left out, and on iOS locked with the device.
+    /// </summary>
+    private string NotesFolder()
+    {
+        string folder = Path.Combine(SafeAppData(), "notato");
+#if ANDROID
+        if (Android.App.Application.Context.NoBackupFilesDir?.AbsolutePath is { } noBackup)
+        {
+            string kept = Path.Combine(noBackup, "notato");
+            try
+            {
+                if (Directory.Exists(folder) && !Directory.Exists(kept))
+                {
+                    Directory.Move(folder, kept);
+                }
+
+                return kept;
+            }
+            catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+            {
+                _logger.LogWarning(error, "Notato could not move its notes out of the backed-up folder; they stay there");
+            }
+        }
+#elif IOS || MACCATALYST
+        try
+        {
+            Directory.CreateDirectory(folder);
+            Foundation.NSUrl.FromFilename(folder).SetResource(Foundation.NSUrl.IsExcludedFromBackupKey, Foundation.NSNumber.FromBoolean(true), out _);
+#if !MACCATALYST
+            // Files made in it take its protection: unreadable while the device is locked, unless open already.
+            Foundation.NSFileManager.DefaultManager.SetAttributes(new Foundation.NSFileAttributes { ProtectionKey = Foundation.NSFileProtection.CompleteUnlessOpen }, folder, out _);
+#endif
+        }
+        catch (Exception error)
+        {
+            _logger.LogWarning(error, "Notato could not keep its notes out of the device's backups");
+        }
+#endif
+        return folder;
     }
 
     /// <summary>Keeps the notes in <paramref name="store"/> from now on: those read from another store no longer count.</summary>

@@ -22,6 +22,17 @@ internal sealed partial class NotatoController
     /// <summary>The wait after the server refused this app: trying again sooner would only be refused again.</summary>
     private static readonly TimeSpan RefusedDelay = TimeSpan.FromSeconds(30);
 
+    /// <summary>How old the server's word on screenshots may be before a screenshot asks again, and how long it waits.</summary>
+    private static readonly TimeSpan PolicyFresh = TimeSpan.FromSeconds(5);
+
+    private static readonly TimeSpan PolicyWait = TimeSpan.FromSeconds(1.5);
+
+    /// <summary>Capture-only: how often the server is asked again, there being no stream to say that it went.</summary>
+    private static readonly TimeSpan SendOnlyCheck = TimeSpan.FromSeconds(30);
+
+    /// <summary>What a capture-only app says when asked to read or change a note it sent.</summary>
+    internal const string OnTheBoard = "This app can only send notes: read, reply to and change them on the Notato board.";
+
     private NotatoClient? _client;
     /// <summary>Stops the sync loop that is running, and everything it planned.</summary>
     private CancellationTokenSource? _sync;
@@ -31,8 +42,16 @@ internal sealed partial class NotatoController
     private NotatoConnection? _lastFailure;
     /// <summary>The menu's Retry is under way.</summary>
     private bool _retrying;
-    private bool _serverScreenshots = true;
+    /// <summary>
+    /// Whether the server takes screenshots, as it last said (<c>/config</c>): asked before its stream is opened, on each
+    /// connection, and again before a screenshot. Null until it answers, and until then none is taken.
+    /// </summary>
+    private bool? _serverScreenshots;
     private bool _serverDerivedScreenshots;
+    /// <summary>The server takes new notes from this app and nothing else (a capture-only token).</summary>
+    private bool _captureOnly;
+    /// <summary>When the server was last asked what it allows, answered or not. Main thread.</summary>
+    private DateTime _askedAt;
     private List<MentionInfo> _mentions = [];
     private AgentState _agentState = new();
 
@@ -49,11 +68,17 @@ internal sealed partial class NotatoController
     /// <summary>The menu's Retry is trying the server now.</summary>
     internal bool Retrying => _retrying;
 
-    /// <summary>Whether the server takes screenshots: it can turn them off for everyone.</summary>
-    public bool ServerScreenshotsAllowed => _serverScreenshots;
+    /// <summary>Whether the server has said it takes screenshots: it can turn them off for everyone.</summary>
+    public bool ServerScreenshotsAllowed => _serverScreenshots == true;
 
-    /// <summary>Screenshots are taken: this person wants them, and the server allows them.</summary>
-    private bool ScreenshotsOn => ScreenshotsWanted && _serverScreenshots;
+    /// <summary>The server takes new notes from this app and nothing else: replies, status and deleting are on the board.</summary>
+    internal bool CaptureOnly => _captureOnly && Server is not null;
+
+    /// <summary>
+    /// Screenshots are taken: this person wants them and, when there is a server (test mode's too), it has said it takes
+    /// them. With no server at all, they stay on the device and the person decides.
+    /// </summary>
+    private bool ScreenshotsOn => ScreenshotsWanted && (Server is null || _serverScreenshots == true);
 
     /// <summary>What <c>@</c> can call now: the server's mention plugins, of which there are none unless the server adds some.</summary>
     internal IReadOnlyList<MentionInfo> AvailableMentions =>
@@ -108,9 +133,15 @@ internal sealed partial class NotatoController
         string? server = Server;
         if (!HasServer)
         {
-            // Test mode with a server set still uploads its packages there.
+            // Test mode with a server set still uploads its packages there, and asks it whether to take screenshots.
             _client = server is null ? null : new NotatoClient(_http, server, Options.TokenFor(server));
             SetConnection(NotatoConnection.Local, Mode == NotatoMode.Test ? null : "No server is set: notes stay on this device.");
+            if (_client is { } asked)
+            {
+                _sync = new CancellationTokenSource();
+                _ = AskServerAsync(asked, _sync.Token);
+            }
+
             return;
         }
 
@@ -131,7 +162,11 @@ internal sealed partial class NotatoController
 
     private void StopSync()
     {
+        // What a server allowed is that server's: the next one (or the same one, asked again) says for itself.
+        _serverScreenshots = null;
         _serverDerivedScreenshots = false;
+        _captureOnly = false;
+        _askedAt = default;
         _sync?.Cancel();
         _sync?.Dispose();
         _sync = null;
@@ -169,18 +204,43 @@ internal sealed partial class NotatoController
             try
             {
                 DispatchFor(token, () => SetConnection(NotatoConnection.Connecting, null));
-                await foreach (ServerSentEvent e in client.EventsAsync(Options.Project, agent: Mode == NotatoMode.Agent, token).ConfigureAwait(false))
+                // What the server allows comes first: a capture-only token may not open the stream at all.
+                if (await AskServerAsync(client, token).ConfigureAwait(false) is { CaptureOnly: true })
                 {
-                    await OnServerEventAsync(client, e, token).ConfigureAwait(false);
+                    await OnSendOnlyAsync(client, token).ConfigureAwait(false);
                     delay = ReconnectDelay;
-                }
+                    // Nothing comes from the server to follow, so it is asked again now and then instead: that is how a
+                    // lost connection shows, and a token that may do more now.
+                    ServerConfig? again;
+                    do
+                    {
+                        await Task.Delay(SendOnlyCheck, token).ConfigureAwait(false);
+                        again = await AskServerAsync(client, token).ConfigureAwait(false);
+                    }
+                    while (again is { CaptureOnly: true });
 
-                if (token.IsCancellationRequested)
+                    if (again is not null)
+                    {
+                        continue;
+                    }
+
+                    DispatchFor(token, () => SetConnection(NotatoConnection.Offline, $"Cannot reach the server at {client.BaseUrl}."));
+                }
+                else
                 {
-                    return;
-                }
+                    await foreach (ServerSentEvent e in client.EventsAsync(Options.Project, agent: Mode == NotatoMode.Agent, token).ConfigureAwait(false))
+                    {
+                        await OnServerEventAsync(client, e, token).ConfigureAwait(false);
+                        delay = ReconnectDelay;
+                    }
 
-                DispatchFor(token, () => SetConnection(NotatoConnection.Offline, "The server closed the connection."));
+                    if (token.IsCancellationRequested)
+                    {
+                        return;
+                    }
+
+                    DispatchFor(token, () => SetConnection(NotatoConnection.Offline, "The server closed the connection."));
+                }
             }
             catch (OperationCanceledException) when (token.IsCancellationRequested)
             {
@@ -264,20 +324,7 @@ internal sealed partial class NotatoController
     private async Task OnConnectedAsync(NotatoClient client, CancellationToken token)
     {
         DispatchFor(token, () => SetConnection(NotatoConnection.Connected, null));
-        try
-        {
-            ServerConfig config = await client.GetConfigAsync(token).ConfigureAwait(false);
-            DispatchFor(token, () =>
-            {
-                _serverScreenshots = config.Screenshots;
-                _serverDerivedScreenshots = config.DerivedScreenshots;
-                SetMentions(config.Mentions, config.Agent);
-            });
-        }
-        catch (NotatoServerException)
-        {
-            // An older server has no /config: screenshots stay as they are.
-        }
+        await AskServerAsync(client, token).ConfigureAwait(false);
 
         // What an earlier connection heard goes in before the list, which is newer.
         await OnMain(DrainEvents).ConfigureAwait(false);
@@ -293,6 +340,78 @@ internal sealed partial class NotatoController
         // Sorted out here, off the main thread; the main thread only puts it in place.
         ServerList listed = new(items, Options.Project);
         DispatchFor(token, () => Merge(listed, settled, client));
+    }
+
+    /// <summary>
+    /// A capture-only token: the server takes new notes from this app and nothing else (no stream, no list). The notes
+    /// waiting here are sent now; one that cannot go is tried again later (<see cref="RetryFlushLater"/>).
+    /// </summary>
+    internal async Task OnSendOnlyAsync(NotatoClient client, CancellationToken token)
+    {
+        DispatchFor(token, () => SetConnection(NotatoConnection.Connected, null));
+        await FlushAsync(client).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Asks the server what it allows (<c>/config</c>) and keeps the answer. Null when it gives none (it cannot be
+    /// reached, or is too old to say): what it said last then stands, and until it has said anything no screenshot is
+    /// taken.
+    /// </summary>
+    internal async Task<ServerConfig?> AskServerAsync(NotatoClient client, CancellationToken token)
+    {
+        ServerConfig? config = null;
+        try
+        {
+            config = await client.GetConfigAsync(token).ConfigureAwait(false);
+        }
+        catch (Exception error) when (error is not OperationCanceledException)
+        {
+            _logger.LogDebug(error, "Notato could not ask the server what it allows");
+        }
+
+        await OnMain(() =>
+        {
+            // A stopped connection's answer is the last server's.
+            if (token.IsCancellationRequested)
+            {
+                return;
+            }
+
+            _askedAt = DateTime.UtcNow;
+            if (config is not null)
+            {
+                _serverScreenshots = config.Screenshots;
+                _serverDerivedScreenshots = config.DerivedScreenshots;
+                _captureOnly = config.CaptureOnly;
+                SetMentions(config.Mentions, config.Agent);
+                RaiseChanged();
+            }
+        }).ConfigureAwait(false);
+        return config;
+    }
+
+    /// <summary>
+    /// Whether a screenshot may be taken now (<see cref="ScreenshotsOn"/>). An answer from the server more than a few
+    /// seconds old is asked for again first. Main thread.
+    /// </summary>
+    private async Task<bool> ScreenshotsAllowedAsync()
+    {
+        if (ScreenshotsWanted && DateTime.UtcNow - _askedAt > PolicyFresh)
+        {
+            await AskBrieflyAsync();
+        }
+
+        return ScreenshotsOn;
+    }
+
+    /// <summary>Asks the server what it allows, when there is one, waiting a moment at most: a slow server must not hold the person up.</summary>
+    private async Task AskBrieflyAsync()
+    {
+        (NotatoClient? client, CancellationToken token) = await OnMain(() => (_client, _sync?.Token ?? new CancellationToken(canceled: true)));
+        if (client is not null && !token.IsCancellationRequested)
+        {
+            await Task.WhenAny(AskServerAsync(client, token), Task.Delay(PolicyWait));
+        }
     }
 
     /// <summary>An event's JSON, or null when it cannot be read: what was known before is kept.</summary>
@@ -396,7 +515,7 @@ internal sealed partial class NotatoController
         string? where = MenuText.Host(Server);
         return _connection switch
         {
-            NotatoConnection.Connected => $"Connected to {where}",
+            NotatoConnection.Connected => CaptureOnly ? $"Sending notes to {where}; they are read on the board" : $"Connected to {where}",
             NotatoConnection.Connecting => $"Connecting to {where}…",
             NotatoConnection.Offline => _connectionDetail ?? $"Cannot reach {where}",
             NotatoConnection.Refused => _connectionDetail ?? $"{where} refused this app",

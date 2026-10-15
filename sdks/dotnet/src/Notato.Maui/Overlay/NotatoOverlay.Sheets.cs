@@ -249,7 +249,7 @@ internal sealed partial class NotatoOverlay
         Entry server = Fields.Text(_controller.ServerOverride, _controller.ConfiguredServer ?? "No server: notes stay on this device");
         server.Keyboard = Keyboard.Url;
         (Grid shotsRow, Switch screenshots) = Ui.SwitchTileRow(Ui.IconTile(Ui.IconCamera), "Screenshots",
-            _controller.ServerScreenshotsAllowed ? "Each note takes one of the screen" : "The server has them turned off",
+            _controller.ServerScreenshotsAllowed || _controller.Server is null ? "Each note takes one of the screen" : "Off until the server says it takes them",
             _controller.ScreenshotsWanted, "NotatoScreenshots");
 
         Label connection = Ui.Text(_controller.DescribeConnection(), 12, Ui.CardMuted);

@@ -73,7 +73,8 @@ public sealed class NotatoOptions
     /// <summary>
     /// A project token (<c>notato_…</c>) for a shared server (<c>notato serve</c>). Not needed for <c>notato dev</c>. It is
     /// only ever sent to the server configured here (its scheme, host and port), never to one typed into the settings
-    /// sheet.
+    /// sheet. A build handed to others carries it for anyone to read out: give such a build a capture-only token
+    /// (<c>notato token create &lt;project&gt; --purpose app --capture-only</c>), which can send notes and nothing else.
     /// </summary>
     public string? Token { get; set; }
 
@@ -86,8 +87,17 @@ public sealed class NotatoOptions
     /// <summary>The name written on this person's notes and replies. They can change it in the settings sheet.</summary>
     public string? Author { get; set; }
 
-    /// <summary>Take screenshots. A server that has them turned off wins either way.</summary>
+    /// <summary>
+    /// Take screenshots. With a server set (test mode's too), none is taken until it has said it takes them, and a server
+    /// that has them turned off wins either way.
+    /// </summary>
     public bool Screenshots { get; set; } = true;
+
+    /// <summary>
+    /// Take screenshots of an Android screen the app keeps out of them (<c>FLAG_SECURE</c>: a one-time code, a card's
+    /// number) too. Off by default: a note made on one goes without a screenshot.
+    /// </summary>
+    public bool CaptureSecureWindows { get; set; }
 
     /// <summary>
     /// Cover inputs (Entry, Editor, SearchBar) in screenshots and leave what is typed in them out of notes. Defaults to on

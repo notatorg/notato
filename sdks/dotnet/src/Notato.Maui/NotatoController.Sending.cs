@@ -89,6 +89,25 @@ internal sealed partial class NotatoController
 
             return new SendResult(Sending.Sent, null);
         }
+        catch (NotatoServerException error) when (error.Status == 409 && CaptureOnly)
+        {
+            // A capture-only token is told only that the server has this id: the answer to an earlier send was lost on
+            // its way. It is there.
+            await OnMain(() =>
+            {
+                record.Pending = false;
+                record.Error = null;
+                record.Held = null;
+                record.Assets = null;
+                RaiseChanged();
+            }).ConfigureAwait(false);
+            if (_local is { } store)
+            {
+                await store.RemoveAsync(record.Annotation.Id).ConfigureAwait(false);
+            }
+
+            return new SendResult(Sending.Sent, null);
+        }
         catch (NotatoServerException error) when (error.Rejected)
         {
             _logger.LogWarning("The Notato server refused annotation {Id}: {Problem}", record.Annotation.Id, error.Message);
