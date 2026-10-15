@@ -87,8 +87,35 @@ export interface WebhookForm {
     secret: string;
     /** What to do with the saved secret when editing: keep it, use what is typed, or remove it. */
     secretAction: "keep" | "set" | "remove";
+    /** Store a secret typed as it is in the settings file anyway, which the server refuses unless asked. */
+    secretInFile: boolean;
     /** Put the screenshot in the message (Teams and JSON can carry one). */
     screenshots: boolean;
+}
+
+/** The file the board's settings are written to, as people know it. */
+export const CONFIG_FILE = "notato.config.json";
+
+/** A value written as `env:NAME` is read from that environment variable where the server runs, as the server reads it. */
+const ENV = "env:";
+const ENV_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;
+
+/** The environment variable a value written as `env:NAME` names; undefined for one written as it is. */
+export const envName = (value: string): string | undefined =>
+    value.startsWith(ENV) ? value.slice(ENV.length) : undefined;
+
+/**
+ * Whether saving would write the signing secret as it is typed into the settings file, which is meant to be committed.
+ * The server refuses that unless the request says to (`secretInFile`); a secret written as `env:NAME` never goes there.
+ */
+export function secretGoesInFile(form: WebhookForm): boolean {
+    const secret = form.secret.trim();
+    return (
+        form.format === "json" &&
+        form.secretAction === "set" &&
+        secret !== "" &&
+        envName(secret) === undefined
+    );
 }
 
 /** The formats a message can carry a screenshot in. */
@@ -106,6 +133,7 @@ export function formFor(existing?: WebhookView): WebhookForm {
         // A secret named by environment variable is not a secret: it is shown so it can be changed.
         secret: existing?.secret.kind === "env" ? `env:${existing.secret.name}` : "",
         secretAction: existing ? "keep" : "set",
+        secretInFile: false,
         screenshots: existing?.screenshots ?? true,
     };
 }
@@ -127,20 +155,46 @@ export function draftOf(form: WebhookForm, existing?: WebhookView): WebhookDraft
     return draft;
 }
 
+/** What is wrong with the URL typed, or null when it will do (or the saved one is kept). */
+export function urlProblem(form: WebhookForm, existing?: WebhookView): string | null {
+    if (existing && !form.replaceUrl) return null;
+    const url = form.url.trim();
+    if (!url) return "Paste the webhook's URL.";
+    const name = envName(url);
+    if (name !== undefined)
+        return ENV_NAME.test(name)
+            ? null
+            : "After env:, write the name of an environment variable (letters, digits and _), like env:SLACK_WEBHOOK_URL.";
+    try {
+        const parsed = new URL(url);
+        if (parsed.protocol !== "https:" && parsed.protocol !== "http:")
+            return "The URL must start with https://.";
+    } catch {
+        return "That is not a URL.";
+    }
+    return null;
+}
+
 /** Why the form cannot be saved or tested yet, or null when it can. */
 export function formProblem(form: WebhookForm, existing?: WebhookView): string | null {
-    if (!existing || form.replaceUrl) {
-        const url = form.url.trim();
-        if (!url) return "Paste the webhook's URL.";
-        try {
-            const parsed = new URL(url);
-            if (parsed.protocol !== "https:" && parsed.protocol !== "http:")
-                return "The URL must start with https://.";
-        } catch {
-            return "That is not a URL.";
-        }
-    }
+    const url = urlProblem(form, existing);
+    if (url) return url;
     if (!form.allEvents && form.events.length === 0)
         return "Choose at least one event, or Every event.";
     return null;
+}
+
+/** What is wrong with the secret for saving: one typed as it is goes in the settings file only when that is ticked. */
+export function secretProblem(form: WebhookForm): string | null {
+    return secretGoesInFile(form) && !form.secretInFile
+        ? `Write the secret as env:NAME so it stays out of ${CONFIG_FILE}, or tick “Store this secret in ${CONFIG_FILE}”.`
+        : null;
+}
+
+/**
+ * Why the form cannot be saved yet, or null when it can. A test may still be sent: it writes nothing, so a secret typed
+ * as it is goes no further than the message it signs.
+ */
+export function saveProblem(form: WebhookForm, existing?: WebhookView): string | null {
+    return formProblem(form, existing) ?? secretProblem(form);
 }

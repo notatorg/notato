@@ -336,8 +336,9 @@ export interface WebhookView {
     /** Which version of the webhook this is; an edit or delete against an older one is refused. */
     fingerprint: string;
     name: string | null;
-    /** Masked: enough to recognise, not enough to use. */
+    /** Masked, the host only: enough to recognise, not enough to use. One read from the environment is `env:NAME`. */
     url: string;
+    /** Where it sends, or `$NAME` when its URL is read from a variable that is not set where the server runs. */
     host: string;
     format: "json" | "slack" | "discord" | "teams";
     events: string[] | null;
@@ -400,12 +401,18 @@ export const isStale = (e: unknown) =>
     e instanceof ApiError && e.status === 409 && /changed or removed/.test(e.message);
 export const setSetting = (name: string, value: OnOff | null) =>
     request<SettingsView>(`/settings/${encodeURIComponent(name)}`, json("PUT", { value }));
-export const addWebhook = (hook: WebhookDraft) =>
-    request<SettingsView>("/settings/webhooks", json("POST", { hook }));
-export const editWebhook = (w: WebhookView, hook: WebhookDraft) =>
+/** `secretInFile`: store a signing secret typed as it is in the settings file, which the server otherwise refuses. */
+export interface SaveWebhookOptions {
+    secretInFile?: boolean;
+}
+const inFile = (options: SaveWebhookOptions) =>
+    options.secretInFile ? { secretInFile: true } : {};
+export const addWebhook = (hook: WebhookDraft, options: SaveWebhookOptions = {}) =>
+    request<SettingsView>("/settings/webhooks", json("POST", { hook, ...inFile(options) }));
+export const editWebhook = (w: WebhookView, hook: WebhookDraft, options: SaveWebhookOptions = {}) =>
     request<SettingsView>(
         `/settings/webhooks/${w.index}`,
-        json("PUT", { fingerprint: w.fingerprint, hook })
+        json("PUT", { fingerprint: w.fingerprint, hook, ...inFile(options) })
     );
 export const deleteWebhook = (w: WebhookView) =>
     request<SettingsView>(

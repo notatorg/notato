@@ -169,6 +169,7 @@ function subcommand(argv: string[]): { word: string; index: number } | undefined
             event: { type: "string", short: "e", multiple: true },
             format: { type: "string", short: "F" },
             secret: { type: "string", short: "s" },
+            "secret-in-file": { type: "boolean" },
             name: { type: "string", short: "n" },
             project: { type: "string", short: "p" },
         },

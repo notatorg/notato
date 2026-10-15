@@ -1,12 +1,21 @@
-import { describe, expect, it } from "bun:test";
-import type { WebhookView } from "../src/api.ts";
-import { draftOf, eventsSummary, formFor, formProblem, orderEvents } from "../src/webhook-form.ts";
+import { afterEach, describe, expect, it } from "bun:test";
+import { addWebhook, editWebhook, type WebhookView } from "../src/api.ts";
+import {
+    draftOf,
+    eventsSummary,
+    formFor,
+    formProblem,
+    orderEvents,
+    saveProblem,
+    secretGoesInFile,
+    urlProblem,
+} from "../src/webhook-form.ts";
 
 const saved = (over: Partial<WebhookView> = {}): WebhookView => ({
     index: 0,
     fingerprint: "abc",
     name: "Team",
-    url: "https://hooks.slack.com/services/••••",
+    url: "https://hooks.slack.com/••••",
     host: "hooks.slack.com",
     format: "json",
     events: ["annotation.created", "annotation.resolved"],
@@ -71,6 +80,79 @@ describe("a new webhook", () => {
         expect(draftOf({ ...formFor(), url: "https://x.test", secret: "s" })).not.toHaveProperty(
             "secret"
         );
+    });
+});
+
+describe("a URL read from the server's environment", () => {
+    it("is written env:NAME, with a name the server can read", () => {
+        const form = formFor();
+        for (const url of ["env:SLACK_WEBHOOK_URL", " env:_hook2 "])
+            expect(formProblem({ ...form, url }), url).toBeNull();
+        for (const url of ["env:", "env:1HOOK", "env:MY-HOOK", "env:A B"])
+            expect(urlProblem({ ...form, url }), url).toContain("After env:");
+        // Only as the server writes it: anything else is a URL, and not an http one.
+        expect(formProblem({ ...form, url: "ENV:HOOK" })).toBe("The URL must start with https://.");
+        expect(draftOf({ ...form, url: " env:SLACK_WEBHOOK_URL " }).url).toBe(
+            "env:SLACK_WEBHOOK_URL"
+        );
+    });
+});
+
+describe("a signing secret typed as it is", () => {
+    const json = { ...formFor(), format: "json" as const, url: "https://x.test/h" };
+
+    it("is not saved into the settings file unless that is ticked, and the form says to use env:NAME", () => {
+        const typed = { ...json, secret: " s3cret " };
+        expect(secretGoesInFile(typed)).toBe(true);
+        expect(saveProblem(typed)).toBe(
+            "Write the secret as env:NAME so it stays out of notato.config.json, or tick “Store this secret in notato.config.json”."
+        );
+        expect(saveProblem({ ...typed, secretInFile: true })).toBeNull();
+        // A test writes nothing, so it can be sent either way.
+        expect(formProblem(typed)).toBeNull();
+    });
+
+    it("is no question for env:NAME, no secret, a chat service, or a saved secret kept as it is", () => {
+        expect(secretGoesInFile({ ...json, secret: "env:NOTATO_WEBHOOK_SECRET" })).toBe(false);
+        expect(secretGoesInFile({ ...json, secret: "  " })).toBe(false);
+        expect(secretGoesInFile({ ...json, format: "slack", secret: "s3cret" })).toBe(false);
+        const kept = formFor(saved());
+        expect(secretGoesInFile(kept)).toBe(false);
+        expect(saveProblem(kept, saved())).toBeNull();
+        expect(secretGoesInFile({ ...kept, secretAction: "remove" })).toBe(false);
+        // Replacing it with one typed as it is asks again.
+        expect(secretGoesInFile({ ...kept, secretAction: "set", secret: "new" })).toBe(true);
+        expect(formFor().secretInFile).toBe(false);
+    });
+});
+
+describe("saving, as the server is asked", () => {
+    const realFetch = globalThis.fetch;
+    afterEach(() => {
+        globalThis.fetch = realFetch;
+    });
+    const bodies = () => {
+        const sent: unknown[] = [];
+        globalThis.fetch = (async (_url: string, init?: RequestInit) => {
+            sent.push(JSON.parse(String(init?.body)));
+            return Response.json({});
+        }) as unknown as typeof fetch;
+        return sent;
+    };
+
+    it("says to keep a secret typed as it is in the file only when asked to", async () => {
+        const sent = bodies();
+        const hook = { format: "json" as const, url: "https://x.test/h", secret: "s3cret" };
+        await addWebhook(hook);
+        await addWebhook(hook, { secretInFile: true });
+        await editWebhook(saved(), hook, { secretInFile: true });
+        await editWebhook(saved(), hook);
+        expect(sent).toEqual([
+            { hook },
+            { hook, secretInFile: true },
+            { fingerprint: "abc", hook, secretInFile: true },
+            { fingerprint: "abc", hook },
+        ]);
     });
 });
 

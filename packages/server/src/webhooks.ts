@@ -2,7 +2,7 @@ import { createHmac } from "node:crypto";
 import { clip, mentionsIn, renderAnnotation } from "@notato/core";
 import type { Annotation } from "@notato/schema";
 import { ulid } from "ulid";
-import type { ConfigSource } from "./config.ts";
+import type { ConfigSource, ResolvedConfig } from "./config.ts";
 import type { EventBus, NotatoEvent } from "./events.ts";
 import type { ShareLinks, ShotLinks } from "./share.ts";
 import { teamsMessage } from "./teams.ts";
@@ -28,6 +28,10 @@ export const WEBHOOK_FORMATS = ["json", "slack", "discord", "teams"] as const;
 export type WebhookFormat = (typeof WEBHOOK_FORMATS)[number];
 
 export interface Webhook {
+    /**
+     * Where to send. Write `env:NAME` to read it from an environment variable where the server runs: a Slack, Discord or
+     * Teams URL lets anyone who has it post to the channel, so it is as much a secret as `secret` is.
+     */
     url: string;
     /** Which events to send. Every event when absent. */
     events?: WebhookEvent[];
@@ -54,6 +58,25 @@ export interface Webhook {
 
 const FIELDS = ["url", "events", "format", "secret", "name", "project", "screenshots"];
 
+/** A value written as `env:NAME` is read from that environment variable where the server runs. */
+const ENV = "env:";
+const ENV_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;
+const envName = (value: string | undefined) =>
+    value?.startsWith(ENV) ? value.slice(ENV.length) : undefined;
+
+/** An http or https URL, written the way `URL` writes it, or what is wrong with it. */
+function httpUrl(raw: string): { url: string } | { error: string } {
+    let url: URL;
+    try {
+        url = new URL(raw);
+    } catch {
+        return { error: "is not a URL" };
+    }
+    if (url.protocol !== "http:" && url.protocol !== "https:")
+        return { error: "must be http or https" };
+    return { url: url.toString() };
+}
+
 /** Checks a `webhooks` value from a config file. */
 export function parseWebhooks(raw: unknown): { webhooks: Webhook[]; error?: string } {
     if (raw === undefined) return { webhooks: [] };
@@ -71,14 +94,15 @@ export function parseWebhooks(raw: unknown): { webhooks: Webhook[]; error?: stri
                 error: `${at}: unknown field "${unknown}" (known: ${FIELDS.join(", ")})`,
             };
         if (typeof e.url !== "string") return { webhooks: [], error: `${at}.url is required` };
-        let url: URL;
-        try {
-            url = new URL(e.url);
-        } catch {
-            return { webhooks: [], error: `${at}.url is not a URL` };
-        }
-        if (url.protocol !== "http:" && url.protocol !== "https:")
-            return { webhooks: [], error: `${at}.url must be http or https` };
+        // `env:NAME` is kept as it is written, so the URL itself never has to be in the file; it is read when sending.
+        const fromEnv = envName(e.url);
+        const url = fromEnv === undefined ? httpUrl(e.url) : { url: e.url };
+        if ("error" in url) return { webhooks: [], error: `${at}.url ${url.error}` };
+        if (fromEnv !== undefined && !ENV_NAME.test(fromEnv))
+            return {
+                webhooks: [],
+                error: `${at}.url: env: must be followed by the name of an environment variable`,
+            };
         const format = e.format ?? "json";
         if (!(WEBHOOK_FORMATS as readonly unknown[]).includes(format))
             return {
@@ -104,7 +128,7 @@ export function parseWebhooks(raw: unknown): { webhooks: Webhook[]; error?: stri
         if (e.screenshots !== undefined && typeof e.screenshots !== "boolean")
             return { webhooks: [], error: `${at}.screenshots must be true or false` };
         out.push({
-            url: url.toString(),
+            url: url.url,
             format: format as WebhookFormat,
             ...(events ? { events } : {}),
             ...(typeof e.secret === "string" ? { secret: e.secret } : {}),
@@ -116,11 +140,9 @@ export function parseWebhooks(raw: unknown): { webhooks: Webhook[]; error?: stri
     return { webhooks: out };
 }
 
-const ENV_SECRET = "env:";
-
 /** The environment variable a secret written as `env:NAME` is read from; undefined for one written as it is. */
 export function secretEnvName(secret: string | undefined): string | undefined {
-    return secret?.startsWith(ENV_SECRET) ? secret.slice(ENV_SECRET.length) : undefined;
+    return envName(secret);
 }
 
 /** The secret, with `env:NAME` read from the environment. Null when it names a variable that is not set. */
@@ -134,10 +156,66 @@ export function secretOf(
     return env[name] || null;
 }
 
+/** The environment variable a URL written as `env:NAME` is read from; undefined for one written as it is. */
+export function urlEnvName(webhook: Webhook): string | undefined {
+    return envName(webhook.url);
+}
+
+/**
+ * Where a webhook sends, with `env:NAME` read from the environment. Null when it names a variable that is not set, or
+ * that does not hold an http or https URL: then nothing is sent to it.
+ */
+export function urlOf(
+    webhook: Webhook,
+    env: Record<string, string | undefined> = process.env
+): string | null {
+    const name = urlEnvName(webhook);
+    if (name === undefined) return webhook.url;
+    const checked = httpUrl(env[name] ?? "");
+    return "url" in checked ? checked.url : null;
+}
+
+/**
+ * A webhook URL as a list or a log shows it: `https://hooks.slack.com/••••`. The path and the query are what make a
+ * Slack, Discord or Teams URL work, so only the host is left to recognise it by. `env:NAME` is shown as it is.
+ */
+export function redactUrl(raw: string): string {
+    if (envName(raw) !== undefined) return raw;
+    let url: URL;
+    try {
+        url = new URL(raw);
+    } catch {
+        return "(not a URL)";
+    }
+    const hidden = url.pathname.length > 1 || url.search || url.hash;
+    return `${url.protocol}//${url.host}/${hidden ? "••••" : ""}`;
+}
+
 export const signature = (secret: string, body: string) =>
     `sha256=${createHmac("sha256", secret).update(body).digest("hex")}`;
 
-const label = (w: Webhook) => w.name ?? new URL(w.url).host;
+/** What a webhook is called in the log: its name, its host, or the variable its URL is read from. */
+const label = (w: Webhook) => {
+    const name = urlEnvName(w);
+    return w.name ?? (name === undefined ? new URL(w.url).host : `$${name}`);
+};
+
+/** Why a webhook whose URL is written as `env:NAME` has nowhere to send, for the log. */
+const noUrl = (w: Webhook) =>
+    `webhook ${w.name ? `${w.name}: ` : ""}$${urlEnvName(w)} is not set to an http or https URL`;
+
+/** Where a webhook sends, host only, for the log line that says where annotation events go. */
+function destination(w: Webhook, env: Record<string, string | undefined> | undefined): string {
+    const name = urlEnvName(w);
+    const url = urlOf(w, env);
+    const where =
+        name === undefined
+            ? new URL(w.url).host
+            : url === null
+              ? `$${name}, which is not set to a URL here`
+              : `${new URL(url).host} from $${name}`;
+    return w.name ? `${w.name} (${where})` : where;
+}
 
 /** What is said in one line, for chat services: who, what happened, and the comment. */
 function summary(event: string, a: Annotation): string {
@@ -234,6 +312,8 @@ export interface SendOptions {
     retryDelaysMs?: number[];
     timeoutMs?: number;
     log?: (message: string) => void;
+    /** Where a secret or a URL written as `env:NAME` is read from. Default the server's own environment. */
+    env?: Record<string, string | undefined>;
 }
 
 /** Sends one delivery, retrying a failure that may pass (a network error, a 5xx, a 429). Resolves true if it got through. */
@@ -244,10 +324,15 @@ export async function sendDelivery(
 ): Promise<boolean> {
     const http = options.fetch ?? fetch;
     const delays = options.retryDelaysMs ?? RETRY_DELAYS_MS;
+    const url = urlOf(webhook, options.env);
+    if (url === null) {
+        options.log?.(`${noUrl(webhook)}, so ${delivery.event} was not sent`);
+        return false;
+    }
     for (let attempt = 0; ; attempt++) {
         let failure: string;
         try {
-            const res = await http(webhook.url, {
+            const res = await http(url, {
                 method: "POST",
                 headers: delivery.headers,
                 body: delivery.body,
@@ -316,7 +401,6 @@ export interface DispatcherOptions extends SendOptions {
     config: ConfigSource;
     /** Makes the screenshot links cards and payloads carry. Without it, none are sent. */
     share?: ShareLinks;
-    env?: Record<string, string | undefined>;
     now?: () => Date;
 }
 
@@ -333,6 +417,22 @@ export function startWebhooks(options: DispatcherOptions): WebhookDispatcher {
     const pending = new Map<string, number>();
     const droppedFor = new Map<string, number>();
     const warned = new Set<string>();
+
+    // The config file is meant to be committed, so a webhook in it sends every clone's notes on: whoever runs the
+    // server is told where they go (the host only) when it starts, and again whenever that changes.
+    let told = "";
+    const tell = (config: ResolvedConfig) => {
+        const where = config.webhooks.map((w) => destination(w, options.env)).join(", ");
+        if (where === told) return;
+        const count = config.webhooks.length;
+        options.log?.(
+            where
+                ? `annotation events go to ${count === 1 ? "1 webhook" : `${count} webhooks`}: ${where}${config.file ? ` (from ${config.file})` : ""}`
+                : "annotation events no longer go to any webhook"
+        );
+        told = where;
+    };
+    tell(options.config());
 
     const unsubscribe = options.bus.subscribe((event) => {
         // The event says what it was just before; what this dispatcher saw last is only a fallback (it forgets on restart).
@@ -354,9 +454,17 @@ export function startWebhooks(options: DispatcherOptions): WebhookDispatcher {
         if (!name) return;
 
         const config = options.config();
+        tell(config);
         for (const webhook of config.webhooks) {
             if (webhook.events && !webhook.events.includes(name)) continue;
             if (webhook.project && webhook.project !== event.annotation.projectId) continue;
+            if (urlOf(webhook, options.env) === null) {
+                // Like a missing secret: said once, and nothing is sent.
+                if (!warned.has(`url ${webhook.url}`))
+                    options.log?.(`${noUrl(webhook)}, so nothing is sent to it`);
+                warned.add(`url ${webhook.url}`);
+                continue;
+            }
             const secret = secretOf(webhook, options.env);
             if (secret === null) {
                 // Sending unsigned when a signature was asked for would be worse than not sending.
