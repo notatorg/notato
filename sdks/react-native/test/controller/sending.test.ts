@@ -34,7 +34,7 @@ describe("sending a note", () => {
 
     it("keeps a note made offline and sends it when the server says hello", async () => {
         const { notato, server } = start({ project: "shop" });
-        server.drop();
+        await server.drop();
         server.failWith(new NotatoError("cannot reach the Notato server"));
         await notato.annotate("Text", "Offline note");
         expect(notato.getState()).toMatchObject({ connection: "offline", pendingCount: 1 });

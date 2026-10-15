@@ -71,8 +71,13 @@ export interface NotatoState {
     pendingCount: number;
     /** The agents connected to the project, by name. */
     agents: readonly string[];
-    /** False when the server has screenshots turned off. */
+    /** False when the server has screenshots turned off, or has not said yet whether it takes them. */
     serverScreenshots: boolean;
+    /**
+     * The server takes new notes from this app and nothing else (a capture-only token): notes are sent, and read,
+     * replied to and changed on the board.
+     */
+    captureOnly: boolean;
     mode: NotatoMode;
     project?: string;
     /** The server notes go to, or none. */
@@ -174,6 +179,18 @@ const NETWORK_LIMIT = 50;
 /** How long the server's changes are gathered before they are applied together: about a frame. */
 const BATCH_MS = 16;
 
+/** How old the server's word on screenshots may be before it is asked again, and how long a screenshot waits for it. */
+const POLICY_FRESH_MS = 5_000;
+const POLICY_WAIT_MS = 1_500;
+
+/** Capture-only: the pause before notes that could not go are tried again, doubled each time, up to the longest. */
+const FIRST_RESEND_MS = 3_000;
+const LONGEST_RESEND_MS = 60_000;
+
+/** What a capture-only app is told when it tries to read or change a note it sent. */
+const ON_THE_BOARD =
+    "This app can only send notes: read, reply to and change them on the Notato board.";
+
 /** A reason as the end of a sentence. */
 const sentence = (reason: string) => reason.replace(/\.?$/, ".");
 
@@ -209,10 +226,16 @@ export class NotatoController {
     private connectionDetail?: string;
     private problem?: string;
     private agents: string[] = [];
-    private serverScreenshots = true;
-    private serverDerivedScreenshots = false;
+    /**
+     * What the server said it allows (`/config`), asked as Notato connects and again before a screenshot. Unknown until
+     * it answers, and then no screenshot is taken.
+     */
+    private policy?: { screenshots: boolean; derived: boolean; captureOnly: boolean };
+    /** When the server was last asked, whether it answered or not. */
+    private askedAt = 0;
+    private asking?: { generation: number; done: Promise<void> };
     get derivedScreenshots(): boolean {
-        return this.hasServer && this.serverDerivedScreenshots;
+        return this.hasServer && this.policy?.derived === true;
     }
     private snapshot: NotatoState;
     private readonly listeners = new Set<() => void>();
@@ -241,6 +264,9 @@ export class NotatoController {
     private listing?: Change[];
     /** The agent's annotate requests, answered one at a time: two at once would photograph each other's outlines. */
     private relays: Promise<void> = Promise.resolve();
+    /** Capture-only: the next try at the notes that could not go, while one is planned, and how long it waits. */
+    private resend?: ReturnType<typeof setTimeout>;
+    private resendWait = FIRST_RESEND_MS;
 
     /** The app's recent warnings and errors, while `captureLogs` has the console wrapped. */
     private readonly logs: LogEntry[] = [];
@@ -274,7 +300,8 @@ export class NotatoController {
             notes: this.store.all,
             pendingCount: this.store.pendingCount,
             agents: this.agents,
-            serverScreenshots: this.serverScreenshots,
+            serverScreenshots: this.policy?.screenshots ?? !this.server,
+            captureOnly: this.captureOnly,
             mode: this.mode,
             ...(c ? { project: c.project } : {}),
             ...(this.server ? { server: this.server } : {}),
@@ -323,9 +350,31 @@ export class NotatoController {
         return !!this.server && this.mode !== "test";
     }
 
-    /** Whether notes get screenshots: the person wants them and the server takes them. */
+    /**
+     * Whether notes get screenshots: the person wants them and, when there is a server (test mode's too), it has said
+     * it takes them. With no server at all, they stay on the device and the person decides.
+     */
     get screenshotsOn(): boolean {
-        return this.screenshotsWanted && this.serverScreenshots;
+        return this.screenshotsWanted && (!this.server || this.policy?.screenshots === true);
+    }
+
+    /** Whether the server takes new notes from this app and nothing else (a capture-only token). */
+    get captureOnly(): boolean {
+        return !!this.server && this.policy?.captureOnly === true;
+    }
+
+    /**
+     * Whether a screenshot may be taken now (`screenshotsOn`). An answer from the server older than a few seconds is
+     * asked for again first, waiting a moment at most: a slow server must not hold up the note.
+     */
+    async screenshotsAllowed(): Promise<boolean> {
+        const conn = this.connectionInfo;
+        if (this.screenshotsWanted && conn && Date.now() - this.askedAt > POLICY_FRESH_MS)
+            await Promise.race([
+                this.askServer(conn),
+                new Promise((resolve) => setTimeout(resolve, POLICY_WAIT_MS)),
+            ]);
+        return this.screenshotsOn;
     }
 
     get maskInputs(): boolean {
@@ -403,6 +452,7 @@ export class NotatoController {
             this.emit();
             return;
         }
+        if (next.tokenWithheld) console.warn(`[notato] ${next.tokenWithheld}`);
         this.storage = this.openStorage(next.project);
         this.settings = next.rememberRuntimeState ? this.loadSettings() : {};
         this.store.replace([]);
@@ -635,7 +685,9 @@ export class NotatoController {
         const host = this.serverHost;
         switch (this.connection) {
             case "connected":
-                return `Connected to ${host ?? "the server"}`;
+                return this.captureOnly
+                    ? `Sending notes to ${host ?? "the server"}; they are read on the board`
+                    : `Connected to ${host ?? "the server"}`;
             case "connecting":
                 return `Connecting to ${host ?? "the server"}…`;
             case "offline":
@@ -835,7 +887,10 @@ export class NotatoController {
         const pin = this.nextPin(host.route());
         const id = ulid();
         const { screenshot = true, ...draft } = options;
-        const shots = screenshot && this.screenshotsOn ? await host.capture(picked, pin, id) : {};
+        const shots =
+            screenshot && (await this.screenshotsAllowed())
+                ? await host.capture(picked, pin, id)
+                : {};
         const { annotation } = await this.createNote(
             picked,
             { ...draft, comment },
@@ -850,11 +905,14 @@ export class NotatoController {
         return this.host;
     }
 
-    /** Adds an HTTP request to the `network` context of later notes (the last 50 are kept, without query strings). */
+    /**
+     * Adds an HTTP request to the `network` context of later notes (the last 50 are kept, without query strings or a
+     * user name and password in the address).
+     */
     recordRequest(entry: Omit<NetworkEntry, "at"> & { at?: string }): void {
         this.network.push({
             method: entry.method.toUpperCase(),
-            url: entry.url.replace(/[?#].*$/, ""),
+            url: entry.url.replace(/[?#].*$/, "").replace(/^([a-z][a-z\d+.-]*:\/\/)[^/]*@/i, "$1"),
             status: entry.status,
             durationMs: Math.round(entry.durationMs),
             at: entry.at ?? new Date().toISOString(),
@@ -899,11 +957,24 @@ export class NotatoController {
             this.store.update(id, (r) =>
                 r.pending ? { annotation: stored.annotation, pending: false, mine: r.mine } : r
             );
+            this.sentState();
             this.persist();
             this.emit();
             return { kind: "sent" };
         } catch (e) {
             const error = e instanceof NotatoError ? e : new NotatoError(messageOf(e));
+            if (error.status === 409 && this.captureOnly && generation === this.generation) {
+                // A capture-only token is told only that the server has this id: the answer to an earlier send was
+                // lost on its way. It is there.
+                this.dropAssets(record.annotation);
+                this.store.update(id, (r) =>
+                    r.pending ? { annotation: r.annotation, pending: false, mine: r.mine } : r
+                );
+                this.sentState();
+                this.persist();
+                this.emit();
+                return { kind: "sent" };
+            }
             if (error.refusesNote) {
                 this.store.update(id, (r) => ({ ...r, failed: error.message }));
                 console.warn(`[notato] The server refused a note: ${error.message}`);
@@ -917,6 +988,11 @@ export class NotatoController {
                 const { waiting: _, ...rest } = r;
                 return waiting ? { ...rest, waiting } : rest;
             });
+            if (generation === this.generation) {
+                // With no stream to say when the server is back, a capture-only app tries again in a while.
+                this.sentState(error);
+                this.planResend();
+            }
             this.persist();
             this.emit();
             return { kind: "held", error };
@@ -943,6 +1019,9 @@ export class NotatoController {
         this.generation++;
         this.stream?.stop();
         this.stream = undefined;
+        if (this.resend) clearTimeout(this.resend);
+        this.resend = undefined;
+        this.resendWait = FIRST_RESEND_MS;
         this.dropIncoming();
         this.listing = undefined;
         this.agents = [];
@@ -955,19 +1034,39 @@ export class NotatoController {
         this.incoming = [];
     }
 
-    /** Opens a fresh connection to the server, or says there is none. */
+    /**
+     * Opens a fresh connection to the server, or says there is none. What the server allows is asked first, whenever
+     * there is a server (test mode's too): it says whether screenshots may be taken, and whether this app may do more
+     * than send notes.
+     */
     private restartSync() {
-        this.serverDerivedScreenshots = false;
         this.closeStream();
+        this.policy = undefined;
+        this.askedAt = 0;
         const conn = this.connectionInfo;
         if (!this.enabled || !conn || !this.hasServer) {
             this.connection = "local";
             this.connectionDetail =
                 this.mode === "test" ? undefined : "No server is set: notes stay on this device.";
+            if (this.enabled && conn) void this.askServer(conn);
             return;
         }
         const generation = this.generation;
         this.connection = "connecting";
+        void this.askServer(conn).then(() => {
+            if (generation === this.generation) this.connect(conn, generation);
+        });
+    }
+
+    /**
+     * Follows the server's events; or, for a capture-only token, which may not, only sends the notes. A server that
+     * could not be asked first, and then refuses the stream, is asked again: the token may be capture-only.
+     */
+    private connect(conn: Connection, generation: number) {
+        if (this.captureOnly) {
+            this.sendOnly(generation);
+            return;
+        }
         this.stream = this.transport.follow(
             conn,
             this.mode === "agent",
@@ -976,6 +1075,13 @@ export class NotatoController {
             },
             (state, detail) => {
                 if (generation !== this.generation || state === "connected") return;
+                if (state === "refused")
+                    void this.askServer(conn).then(() => {
+                        if (generation !== this.generation || !this.captureOnly) return;
+                        this.stream?.stop();
+                        this.stream = undefined;
+                        this.sendOnly(generation);
+                    });
                 // Connected only once the server has said hello.
                 this.connection = state;
                 this.connectionDetail = detail;
@@ -985,11 +1091,85 @@ export class NotatoController {
         );
     }
 
+    /**
+     * Asks the server what it allows (`/config`). An answer that does not come leaves the last one standing: none, at
+     * first, and then no screenshots are taken. One question at a time per connection.
+     */
+    private askServer(conn: Connection): Promise<void> {
+        const generation = this.generation;
+        if (this.asking?.generation === generation) return this.asking.done;
+        const done = this.transport
+            .config(conn)
+            .then(
+                (config) => {
+                    if (generation !== this.generation) return;
+                    this.policy = {
+                        screenshots: config?.screenshots === true,
+                        derived: config?.derivedScreenshots === true,
+                        captureOnly: config?.captureOnly === true,
+                    };
+                    this.emit();
+                },
+                () => undefined
+            )
+            .finally(() => {
+                if (generation === this.generation) this.askedAt = Date.now();
+                if (this.asking?.done === done) this.asking = undefined;
+            });
+        this.asking = { generation, done };
+        return done;
+    }
+
+    /**
+     * A capture-only token: the server takes new notes from this app and nothing else (no stream, no list), so there is
+     * nothing to wait for. The notes kept here go now, and are tried again in a while when they cannot.
+     */
+    private sendOnly(generation: number) {
+        this.connection = "connected";
+        this.connectionDetail = undefined;
+        this.agents = [];
+        this.emit();
+        void this.sendKept(generation);
+    }
+
+    /** Capture-only: sends the notes kept here, and says how that went. */
+    private async sendKept(generation: number) {
+        const held = await this.flush();
+        if (generation !== this.generation) return;
+        this.sentState(held);
+        if (held) this.planResend();
+        else this.resendWait = FIRST_RESEND_MS;
+        this.emit();
+    }
+
+    /** Capture-only: there is no stream to say how the connection stands, so the last note sent (or not) says it. */
+    private sentState(held?: NotatoError) {
+        if (!this.captureOnly) return;
+        this.connection = !held ? "connected" : held.permanent ? "refused" : "offline";
+        this.connectionDetail = held?.message;
+    }
+
+    /** Capture-only: tries the notes kept here again in a while, waiting longer each time they cannot go. */
+    private planResend() {
+        if (this.resend || !this.captureOnly || !this.hasServer) return;
+        const generation = this.generation;
+        this.resend = setTimeout(() => {
+            this.resend = undefined;
+            if (generation === this.generation) void this.sendKept(generation);
+        }, this.resendWait);
+        this.resendWait = Math.min(this.resendWait * 2, LONGEST_RESEND_MS);
+    }
+
     /** Tries the server again now, instead of waiting out the pause between attempts (the menu's Retry). */
     retryConnection(): void {
         if (!this.enabled || !this.hasServer) return;
         if (this.stream) this.stream.retry();
-        else this.restartSync();
+        else if (this.captureOnly) {
+            if (this.resend) clearTimeout(this.resend);
+            this.resend = undefined;
+            this.resendWait = FIRST_RESEND_MS;
+            void this.sendKept(this.generation);
+        } else this.restartSync();
     }
 
     private async handle({ event, data }: ServerEvent, conn: Connection) {
@@ -1009,18 +1189,8 @@ export class NotatoController {
                 this.agents = body.agent?.connected ? (body.agent.names ?? []) : [];
                 this.emit();
                 const generation = this.generation;
-                try {
-                    const config = await this.transport.config(conn);
-                    if (
-                        generation === this.generation &&
-                        typeof config?.screenshots === "boolean"
-                    ) {
-                        this.serverScreenshots = config.screenshots;
-                        this.serverDerivedScreenshots = config.derivedScreenshots === true;
-                    }
-                } catch {
-                    // the screenshots stay as they were
-                }
+                // Asked again on each connection: the server's settings may have changed while it was away.
+                await this.askServer(conn);
                 // The notes kept on the device go first, so the list read after them has them.
                 const held = await this.flush();
                 if (generation !== this.generation) return;
@@ -1196,6 +1366,7 @@ export class NotatoController {
     private requireConnection(): Connection {
         const conn = this.connectionInfo;
         if (!this.hasServer || !conn) throw new NotatoError("Not connected to a Notato server.");
+        if (this.captureOnly) throw new NotatoError(ON_THE_BOARD);
         return conn;
     }
 
@@ -1272,15 +1443,28 @@ export class NotatoController {
     /**
      * Packages this device's notes as a bundle zip (`feedback.md`, `annotations.json`, `shots/`), the format
      * `notato_import_bundle` reads, and uploads it when a server is set. Returns the zip, and where it was written
-     * when there is storage to write it to.
+     * when there is storage to write it to. With a server set, its screenshots are in it only when the server says it
+     * takes them; a capture-only token cannot upload it.
      */
-    async packageNotes(
-        options: { upload?: boolean } = {}
-    ): Promise<{ zip: Uint8Array; name: string; uri?: string; uploaded: boolean }> {
+    async packageNotes(options: { upload?: boolean } = {}): Promise<{
+        zip: Uint8Array;
+        name: string;
+        uri?: string;
+        uploaded: boolean;
+        screenshots: boolean;
+    }> {
         const c = this.config;
         if (!c) throw new NotatoError("Notato has not been started.");
         const mine = this.store.all.filter((r) => r.pending || (this.mode === "test" && r.mine));
         if (!mine.length) throw new NotatoError("Nothing to package yet: make at least one note.");
+        const conn = this.connectionInfo;
+        if (conn)
+            await Promise.race([
+                this.askServer(conn),
+                new Promise((resolve) => setTimeout(resolve, POLICY_WAIT_MS)),
+            ]);
+        // Taken while the server allowed them, perhaps, but a package is shared by hand: it follows what it says now.
+        const screenshots = !this.server || this.policy?.screenshots === true;
         const { zip, name } = writeBundle(
             mine.map((r) => r.annotation),
             {
@@ -1289,27 +1473,33 @@ export class NotatoController {
                 appName: c.appName,
                 ...(c.appVersion ? { appVersion: c.appVersion } : {}),
             },
-            (id) => this.loadAsset(id)
+            (id) => (screenshots ? this.loadAsset(id) : undefined)
         );
         const uri = this.storage.writeShare(name, zip);
         let uploaded = false;
-        if (options.upload !== false && this.server) {
+        if (options.upload !== false && this.server && !this.captureOnly) {
             await this.transport.uploadBundle(this.connectionTo(c, this.server), zip);
             uploaded = true;
         }
-        return { zip, name, ...(uri ? { uri } : {}), uploaded };
+        return { zip, name, ...(uri ? { uri } : {}), uploaded, screenshots };
     }
 
     /** The menu's Package and share: the zip, uploaded when there is a server, and offered to the share sheet. */
     async packageAndShare(): Promise<string> {
         const result = await this.packageNotes({ upload: true });
+        const bare = result.screenshots
+            ? ""
+            : ", without screenshots (the server does not take them)";
         if (result.uri && this.provider?.share) {
             const shared = await this.provider.share(result.uri).catch(() => false);
             if (shared)
-                return result.uploaded ? "Packaged, uploaded and shared" : "Packaged and shared";
+                return (
+                    (result.uploaded ? "Packaged, uploaded and shared" : "Packaged and shared") +
+                    bare
+                );
         }
-        if (result.uploaded) return "Packaged and uploaded to the server";
-        if (result.uri) return `Packaged: ${result.name}`;
+        if (result.uploaded) return `Packaged and uploaded to the server${bare}`;
+        if (result.uri) return `Packaged: ${result.name}${bare}`;
         throw new NotatoError(
             "Sharing a package needs storage: pass storage={expoStorage} to <Notato>, or set a server."
         );

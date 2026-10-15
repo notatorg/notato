@@ -433,7 +433,7 @@ export function SettingsSheet(props: {
                         hint={
                             state.serverScreenshots
                                 ? "Each note takes one of the screen"
-                                : "The server has them turned off"
+                                : "Off until the server says it takes them"
                         }
                         value={screenshots}
                         onChange={setScreenshots}
@@ -566,8 +566,10 @@ export function NoteCard(props: {
     const [busy, setBusy] = useState(false);
     /** The People only switch's new value while the change is on its way. */
     const [asked, setAsked] = useState<boolean>();
+    /** Sent with a capture-only token: the server took it, and this app can neither read it back nor change it. */
+    const sentOnly = notato.captureOnly && !record.pending;
     /** On the server: it has a thread to reply on, and a status to change. */
-    const live = notato.hasServer && !record.pending;
+    const live = notato.hasServer && !record.pending && !sentOnly;
 
     const run = (action: () => Promise<void>, done: string) => {
         if (busy) return;
@@ -618,7 +620,7 @@ export function NoteCard(props: {
     const canRevert = live && a.status === "resolved";
     const canCancelRevert = live && a.status === "revert_requested";
     // A note on the server is the person's to delete while it is open and theirs; one on the device always is.
-    const canDelete = !live || (record.mine && a.status === "open");
+    const canDelete = !sentOnly && (!live || (record.mine && a.status === "open"));
     // Reply and another action: one above the other, so each has room for its words.
     const stacked = live && (canRevert || canCancelRevert || canDelete);
 
@@ -666,12 +668,16 @@ export function NoteCard(props: {
                                 ? `Not sent: ${record.failed}`
                                 : `Not sent yet: ${record.waiting ?? "it goes when the server can be reached."}`}
                         </Text>
+                    ) : sentOnly ? (
+                        <Text style={[styles.small, { color: p.muted }]}>
+                            Sent. Its replies and status are on the Notato board.
+                        </Text>
                     ) : null}
                     <FlagToggle
                         title={PEOPLE_ONLY.title}
                         hint={PEOPLE_ONLY.hint}
                         value={asked ?? a.peopleOnly === true}
-                        disabled={asked !== undefined}
+                        disabled={asked !== undefined || sentOnly}
                         onChange={setPeopleOnly}
                         testID="NotatoNotePeopleOnly"
                     />

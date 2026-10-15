@@ -5,6 +5,23 @@ import { captureSize, compressScreenshot, type RawShot } from "./png.ts";
 export type { RawShot, Shot } from "./png.ts";
 
 /**
+ * Whether Android has the app's window marked never to be captured (`FLAG_SECURE`: a one-time code, a card's number),
+ * which view-shot would capture anyway. Only an app built with Notato's native module can tell; Expo Go cannot, and
+ * says no.
+ */
+export async function windowIsSecure(): Promise<boolean> {
+    if (Platform.OS !== "android") return false;
+    const codec = NativeModules.NotatoImageCodec as
+        | { isWindowSecure?(): Promise<boolean> }
+        | undefined;
+    try {
+        return (await codec?.isWindowSecure?.()) === true;
+    } catch {
+        return false;
+    }
+}
+
+/**
  * A compressed capture of a view at `size` points (base64, not read yet), or
  * undefined when it cannot be taken.
  */

@@ -84,8 +84,12 @@ export function fakeServer() {
         transport,
         stored,
         calls,
-        /** The server greets the app, and the controller sends what it kept and reads the list. */
+        /**
+         * The server greets the app, and the controller sends what it kept and reads the list. The app asks the server
+         * what it allows before it follows its events, so that comes first.
+         */
         hello: async () => {
+            await settle();
             onEvent?.({
                 event: "hello",
                 data: { projectId: "shop", agent: { connected: true, names: ["Claude"] } },
@@ -99,7 +103,16 @@ export function fakeServer() {
         },
         /** An event, with no wait for it to be applied. */
         send: (event: string, data: unknown) => onEvent?.({ event, data }),
-        drop: () => onState?.("offline", "cannot reach it"),
+        drop: async () => {
+            await settle();
+            onState?.("offline", "cannot reach it");
+        },
+        /** The stream says the server refused the app, as it does a capture-only token. */
+        refuse: async (detail = "capture tokens can only send new notes") => {
+            await settle();
+            onState?.("refused", detail);
+            await settle();
+        },
         /** Every note sent from now on fails with this, until it is cleared. */
         failWith: (e?: NotatoError) => {
             fail = e;

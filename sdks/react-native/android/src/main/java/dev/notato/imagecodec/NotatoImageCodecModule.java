@@ -1,9 +1,12 @@
 package dev.notato.imagecodec;
 
+import android.app.Activity;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.os.Build;
 import android.util.Base64;
+import android.view.Window;
+import android.view.WindowManager;
 import com.facebook.react.bridge.Promise;
 import com.facebook.react.bridge.ReactApplicationContext;
 import com.facebook.react.bridge.ReactContextBaseJavaModule;
@@ -13,6 +16,19 @@ import java.io.ByteArrayOutputStream;
 public class NotatoImageCodecModule extends ReactContextBaseJavaModule {
     public NotatoImageCodecModule(ReactApplicationContext context) { super(context); }
     @Override public String getName() { return "NotatoImageCodec"; }
+
+    /** Whether the app's window is marked never to be captured (FLAG_SECURE), which a drawn screenshot ignores. */
+    @ReactMethod
+    public void isWindowSecure(Promise promise) {
+        try {
+            Activity activity = getReactApplicationContext().getCurrentActivity();
+            Window window = activity == null ? null : activity.getWindow();
+            promise.resolve(window != null
+                && (window.getAttributes().flags & WindowManager.LayoutParams.FLAG_SECURE) != 0);
+        } catch (Exception error) {
+            promise.resolve(false);
+        }
+    }
 
     @ReactMethod
     @SuppressWarnings("deprecation")

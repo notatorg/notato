@@ -221,9 +221,12 @@ export type RelayResult = { ok: true; annotationId: string } | { ok: false; erro
 export const relayResult = (c: Connection, requestId: string, result: RelayResult) =>
     call<void>(c, "POST", `/relay/${segment(requestId)}/result`, result);
 
-/** What the server says before anything is captured: whether it takes screenshots. */
+/**
+ * What the server says before anything is captured: whether it takes screenshots, and whether this app's token may
+ * only send notes (`captureOnly`: no event stream, no list, nothing to change).
+ */
 export const getConfig = (c: Connection) =>
-    call<{ screenshots?: boolean; derivedScreenshots?: boolean }>(
+    call<{ screenshots?: boolean; derivedScreenshots?: boolean; captureOnly?: boolean }>(
         c,
         "GET",
         `/config?project=${segment(c.project)}`
