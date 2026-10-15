@@ -514,7 +514,7 @@ export class LocalBackend implements Backend {
 
     /**
      * Null when a project with that id already exists. `extra` is what a deployment's own store keeps on a project
-     * (the workspace it belongs to), handed to it as it is.
+     * (who it belongs to, say), handed to it as it is.
      */
     async createProject(
         id: string,

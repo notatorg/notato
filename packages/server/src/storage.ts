@@ -1,3 +1,4 @@
+import { awaitsAgent, lastWord } from "@notato/core";
 import type { Annotation, Intent, Severity, Status } from "@notato/schema";
 
 export interface AnnotationFilter {
@@ -44,6 +45,28 @@ export interface AnnotationFilter {
 export function inProjects(wanted: AnnotationFilter["projectId"], projectId: string): boolean {
     if (wanted === undefined) return true;
     return Array.isArray(wanted) ? wanted.includes(projectId) : wanted === projectId;
+}
+
+/**
+ * What the filters and the project list ask of a note, for a store to keep in columns beside its JSON so they are read
+ * from an index rather than by parsing every note: whether the last word waits on the agent (`awaitsAgent`, which an
+ * agent's watch polls), People only, a diagnostic note, its intent and author, and when it last saw activity (made, or
+ * replied to). The keys are column names, always in this order; the SQLite store keeps them, and any other store can.
+ */
+export function annotationColumns(a: Annotation) {
+    let last = a.createdAt;
+    for (const r of a.thread) if (Date.parse(r.createdAt) > Date.parse(last)) last = r.createdAt;
+    return {
+        awaits_agent: awaitsAgent(a) ? 1 : 0,
+        people_only: a.peopleOnly ? 1 : 0,
+        diagnostic: (a.context as { notatoDiagnostic?: unknown } | undefined)?.notatoDiagnostic
+            ? 1
+            : 0,
+        intent: a.intent ?? null,
+        author_name: a.author.name ?? null,
+        last_activity_at: last,
+        last_word_id: lastWord(a)?.id ?? null,
+    };
 }
 
 /** A note, and the id of its latest word as an agent was handed it. */

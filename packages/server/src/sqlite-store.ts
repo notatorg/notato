@@ -1,18 +1,18 @@
 import { Database } from "bun:sqlite";
-import { awaitsAgent, lastWord } from "@notato/core";
 import { Annotation, type Status } from "@notato/schema";
-import type {
-    AnnotationFilter,
-    AuthStore,
-    BundleRecord,
-    HandedEntry,
-    ProjectRecord,
-    ProjectSummary,
-    SessionRecord,
-    Store,
-    StoredAnnotation,
-    TokenRecord,
-    UserRecord,
+import {
+    type AnnotationFilter,
+    type AuthStore,
+    annotationColumns,
+    type BundleRecord,
+    type HandedEntry,
+    type ProjectRecord,
+    type ProjectSummary,
+    type SessionRecord,
+    type Store,
+    type StoredAnnotation,
+    type TokenRecord,
+    type UserRecord,
 } from "./storage.ts";
 
 const SCHEMA_VERSION = 6;
@@ -25,28 +25,7 @@ interface Row {
     json: string;
 }
 
-/**
- * What the filters and the project list ask of a note, kept in columns beside its JSON so they are read from an index
- * rather than by parsing every note: whether the last word waits on the agent (`awaitsAgent`, which an agent's watch
- * polls), People only, a diagnostic note, its intent and author, and when it last saw activity (made, or replied to).
- */
-function derived(a: Annotation) {
-    let last = a.createdAt;
-    for (const r of a.thread) if (Date.parse(r.createdAt) > Date.parse(last)) last = r.createdAt;
-    return {
-        awaits_agent: awaitsAgent(a) ? 1 : 0,
-        people_only: a.peopleOnly ? 1 : 0,
-        diagnostic: (a.context as { notatoDiagnostic?: unknown } | undefined)?.notatoDiagnostic
-            ? 1
-            : 0,
-        intent: a.intent ?? null,
-        author_name: a.author.name ?? null,
-        last_activity_at: last,
-        last_word_id: lastWord(a)?.id ?? null,
-    };
-}
-
-type Derived = ReturnType<typeof derived>;
+type Derived = ReturnType<typeof annotationColumns>;
 
 /** The derived columns, each with its type, in the order they are written. */
 const DERIVED_COLUMNS: Array<[keyof Derived, string]> = [
@@ -62,7 +41,7 @@ const DERIVED_NAMES = DERIVED_COLUMNS.map(([name]) => name);
 
 /** A note's derived values, in the order of `DERIVED_COLUMNS`. */
 const derivedValues = (a: Annotation) => {
-    const d = derived(a);
+    const d = annotationColumns(a);
     return DERIVED_NAMES.map((name) => d[name]);
 };
 

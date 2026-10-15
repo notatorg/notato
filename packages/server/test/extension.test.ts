@@ -1,12 +1,15 @@
 import { describe, expect, it } from "bun:test";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
+import { z } from "zod";
 import {
     Authenticator,
     type AuthProvider,
     json,
     type Principal,
+    type ProjectRecord,
     RequestError,
+    readJson,
     type ServerExtension,
     SqliteStore,
 } from "../src/index.ts";
@@ -238,19 +241,24 @@ describe("a server extension", () => {
     });
 
     it("tells a suspended credential why, on MCP and everywhere else, and lists nothing for it", async () => {
+        const initialize = (s: Awaited<ReturnType<typeof startServe>>) =>
+            s.call("/mcp", {
+                method: "POST",
+                headers: {
+                    "x-user": "carol",
+                    "content-type": "application/json",
+                    accept: "application/json, text/event-stream",
+                },
+                body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "initialize", params: {} }),
+            });
         const cloud = fakeCloud();
         const s = await startServe(defer, { extension: cloud.extension });
         await s.rt.backend.createProject("a1");
-        const mcp = await s.call("/mcp", {
-            method: "POST",
-            headers: {
-                "x-user": "carol",
-                "content-type": "application/json",
-                accept: "application/json, text/event-stream",
-            },
-            body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "initialize", params: {} }),
-        });
-        expect(mcp.status).toBe(402);
+        const plain = await initialize(s);
+        expect(plain.status).toBe(403);
+        expect(((await plain.json()) as { error: { message: string } }).error.message).toBe(
+            "access is suspended for this account"
+        );
         const projects = (await (
             await s.call("/projects", { headers: { "x-user": "carol" } })
         ).json()) as { items: unknown[] };
@@ -258,6 +266,184 @@ describe("a server extension", () => {
         expect(
             (await s.call("/projects/a1/annotations", { headers: { "x-user": "carol" } })).status
         ).toBe(403);
+
+        // The deployment says how a suspension is answered, and what to do about it.
+        const worded = fakeCloud();
+        const told = await startServe(defer, {
+            extension: {
+                ...worded.extension,
+                mcp: () => ({
+                    lockedRefusal: { status: 402, message: "ask an admin to lift the suspension" },
+                }),
+            },
+        });
+        const refused = await initialize(told);
+        expect(refused.status).toBe(402);
+        expect(((await refused.json()) as { error: { message: string } }).error.message).toBe(
+            "ask an admin to lift the suspension"
+        );
+    });
+
+    it("decides who manages projects, what each lists and what a new one is made with", async () => {
+        const cloud = fakeCloud();
+        const made: ProjectRecord[] = [];
+        const s = await startServe(defer, {
+            extension: {
+                ...cloud.extension,
+                hooks: () => ({ beforeCreateProject: (project) => void made.push(project) }),
+                http: (context) => ({
+                    ...cloud.extension.http?.(context),
+                    projectRules: {
+                        // alice runs her team's projects; the other members do not.
+                        assertManager: (who) => {
+                            if (
+                                who.kind !== "admin" &&
+                                !(who.kind === "member" && who.username === "alice")
+                            )
+                                throw new RequestError("only alice manages projects", 403);
+                        },
+                        list: async () =>
+                            (await context.store.listProjects()).map((p) => ({
+                                ...p,
+                                name: p.name.toUpperCase(),
+                            })),
+                        create: async (who, body) => ({
+                            id: `made-${String(body.color)}`,
+                            fields: { owner: who.kind === "member" ? who.username : "admin" },
+                            appToken: { expiresInDays: 7 },
+                            agentToken: { createdBy: "rules" },
+                        }),
+                    },
+                }),
+            },
+        });
+        for (const id of ["a1", "b1"]) await s.rt.backend.createProject(id);
+        const asUser = (user: string, init: RequestInit = {}) => ({
+            ...init,
+            headers: { "x-user": user, "content-type": "application/json" },
+        });
+
+        // The list is the rules', and still only what the credential reaches.
+        const listed = (await (await s.call("/projects", asUser("bob"))).json()) as {
+            items: Array<{ id: string; name: string }>;
+        };
+        expect(listed.items.map((p) => [p.id, p.name])).toEqual([["b1", "B1"]]);
+
+        const created = await s.call(
+            "/projects",
+            asUser("alice", {
+                method: "POST",
+                body: JSON.stringify({ id: "chosen", name: "Shop", color: "red", agent: true }),
+            })
+        );
+        expect(created.status).toBe(201);
+        const body = (await created.json()) as {
+            project: { id: string; name: string };
+            token: { record: { expiresAt?: string; purpose: string } };
+            agentToken: { record: { createdBy?: string; purpose: string } };
+        };
+        expect(body.project).toMatchObject({ id: "made-red", name: "Shop" });
+        expect(made.at(-1)).toMatchObject({ id: "made-red", owner: "alice" });
+        expect(body.token.record.expiresAt).toBeString();
+        expect(body.agentToken.record).toMatchObject({ createdBy: "rules", purpose: "agent" });
+        expect(await s.rt.store.getProject("chosen")).toBeNull();
+
+        for (const init of [
+            { method: "POST", body: JSON.stringify({ id: "x", color: "blue" }) },
+            { method: "PATCH", body: JSON.stringify({ name: "Mine" }) },
+            { method: "DELETE" },
+        ]) {
+            const path = init.method === "POST" ? "/projects" : "/projects/b1";
+            const refused = await s.call(path, asUser("bob", init));
+            expect(refused.status, init.method).toBe(403);
+            expect(((await refused.json()) as { error: string }).error).toBe(
+                "only alice manages projects"
+            );
+        }
+        expect((await s.rt.store.getProject("b1"))?.name).toBe("b1");
+    });
+
+    it("lets members hold tokens of their own, see only theirs and say who they are", async () => {
+        const cloud = fakeCloud();
+        const s = await startServe(defer, {
+            extension: {
+                ...cloud.extension,
+                http: (context) => ({
+                    ...cloud.extension.http?.(context),
+                    tokenRules: {
+                        assertManager: (who) => {
+                            if (who?.kind !== "member" && who?.kind !== "admin")
+                                throw new RequestError("sign in with an account", 403);
+                        },
+                        visible: (who, token) =>
+                            who.kind === "admin" ||
+                            (who.kind === "member" && token.createdBy === who.username),
+                        issue: async (who, req) => {
+                            const { projectId } = await readJson(
+                                req,
+                                z.object({ projectId: z.string() }).strict()
+                            );
+                            return context.auth.issueToken(projectId, "mine", {
+                                createdBy: who.kind === "member" ? who.username : "admin",
+                            });
+                        },
+                        shown: ({ tokenHash: _hash, createdBy: _by, ...record }) => record,
+                    },
+                    aboutCaller: async (who) => ({
+                        team: who?.kind === "member" ? who.scope : null,
+                    }),
+                }),
+            },
+        });
+        await s.rt.backend.createProject("a1");
+        const asUser = (user: string, init: RequestInit = {}) => ({
+            ...init,
+            headers: { "x-user": user, "content-type": "application/json" },
+        });
+        const issued = await s.call(
+            "/tokens",
+            asUser("alice", { method: "POST", body: JSON.stringify({ projectId: "a1" }) })
+        );
+        expect(issued.status).toBe(201);
+        const { token, record } = (await issued.json()) as {
+            token: string;
+            record: { id: string; name: string; tokenHash?: string; createdBy?: string };
+        };
+        expect(record.name).toBe("mine");
+        expect(record.tokenHash).toBeUndefined();
+        expect(record.createdBy).toBeUndefined();
+        expect((await s.rt.store.listTokens())[0]?.createdBy).toBe("alice");
+
+        const listed = async (user: string) =>
+            (
+                (await (await s.call("/tokens", asUser(user))).json()) as {
+                    items: Array<{ id: string }>;
+                }
+            ).items.map((t) => t.id);
+        expect(await listed("alice")).toEqual([record.id]);
+        expect(await listed("bob")).toEqual([]);
+        // `/admin/tokens` stays an admin's, and a token cannot manage tokens.
+        expect((await s.call("/admin/tokens", asUser("alice"))).status).toBe(403);
+        expect(
+            (await s.call("/tokens", { headers: { authorization: `Bearer ${token}` } })).status
+        ).toBe(403);
+        // Someone else's token is one that does not exist.
+        expect(
+            (await s.call(`/tokens/${record.id}`, asUser("bob", { method: "DELETE" }))).status
+        ).toBe(404);
+        expect(
+            (await s.call(`/tokens/${record.id}`, asUser("alice", { method: "DELETE" }))).status
+        ).toBe(204);
+
+        expect(await (await s.call("/auth/me", asUser("alice"))).json()).toMatchObject({
+            authenticated: true,
+            username: "alice",
+            team: "workspace-alice",
+        });
+        expect(await (await s.call("/auth/me")).json()).toMatchObject({
+            authenticated: false,
+            team: null,
+        });
     });
 
     it("stops the extension before the store closes", async () => {

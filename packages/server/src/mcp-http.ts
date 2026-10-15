@@ -37,7 +37,15 @@ export interface McpHttpOptions {
     maxWaitSeconds?: number;
     /** Where an open session counts as an agent being there (what pages show), named once it says who it is. */
     presence?: AgentPresence;
+    /**
+     * How a credential that is valid but suspended (`locked`) is refused: the HTTP status, and what the agent is told
+     * to do about it. Default: 403, saying that access is suspended.
+     */
+    lockedRefusal?: { status: number; message: string };
 }
+
+/** What a suspended credential is told when the deployment does not say more. */
+const LOCKED_REFUSAL = { status: 403, message: "access is suspended for this account" };
 
 interface Session {
     transport: WebStandardStreamableHTTPServerTransport;
@@ -124,16 +132,13 @@ export function createMcpHttp(options: McpHttpOptions): {
                 return jsonRpcError(403, -32001, off);
             }
             const principal = await options.auth.identify(req, new URL(req.url));
-            // Valid, but suspended (an unpaid workspace, say): say so, and end any session it has open.
+            // Valid, but suspended: say so, as the deployment words it, and end any session it has open.
             if (principal && principal.kind !== "admin" && principal.locked) {
                 const open = sessions.get(req.headers.get("mcp-session-id") ?? "");
                 if (open && samePrincipal(open.principal, principal))
                     await open.transport.close().catch(() => {});
-                return jsonRpcError(
-                    402,
-                    -32001,
-                    "access is suspended for this account: sign in to the board to put it right"
-                );
+                const { status, message } = options.lockedRefusal ?? LOCKED_REFUSAL;
+                return jsonRpcError(status, -32001, message);
             }
             // The token an app carries is for notes; MCP is for an agent's, so a page's token cannot drive it.
             if (principal?.kind === "token" && tokenPurpose(principal) !== "agent")

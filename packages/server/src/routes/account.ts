@@ -1,5 +1,11 @@
 import { z } from "zod";
-import { type Principal, UnknownProjectError } from "../auth.ts";
+import {
+    type AuthProvider,
+    type IssuedToken,
+    isAdmin,
+    type Principal,
+    UnknownProjectError,
+} from "../auth.ts";
 import { RequestError } from "../backend.ts";
 import { PROJECT_ID, type TokenRecord } from "../storage.ts";
 import {
@@ -11,6 +17,7 @@ import {
     notFound,
     type Routes,
     readJson,
+    showToken,
 } from "./common.ts";
 
 const LoginBody = z.object({
@@ -26,17 +33,15 @@ const TokenBody = z.object({
     expiresInDays: z.number().int().min(1).max(3650).optional(),
 });
 
-/** A token record as it is shown: everything but the hash of the token. */
-export const shownToken = ({ tokenHash: _hash, ...record }: TokenRecord) => record;
-
 /**
- * Who am I, signing in and out, and the admin's API tokens. `/auth/me` and the login are open to anyone; the rest
- * exists only on a server with logins.
+ * Who am I, signing in and out, and the API tokens. `/auth/me` and the login are open to anyone; the rest exists only
+ * on a server with logins.
  */
 export const accountRoutes: Routes<Principal | null> = async (
     { req, path, method, principal, info, match },
-    { auth, options }
+    app
 ) => {
+    const { auth, options } = app;
     if (path === "/auth/me" && method === "GET") {
         return json({
             mode: options.mode,
@@ -46,11 +51,14 @@ export const accountRoutes: Routes<Principal | null> = async (
                 ? { username: principal.username }
                 : {}),
             ...(principal?.kind === "token" ? { projectId: principal.projectId } : {}),
+            ...(await options.aboutCaller?.(principal, req)),
         });
     }
     if (!auth) return null;
 
     if (path === "/auth/login" && method === "POST") {
+        // A service on the public internet is signed in to from its own board: no other page signs a visitor in or out.
+        if (options.strictOrigins) assertBoard(req, "sign-in");
         const { username, password } = await readJson(req, LoginBody);
         const result = await auth.login(
             username,
@@ -68,35 +76,68 @@ export const accountRoutes: Routes<Principal | null> = async (
         return json({ username }, 200, { "Set-Cookie": result.cookie });
     }
     if (path === "/auth/logout" && method === "POST") {
+        if (options.strictOrigins) assertBoard(req, "sign-out");
         return json({ ok: true }, 200, {
             "Set-Cookie": await auth.logout(req, isSecure(req, options.trustProxy)),
         });
     }
 
-    // `/admin/tokens` is the older name: the board asks for `/tokens`, which a deployment with workspaces answers its own way.
+    // `/admin/tokens` is the older name, and always an admin's; the board asks for `/tokens`, which `tokenRules` may
+    // open to others.
+    const rules = options.tokenRules;
+    const assertManager = () =>
+        path.startsWith("/admin/") || !rules?.assertManager
+            ? assertAdmin(principal)
+            : rules.assertManager(principal);
+    const visible = (who: Principal, token: TokenRecord) =>
+        rules?.visible ? rules.visible(who, token) : isAdmin(who);
     if (path === "/admin/tokens" || path === "/tokens") {
-        assertAdmin(principal);
-        if (method === "GET") return json({ items: (await auth.listTokens()).map(shownToken) });
+        assertManager();
+        if (!principal) return null;
+        if (method === "GET")
+            return json({
+                items: (await auth.listTokens())
+                    .filter((token) => visible(principal, token))
+                    .map((token) => showToken(app, token)),
+            });
         if (method === "POST") {
             assertBoard(req, "tokens");
-            const { projectId, name, ...options } = await readJson(req, TokenBody);
-            const issued = await auth
-                .issueToken(projectId, name, {
-                    ...options,
-                    createdBy: principal?.kind === "admin" ? principal.username : undefined,
-                })
-                .catch((error) => {
-                    if (error instanceof UnknownProjectError) throw error;
-                    throw new RequestError(error instanceof Error ? error.message : "bad token");
-                });
-            return json({ token: issued.token, record: shownToken(issued.record) }, 201);
+            const issued = rules?.issue
+                ? await rules.issue(principal, req)
+                : await issueAsked(req, principal, auth);
+            return json({ token: issued.token, record: showToken(app, issued.record) }, 201);
         }
     }
     const tokenOne = match(/^\/(?:admin\/)?tokens\/([^/]+)$/);
     if (tokenOne && method === "DELETE") {
-        assertAdmin(principal);
+        assertManager();
         assertBoard(req, "tokens");
-        return (await auth.revokeToken(tokenOne[0] ?? "")) ? noContent() : notFound();
+        if (!principal) return null;
+        const id = tokenOne[0] ?? "";
+        // Anyone but an admin revokes only what they can see: any other id is one that does not exist.
+        if (!isAdmin(principal)) {
+            const token = (await auth.listTokens()).find((token) => token.id === id);
+            if (!token || !visible(principal, token)) return notFound();
+        }
+        return (await auth.revokeToken(id)) ? noContent() : notFound();
     }
     return null;
 };
+
+/** The token `POST /tokens` asks for, by the server's own rules. */
+async function issueAsked(
+    req: Request,
+    principal: Principal,
+    auth: AuthProvider
+): Promise<IssuedToken> {
+    const { projectId, name, ...options } = await readJson(req, TokenBody);
+    return auth
+        .issueToken(projectId, name, {
+            ...options,
+            createdBy: principal.kind === "admin" ? principal.username : undefined,
+        })
+        .catch((error) => {
+            if (error instanceof UnknownProjectError) throw error;
+            throw new RequestError(error instanceof Error ? error.message : "bad token");
+        });
+}

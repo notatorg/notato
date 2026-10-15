@@ -2,10 +2,15 @@ import { describe, expect, it } from "bun:test";
 import {
     Authenticator,
     LoginLimiter,
+    type NewSession,
+    type Principal,
     runServe,
+    type SessionRecord,
     SqliteStore,
     sha256Hex,
     TOKEN_PREFIX,
+    type TokenRecord,
+    type UserRecord,
 } from "../src/index.ts";
 import { annotationFixture, cleanupAfterEach, makeApp, multipart, tempDir } from "./helpers.ts";
 import { adminCookie, bearer, createProject, issue, login, startServe } from "./serve-helpers.ts";
@@ -306,6 +311,164 @@ describe("Authenticator", () => {
         limiter.fail("ip");
         limiter.succeed("ip");
         expect(limiter.retryAfter("ip")).toBe(0);
+    });
+});
+
+/** Accounts with more to them than the built-in admin, made by extending the built-in rather than starting again. */
+class TeamAccounts extends Authenticator {
+    readonly ended: string[] = [];
+    readonly admins: string[] = [];
+
+    protected override async passwordRefusal(user: UserRecord | null) {
+        return user?.username === "sso" ? "sign in with your company's identity provider" : null;
+    }
+    protected override async newSession(user: UserRecord): Promise<NewSession | string> {
+        return user.username === "outsider"
+            ? "this account has no team"
+            : { ttlMs: 5_000, fields: { team: "red" } };
+    }
+    protected override async sessionPrincipal(session: SessionRecord): Promise<Principal | null> {
+        return session.username === "admin"
+            ? { kind: "admin", username: "admin" }
+            : { kind: "member", username: session.username, projectIds: ["p"] };
+    }
+    protected override async tokenPrincipal(record: TokenRecord): Promise<Principal | null> {
+        return record.name === "suspended" ? null : super.tokenPrincipal(record);
+    }
+    protected override async endSession(id: string) {
+        this.ended.push(id);
+        await super.endSession(id);
+    }
+    protected override async addAdmin(user: UserRecord) {
+        this.admins.push(user.username);
+        await super.addAdmin(user);
+    }
+}
+
+describe("an Authenticator extended with accounts of its own", () => {
+    it("says who a session or a token is, who may sign in, and what a session holds", async () => {
+        const store = new SqliteStore(":memory:");
+        defer(() => store.close());
+        const sessions: SessionRecord[] = [];
+        const createSession = store.createSession.bind(store);
+        store.createSession = async (session) => {
+            sessions.push(session);
+            await createSession(session);
+        };
+        const auth = new TeamAccounts(store);
+        await auth.ensureAdmin("admin", "pw");
+        await auth.ensureAdmin("admin", "pw");
+        expect(auth.admins).toEqual(["admin"]);
+        for (const username of ["sso", "outsider", "carol"])
+            await store.upsertUser({
+                username,
+                passwordHash: await Bun.password.hash("pw", { algorithm: "argon2id" }),
+                createdAt: new Date().toISOString(),
+            });
+
+        // Refused before the password is checked; refused after it only when it was right.
+        expect(await auth.login("sso", "wrong", "ip")).toMatchObject({ ok: false, status: 403 });
+        expect(await auth.login("outsider", "wrong", "ip")).toMatchObject({ status: 401 });
+        expect(await auth.login("outsider", "pw", "ip")).toEqual({
+            ok: false,
+            status: 403,
+            error: "this account has no team",
+        });
+
+        const result = await auth.login("carol", "pw", "ip");
+        if (!result.ok) throw new Error("sign-in failed");
+        expect(result.cookie).toContain("Max-Age=5");
+        const stored = sessions.at(-1);
+        expect(stored).toMatchObject({ username: "carol", team: "red" });
+        expect(Date.parse(stored?.expiresAt ?? "") - Date.parse(stored?.createdAt ?? "")).toBe(
+            5_000
+        );
+        const cookie = result.cookie.split(";")[0] as string;
+        const signedIn = new Request("http://x/", { headers: { cookie } });
+        expect(await auth.identify(signedIn, new URL("http://x/"))).toEqual({
+            kind: "member",
+            username: "carol",
+            projectIds: ["p"],
+        });
+
+        await store.createProject({ id: "p", name: "p", createdAt: new Date().toISOString() });
+        const kept = await auth.issueToken("p", "kept");
+        const suspended = await auth.issueToken("p", "suspended");
+        const asToken = (token: string) =>
+            auth.identify(
+                new Request("http://x/", { headers: bearer(token) }),
+                new URL("http://x/")
+            );
+        expect(await asToken(kept.token)).toMatchObject({ kind: "token", tokenId: kept.record.id });
+        expect(await asToken(suspended.token)).toBeNull();
+        // Only a token that was let in counts as used.
+        const used = Object.fromEntries(
+            (await store.listTokens()).map((t) => [t.name, t.lastUsedAt])
+        );
+        expect(used.kept).toBeString();
+        expect(used.suspended).toBeUndefined();
+
+        await auth.logout(signedIn);
+        expect(auth.ended).toEqual([(await auth.sessionId(signedIn)) as string]);
+        expect(await auth.identify(signedIn, new URL("http://x/"))).toBeNull();
+    });
+
+    it("can carry its session in a host-only cookie, and keep tokens out of URLs", async () => {
+        const store = new SqliteStore(":memory:");
+        defer(() => store.close());
+        const auth = new Authenticator(store, { cookieName: "__Host-team", queryTokens: false });
+        await auth.ensureAdmin("admin", "pw");
+        const result = await auth.login("admin", "pw", "ip");
+        if (!result.ok) throw new Error("sign-in failed");
+        // Browsers keep a `__Host-` cookie only when it is Secure, so it always is.
+        expect(result.cookie).toStartWith("__Host-team=");
+        expect(result.cookie).toContain("; Secure");
+        const value = result.cookie.split(";")[0]?.split("=")[1] ?? "";
+        const as = (cookie: string) =>
+            auth.identify(new Request("http://x/", { headers: { cookie } }), new URL("http://x/"));
+        expect(await as(`__Host-team=${value}`)).toMatchObject({ kind: "admin" });
+        expect(await as(`notato_session=${value}`)).toBeNull();
+        expect(await auth.logout(new Request("http://x/"))).toContain("; Secure");
+
+        await store.createProject({ id: "p", name: "p", createdAt: new Date().toISOString() });
+        const { token } = await auth.issueToken("p", "page");
+        const url = new URL(`http://x/projects/p/events?token=${token}`);
+        expect(await auth.identify(new Request(url), url)).toBeNull();
+        expect(
+            await auth.identify(new Request(url, { headers: bearer(token) }), url)
+        ).toMatchObject({ kind: "token" });
+    });
+});
+
+describe("a server on the public internet (strictOrigins)", () => {
+    it("is signed in to and out of from its own board only, even by an origin it lets call the API", async () => {
+        const listed = "https://app.example.com";
+        const strict = await start({
+            corsOrigins: [listed],
+            extension: { name: "strict", http: () => ({ strictOrigins: true }) },
+        });
+        const signIn = (s: typeof strict, origin?: string) =>
+            s.call("/auth/login", {
+                method: "POST",
+                headers: {
+                    "content-type": "application/json",
+                    ...(origin ? { origin } : {}),
+                },
+                body: JSON.stringify({ username: "admin", password: "correct horse" }),
+            });
+        const refused = await signIn(strict, listed);
+        expect(refused.status).toBe(403);
+        expect(((await refused.json()) as { error: string }).error).toContain("sign-in");
+        expect((await signIn(strict)).status).toBe(200);
+        const cookie = await adminCookie(strict);
+        const signOut = await strict.call("/auth/logout", {
+            method: "POST",
+            headers: { cookie, origin: listed },
+        });
+        expect(signOut.status).toBe(403);
+        // A server that is not strict lets the origins it lists sign in, as before.
+        const open = await start({ corsOrigins: [listed] });
+        expect((await signIn(open, listed)).status).toBe(200);
     });
 });
 

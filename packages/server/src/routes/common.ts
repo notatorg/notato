@@ -9,7 +9,7 @@ import {
 import { type LocalBackend, RequestError } from "../backend.ts";
 import { sameOrigin } from "../cors.ts";
 import type { AppOptions, RequestInfo } from "../http.ts";
-import { type AnnotationFilter, PROJECT_ID } from "../storage.ts";
+import { type AnnotationFilter, PROJECT_ID, type TokenRecord } from "../storage.ts";
 import { fromOutside } from "../tunnel.ts";
 import type { EventStreams } from "./events.ts";
 
@@ -130,6 +130,11 @@ export async function readJson<T>(req: Request, schema: z.ZodType<T>): Promise<T
     } catch {
         throw new RequestError("body must be JSON");
     }
+    return checkBody(body, schema);
+}
+
+/** A body already read, checked against `schema` as `readJson` checks one: a 400 that says what is wrong. */
+export function checkBody<T>(body: unknown, schema: z.ZodType<T>): T {
     const parsed = schema.safeParse(body);
     if (!parsed.success) {
         const issue = parsed.error.issues[0];
@@ -137,6 +142,13 @@ export async function readJson<T>(req: Request, schema: z.ZodType<T>): Promise<T
     }
     return parsed.data;
 }
+
+/** A token record as it is shown: everything but the hash of the token. */
+export const shownToken = ({ tokenHash: _hash, ...record }: TokenRecord) => record;
+
+/** A token record as this server shows it, by its `tokenRules` (see `AppOptions`). */
+export const showToken = (app: AppContext, record: TokenRecord): object =>
+    app.options.tokenRules?.shown?.(record) ?? shownToken(record);
 
 // ---- who may do what -------------------------------------------------------------------------------------------
 

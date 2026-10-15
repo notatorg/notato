@@ -9,6 +9,8 @@ import {
     type AuthProvider,
     accessibleProjects,
     canAccessProject,
+    type IssuedToken,
+    type IssueTokenOptions,
     LOCAL_PRINCIPAL,
     type Principal,
     UnknownProjectError,
@@ -39,6 +41,7 @@ import { relayRoutes } from "./routes/relay.ts";
 import { healthRoute, statusRoutes } from "./routes/status.ts";
 import { settingsRoutes } from "./settings.ts";
 import { type ShareLinks, sharedAsset } from "./share.ts";
+import type { ProjectSummary, TokenRecord } from "./storage.ts";
 import { outsideRefusal } from "./tunnel.ts";
 
 /** Static files of the web UI. `path` is relative, e.g. `index.html` or `assets/app-3f2a.js`. */
@@ -107,6 +110,71 @@ export interface AppOptions {
     mcpUrl?: string;
     /** Routes an extension adds to the server's own (see `ServerExtension`). */
     routes?: ExtraRoutes;
+    /** Who manages projects, what `/projects` lists, and what a new project is made with, beyond an admin's own. */
+    projectRules?: ProjectRules;
+    /** Who uses `/tokens` beyond an admin, what each of them sees there, and how their tokens are issued. */
+    tokenRules?: TokenRules;
+    /**
+     * What `GET /auth/me` says about whoever asks, beyond whether they are signed in and as whom: for accounts that
+     * have more to them (a display name, a team) or a sign-in the board must be told about.
+     */
+    aboutCaller?(principal: Principal | null, req: Request): Promise<Record<string, unknown>>;
+}
+
+/**
+ * How `/projects` works where more than an admin manages projects, or a project is more than an id and a name. Each
+ * part left out keeps the server's own rule.
+ */
+export interface ProjectRules {
+    /** Throws a `RequestError` unless the credential may create, rename and delete projects. The server's own: an admin. */
+    assertManager?(principal: Principal): void;
+    /**
+     * The projects `GET /projects` lists for this credential, with their counts and whatever the store keeps about each
+     * for whoever asks. The server shows only the ones the credential reaches whatever this returns. The server's
+     * own: every project.
+     */
+    list?(principal: Principal): Promise<ProjectSummary[]>;
+    /**
+     * Decides a new project from who asks and what they sent: its id (one the server makes, say, where ids are shared
+     * by many accounts and one chosen by a caller could collide with another's), what else its record holds, and how
+     * its first tokens are issued. Throw a `RequestError` to refuse.
+     */
+    create?(principal: Principal, body: ProjectRequest): Promise<NewProject>;
+}
+
+/** `POST /projects` as `ProjectRules.create` reads it: `id`, `name` and `agent` checked, and any other field kept. */
+export interface ProjectRequest {
+    id?: string;
+    name?: string;
+    /** Also make a token for a coding agent, for this project only. */
+    agent?: boolean;
+    [field: string]: unknown;
+}
+
+/** What a new project is made with. */
+export interface NewProject {
+    id: string;
+    /** Kept in the project's record beside its id, name and when it was made. */
+    fields?: Record<string, unknown>;
+    /** How its first app token is issued. */
+    appToken?: IssueTokenOptions;
+    /** How its agent token is issued, when one is asked for; it is always for an agent. */
+    agentToken?: IssueTokenOptions;
+}
+
+/**
+ * How `/tokens` works where people other than an admin hold tokens (their own, or their team's). Without these it is
+ * an admin's alone, as `/admin/tokens` always is. Each part left out keeps the server's own rule.
+ */
+export interface TokenRules {
+    /** Throws a `RequestError` unless the credential may list, issue and revoke tokens at `/tokens`. */
+    assertManager?(principal: Principal | null): void;
+    /** Whether the credential sees this token in the list and may revoke it. The server's own: only an admin does. */
+    visible?(principal: Principal, token: TokenRecord): boolean;
+    /** Issues the token `POST /tokens` asks for, reading the request's body itself. Throw a `RequestError` to refuse. */
+    issue?(principal: Principal, req: Request): Promise<IssuedToken>;
+    /** A token's record as any answer shows it. The server's own leaves out the token's hash (`shownToken`). */
+    shown?(record: TokenRecord): object;
 }
 
 /** What an extension adds to the routes: tried before the server's own, so one can replace a built-in route. */

@@ -13,7 +13,11 @@ import { SqliteStore } from "./sqlite-store.ts";
 import type { AuthStore, Store } from "./storage.ts";
 import { startWebhooks } from "./webhooks.ts";
 
-export interface ServeOptions {
+export interface ServeOptions<
+    S extends Store & AuthStore = Store & AuthStore,
+    B extends LocalBackend = LocalBackend,
+    A extends AuthProvider = AuthProvider,
+> {
     /** Interface to bind. Loopback unless told otherwise: expose it deliberately, behind TLS. */
     host?: string;
     port?: number;
@@ -35,22 +39,31 @@ export interface ServeOptions {
     /** `--no-mcp`: refuse agents whatever the config file says, for as long as this process runs. */
     mcp?: boolean;
     /** What a deployment adds or replaces: its store, accounts, routes and limits. A plain server has none. */
-    extension?: ServerExtension;
+    extension?: ServerExtension<S, B, A>;
 }
 
-export interface ServeRuntime {
+/** The running server, with the store, backend and accounts an extension made as its own. */
+export interface ServeRuntime<
+    S extends Store & AuthStore = Store & AuthStore,
+    B extends LocalBackend = LocalBackend,
+    A extends AuthProvider = AuthProvider,
+> {
     readonly host: string;
     readonly port: number;
-    readonly backend: LocalBackend;
-    readonly auth: AuthProvider;
-    readonly store: Store & AuthStore;
+    readonly backend: B;
+    readonly auth: A;
+    readonly store: S;
     /** Answers a request the way the listener does (extension middleware, MCP and all), without a socket. For tests. */
     handle(req: Request, info?: { ip?: string }): Promise<Response>;
     stop(): Promise<void>;
 }
 
 /** The shared server: login, per-project tokens, the HTTP API, streamable HTTP MCP at `/mcp`, and the board UI. */
-export async function runServe(options: ServeOptions): Promise<ServeRuntime> {
+export async function runServe<
+    S extends Store & AuthStore = Store & AuthStore,
+    B extends LocalBackend = LocalBackend,
+    A extends AuthProvider = AuthProvider,
+>(options: ServeOptions<S, B, A>): Promise<ServeRuntime<S, B, A>> {
     const host = options.host ?? process.env.NOTATO_HOST ?? "127.0.0.1";
     const port = options.port ?? Number(process.env.NOTATO_PORT ?? DEFAULT_PORT);
     const dir = resolve(options.dir ?? process.env.NOTATO_DIR ?? join(process.cwd(), ".notato"));
@@ -59,7 +72,9 @@ export async function runServe(options: ServeOptions): Promise<ServeRuntime> {
     ensureDataDir(dir);
     const extension = options.extension;
     const context = { dir, version: options.version, log };
-    const store = (await extension?.store?.(context)) ?? new SqliteStore(databaseIn(dir));
+    // Without an extension's own part, each is the server's, and `S`, `B` and `A` are the defaults it satisfies.
+    const ownStore = (): Store & AuthStore => new SqliteStore(databaseIn(dir));
+    const store = (await extension?.store?.(context)) ?? (ownStore() as S);
     const blobs = (await extension?.blobs?.(context)) ?? new FileBlobStore(join(dir, "assets"));
     const baseConfig = createConfigSource({
         file: options.configFile ?? process.env.NOTATO_CONFIG ?? join(process.cwd(), CONFIG_FILE),
@@ -84,7 +99,7 @@ export async function runServe(options: ServeOptions): Promise<ServeRuntime> {
     };
     const backend =
         extension?.backend?.({ ...context, ...parts, options: backendOptions }) ??
-        new LocalBackend(store, blobs, backendOptions);
+        (new LocalBackend(store, blobs, backendOptions) as B);
     // A shared server is reached at its proxy's address, which only the person running it knows: NOTATO_PUBLIC_URL.
     // Without it, webhook messages carry no screenshot.
     const share =
@@ -93,11 +108,12 @@ export async function runServe(options: ServeOptions): Promise<ServeRuntime> {
             : new ShareLinks(dir, () => process.env.NOTATO_PUBLIC_URL);
     const hooks = startWebhooks({ bus: backend.bus, config, log, share });
 
-    let auth: AuthProvider;
+    let auth: A;
     if (extension?.auth) auth = await extension.auth({ ...context, ...parts, backend });
     else {
         const builtIn = new Authenticator(store);
-        auth = builtIn;
+        const provider: AuthProvider = builtIn;
+        auth = provider as A;
         const adminUser = options.adminUser ?? process.env.NOTATO_ADMIN_USER ?? "admin";
         const admin = await builtIn.ensureAdmin(
             adminUser,
@@ -111,7 +127,7 @@ export async function runServe(options: ServeOptions): Promise<ServeRuntime> {
         }
     }
 
-    const built: Built = { backend, auth };
+    const built: Built<B, A> = { backend, auth };
     const full = { ...context, ...parts, ...built };
     const trustProxy = options.trustProxy ?? process.env.NOTATO_TRUST_PROXY === "1";
     const http = extension?.http?.(full);
@@ -127,6 +143,9 @@ export async function runServe(options: ServeOptions): Promise<ServeRuntime> {
         originsFor: http?.originsFor,
         strictOrigins: http?.strictOrigins,
         boardCsp: http?.boardCsp,
+        projectRules: http?.projectRules,
+        tokenRules: http?.tokenRules,
+        aboutCaller: http?.aboutCaller,
         responseHeaders: http?.responseHeaders,
         maxUploadBytes: http?.maxUploadBytes,
         maxBundleBytes: http?.maxBundleBytes,
