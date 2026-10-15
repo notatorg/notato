@@ -46,6 +46,8 @@ CI runs these on every pull request. `bun run check` runs the first four togethe
 
 CI also builds the `notato` binary on Linux, macOS and Windows and smoke-tests it, builds the example apps, installs the packed packages into a fresh Vite app, and builds the Docker image.
 
+CI runs one exact Bun (`bun-version` in each workflow), the same as the Dockerfile's build image, and the Dockerfile pins each image by digest. Dependabot moves the images and the actions' pins once a month; when it moves `oven/bun`, move `bun-version` in the workflows with it.
+
 ## Each SDK
 
 The TypeScript SDKs (`browser`, `react`, `angular`, `react-native`) are covered by `bun run test`. The others have their own tools and their own workflow, which runs when their folder or the schema changes. Their contract tests run the server's own schema over the JSON they write, so they need `bun` installed.
