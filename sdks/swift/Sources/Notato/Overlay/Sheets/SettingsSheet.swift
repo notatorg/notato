@@ -34,7 +34,9 @@ struct SettingsSheet: View {
                         Text(notato.describeConnection()).font(.system(size: 12)).foregroundStyle(Palette.muted).padding(.horizontal, 4)
                     }
                     ToggleRow(icon: .symbol("camera"), title: "Screenshots",
-                              detail: notato.serverScreenshots ? "Each note takes one of the screen" : "The server has them turned off",
+                              detail: notato.serverScreenshots ? "Each note takes one of the screen"
+                                  : notato.serverPolicy?.screenshots == false ? "The server has them turned off"
+                                  : "None until the server says it takes them",
                               isOn: $screenshots)
                 }
             }

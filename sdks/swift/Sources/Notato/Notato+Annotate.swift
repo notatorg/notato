@@ -40,6 +40,10 @@ extension Notato {
         guard isEnabled, let platform else { throw NotatoError(message: "Notato is off. Call enable() first.") }
         let comment = comment.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !comment.isEmpty else { throw NotatoError(message: "A note needs a comment.") }
+        // Whether a screenshot may be taken is the server's to say, asked first (unless it was moments ago); and the
+        // screen is read once the accessibility tree is whole, so the fields the picture covers are all in it.
+        if options.screenshot { await refreshPolicy() }
+        await platform.accessible()
         var found = try platform.find(selector)
         if found == nil {
             // The accessibility tree is built lazily the first time it is read: look again once it has been.
@@ -66,12 +70,13 @@ extension Notato {
     /// Selects the element a selector finds, as if it had been tapped, and opens the note for it.
     public func select(_ selector: String) throws {
         guard isEnabled, let platform else { throw NotatoError(message: "Notato is off. Call enable() first.") }
-        guard case (let session, var selection)? = try platform.find(selector) else {
+        guard case let (session, selection)? = try platform.find(selector) else {
             throw NotatoError(message: "No element on the screen matches \"\(selector)\".")
         }
         isAnnotating = true
-        if screenshotsOn, let window = session.appWindow { selection.screen = platform.capture(window, elements: selection.all) }
         platform.select(selection, in: session)
+        // As a tap's: once the server has said screenshots may be taken, and the accessibility tree is whole.
+        if let window = session.appWindow { platform.captureNextFrame(window, scanned: selection.all, in: session) }
     }
 }
 #else

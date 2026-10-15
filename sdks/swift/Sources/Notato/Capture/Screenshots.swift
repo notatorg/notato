@@ -13,10 +13,12 @@ struct ComposedScreenshots: Sendable {
 
 @MainActor
 enum ScreenshotTaker {
-    /// The window now, and what to cover in it now: `elements` (scanned just before) and the private views. Drawn at
-    /// no more than `maxScale`, the most the note's pictures are drawn at: a 3x screen is not drawn at 3x to be shrunk.
-    static func capture(_ window: UIWindow, elements: [ScreenElement], privateViews: [CGRect], maskInputs: Bool,
-                        maxScale: Double = 4) -> CapturedScreen? {
+    /// The window now, and what to cover in it now: `elements` (scanned just before), the private views, and the text
+    /// fields in the window's views (`InputFields`), which the accessibility tree may have left out; `optOuts` are the
+    /// `.notatoMask(false)` views. Drawn at no more than `maxScale`, the most the note's pictures are drawn at: a 3x
+    /// screen is not drawn at 3x to be shrunk.
+    static func capture(_ window: UIWindow, elements: [ScreenElement], privateViews: [CGRect], optOuts: [CGRect] = [],
+                        maskInputs: Bool, maxScale: Double = 4) -> CapturedScreen? {
         let bounds = window.bounds
         guard bounds.width > 0, bounds.height > 0 else { return nil }
         let format = UIGraphicsImageRendererFormat()
@@ -26,7 +28,8 @@ enum ScreenshotTaker {
         let image = UIGraphicsImageRenderer(bounds: bounds, format: format).image { _ in
             _ = window.drawHierarchy(in: bounds, afterScreenUpdates: false)
         }
-        return CapturedScreen(image, size: bounds.size, elements: elements, privateViews: privateViews, maskInputs: maskInputs)
+        return CapturedScreen(image, size: bounds.size, elements: elements, privateViews: privateViews,
+                              fields: InputFields.find(in: window), optOuts: optOuts, maskInputs: maskInputs)
     }
 }
 

@@ -61,7 +61,8 @@ struct MenuSheet: View {
     private var pill: (label: String, color: Color)? {
         guard notato.hasServer else { return nil }
         switch notato.connection {
-        case .connected: return ("Connected", Palette.connected)
+        // A capture-only token sends notes and reads nothing back: no live updates to be connected for.
+        case .connected: return (notato.captureOnly ? "Send only" : "Connected", Palette.connected)
         case .connecting: return ("Connecting…", Palette.status(Status.acknowledged))
         case .offline: return ("Offline", Palette.offline)
         case .refused: return ("Refused", Palette.offline)

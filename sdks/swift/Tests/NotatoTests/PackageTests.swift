@@ -33,6 +33,45 @@ struct PackageTests {
         #expect(BundleWriter.build(loaded, project: "shop-ios", author: nil, appName: nil, appVersion: nil).files.isEmpty)
     }
 
+    @Test func keptNotesAreLeftOutOfBackupsAndReadOnlyWhileTheDeviceIsUnlocked() async throws {
+        let folder = try temporary()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let base = folder.appendingPathComponent("notato", isDirectory: true)
+        let store = LocalStore(base: base, project: "shop-ios")
+        let shot = String(repeating: "a", count: 64)
+        let kept = try await store.keep(Fixture.annotation(), screenshots: [shot: Data([137, 80, 78, 71])])
+        #expect(try base.resourceValues(forKeys: [.isExcludedFromBackupKey]).isExcludedFromBackup == true)
+        guard case let .file(file)? = kept[shot] else {
+            Issue.record("kept in memory: \(kept)")
+            return
+        }
+        #expect(await store.load().count == 1, "and read back")
+        // Protected on an iPhone or iPad, where it is enforced: a Mac would not open it again, and the simulator keeps
+        // no protection class to read back.
+        #if !targetEnvironment(simulator)
+        guard LocalStore.protects else { return }
+        let note = file.deletingLastPathComponent()
+        for url in [note, file, note.appendingPathComponent("annotation.json")] {
+            let protection = try FileManager.default.attributesOfItem(atPath: url.path)[.protectionKey] as? FileProtectionType
+            #expect(protection == .completeUnlessOpen, "\(url.lastPathComponent)")
+        }
+        #endif
+    }
+
+    @Test func aScreenshotThatIsThereButCannotBeReadHoldsTheNote() throws {
+        let folder = try temporary()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let file = folder.appendingPathComponent("shot.png")
+        try Data([137, 80, 78, 71]).write(to: file)
+        // As a protected file is while the device is locked.
+        try FileManager.default.setAttributes([.posixPermissions: 0], ofItemAtPath: file.path)
+        defer { try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: file.path) }
+        #expect(throws: (any Error).self) { try KeptAsset.readToSend(["a": .file(file)]) }
+        #expect(KeptAsset.read(["a": .file(file)]).isEmpty, "a package or a list leaves it out")
+        // One gone since is left out, as a screenshot never taken is.
+        #expect(try KeptAsset.readToSend(["a": .file(folder.appendingPathComponent("gone.png")), "b": .bytes(Data([1]))]) == ["b": Data([1])])
+    }
+
     @Test func aZipCountsUpTo65535EntriesAndRefusesTheNext() throws {
         let folder = try temporary()
         defer { try? FileManager.default.removeItem(at: folder) }

@@ -1,14 +1,29 @@
 import Foundation
 
-// The connection to the server: its event stream, read for as long as Notato is on, and what each event does.
+/// What a server said it allows at `/config`, before anything is captured or sent.
+struct ServerPolicy: Equatable {
+    /// The server that said it: what one server allows says nothing of another.
+    var server: URL
+    /// Whether it takes screenshots; nil when it could not be asked again since, which counts as no until it answers.
+    var screenshots: Bool?
+    /// It makes the crop itself from the full screenshot, so none is sent (`context.screenshot.cropRect`).
+    var derivedScreenshots: Bool
+    /// The app's token may only send new notes (`--capture-only`).
+    var captureOnly: Bool
+}
+
+// The connection to the server: what it allows, then its event stream, read for as long as Notato is on, and what each
+// event does.
 extension Notato {
     /// The longest wait between attempts to connect, in seconds. The wait doubles from one second up to it.
-    private static let maxReconnectDelay = 10
+    static let maxReconnectDelay = 10
+    /// How long an answer to `/config` counts as just given: `refreshPolicy` does not ask again before then.
+    private static let policyFresh: TimeInterval = 5
 
     /// (Re)opens the connection to the server, or says why there is none. Called on start, on a settings change and on
-    /// Retry; the previous connection is closed first.
+    /// Retry; the previous connection is closed first. What the server allows is asked first, in test mode too, where
+    /// the server only takes packages: until it answers, no screenshot is taken.
     func restartSync() {
-        serverDerivedScreenshots = false
         syncTask?.cancel()
         syncTask = nil
         guard isEnabled, let configuration else { return }
@@ -16,6 +31,7 @@ extension Notato {
         guard hasServer, let client else {
             connection = .local
             connectionDetail = mode == .test ? nil : "No server is set: notes stay on this device."
+            if let client { syncTask = Task { [weak self] in _ = try? await self?.readPolicy(client) } }
             return
         }
         let project = configuration.project
@@ -25,6 +41,12 @@ extension Notato {
             while !Task.isCancelled {
                 self?.connection = .connecting
                 do {
+                    guard let policy = try await self?.readPolicy(client) else { return }
+                    if policy.captureOnly {
+                        // Never returns but by throwing why it stopped, as a stream that drops.
+                        try await self?.sendOnly { delay = 1 }
+                        return
+                    }
                     for try await event in client.events(project: project, agent: agent) {
                         await self?.handle(event, client: client)
                         delay = 1
@@ -42,6 +64,55 @@ extension Notato {
                 try? await Task.sleep(for: .seconds(delay))
                 delay = min(Self.maxReconnectDelay, delay * 2)
             }
+        }
+    }
+
+    /// A token that may only send new notes (`captureOnly`): there is no stream to follow, nor a list to read back,
+    /// and asking for them would only be refused. What is waiting is sent now and every `interval` after, until a note is
+    /// held (no connection, a busy server, a project the server does not have): that is thrown, as a stream dropping is,
+    /// and the connection is made again. `sent` is told each time everything waiting has gone.
+    func sendOnly(every interval: Duration = .seconds(maxReconnectDelay), sent: () -> Void = {}) async throws {
+        setConnection(.connected, nil)
+        while true {
+            if let held = await flush() { throw held }
+            sent()
+            try await Task.sleep(for: interval)
+        }
+    }
+
+    /// Asks the server what it allows (`GET /config`, for the project) and keeps its answer. When it cannot be asked,
+    /// what it said of screenshots no longer counts, and none are taken until it answers again.
+    @discardableResult
+    func readPolicy(_ client: NotatoClient) async throws -> ServerPolicy {
+        policyAsked = (client.base, Date())
+        do {
+            let config = try await client.config(project: configuration?.project)
+            // Screenshots only when it says so: a server that answers without saying has not said it takes them.
+            let read = ServerPolicy(server: client.base, screenshots: config.screenshots == true,
+                                    derivedScreenshots: config.derivedScreenshots == true, captureOnly: config.captureOnly == true)
+            // An answer from a server no longer in use (Settings changed it meanwhile) is not kept.
+            if client.base == server, policy != read { policy = read }
+            return read
+        } catch {
+            if !NotatoClient.isCancellation(error), policy?.server == client.base, policy?.screenshots != nil {
+                policy?.screenshots = nil
+            }
+            throw error
+        }
+    }
+
+    /// Asks the server again what it allows, before a picture is taken or a package written, unless it was asked in the
+    /// last few seconds. Waits for the answer at most `wait`: a slow server does not hold up the note, which goes by
+    /// what it said before (nothing said, no screenshot).
+    func refreshPolicy(wait: Duration = .milliseconds(1500)) async {
+        guard let server else { return }
+        if let asked = policyAsked, asked.server == server, Date().timeIntervalSince(asked.at) < Self.policyFresh { return }
+        let client = self.client.flatMap { $0.base == server ? $0 : nil } ?? client(for: server)
+        await withTaskGroup(of: Void.self) { group in
+            group.addTask { _ = try? await self.readPolicy(client) }
+            group.addTask { try? await Task.sleep(for: wait) }
+            await group.next()
+            group.cancelAll()
         }
     }
 
@@ -79,15 +150,11 @@ extension Notato {
     }
 
     /// One event from the server: `hello` on each connection, then each change to the project's notes, and (in agent
-    /// mode) an agent's request to annotate something.
+    /// mode) an agent's request to annotate something. What the server allows was asked before the stream was opened.
     func handle(_ event: ServerSentEvent, client: NotatoClient) async {
         switch event.event {
         case "hello":
             setConnection(.connected, nil)
-            if let config = try? await client.config() {
-                serverScreenshots = config.screenshots ?? serverScreenshots
-                serverDerivedScreenshots = config.derivedScreenshots == true
-            }
             // The notes made while away go first, so the list read next has them.
             let held = await flush()
             await reload(client)

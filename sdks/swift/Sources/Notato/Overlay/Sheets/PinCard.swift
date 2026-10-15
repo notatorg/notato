@@ -55,11 +55,17 @@ struct PinCard: View {
                     } else if record.pending {
                         Text(record.error.map { "Not sent: \($0)" } ?? "Not sent yet: \(record.notice ?? "it goes when the server can be reached.")")
                             .font(.system(size: 12.5)).foregroundStyle(Palette.status(Status.acknowledged))
+                    } else if sendOnly {
+                        Text("Sent. This app can only send notes: read, reply to and change them on the Notato board.")
+                            .font(.system(size: 12.5)).foregroundStyle(Palette.muted)
                     }
-                    FlagToggle(title: PeopleOnlyCopy.title, hint: PeopleOnlyCopy.hint,
-                               isOn: Binding(get: { askedPeopleOnly ?? a.isPeopleOnly }, set: { setPeopleOnly($0) }))
-                        .disabled(askedPeopleOnly != nil)
-                        .accessibilityIdentifier("NotatoNotePeopleOnly")
+                    // Once sent, a capture-only token can no longer change it.
+                    if !sendOnly {
+                        FlagToggle(title: PeopleOnlyCopy.title, hint: PeopleOnlyCopy.hint,
+                                   isOn: Binding(get: { askedPeopleOnly ?? a.isPeopleOnly }, set: { setPeopleOnly($0) }))
+                            .disabled(askedPeopleOnly != nil)
+                            .accessibilityIdentifier("NotatoNotePeopleOnly")
+                    }
                     ForEach(a.thread.suffix(4)) { ThreadEntry(reply: $0) }
                     if a.thread.count > 4 {
                         // The card shows the latest of a long thread: say the rest is there.
@@ -68,7 +74,7 @@ struct PinCard: View {
                             .padding(.horizontal, 10)
                             .accessibilityIdentifier("NotatoEarlierReplies")
                     }
-                    if notato.hasServer, !record.pending {
+                    if notato.hasServer, !record.pending, !sendOnly {
                         TextField(a.status == Status.resolved ? "Reply, or say what was wrong" : "Reply", text: $reply, axis: .vertical)
                             .lineLimit(1...4)
                             .field()
@@ -88,9 +94,14 @@ struct PinCard: View {
         }
     }
 
+    /// Sent with a token that may only send new notes: the board is where it is read, replied to and changed.
+    private var sendOnly: Bool { notato.hasServer && notato.captureOnly && !record.pending }
+
     @ViewBuilder
     private func actions(_ a: Annotation) -> some View {
-        if notato.hasServer, !record.pending {
+        if sendOnly {
+            EmptyView()
+        } else if notato.hasServer, !record.pending {
             if a.status == Status.resolved {
                 SheetButton("Ask the agent to revert") { run({ try await notato.requestRevert(a.id, reason: reply) }, "Asked the agent to undo that change") }
             }

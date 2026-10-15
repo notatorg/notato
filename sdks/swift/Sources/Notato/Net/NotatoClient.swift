@@ -112,8 +112,10 @@ final class NotatoClient: Sendable {
         }
     }
 
-    func config() async throws -> ServerConfig {
-        try decode(ServerConfig.self, try await send(request("GET", "/config")))
+    /// What the server allows: screenshots, and whether the token may only send. Asked for the project, which a
+    /// capture-only token is refused for when it is not the token's own.
+    func config(project: String? = nil) async throws -> ServerConfig {
+        try decode(ServerConfig.self, try await send(request("GET", "/config" + (project.map { "?project=\(Self.segment($0))" } ?? ""))))
     }
 
     /// The multipart form the server ingests: the annotation as JSON, and each screenshot as an `asset:<id>` file.

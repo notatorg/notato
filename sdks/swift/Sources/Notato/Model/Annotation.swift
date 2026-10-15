@@ -307,6 +307,8 @@ struct AnnotationList: Codable, Sendable {
 struct ServerConfig: Codable, Sendable {
     var derivedScreenshots: Bool?
     var screenshots: Bool?
+    /// The token may only send new notes: no stream, no list, nothing done to a note once sent.
+    var captureOnly: Bool?
 }
 
 struct ErrorBody: Codable, Sendable {
