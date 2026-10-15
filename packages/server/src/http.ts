@@ -286,6 +286,7 @@ export function createApp(options: AppOptions): AppHandler {
                         return withCors(
                             json({
                                 screenshots: backend.config().screenshots,
+                                derivedScreenshots: backend.derivedScreenshots,
                                 mentions: [],
                                 agent: { connected: false, watching: false, sessions: 0 },
                                 captureOnly: true,

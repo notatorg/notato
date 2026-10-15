@@ -126,6 +126,11 @@ it("never exposes even a warmed view to another project or a send-only credentia
             })
         ).status
     ).toBe(201);
+    const capabilities = await app.call("/config?project=mine", { headers: sendOnly });
+    expect(await capabilities.json()).toMatchObject({
+        captureOnly: true,
+        derivedScreenshots: true,
+    });
     const path = `/annotations/${note.id}/screenshot?view=thumbnail`;
     expect((await app.call(path, { headers: owner })).status).toBe(200);
     expect((await app.call(path, { headers: other })).status).toBe(403);
