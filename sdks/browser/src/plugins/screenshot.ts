@@ -23,7 +23,7 @@ export interface ScreenshotOptions {
     enabled?: () => boolean | Promise<boolean>;
     /** WebP quality, 0 to 1. */
     quality?: number;
-    /** `auto` uses WebP where the browser can encode it and PNG otherwise. */
+    /** `auto` uses WebP when it is smaller than PNG, with PNG as a fallback. */
     format?: "auto" | "png";
     outlineColor?: string;
 }
@@ -134,15 +134,20 @@ function toBlob(canvas: HTMLCanvasElement, type: string, quality?: number): Prom
     return new Promise((resolve) => canvas.toBlob(resolve, type, quality));
 }
 
-async function encode(
+export async function encodeScreenshot(
     canvas: HTMLCanvasElement,
     options: Required<Pick<ScreenshotOptions, "format" | "quality">>
 ) {
-    if (options.format === "auto") {
-        const webp = await toBlob(canvas, "image/webp", options.quality);
-        if (webp?.type === "image/webp") return webp;
-    }
     const png = await toBlob(canvas, "image/png");
+    if (options.format === "auto") {
+        try {
+            const webp = await toBlob(canvas, "image/webp", options.quality);
+            if (webp?.type === "image/webp" && webp.size > 0 && (!png || webp.size < png.size))
+                return webp;
+        } catch {
+            // A platform encoder failure must not discard a screenshot that PNG can preserve.
+        }
+    }
     if (!png) throw new Error("canvas.toBlob returned null");
     return png;
 }
@@ -205,7 +210,10 @@ export function screenshotPlugin(options: ScreenshotOptions = {}): CapturePlugin
     const maxEdge = options.maxEdge ?? 2000;
     const cropPadding = options.cropPadding ?? 24;
     const outlineColor = options.outlineColor ?? "#ef4444";
-    const encoding = { format: options.format ?? "auto", quality: options.quality ?? 0.9 } as const;
+    const encoding = {
+        format: options.format ?? "auto",
+        quality: options.quality ?? 0.85,
+    } as const;
 
     return {
         id: "screenshot",
@@ -262,8 +270,8 @@ export function screenshotPlugin(options: ScreenshotOptions = {}): CapturePlugin
             drawOutline(canvas, boxes, draft.number, f, outlineColor);
 
             const [fullBlob, cropBlob] = await Promise.all([
-                encode(canvas, encoding),
-                encode(cropCanvas, encoding),
+                encodeScreenshot(canvas, encoding),
+                encodeScreenshot(cropCanvas, encoding),
             ]);
             const full = await draft.putAsset(fullBlob, { w: canvas.width, h: canvas.height });
             const cropRef = await draft.putAsset(cropBlob, {

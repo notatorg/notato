@@ -94,13 +94,15 @@ internal static class ScreenshotComposer
         }
 
         Dictionary<string, byte[]> assets = [];
-        AssetRef fullRef = new() { Id = AssetId(full), Mime = "image/png", W = width, H = height };
-        assets[fullRef.Id] = full;
+        ScreenshotEncoding.Encoded encodedFull = ScreenshotEncoding.Encode(full);
+        AssetRef fullRef = new() { Id = AssetId(encodedFull.Bytes), Mime = encodedFull.Mime, W = width, H = height };
+        assets[fullRef.Id] = encodedFull.Bytes;
         AssetRef? cropRef = null;
         if (crop is not null)
         {
-            cropRef = new AssetRef { Id = AssetId(crop), Mime = "image/png", W = cropWidth, H = cropHeight };
-            assets[cropRef.Id] = crop;
+            ScreenshotEncoding.Encoded encodedCrop = ScreenshotEncoding.Encode(crop);
+            cropRef = new AssetRef { Id = AssetId(encodedCrop.Bytes), Mime = encodedCrop.Mime, W = cropWidth, H = cropHeight };
+            assets[cropRef.Id] = encodedCrop.Bytes;
         }
         return new ComposedScreenshots(new Screenshots { Full = fullRef, Crop = cropRef }, assets);
 #else

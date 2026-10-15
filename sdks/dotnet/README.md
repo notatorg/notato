@@ -4,6 +4,8 @@ Figma-style comments for a running .NET MAUI app. Tap an element, write a note, 
 
 Works on iOS, Android and Mac Catalyst with .NET 10 and later. Windows builds, but has no overlay yet.
 
+**Screenshot size.** New captures prefer WebP at quality 85 when it is smaller than PNG, after privacy masking and at the same dimensions. PNG remains a fallback, and existing queues and bundles stay readable. See [screenshot storage](../../docs/screenshot-storage.md).
+
 ## Quick start
 
 ```bash

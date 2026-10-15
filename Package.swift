@@ -11,9 +11,13 @@ let package = Package(
     products: [
         .library(name: "Notato", targets: ["Notato"]),
     ],
+    dependencies: [
+        .package(url: "https://github.com/SDWebImage/libwebp-Xcode.git", from: "1.6.0"),
+    ],
     targets: [
         // The potato on the folded toolbar and in the menu, at 2x and 3x (`sips -Z` from the repository's assets/notato.png).
-        .target(name: "Notato", path: "sdks/swift/Sources/Notato", resources: [.process("Resources")]),
+        .target(name: "Notato", dependencies: [.product(name: "libwebp", package: "libwebp-Xcode")],
+                path: "sdks/swift/Sources/Notato", resources: [.process("Resources")]),
         .testTarget(name: "NotatoTests", dependencies: ["Notato"], path: "sdks/swift/Tests/NotatoTests"),
     ]
 )

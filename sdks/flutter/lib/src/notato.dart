@@ -405,7 +405,7 @@ class _NotatoState extends State<Notato> with WidgetsBindingObserver implements 
 
   /// The screenshots for a note: the widget on its own (masked), then the screen as the person saw it, outlined and
   /// numbered. [plainTaken] is told once the first is taken, for the outline (and the composer) to be shown: the
-  /// outlined one is taken under them. The two pictures of the whole screen are let go of as soon as the PNGs are made.
+  /// outlined one is taken under them. The two pictures of the whole screen are let go of as soon as the encoded images are made.
   Future<_Shots> _photograph(Picked picked, int pin, String id, {VoidCallback? plainTaken}) async {
     var told = false;
     void tell() {

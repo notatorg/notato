@@ -6,6 +6,8 @@ It is the same client as the Swift, Android and .NET MAUI SDKs: the toolbar and 
 
 Flutter 3.38.1 and later, on iOS, Android and macOS. On the web, notes are kept in memory and a package cannot be shared, only uploaded.
 
+**Screenshot size.** New captures prefer WebP at quality 85 when it is smaller than PNG, after privacy masking and at the same dimensions. PNG remains a fallback, and existing queues and bundles stay readable. Run `flutter pub get` and rebuild to include the encoder; unsupported platforms keep PNG. See [screenshot storage](../../docs/screenshot-storage.md).
+
 ## Set up
 
 ```bash

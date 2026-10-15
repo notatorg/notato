@@ -264,6 +264,10 @@ Then in `chrome://extensions` turn on Developer mode, **Load unpacked**, and cho
 
 How it stays safe and works on pages with their own security policy: the part that reads the page runs in the page; it cannot call the server itself, so it asks a relay, which asks the extension's background worker. The worker only reaches the server set for that site, and only Notato's own API on it, so a page cannot use the extension to reach anything else on your machine. It asks for almost nothing up front: scripting and storage, plus loopback addresses; each site and any other server address is asked for when you turn it on. An unpacked build has a fixed id that the server accepts by default; a build from a store has its own, which you list with `--cors-origin chrome-extension://<id>`. The extension is not on any store. A page that is turned on could write notes to your project through the extension (it could with an SDK token too), so turn it on for sites you trust.
 
+## Screenshot size
+
+Browser and mobile SDKs encode the finished, masked screenshot as WebP at quality 85 when it is smaller than PNG. They keep the same dimensions and use PNG if the encoder is unavailable or PNG wins. Old PNG notes, offline queues and bundles continue to work. React Native needs a native rebuild for its optional encoder; Expo Go keeps PNG. See [screenshot storage](docs/screenshot-storage.md) for platform dependencies, compatibility and measured examples.
+
 ## Screenshots: on or off
 
 Screenshots are what the agent sees, and they can contain whatever is on screen. They are on by default and can be turned off for a project:
@@ -463,7 +467,7 @@ The toolbar lives in a shadow root, so your styles cannot leak in or out. Identi
     - a note takes at most 1,000 replies (an agent can still close it with a note); a reply or a comment is at most 10,000 characters, a note's context at most 512 kB, and a whole note with its screenshots at most 25 MB;
     - `notato_watch` hands each reply over once (a new agent session is not handed old ones again), at most twenty a call, and `notato_get` writes out a thread's latest twenty replies;
     - a bundle zip is at most 100 MB with 20,000 files, and an export of any size streams a screenshot at a time;
-    - an app's list can ask for `?fields=summary`, which leaves each note's context (console, network, styles) and steps out;
+    - an app's list can ask for `?fields=summary`, which leaves bulky context (console, network, styles) and steps in the database instead of transferring them with each list;
     - a webhook that is down keeps at most 1,000 deliveries waiting, and deleting a whole project sends none.
 
     The board draws a project's list two hundred notes at a time. There is no rate limit on writes yet.

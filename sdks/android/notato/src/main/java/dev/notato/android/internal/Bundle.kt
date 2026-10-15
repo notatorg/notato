@@ -33,12 +33,12 @@ internal object BundleWriter {
             val refs = item.annotation.screenshots
             val full = refs?.full?.let { item.assets[it.id] }?.takeIf { it.isFile }
             if (refs != null && full != null) {
-                val fullRef = refs.full.copy(path = "shots/$n-full.png")
+                val fullRef = refs.full.copy(path = "shots/$n-full.${if (refs.full.mime == "image/webp") "webp" else "png"}")
                 files[fullRef.path!!] = full
                 var cropRef: AssetRef? = null
                 val cropFile = refs.crop?.let { item.assets[it.id] }?.takeIf { it.isFile }
                 if (refs.crop != null && cropFile != null) {
-                    cropRef = refs.crop.copy(path = "shots/$n-crop.png")
+                    cropRef = refs.crop.copy(path = "shots/$n-crop.${if (refs.crop.mime == "image/webp") "webp" else "png"}")
                     files[cropRef.path!!] = cropFile
                 }
                 shots = Screenshots(fullRef, cropRef)

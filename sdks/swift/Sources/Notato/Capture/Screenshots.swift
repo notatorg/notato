@@ -38,7 +38,7 @@ enum ScreenshotComposer {
     private static let cropPadding: CGFloat = 24
 
     /// The two pictures, covered where `screen` says: what was private when it was taken.
-    static func compose(_ screen: CapturedScreen, targets: [CGRect], pin: Int?, maxScale: Double) -> ComposedScreenshots {
+    static func compose(_ screen: CapturedScreen, targets: [CGRect], pin: Int?, maxScale: Double) -> ComposedScreenshots? {
         let masks = screen.covers
         let scale = max(1, min(screen.picture.scale, CGFloat(maxScale)))
         let format = UIGraphicsImageRendererFormat()
@@ -55,23 +55,26 @@ enum ScreenshotComposer {
             for target in targets { context.stroke(target.offsetBy(dx: -offset.x, dy: -offset.y).insetBy(dx: 1, dy: 1)) }
         }
 
-        let full = UIGraphicsImageRenderer(bounds: bounds, format: format).pngData { renderer in
+        let fullImage = UIGraphicsImageRenderer(bounds: bounds, format: format).image { renderer in
             draw(renderer.cgContext, offset: .zero)
             if let pin, let first = targets.first { drawPin(pin, at: first) }
         }
-        var refs = Screenshots(full: AssetRef(id: Hash.sha256(full), mime: "image/png",
+        guard let image = fullImage.cgImage, let full = ScreenshotEncoding.encode(image) else { return nil }
+        var refs = Screenshots(full: AssetRef(id: Hash.sha256(full.bytes), mime: full.mime,
                                               w: Int((screen.size.width * scale).rounded()), h: Int((screen.size.height * scale).rounded())))
-        var assets = [refs.full.id: full]
+        var assets = [refs.full.id: full.bytes]
 
         if let union = targets.dropFirst().reduce(targets.first, { $0?.union($1) }) {
             let area = union.insetBy(dx: -cropPadding, dy: -cropPadding).intersection(bounds)
             if area.width >= 4, area.height >= 4 {
-                let crop = UIGraphicsImageRenderer(size: area.size, format: format).pngData { renderer in
+                let cropImage = UIGraphicsImageRenderer(size: area.size, format: format).image { renderer in
                     draw(renderer.cgContext, offset: area.origin)
                 }
-                let ref = AssetRef(id: Hash.sha256(crop), mime: "image/png", w: Int((area.width * scale).rounded()), h: Int((area.height * scale).rounded()))
-                refs.crop = ref
-                assets[ref.id] = crop
+                if let image = cropImage.cgImage, let crop = ScreenshotEncoding.encode(image) {
+                    let ref = AssetRef(id: Hash.sha256(crop.bytes), mime: crop.mime, w: Int((area.width * scale).rounded()), h: Int((area.height * scale).rounded()))
+                    refs.crop = ref
+                    assets[ref.id] = crop.bytes
+                }
             }
         }
         return ComposedScreenshots(refs: refs, assets: assets)

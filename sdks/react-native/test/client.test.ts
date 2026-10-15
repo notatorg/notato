@@ -29,6 +29,16 @@ describe("a note on its way", () => {
         );
     });
 
+    it("labels compressed uploads as WebP while keeping legacy PNG uploads intact", () => {
+        const a = annotation({
+            screenshots: { full: { id: "s1", mime: "image/webp", w: 320, h: 480 } },
+        });
+        const body = new TextDecoder().decode(
+            multipart(a, [{ id: "s1", bytes: new Uint8Array([1, 2, 3]) }], "B")
+        );
+        expect(body).toContain('filename="s1.webp"\r\nContent-Type: image/webp');
+    });
+
     it("tells a note the server will never take from a server that will not take it now", () => {
         expect(new NotatoError("x", 422).refusesNote).toBe(true);
         expect(new NotatoError("x", 409).refusesNote).toBe(true);

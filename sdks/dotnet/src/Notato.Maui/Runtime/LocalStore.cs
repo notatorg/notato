@@ -127,7 +127,9 @@ internal sealed partial class LocalStore
             {
                 if (Usable(id, "screenshot"))
                 {
-                    await WriteWholeAsync(Path.Combine(folder, id + ".png"), bytes).ConfigureAwait(false);
+                    string extension = annotation.Screenshots?.Full is { } full && full.Id == id && full.Mime == "image/webp" ||
+                        annotation.Screenshots?.Crop is { } crop && crop.Id == id && crop.Mime == "image/webp" ? ".webp" : ".png";
+                    await WriteWholeAsync(Path.Combine(folder, id + extension), bytes).ConfigureAwait(false);
                 }
             }
 
@@ -177,7 +179,7 @@ internal sealed partial class LocalStore
     private static Dictionary<string, string> PicturesIn(string folder)
     {
         Dictionary<string, string> pictures = [];
-        foreach (string png in Directory.GetFiles(folder, "*.png"))
+        foreach (string png in Directory.GetFiles(folder).Where(file => Path.GetExtension(file) is ".png" or ".webp"))
         {
             string id = Path.GetFileNameWithoutExtension(png);
             if (IsSafeId(id))

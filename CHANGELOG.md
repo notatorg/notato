@@ -4,6 +4,9 @@ Every Notato package is released together, at one version: the `notato` command 
 
 ## 0.3.0
 
+- **Smaller screenshots.** Browser and mobile SDKs prefer WebP at quality 85 after masking, keeping PNG whenever it is smaller or compression is unavailable. Dimensions stay the same. Local queues, uploads and bundle paths carry the actual media type and still read existing PNG captures. Swift uses libwebp, MAUI uses SkiaSharp, Flutter uses flutter_image_compress, and React Native includes an optional native encoder (rebuild the app to enable it; Expo Go and older binaries keep PNG).
+- **Cheaper summary reads.** `?fields=summary` is projected inside the store before rows leave the database. Full diagnostics and agent steps remain stored and available through full-note requests. The generic `AnnotationFilter.summary` seam lets other stores implement the same projection.
+
 - **Potato-patch 404.** Broken board links and missing projects or notes show a shared illustrated error page with routes back to the board or project. Browser requests for unknown server addresses receive a real HTTP 404 page; SDK and MCP responses keep their JSON format. The page uses the existing mascot and local fonts, supports reduced motion, and works on the local developer server as well as extended boards.
 
 Safer connections for apps, and a server that other products can be built on.

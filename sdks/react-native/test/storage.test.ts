@@ -1,4 +1,7 @@
+import { unzipSync } from "fflate";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { writeBundle } from "../src/bundle.ts";
+import { webpSize } from "../src/png.ts";
 import { type ExpoFile, type ExpoFs, fileStorage, WRITE_DELAY_MS } from "../src/storage.ts";
 import { annotation } from "./fixtures.ts";
 
@@ -113,4 +116,29 @@ describe("fileStorage", () => {
                 .map((n) => n.annotation.id)
         ).toEqual(["b"]);
     });
+});
+
+it("keeps compressed assets across launches, exports WebP paths, and still reads old PNG files", () => {
+    const { fs, files } = fakeFs();
+    const bytes = new Uint8Array(30);
+    bytes.set(new TextEncoder().encode("RIFF"));
+    const view = new DataView(bytes.buffer);
+    view.setUint32(4, 22, true);
+    bytes.set(new TextEncoder().encode("WEBPVP8X"), 8);
+    view.setUint32(16, 10, true);
+    const dims = webpSize(bytes);
+    expect(dims).toEqual({ w: 1, h: 1 });
+    fileStorage("shop", fs)?.saveAsset("new", bytes);
+    const reopened = fileStorage("shop", fs);
+    expect(files.get("docs/notato/shop/shots/new.webp")).toEqual(bytes);
+    expect(reopened?.loadAsset("new")).toEqual(bytes);
+    const old = new Uint8Array([137, 80]);
+    files.set("docs/notato/shop/shots/old.png", old);
+    expect(reopened?.loadAsset("old")).toEqual(old);
+    const a = annotation({ screenshots: { full: { id: "new", mime: "image/webp", w: 1, h: 1 } } });
+    const result = writeBundle([a], { project: "shop" }, (id) => reopened?.loadAsset(id));
+    expect(result.bundle.annotations[0]?.screenshots?.full.path).toBe("shots/01-full.webp");
+    expect(unzipSync(result.zip)["shots/01-full.webp"]).toEqual(bytes);
+    reopened?.deleteAsset("new");
+    expect(reopened?.loadAsset("new")).toBeUndefined();
 });

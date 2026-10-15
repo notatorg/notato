@@ -1,11 +1,11 @@
-import { PixelRatio, Platform } from "react-native";
+import { NativeModules, PixelRatio, Platform } from "react-native";
 import { captureRef } from "react-native-view-shot";
-import { captureSize, type RawShot } from "./png.ts";
+import { captureSize, compressScreenshot, type RawShot } from "./png.ts";
 
 export type { RawShot, Shot } from "./png.ts";
 
 /**
- * A PNG of a view (the whole app, or one view of it) at `size` points, as view-shot gives it (base64, not read yet), or
+ * A compressed capture of a view at `size` points (base64, not read yet), or
  * undefined when it cannot be taken.
  */
 export async function shootRaw(
@@ -23,7 +23,16 @@ export async function shootRaw(
             result: "base64",
             ...captureSize(size.width, size.height, maxScale, PixelRatio.get(), Platform.OS),
         });
-        return { id, data };
+        const codec = NativeModules.NotatoImageCodec as
+            | { encodeWebP(png: string): Promise<string | null> }
+            | undefined;
+        return {
+            id,
+            data: await compressScreenshot(
+                data,
+                codec ? (png) => codec.encodeWebP(png) : undefined
+            ),
+        };
     } catch {
         return undefined;
     }

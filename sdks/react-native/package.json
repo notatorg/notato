@@ -26,10 +26,16 @@
     "types": "./src/index.ts",
     "exports": {
         ".": "./src/index.ts",
-        "./expo": "./src/expo.ts"
+        "./expo": "./src/expo.ts",
+        "./package.json": "./package.json"
     },
     "files": [
-        "src"
+        "src",
+        "ios",
+        "android/src",
+        "android/build.gradle",
+        "NotatoImageCodec.podspec",
+        "react-native.config.cjs"
     ],
     "dependencies": {
         "@notato/schema": "workspace:*",

@@ -1,15 +1,22 @@
 import 'ids.dart';
 import 'version.dart';
 
-/// A screenshot, as its PNG bytes and the reference the note carries (the server stores it under its own hash).
+/// A screenshot and its media type (the server stores the bytes under their own hash).
 class Shot {
-  const Shot({required this.id, required this.bytes, required this.width, required this.height});
+  const Shot({
+    required this.id,
+    required this.bytes,
+    required this.width,
+    required this.height,
+    this.mime = 'image/png',
+  });
   final String id;
   final List<int> bytes;
   final int width;
   final int height;
+  final String mime;
 
-  Map<String, Object?> get ref => {'id': id, 'mime': 'image/png', 'w': width, 'h': height};
+  Map<String, Object?> get ref => {'id': id, 'mime': mime, 'w': width, 'h': height};
 }
 
 /// The device a note is made on.

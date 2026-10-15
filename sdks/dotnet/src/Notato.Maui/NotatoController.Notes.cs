@@ -153,7 +153,7 @@ internal sealed partial class NotatoController
         }
         finally
         {
-            // The window's bitmap is done with: its PNGs are drawn (or there are none).
+            // The window's bitmap is done with: its images are encoded (or there are none).
             screen?.Dispose();
         }
 

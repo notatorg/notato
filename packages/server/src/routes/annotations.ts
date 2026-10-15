@@ -94,7 +94,9 @@ async function page(
     filter: AnnotationFilter,
     query: URLSearchParams
 ): Promise<{ items: StoredAnnotation[]; next?: number }> {
-    const listed = await backend.list(filter);
+    const listed = await backend.list(
+        query.get("fields") === "summary" ? { ...filter, summary: true } : filter
+    );
     const last = listed.at(-1);
     const items = query.get("fields") === "summary" ? listed.map(summary) : listed;
     return filter.limit !== undefined && listed.length >= filter.limit && last

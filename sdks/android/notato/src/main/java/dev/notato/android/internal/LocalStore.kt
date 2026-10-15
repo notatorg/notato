@@ -87,7 +87,8 @@ internal class LocalStore(private val base: File, project: String) {
         val files = linkedMapOf<String, File>()
         for ((id, bytes) in pictures) {
             if (unsafe(id)) continue
-            val file = File(folder, "$id.png")
+            val mime = listOfNotNull(annotation.screenshots?.full, annotation.screenshots?.crop).firstOrNull { it.id == id }?.mime
+            val file = File(folder, "$id.${if (mime == "image/webp") "webp" else "png"}")
             writeAtomically(file, bytes)
             files[id] = file
         }
@@ -121,7 +122,7 @@ internal class LocalStore(private val base: File, project: String) {
         val annotation = NotatoJson.decodeFromString(Annotation.serializer(), json.readText())
         // Kept only in the folder its id names: any other could never be removed once the server has it.
         if (unsafe(annotation.id) || folder.name != annotation.id) return null
-        val assets = (folder.listFiles { f -> f.extension == "png" } ?: emptyArray())
+        val assets = (folder.listFiles { f -> f.extension in listOf("png", "webp") } ?: emptyArray())
             .filter { SafeIds.isSafe(it.nameWithoutExtension) }
             .associate { it.nameWithoutExtension to it }
         return LocalAnnotation(annotation, assets)

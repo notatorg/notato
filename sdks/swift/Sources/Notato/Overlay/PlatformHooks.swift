@@ -552,7 +552,7 @@ final class PlatformHooks {
         let route = self.route(of: session)
         let pin = notato.notes(onRoute: route).count + 1
         let targets = selection.elements.map(\.frame)
-        var drawing: Task<ComposedScreenshots, Never>?
+        var drawing: Task<ComposedScreenshots?, Never>?
         if let screen = selection.screen, notato.screenshotsOn {
             // Covered where things were when the picture was taken, not where they are now.
             let maxScale = configuration.maxScreenshotScale

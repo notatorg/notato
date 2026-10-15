@@ -7,6 +7,8 @@ Android 7 (API 24) and later, for apps built with Views, Jetpack Compose, or bot
 - `dev.notato:notato-android`: the overlay, the client and View inspection. Kotlin, no UI dependencies beyond AndroidX core.
 - `dev.notato:notato-compose`: Compose support. With it on the classpath, Notato reads composables through their semantics and finds where each is written from Compose's inspection data, as Android Studio's Layout Inspector does.
 
+**Screenshot size.** New captures prefer WebP at quality 85 when it is smaller than PNG, after privacy masking and at the same dimensions. PNG remains a fallback, and existing queues and bundles stay readable. See [screenshot storage](../../docs/screenshot-storage.md).
+
 ## Quick start
 
 ```bash

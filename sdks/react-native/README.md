@@ -6,6 +6,8 @@ It is the same client as the Swift, Android, Flutter and .NET MAUI SDKs: the too
 
 React Native 0.76 and later, with the New Architecture, in Expo (Expo Go included) or a bare app.
 
+**Screenshot size.** New captures prefer WebP at quality 85 when it is smaller than PNG, after privacy masking and at the same dimensions. PNG remains a fallback, and existing queues and bundles stay readable. Rebuild the native app (and install iOS pods) to enable the optional encoder; Expo Go and older app binaries continue with PNG. See [screenshot storage](../../docs/screenshot-storage.md).
+
 ## Set up
 
 ```bash

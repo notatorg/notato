@@ -125,8 +125,13 @@ export function multipart(
     text(JSON.stringify(annotation));
     text("\r\n");
     for (const file of files) {
+        const ref = [annotation.screenshots?.full, annotation.screenshots?.crop].find(
+            (shot) => shot?.id === file.id
+        );
+        const mime = ref?.mime === "image/webp" ? "image/webp" : "image/png";
+        const extension = mime === "image/webp" ? "webp" : "png";
         text(
-            `--${boundary}\r\nContent-Disposition: form-data; name="asset:${file.id}"; filename="${file.id}.png"\r\nContent-Type: image/png\r\n\r\n`
+            `--${boundary}\r\nContent-Disposition: form-data; name="asset:${file.id}"; filename="${file.id}.${extension}"\r\nContent-Type: ${mime}\r\n\r\n`
         );
         parts.push(file.bytes);
         text("\r\n");

@@ -2,7 +2,9 @@
 
 Figma-style comments for a running iOS app. Tap an element, write a note, and it reaches your coding agent (Claude Code, Codex, Cursor, Gemini CLI, Copilot and others) over MCP with a screenshot, the Swift file and line it was written at (for views you mark), what VoiceOver would call it, and the app's recent log. It is the iOS client of the same Notato server the web, Android, .NET MAUI, React Native and Flutter SDKs use: the notes, the board, the MCP tools and the status loop (open, acknowledged, resolved, revert) are the same.
 
-SwiftUI and UIKit apps on iOS 17 and later (and Mac Catalyst), as a Swift package with no dependencies.
+SwiftUI and UIKit apps on iOS 17 and later (and Mac Catalyst), as a Swift package, with libwebp for screenshot compression.
+
+**Screenshot size.** New captures prefer WebP at quality 85 when it is smaller than PNG, after privacy masking and at the same dimensions. PNG remains a fallback, and existing queues and bundles stay readable. See [screenshot storage](../../docs/screenshot-storage.md).
 
 ## Quick start
 

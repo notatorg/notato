@@ -1,6 +1,6 @@
 import type { AssetRef } from "@notato/schema";
 
-/** A screenshot as it is sent and kept: its PNG bytes, and the reference the note carries. */
+/** A screenshot as it is sent and kept, with its actual media type. */
 export interface Shot {
     bytes: Uint8Array;
     ref: AssetRef;
@@ -40,9 +40,70 @@ export function fromBase64(text: string): Uint8Array {
 
 /** A PNG's size, from its header. */
 export function pngSize(bytes: Uint8Array): { w: number; h: number } | undefined {
-    if (bytes.length < 24 || bytes[0] !== 0x89 || bytes[1] !== 0x50) return undefined;
+    if (
+        bytes.length < 24 ||
+        ![0x89, 0x50, 0x4e, 0x47, 13, 10, 26, 10, 0, 0, 0, 13, 73, 72, 68, 82].every(
+            (value, i) => bytes[i] === value
+        )
+    )
+        return undefined;
     const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
-    return { w: view.getUint32(16), h: view.getUint32(20) };
+    const w = view.getUint32(16);
+    const h = view.getUint32(20);
+    return w > 0 && h > 0 ? { w, h } : undefined;
+}
+
+/** WebP's three frame headers, without decoding pixels on the JavaScript thread. */
+export function webpSize(bytes: Uint8Array): { w: number; h: number } | undefined {
+    const tag = (at: number) => String.fromCharCode(...bytes.subarray(at, at + 4));
+    if (bytes.length < 25 || tag(0) !== "RIFF" || tag(8) !== "WEBP") return undefined;
+    const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+    for (let at = 12; at + 8 <= bytes.length; ) {
+        const size = view.getUint32(at + 4, true);
+        if (at + 8 + size > bytes.length) return undefined;
+        const kind = tag(at);
+        if (kind === "VP8X" && size >= 10) {
+            const u24 = (p: number) =>
+                (bytes[p] ?? 0) | ((bytes[p + 1] ?? 0) << 8) | ((bytes[p + 2] ?? 0) << 16);
+            return { w: u24(at + 12) + 1, h: u24(at + 15) + 1 };
+        }
+        if (kind === "VP8L" && size >= 5 && bytes[at + 8] === 0x2f) {
+            const bits = view.getUint32(at + 9, true);
+            return { w: (bits & 0x3fff) + 1, h: ((bits >>> 14) & 0x3fff) + 1 };
+        }
+        if (
+            kind === "VP8 " &&
+            size >= 10 &&
+            bytes[at + 11] === 0x9d &&
+            bytes[at + 12] === 1 &&
+            bytes[at + 13] === 0x2a
+        )
+            return {
+                w: view.getUint16(at + 14, true) & 0x3fff,
+                h: view.getUint16(at + 16, true) & 0x3fff,
+            };
+        at += 8 + size + (size & 1);
+    }
+    return undefined;
+}
+
+/** A missing native module (an app binary made before this SDK) is a safe PNG fallback. */
+export async function compressScreenshot(
+    data: string,
+    encoder?: (png: string) => Promise<string | null>
+): Promise<string> {
+    if (!encoder) return data;
+    try {
+        const result = await encoder(data);
+        if (!result || result.length >= data.length) return data;
+        const original = pngSize(fromBase64(data));
+        const compressed = webpSize(fromBase64(result));
+        if (original && compressed && original.w === compressed.w && original.h === compressed.h)
+            return result;
+    } catch {
+        // Compression cannot make capturing a note fail.
+    }
+    return data;
 }
 
 /**
@@ -65,12 +126,16 @@ export function captureSize(
     };
 }
 
-/** A screenshot's bytes and reference, read from what view-shot gave. Undefined when it is not a PNG. */
+/** A screenshot's bytes and reference, read from what view-shot gave. Supports old PNGs and compressed WebP. */
 export function readShot(raw: RawShot | undefined): Shot | undefined {
     if (!raw) return undefined;
     const bytes = fromBase64(raw.data);
-    const dims = pngSize(bytes);
-    return dims
-        ? { bytes, ref: { id: raw.id, mime: "image/png", w: dims.w, h: dims.h } }
+    const webp = webpSize(bytes);
+    const dims = webp ?? pngSize(bytes);
+    return dims && dims.w > 0 && dims.h > 0
+        ? {
+              bytes,
+              ref: { id: raw.id, mime: webp ? "image/webp" : "image/png", w: dims.w, h: dims.h },
+          }
         : undefined;
 }

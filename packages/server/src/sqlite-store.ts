@@ -311,7 +311,12 @@ export class SqliteStore implements Store, AuthStore {
             where.push(`id NOT IN (${filter.excludeIds.map(() => "?").join(", ")})`);
             params.push(...filter.excludeIds);
         }
-        const sql = `SELECT seq, json FROM annotations${where.length ? ` WHERE ${where.join(" AND ")}` : ""} ORDER BY seq ASC${
+        const json = filter.summary
+            ? `json_set(json_remove(json, '$.steps'), '$.context', json(CASE
+                WHEN json_extract(json, '$.context.screenshot') IS NULL THEN '{}'
+                ELSE json_object('screenshot', json_extract(json, '$.context.screenshot')) END))`
+            : "json";
+        const sql = `SELECT seq, ${json} AS json FROM annotations${where.length ? ` WHERE ${where.join(" AND ")}` : ""} ORDER BY seq ASC${
             filter.limit ? ` LIMIT ${Math.max(1, Math.floor(filter.limit))}` : ""
         }`;
         return (this.db.query(sql).all(...params) as Row[]).map((row) => this.parse(row));

@@ -7,6 +7,7 @@ import android.graphics.Paint
 import android.graphics.Rect
 import android.graphics.RectF
 import android.graphics.Typeface
+import android.os.Build
 import androidx.core.graphics.createBitmap
 import androidx.core.graphics.toColorInt
 import dev.notato.android.inspect.Box
@@ -15,7 +16,7 @@ import dev.notato.android.model.Screenshots
 import dev.notato.android.overlay.Ui
 import java.io.ByteArrayOutputStream
 
-/** The two pictures a note carries: the window with the target outlined, and a crop around it, as PNG bytes by asset id. */
+/** The two pictures a note carries: the window with the target outlined, and a crop around it, by asset id. */
 internal class ComposedScreenshots(val refs: Screenshots, val assets: Map<String, ByteArray>)
 
 /** Draws the outline, the pin number and the masks onto a captured window, and cuts the crop. */
@@ -62,13 +63,13 @@ internal object ScreenshotComposer {
             if (area.width() >= 4 && area.height() >= 4) crop = Bitmap.createBitmap(full, area.left, area.top, area.width(), area.height())
         }
         if (pin != null && targets.isNotEmpty()) drawPin(canvas, targets.first().rect(), pin, dp)
-        val fullBytes = png(full)
+        val (fullBytes, fullMime) = encode(full)
         full.recycle()
-        var refs = Screenshots(AssetRef(sha256(fullBytes), "image/png", width, height))
+        var refs = Screenshots(AssetRef(sha256(fullBytes), fullMime, width, height))
         val assets = linkedMapOf(refs.full.id to fullBytes)
         if (crop != null) {
-            val cropBytes = png(crop)
-            refs = refs.copy(crop = AssetRef(sha256(cropBytes), "image/png", crop.width, crop.height))
+            val (cropBytes, cropMime) = encode(crop)
+            refs = refs.copy(crop = AssetRef(sha256(cropBytes), cropMime, crop.width, crop.height))
             assets[refs.crop!!.id] = cropBytes
             crop.recycle()
         }
@@ -95,5 +96,19 @@ internal object ScreenshotComposer {
         canvas.drawText(number.toString(), cx, cy - (text.descent() + text.ascent()) / 2, text)
     }
 
-    private fun png(bitmap: Bitmap): ByteArray = ByteArrayOutputStream().also { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }.toByteArray()
+    /** Encodes only the already-masked bitmap. Small flat images can still be smaller as PNG. */
+    internal fun encode(bitmap: Bitmap): Pair<ByteArray, String> {
+        val png = ByteArrayOutputStream().use { out ->
+            check(bitmap.compress(Bitmap.CompressFormat.PNG, 100, out)) { "Could not encode screenshot" }
+            out.toByteArray()
+        }
+        val webp = runCatching {
+            @Suppress("DEPRECATION")
+            val format = if (Build.VERSION.SDK_INT >= 30) Bitmap.CompressFormat.WEBP_LOSSY else Bitmap.CompressFormat.WEBP
+            ByteArrayOutputStream().use { out ->
+                if (bitmap.compress(format, 85, out)) out.toByteArray() else null
+            }
+        }.getOrNull()
+        return if (webp != null && webp.isNotEmpty() && webp.size < png.size) webp to "image/webp" else png to "image/png"
+    }
 }

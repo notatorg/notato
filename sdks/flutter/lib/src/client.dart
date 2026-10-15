@@ -121,7 +121,13 @@ class NotatoClient {
         ..headers.addAll(_auth)
         ..fields['annotation'] = jsonEncode(annotation);
       for (final shot in shots) {
-        request.files.add(http.MultipartFile.fromBytes('asset:${shot.id}', shot.bytes, filename: '${shot.id}.png'));
+        request.files.add(
+          http.MultipartFile.fromBytes(
+            'asset:${shot.id}',
+            shot.bytes,
+            filename: '${shot.id}.${shot.mime == 'image/webp' ? 'webp' : 'png'}',
+          ),
+        );
       }
       return request;
     }, const Duration(seconds: 60)),

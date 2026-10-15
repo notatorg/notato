@@ -99,7 +99,8 @@ actor LocalStore {
                 kept[id] = .bytes(bytes)
                 continue
             }
-            let file = folder.appendingPathComponent("\(id).png")
+            let mime = [annotation.screenshots?.full, annotation.screenshots?.crop].compactMap { $0 }.first { $0.id == id }?.mime
+            let file = folder.appendingPathComponent("\(id).\(mime == "image/webp" ? "webp" : "png")")
             try bytes.write(to: file, options: .atomic)
             kept[id] = .file(file)
         }
@@ -121,7 +122,7 @@ actor LocalStore {
             guard let json = try? Data(contentsOf: folder.appendingPathComponent("annotation.json")),
                   let annotation = try? NotatoJSON.decoder.decode(Annotation.self, from: json) else { continue }
             var assets: [String: KeptAsset] = [:]
-            for file in (try? FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: nil)) ?? [] where file.pathExtension == "png" {
+            for file in (try? FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: nil)) ?? [] where ["png", "webp"].contains(file.pathExtension) {
                 assets[file.deletingPathExtension().lastPathComponent] = .file(file)
             }
             let refusal = (try? Data(contentsOf: folder.appendingPathComponent("refused.txt"))).map { String(decoding: $0, as: UTF8.self) }

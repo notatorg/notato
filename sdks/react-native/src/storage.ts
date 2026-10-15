@@ -1,4 +1,5 @@
 import type { Annotation } from "@notato/schema";
+import { webpSize } from "./png.ts";
 
 /** A note kept on the device between launches: made here, and not on the server yet. */
 export interface LocalNote {
@@ -19,7 +20,7 @@ export interface NotatoStorage {
     /** The notes not on the server yet. */
     loadNotes(): LocalNote[];
     saveNotes(notes: LocalNote[]): void;
-    /** A screenshot's PNG bytes, by its id. */
+    /** A screenshot's encoded bytes, by its id. */
     loadAsset(id: string): Uint8Array | undefined;
     saveAsset(id: string, bytes: Uint8Array): void;
     deleteAsset(id: string): void;
@@ -148,16 +149,22 @@ export function fileStorage(project: string, fs: ExpoFs): NotatoStorage | undefi
             },
             loadAsset: (id) => {
                 if (!SAFE.test(id)) return undefined;
-                const f = new fs.File(shots, `${id}.png`);
-                return f.exists ? f.bytesSync() : undefined;
+                for (const suffix of ["webp", "png"]) {
+                    const f = new fs.File(shots, `${id}.${suffix}`);
+                    if (f.exists) return f.bytesSync();
+                }
+                return undefined;
             },
             saveAsset: (id, bytes) => {
-                if (SAFE.test(id)) new fs.File(shots, `${id}.png`).write(bytes);
+                if (SAFE.test(id))
+                    new fs.File(shots, `${id}.${webpSize(bytes) ? "webp" : "png"}`).write(bytes);
             },
             deleteAsset: (id) => {
                 if (!SAFE.test(id)) return;
-                const f = new fs.File(shots, `${id}.png`);
-                if (f.exists) f.delete();
+                for (const suffix of ["webp", "png"]) {
+                    const f = new fs.File(shots, `${id}.${suffix}`);
+                    if (f.exists) f.delete();
+                }
             },
             loadSettings: () => readJson<Record<string, unknown>>("settings.json", {}),
             saveSettings: (settings) => writeJson("settings.json", settings),

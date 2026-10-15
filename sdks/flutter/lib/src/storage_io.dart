@@ -27,7 +27,8 @@ class FileStorage implements NotatoStorage {
   final Directory root;
 
   File _file(String name) => File('${root.path}/$name');
-  File? _shot(String id) => safeId.hasMatch(id) ? File('${root.path}/shots/$id.png') : null;
+  File? _shot(String id, [String suffix = 'png']) =>
+      safeId.hasMatch(id) ? File('${root.path}/shots/$id.$suffix') : null;
   _Writer _writer(String name) => _Writer.of(_file(name));
 
   Object? _readJson(String name) {
@@ -55,17 +56,28 @@ class FileStorage implements NotatoStorage {
 
   @override
   List<int>? loadAsset(String id) {
-    final f = _shot(id);
-    return f != null && f.existsSync() ? f.readAsBytesSync() : null;
+    for (final suffix in ['webp', 'png']) {
+      final f = _shot(id, suffix);
+      if (f != null && f.existsSync()) return f.readAsBytesSync();
+    }
+    return null;
   }
 
   @override
-  void saveAsset(String id, List<int> bytes) => _shot(id)?.writeAsBytesSync(bytes, flush: true);
+  void saveAsset(String id, List<int> bytes) {
+    final webp =
+        bytes.length >= 12 &&
+        String.fromCharCodes(bytes.sublist(0, 4)) == 'RIFF' &&
+        String.fromCharCodes(bytes.sublist(8, 12)) == 'WEBP';
+    _shot(id, webp ? 'webp' : 'png')?.writeAsBytesSync(bytes, flush: true);
+  }
 
   @override
   void deleteAsset(String id) {
-    final f = _shot(id);
-    if (f != null && f.existsSync()) f.deleteSync();
+    for (final suffix in ['webp', 'png']) {
+      final f = _shot(id, suffix);
+      if (f != null && f.existsSync()) f.deleteSync();
+    }
   }
 
   @override

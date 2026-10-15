@@ -55,7 +55,7 @@ export const PAGES: Page[] = [
         slug: "swiftui",
         group: "Mobile apps",
         title: "SwiftUI",
-        summary: "iOS 17 and later, as a Swift package with no dependencies.",
+        summary: "iOS 17 and later, as a Swift package with native WebP compression.",
         file: "sdks/swift/README.md",
     },
     {
@@ -145,6 +145,7 @@ export const PAGES: Page[] = [
             "Variants: compare versions in the page",
             "The board: every project in one place",
             "Copy as Markdown, and export",
+            "Screenshot size",
             "Screenshots: on or off",
         ],
     },

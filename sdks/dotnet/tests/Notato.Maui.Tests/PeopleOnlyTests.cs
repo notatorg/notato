@@ -1,5 +1,6 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Maui.Controls;
+using Microsoft.Maui.Graphics;
 using Notato.Maui.Inspection;
 using Notato.Maui.Model;
 using Notato.Maui.Net;

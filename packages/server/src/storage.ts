@@ -35,6 +35,8 @@ export interface AnnotationFilter {
     unhanded?: true;
     /** `false` leaves out `notato doctor`'s test note (marked `context.notatoDiagnostic`), which is nobody's work. */
     diagnostic?: false;
+    /** Leave bulky diagnostics and agent steps in the database for an SDK's summary list. */
+    summary?: true;
     limit?: number;
 }
 
