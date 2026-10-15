@@ -102,7 +102,7 @@ Notato.start()   // reads Info.plist and the environment
 
 ### For one launch: `NOTATO_ENABLED` and `NOTATO_SERVER`
 
-These two are read however Notato is started, from code too, so whoever launches the app decides for that launch without changing it: in an Xcode scheme (Run › Arguments › Environment Variables), with the `SIMCTL_CHILD_` prefix for `xcrun simctl launch`, or from a launcher such as .NET Aspire.
+These two are read however Notato is started, from code too, so whoever launches the app decides for that launch without changing it: in an Xcode scheme (Run › Arguments › Environment Variables), with the `SIMCTL_CHILD_` prefix for `xcrun simctl launch`, or from a launcher such as Aspire.
 
 ```bash
 SIMCTL_CHILD_NOTATO_ENABLED=false xcrun simctl launch booted com.example.shop

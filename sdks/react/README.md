@@ -23,7 +23,7 @@ A changed prop restarts the toolbar with it: the token, the author, `persist` an
 
 ## On or off from where the app is built
 
-In an app built with Vite, two variables in the environment it is built or served from (the shell, a `.env` file, or [.NET Aspire](https://github.com/notatorg/notato/tree/main/sdks/dotnet/src/Notato.Aspire#readme)) win over the props:
+In an app built with Vite, two variables in the environment it is built or served from (the shell, a `.env` file, or [Aspire](https://github.com/notatorg/notato/tree/main/sdks/dotnet/src/Notato.Aspire#readme)) win over the props:
 
 - `VITE_NOTATO`: `true` (or `1`, `yes`, `on`) starts the toolbar, in a production build too, such as one made with `vite build --watch` and served with `vite preview`. `false` (or `0`, `no`, `off`) keeps it off, in development too. Anything else, or nothing, leaves it to `enabled` and the kind of build.
 - `VITE_NOTATO_SERVER`: the server, over `server`.

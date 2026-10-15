@@ -43,7 +43,7 @@ public sealed class NotatoOptions
     /// nothing at all, leave <c>UseNotato</c> out of the build (for example behind <c>#if DEBUG</c>).
     /// <para>
     /// The <c>NOTATO_ENABLED</c> environment variable (<c>true</c> or <c>false</c>), when the app is launched with it,
-    /// decides instead: over this, and over the choice remembered on the device. .NET Aspire sets it.
+    /// decides instead: over this, and over the choice remembered on the device. Aspire sets it.
     /// </para>
     /// </summary>
     public bool Enabled { get; set; } = true;
@@ -65,7 +65,7 @@ public sealed class NotatoOptions
     /// <para>
     /// The <c>NOTATO_SERVER</c> environment variable, when the app is launched with it, is used in place of this. A
     /// phone or emulator that cannot reach this machine's localhost reaches a localhost server through the dev tunnel the
-    /// build recorded for it, so <c>http://localhost:4747</c> from .NET Aspire works on one too.
+    /// build recorded for it, so <c>http://localhost:4747</c> from Aspire works on one too.
     /// </para>
     /// </summary>
     public string? Server { get; set; }

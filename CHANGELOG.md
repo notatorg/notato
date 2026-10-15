@@ -27,7 +27,7 @@ Safer connections for apps, and a server that other products can be built on.
 
 ## 0.2.0
 
-Notato in .NET Aspire, and switching Notato on or off from where an app is built or launched.
+Notato in Aspire, and switching Notato on or off from where an app is built or launched.
 
 - **`Notato.Aspire`** (NuGet), for an Aspire app host. `builder.AddNotato()` runs the board, the server and MCP for your coding agents with your apps, on the same port every run, from the repository's root. `.WithReference(notato)` turns Notato on in an app and points it there: `VITE_NOTATO` and `VITE_NOTATO_SERVER` for a JavaScript app, `NOTATO_ENABLED` and `NOTATO_SERVER` for the rest. `.WithDataDirectory`, `.WithConfigFile`, `.WithTunnel` and `.WithNotatoCommand` change how it runs. Nothing of it is published.
 - **`notato start --attach`:** with a Notato already on the port, it stays up beside that one instead of exiting, and serves the port itself if that one stops. Aspire runs it this way.

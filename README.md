@@ -32,7 +32,7 @@ The board's **Settings › Agents** has the same line for Codex, Cursor, Gemini 
 
 **Setting it up with a coding agent?** Point it at this repository's [AGENTS.md](AGENTS.md): it is the whole job, from `npx notato init` to a shared server with a project, an app token and an agent token.
 
-**In a .NET Aspire app host**, `builder.AddNotato()` (NuGet `Notato.Aspire`) runs the same with your apps, and `.WithReference(notato)` turns Notato on in each app and points it there, a production build of a Vite app included: [Notato for .NET Aspire](sdks/dotnet/src/Notato.Aspire/README.md).
+**In an Aspire app host**, `builder.AddNotato()` (NuGet `Notato.Aspire`) runs the same with your apps, and `.WithReference(notato)` turns Notato on in each app and points it there, a production build of a Vite app included: [Notato for Aspire](sdks/dotnet/src/Notato.Aspire/README.md).
 
 ## Add it to your app
 
@@ -45,7 +45,7 @@ The board's **Settings › Agents** has the same line for Codex, Cursor, Gemini 
 | SwiftUI and UIKit, iOS 17 and later            | `Notato` (Swift package)                              | [Notato for SwiftUI](sdks/swift/README.md)                              |
 | Jetpack Compose and Views, Android 7 and later | `dev.notato:notato-android`, `notato-compose` (Maven) | [Notato for Android](sdks/android/README.md)                            |
 | .NET MAUI, .NET 10 and later                   | `Notato.Maui` (NuGet)                                 | [Notato for .NET MAUI](sdks/dotnet/README.md)                           |
-| Apps run by a .NET Aspire app host             | `Notato.Aspire` (NuGet), with the app's own SDK       | [Notato for .NET Aspire](sdks/dotnet/src/Notato.Aspire/README.md)       |
+| Apps run by an Aspire app host             | `Notato.Aspire` (NuGet), with the app's own SDK       | [Notato for Aspire](sdks/dotnet/src/Notato.Aspire/README.md)       |
 | React Native 0.76 and later, Expo or bare      | `@notato/react-native` (npm)                          | [Notato for React Native](sdks/react-native/README.md)                  |
 | Flutter 3.32 and later                         | `notato` (pub.dev)                                    | [Notato for Flutter](sdks/flutter/README.md)                            |
 
@@ -73,7 +73,7 @@ npx notato init --app app-shell          # choose explicitly
 npx notato init --app app-shell --agent-dir .   # register your agents for the repo root
 ```
 
-**Apps that are built, not served, in development.** `import.meta.env.DEV` is false under `vite build --watch` + `vite preview`, so a dev-only guard would never render there. When a script in `package.json` does that, `init` also lets the toolbar render in a build made with `VITE_NOTATO=true` (put it in `.env.local`, or set it where the build runs, as [.NET Aspire](sdks/dotnet/src/Notato.Aspire/README.md) does); without the variable a build still ships nothing. Force either way with `--guard dev|env`. `<Notato />` reads the variable itself too: `VITE_NOTATO=false` keeps the toolbar off, in development too, and `VITE_NOTATO_SERVER` names the server.
+**Apps that are built, not served, in development.** `import.meta.env.DEV` is false under `vite build --watch` + `vite preview`, so a dev-only guard would never render there. When a script in `package.json` does that, `init` also lets the toolbar render in a build made with `VITE_NOTATO=true` (put it in `.env.local`, or set it where the build runs, as [Aspire](sdks/dotnet/src/Notato.Aspire/README.md) does); without the variable a build still ships nothing. Force either way with `--guard dev|env`. `<Notato />` reads the variable itself too: `VITE_NOTATO=false` keeps the toolbar off, in development too, and `VITE_NOTATO_SERVER` names the server.
 
 **The exact file and line, even in a built app.** React only knows which file an element came from in a development build. In an app that is built and previewed, the agent would get the component name and the selector but no line. The Vite plugin closes that gap: `npx notato init --plugin` adds `notatoSource()` (from `@notato/vite`, which you install in each app) to the `plugins` array of every Vite app's config. A federation setup needs it in each module, since each is built separately; `--plugin-only --app <dir>` does one app and nothing else. It does nothing unless `VITE_NOTATO=true` is set where the build runs, so any other build is exactly what it was. It adds a `data-notato-src` attribute to each element your JSX writes, Notato reads it, and the agent is told `written at src/checkout/PayButton.tsx:18:7`. Paths start at the repository root (looking past a submodule's `.git` file), so in a repo of several apps they begin with the app's folder. Elements a library creates are reported as "inside the element written at …", the nearest one that is tagged. Works with Vite 5 and later.
 
@@ -449,7 +449,7 @@ The extension's parts are made in stages. Later stages receive the parts already
 | `screenshots`                                                                               | `false` never takes a screenshot from this page. A server that has them off wins either way                                                                             |
 | `hashRoutes`, `testIdAttributes`, `maskInputs`, `shortcut`, `position`, `author`, `persist` | See the types                                                                                                                                                           |
 
-**From the environment.** In an app built with Vite, `VITE_NOTATO` and `VITE_NOTATO_SERVER` where it is built or served win over `enabled` and `server` in `<Notato />` and `provideNotato`: `true` starts the toolbar in a production build too, and `false` keeps it off in development. The Swift and .NET MAUI SDKs read `NOTATO_ENABLED` and `NOTATO_SERVER` the same way from the app's environment, and Flutter from `--dart-define`. [.NET Aspire](sdks/dotnet/src/Notato.Aspire/README.md) sets them for the apps it runs.
+**From the environment.** In an app built with Vite, `VITE_NOTATO` and `VITE_NOTATO_SERVER` where it is built or served win over `enabled` and `server` in `<Notato />` and `provideNotato`: `true` starts the toolbar in a production build too, and `false` keeps it off in development. The Swift and .NET MAUI SDKs read `NOTATO_ENABLED` and `NOTATO_SERVER` the same way from the app's environment, and Flutter from `--dart-define`. [Aspire](sdks/dotnet/src/Notato.Aspire/README.md) sets them for the apps it runs.
 
 The toolbar lives in a shadow root, so your styles cannot leak in or out. Identity resolves a test id attribute (`data-testid`, `data-qa`, `data-cy`, `data-test`), then role and accessible name, then the shortest unique CSS selector; in a React development build it also records the component and source file.
 

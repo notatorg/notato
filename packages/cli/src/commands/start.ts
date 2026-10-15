@@ -24,7 +24,7 @@ Options:
       --no-mcp         Refuse coding agents while this runs, whatever the settings say. To switch them off
                        and on as you go, use the board (Settings › Agents) or \`notato config set mcp off\`.
       --attach         If Notato is already running on the port, stay attached to it instead of exiting, and
-                       serve in its place if it stops. For tools that keep a process running, such as .NET Aspire.
+                       serve in its place if it stops. For tools that keep a process running, such as Aspire.
   -h, --help           Show this help`;
 
 /** What `/mcp` on an already running server says about itself, to tell an old server from one with MCP off. */

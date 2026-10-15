@@ -8,7 +8,7 @@
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
 
     <PackageId>Notato.Aspire</PackageId>
-    <Description>Notato in a .NET Aspire app host. AddNotato() runs the Notato board, the server your apps' notes go to and MCP for your coding agents (Claude Code, Codex, Cursor and others); WithReference(notato) turns Notato on in the apps that use it.</Description>
+    <Description>Notato in an Aspire app host. AddNotato() runs the Notato board, the server your apps' notes go to and MCP for your coding agents (Claude Code, Codex, Cursor and others); WithReference(notato) turns Notato on in the apps that use it.</Description>
     <PackageTags>aspire;hosting;feedback;annotations;mcp;ai-agents;claude;codex;notato</PackageTags>
     <PackageReadmeFile>README.md</PackageReadmeFile>
     <PackageIcon>notato.png</PackageIcon>

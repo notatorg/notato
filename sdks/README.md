@@ -9,7 +9,7 @@ What goes into an app. Each SDK is one folder here, in whatever language it is w
 | [angular](angular)           | Angular: `provideNotato()` around it         | `@notato/angular` (npm)                               | `web`          |
 | [swift](swift)               | SwiftUI and UIKit                            | `Notato` (SwiftPM, from `Package.swift` at the root)  | `ios`          |
 | [android](android)           | Android Views and Jetpack Compose            | `dev.notato:notato-android`, `notato-compose` (Maven) | `android`      |
-| [dotnet](dotnet)             | .NET MAUI, and .NET Aspire app hosts         | `Notato.Maui`, `Notato.Aspire` (NuGet)                | `maui`         |
+| [dotnet](dotnet)             | .NET MAUI, and Aspire app hosts         | `Notato.Maui`, `Notato.Aspire` (NuGet)                | `maui`         |
 | [react-native](react-native) | React Native, Expo or bare                   | `@notato/react-native` (npm)                          | `react-native` |
 | [flutter](flutter)           | Flutter: iOS, Android, macOS, web            | `notato` (pub.dev)                                    | `flutter`      |
 

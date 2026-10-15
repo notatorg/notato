@@ -1,7 +1,7 @@
 /**
  * What the environment the app was built in says about Notato. Vite, and the frameworks built on it, put `VITE_`
  * variables in `import.meta.env` for packages too, so they reach here from wherever the app is built or served: a
- * `.env` file, the shell, or a launcher such as .NET Aspire.
+ * `.env` file, the shell, or a launcher such as Aspire.
  */
 export interface NotatoEnvironment {
     /**

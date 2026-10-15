@@ -84,7 +84,7 @@ The configuration is read through `IOptionsMonitor`, so a source that reloads ta
 
 ### For one launch: `NOTATO_ENABLED` and `NOTATO_SERVER`
 
-Two environment variables are read whatever the configuration is, after it and after the code in `MauiProgram`, so whoever launches the app decides for that launch without changing it: [.NET Aspire](https://github.com/notatorg/notato/tree/main/sdks/dotnet/src/Notato.Aspire#readme) sets them for an app it runs (`WithReference(notato)`), and so can an IDE's launch profile, or `xcrun simctl launch` with the `SIMCTL_CHILD_` prefix.
+Two environment variables are read whatever the configuration is, after it and after the code in `MauiProgram`, so whoever launches the app decides for that launch without changing it: [Aspire](https://github.com/notatorg/notato/tree/main/sdks/dotnet/src/Notato.Aspire#readme) sets them for an app it runs (`WithReference(notato)`), and so can an IDE's launch profile, or `xcrun simctl launch` with the `SIMCTL_CHILD_` prefix.
 
 ```bash
 SIMCTL_CHILD_NOTATO_ENABLED=false xcrun simctl launch booted com.example.checkout

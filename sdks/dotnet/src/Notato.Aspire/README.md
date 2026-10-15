@@ -1,4 +1,4 @@
-# Notato for .NET Aspire
+# Notato for Aspire
 
 Notato in your Aspire app host. `AddNotato()` runs the Notato board, the server your apps' notes go to, and MCP for your coding agent (Claude Code, Codex, Cursor and others) with the rest of your apps, and `WithReference(notato)` turns Notato on in each app that uses it and points it there. Nothing in the apps' code has to know which machine or port that is.
 

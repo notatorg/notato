@@ -115,7 +115,7 @@ export const PAGES: Page[] = [
     {
         slug: "aspire",
         group: "Agents and teams",
-        title: ".NET Aspire",
+        title: "Aspire",
         summary:
             "AddNotato() in an Aspire app host runs the board and MCP with your apps, and switches Notato on in each of them.",
         file: "sdks/dotnet/src/Notato.Aspire/README.md",
