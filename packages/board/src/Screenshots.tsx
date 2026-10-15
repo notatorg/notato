@@ -1,6 +1,6 @@
 import { pinNumber, screenshotCrop } from "@notato/core";
 import type { Annotation } from "@notato/schema";
-import { useRef, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { assetHref } from "./api.ts";
 import { Icon, useEscape } from "./ui.tsx";
 
@@ -15,6 +15,15 @@ export function Screenshots({ annotation: a }: { annotation: Annotation }) {
     useEscape(() => setZoom(false), zoom);
     const fullImage = useRef<HTMLImageElement>(null);
     const cropCanvas = useRef<HTMLCanvasElement>(null);
+    const lightboxCanvas = useRef<HTMLCanvasElement | null>(null);
+    const drawLightbox = useCallback((canvas: HTMLCanvasElement | null) => {
+        lightboxCanvas.current = canvas;
+        const image = fullImage.current;
+        if (!canvas || !image?.complete || !image.naturalWidth) return;
+        canvas.width = image.naturalWidth;
+        canvas.height = image.naturalHeight;
+        canvas.getContext("2d")?.drawImage(image, 0, 0);
+    }, []);
     const crop = screenshotCrop(a);
     const drawCrop = () => {
         const image = fullImage.current;
@@ -42,7 +51,10 @@ export function Screenshots({ annotation: a }: { annotation: Annotation }) {
                 >
                     <img
                         ref={fullImage}
-                        onLoad={drawCrop}
+                        onLoad={() => {
+                            drawCrop();
+                            drawLightbox(lightboxCanvas.current);
+                        }}
                         src={assetHref(shots.full.id)}
                         alt={FULL_ALT}
                         loading="lazy"
@@ -92,7 +104,12 @@ export function Screenshots({ annotation: a }: { annotation: Annotation }) {
                         aria-label="Close"
                         onClick={() => setZoom(false)}
                     />
-                    <img className="lightbox-img" src={assetHref(shots.full.id)} alt={FULL_ALT} />
+                    <canvas
+                        ref={drawLightbox}
+                        className="lightbox-img"
+                        role="img"
+                        aria-label={FULL_ALT}
+                    />
                     <button
                         type="button"
                         className="icon-button lightbox-close"
