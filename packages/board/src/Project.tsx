@@ -32,12 +32,13 @@ import {
     SORTS,
     sortAnnotations,
 } from "./model.ts";
+import { NotFound } from "./NotFound.tsx";
 import { Overview } from "./Overview.tsx";
 import { ProjectMenu } from "./ProjectMenu.tsx";
 import { ProjectSettings } from "./ProjectSettings.tsx";
 import { go, projectHref, type Tab } from "./route.ts";
 import { KEYS, remember, remembered, useRemembered } from "./storage.ts";
-import { copyText, Empty, Icon } from "./ui.tsx";
+import { copyText, Icon } from "./ui.tsx";
 
 interface Props {
     me: Me;
@@ -256,26 +257,17 @@ export function Project(props: Props) {
         // On a shared server a project has to be made before anything can be sent to it.
         if (props.known === false && me.mode === "serve") {
             return (
-                <Sheet>
-                    <Empty title={`There is no project “${project}” here`}>
-                        <p>Apps can only send notes to a project that exists on this server.</p>
-                        <div className="empty-actions">
-                            {props.onNewProject ? (
-                                <button
-                                    type="button"
-                                    className="primary"
-                                    onClick={() => props.onNewProject?.(project)}
-                                >
-                                    <Icon name="plus" size={14} />
-                                    Create it
-                                </button>
-                            ) : null}
-                            <a className="button-link" href="#/">
-                                All projects
-                            </a>
-                        </div>
-                    </Empty>
-                </Sheet>
+                <NotFound
+                    title="Project not found."
+                    description="This project may have been removed, or you may need to switch accounts to access it."
+                >
+                    {props.onNewProject ? (
+                        <button type="button" onClick={() => props.onNewProject?.(project)}>
+                            <Icon name="plus" size={14} />
+                            Create a project
+                        </button>
+                    ) : null}
+                </NotFound>
             );
         }
         if (tab === "connect" && admin)
@@ -307,6 +299,15 @@ export function Project(props: Props) {
                 </Sheet>
             );
         }
+        if (selected && !all.some((note) => note.id === selected))
+            return (
+                <NotFound
+                    title="Note not found."
+                    description="This note may have been removed, or the link may belong to another project."
+                    homeHref={projectHref(project)}
+                    homeLabel="Back to project"
+                />
+            );
         if (tab === "activity")
             return <Activity project={project} name={name} all={all} since={since} menu={menu} />;
         if (tab === "overview")

@@ -27,7 +27,7 @@ import {
     type Routes,
 } from "./routes/common.ts";
 import { EventStreams, eventRoutes } from "./routes/events.ts";
-import { pageRoutes } from "./routes/pages.ts";
+import { notFoundPage, pageRoutes } from "./routes/pages.ts";
 import { projectRoutes } from "./routes/projects.ts";
 import { relayRoutes } from "./routes/relay.ts";
 import { healthRoute, statusRoutes } from "./routes/status.ts";
@@ -189,7 +189,7 @@ async function route(request: RouteRequest<Principal | null>, app: AppContext): 
         const answered = await routes({ ...request, principal }, app);
         if (answered) return answered;
     }
-    return notFound();
+    return (await notFoundPage(request.req, app.options)) ?? notFound();
 }
 
 /**
@@ -254,6 +254,9 @@ export function createApp(options: AppOptions): AppHandler {
                     !isPublic(method, path) &&
                     !options.routes?.isPublic?.(method, path)
                 ) {
+                    // A document request receives only the static 404, never private routes or account data.
+                    const missing = await notFoundPage(req, options);
+                    if (missing) return withCors(missing);
                     return withCors(
                         json({ error: "authentication required" }, 401, {
                             "WWW-Authenticate": "Bearer",

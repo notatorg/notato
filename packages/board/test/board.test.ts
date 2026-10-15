@@ -308,6 +308,7 @@ describe("routes", () => {
     it("round-trips every page through the hash", () => {
         const routes = [
             { page: "home" },
+            { page: "not-found" },
             { page: "tokens" },
             { page: "settings" },
             { page: "project", project: "checkout web", tab: "inbox" },
@@ -322,15 +323,18 @@ describe("routes", () => {
         for (const r of routes) expect(parseRoute(href(r))).toEqual(r);
     });
 
-    it("reads the old board's links, and treats anything unknown as home", () => {
+    it("reads the old board's links and gives unknown addresses their own not-found route", () => {
         expect(parseRoute("#/p/checkout-web")).toEqual({
             page: "project",
             project: "checkout-web",
             tab: "inbox",
         });
         expect(parseRoute("")).toEqual({ page: "home" });
-        expect(parseRoute("#/nope")).toEqual({ page: "home" });
-        expect(parseRoute("#/p/x/bogus")).toEqual({ page: "project", project: "x", tab: "inbox" });
+        expect(parseRoute("#/nope")).toEqual({ page: "not-found" });
+        expect(parseRoute("#/p/x/bogus")).toEqual({ page: "not-found" });
+        expect(parseRoute("#/p/x/a/")).toEqual({ page: "not-found" });
+        expect(parseRoute("#/p/x/settings/extra")).toEqual({ page: "not-found" });
+        expect(parseRoute("#/p/x/")).toEqual({ page: "project", project: "x", tab: "inbox" });
     });
 });
 

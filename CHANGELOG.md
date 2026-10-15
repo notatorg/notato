@@ -4,6 +4,8 @@ Every Notato package is released together, at one version: the `notato` command 
 
 ## 0.3.0
 
+- **Potato-patch 404.** Broken board links and missing projects or notes show a shared illustrated error page with routes back to the board or project. Browser requests for unknown server addresses receive a real HTTP 404 page; SDK and MCP responses keep their JSON format. The page uses the existing mascot and local fonts, supports reduced motion, and works on the local developer server as well as extended boards.
+
 Safer connections for apps, and a server that other products can be built on.
 
 - **Web SDK connection fixes.** The browser, React and Angular SDKs send event-stream credentials in an `Authorization` header, not in the address, scope their capability request to the project, and read a token from a `data-notato-token` attribute on the script tag. They work with a 0.2.0 server as they are.

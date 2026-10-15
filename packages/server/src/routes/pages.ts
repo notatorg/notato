@@ -1,5 +1,5 @@
 import type { Principal } from "../auth.ts";
-import type { UiAssets } from "../http.ts";
+import type { AppOptions, UiAssets } from "../http.ts";
 import { bookmarkletPage, injectSource } from "../inject.ts";
 import { isSecure, json, type Routes } from "./common.ts";
 
@@ -20,21 +20,51 @@ async function boardFile(
     if (file.includes("..") || file.startsWith("/")) return null;
     const found = await ui.lookup(file);
     if (!found) return null;
-    const shell = file === "index.html";
+    const missing = file === "404.html";
+    const shell = file === "index.html" || missing;
     return new Response(found.body, {
+        status: missing ? 404 : 200,
         headers: {
             "Content-Type": found.type,
-            "Cache-Control": shell ? "no-cache" : "public, max-age=31536000, immutable",
+            "Cache-Control": missing
+                ? "no-store"
+                : shell
+                  ? "no-cache"
+                  : "public, max-age=31536000, immutable",
             "X-Content-Type-Options": "nosniff",
             ...(shell
                 ? {
                       "Content-Security-Policy": csp,
                       "X-Frame-Options": "DENY",
                       "Referrer-Policy": "no-referrer",
+                      ...(missing ? { "X-Robots-Tag": "noindex" } : {}),
                   }
                 : {}),
         },
     });
+}
+
+/** A static page for browser navigation; API and asset requests keep their normal JSON errors. */
+export async function notFoundPage(req: Request, options: AppOptions): Promise<Response | null> {
+    if (
+        req.method !== "GET" ||
+        !options.ui ||
+        new URL(req.url).pathname.startsWith("/ui/") ||
+        !req.headers
+            .get("accept")
+            ?.split(",")
+            .some((range) => {
+                const [type, ...parameters] = range.trim().toLowerCase().split(";");
+                return (
+                    type === "text/html" &&
+                    !parameters.some((p) => /^q\s*=\s*0(?:\.0*)?$/.test(p.trim()))
+                );
+            })
+    )
+        return null;
+    const page = await boardFile(options.ui, "/ui/404.html");
+    if (page) page.headers.set("Vary", "Accept");
+    return page;
 }
 
 /** What anyone may load without signing in: the board, and the script (with its bookmarklet page) that puts Notato on any page. */

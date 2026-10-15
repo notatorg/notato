@@ -5,6 +5,7 @@ export * from "./extension.tsx";
 export { Login } from "./Login.tsx";
 export * from "./live.ts";
 export * from "./model.ts";
+export { NotFound } from "./NotFound.tsx";
 export { go, href, projectHref, type Route, type Tab, useRoute } from "./route.ts";
 export * from "./storage.ts";
 export * from "./ui.tsx";

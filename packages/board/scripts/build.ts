@@ -72,7 +72,7 @@ async function build(): Promise<boolean> {
     mkdirSync(dist, { recursive: true });
 
     const result = await Bun.build({
-        entrypoints: [page],
+        entrypoints: [page, join(root, "not-found.html")],
         outdir: dist,
         minify: true,
         // Without this React ships its development build, which is several times larger.
@@ -95,6 +95,7 @@ async function build(): Promise<boolean> {
     // The server serves the page as index.html, whatever another page was called.
     if (basename(page) !== "index.html")
         renameSync(join(dist, basename(page)), join(dist, "index.html"));
+    renameSync(join(dist, "not-found.html"), join(dist, "404.html"));
 
     // Every font src/fonts.css names, from the @fontsource-variable package it comes from, into dist/fonts.
     mkdirSync(join(dist, "fonts"), { recursive: true });

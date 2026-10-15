@@ -16,6 +16,7 @@ const TABS: readonly string[] = ["activity", "overview", "connect", "settings"];
 
 export type Route =
     | { page: "home" }
+    | { page: "not-found" }
     | { page: "tokens" }
     | { page: "settings" }
     | { page: "ext"; name: string; rest: string }
@@ -31,6 +32,7 @@ const decode = (s: string) => {
 
 export function parseRoute(hash: string): Route {
     const path = hash.replace(/^#/, "").replace(/\/+$/, "") || "/";
+    if (path === "/") return { page: "home" };
     if (path === "/tokens") return { page: "tokens" };
     if (path === "/settings") return { page: "settings" };
     const ext = /^\/x\/([^/]+)(?:\/(.*))?$/.exec(path);
@@ -43,15 +45,17 @@ export function parseRoute(hash: string): Route {
         if (selected)
             return { page: "project", project: name, tab: "inbox", selected: decode(selected) };
         if (TABS.includes(rest)) return { page: "project", project: name, tab: rest as Tab };
-        return { page: "project", project: name, tab: "inbox" };
+        if (!rest) return { page: "project", project: name, tab: "inbox" };
     }
-    return { page: "home" };
+    return { page: "not-found" };
 }
 
 export function href(route: Route): string {
     switch (route.page) {
         case "home":
             return "#/";
+        case "not-found":
+            return "#/404";
         case "tokens":
             return "#/tokens";
         case "settings":

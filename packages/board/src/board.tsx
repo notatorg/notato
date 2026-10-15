@@ -27,6 +27,7 @@ import { Login } from "./Login.tsx";
 import { markSeen, onLive, setSeenAccount } from "./live.ts";
 import { byActivity, countsMayChange, lastActivity, projectName, withActivity } from "./model.ts";
 import { NewProject } from "./NewProject.tsx";
+import { NotFound } from "./NotFound.tsx";
 import { Project } from "./Project.tsx";
 import { go, projectHref, type Route, useRoute } from "./route.ts";
 import { Settings } from "./Settings.tsx";
@@ -88,6 +89,9 @@ function App() {
 
     if (error) return <p className="center error">Could not reach the server: {error}</p>;
     if (!me) return <p className="center muted">Loading…</p>;
+    const missing =
+        route.page === "not-found" || (route.page === "ext" && !extension?.pages?.[route.name]);
+    if (missing && me.authRequired && !me.authenticated) return <NotFound standalone />;
     if (me.authRequired && !me.authenticated) {
         const SignIn = extension?.Login ?? Login;
         return <SignIn onDone={refresh} />;
@@ -190,13 +194,19 @@ function Shell({ me, route, onSignedOut }: { me: Me; route: Route; onSignedOut()
     const open = route.page === "project" ? route.project : null;
     const openSummary = open ? projects?.find((p) => p.id === open) : undefined;
     const openName = open ? projectName(openSummary, open) : null;
+    const missing =
+        route.page === "not-found" || (route.page === "ext" && !extension?.pages?.[route.name]);
     useEffect(() => {
-        document.title = openName ? `${openName} · Notato` : "Notato";
+        document.title = missing
+            ? "Page not found · Notato"
+            : openName
+              ? `${openName} · Notato`
+              : "Notato";
         if (open) {
             setLastProject(open);
             remember(KEYS.project, open);
         }
-    }, [open, openName]);
+    }, [open, openName, missing]);
     const readState = extension?.readState;
     const reading = useRef(new Map<string, string>());
     const active = useRef(true);
@@ -338,8 +348,10 @@ function Shell({ me, route, onSignedOut }: { me: Me; route: Route; onSignedOut()
                             go("#/", true);
                         }}
                     />
-                ) : (
+                ) : route.page === "home" ? (
                     <Home projects={projects} error={error} me={me} onNewProject={newProject} />
+                ) : (
+                    <NotFound />
                 )}
             </main>
             {creating ? (
