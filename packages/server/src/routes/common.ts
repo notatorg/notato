@@ -10,6 +10,7 @@ import { type LocalBackend, RequestError } from "../backend.ts";
 import { sameOrigin } from "../cors.ts";
 import type { AppOptions, RequestInfo } from "../http.ts";
 import { type AnnotationFilter, PROJECT_ID } from "../storage.ts";
+import { fromOutside } from "../tunnel.ts";
 import type { EventStreams } from "./events.ts";
 
 // What the route modules share: the context `createApp` makes once, the request as a route sees it, the responses
@@ -153,6 +154,15 @@ export function assertAccess(principal: Principal, projectId: string): void {
 
 export function assertAdmin(principal: Principal | null): void {
     if (!principal || !isAdmin(principal)) throw new RequestError("admin login required", 403);
+}
+
+/**
+ * Whether the request is from whoever runs the server, who may see how it is set up (where its settings file is, what
+ * is wrong with it): an admin, and on a server without logins someone at this machine, not an app through the dev
+ * tunnel or a proxy.
+ */
+export function isOperator(req: Request, principal: Principal, app: AppContext): boolean {
+    return isAdmin(principal) && (app.auth !== undefined || !fromOutside(req));
 }
 
 /** The one project a token is for; undefined for an admin or a `*` token, which may use them all. */
