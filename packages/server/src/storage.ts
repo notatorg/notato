@@ -124,7 +124,11 @@ export interface Store {
     /** Returns false when a bundle with that id was already recorded. */
     insertBundle(bundle: BundleRecord): Promise<boolean>;
     getBundle(id: string): Promise<BundleRecord | null>;
-    listBundles(projectId?: string): Promise<BundleRecord[]>;
+    /**
+     * The newest first. With `limit`, only the newest that many; a store that ignores it still works, as the backend
+     * keeps to the limit itself, but then reads every record of the project to do so.
+     */
+    listBundles(projectId?: string, limit?: number): Promise<BundleRecord[]>;
     close(): void;
 }
 

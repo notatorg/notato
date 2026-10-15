@@ -1,6 +1,7 @@
 import { accessibleProjects, type Principal } from "../auth.ts";
-import { RequestError } from "../backend.ts";
+import { BUNDLE_LIST_MAX, RequestError } from "../backend.ts";
 import { filterFromQuery } from "../query.ts";
+import { tokenPurpose } from "../storage.ts";
 import {
     type AppContext,
     assertAccess,
@@ -13,7 +14,8 @@ import {
 
 /**
  * `POST /projects/:id/bundles` or `POST /bundles`: a tester's zip, sent as the body or as the `bundle` file of a form.
- * A project token can only ever import into its own project, whatever the URL says.
+ * A project token can only ever import into its own project, whatever the URL says. An app's token or a member brings
+ * notes in as people's, as when they send one: only the admin and agents may bring back what an agent did.
  */
 async function importBundle(
     req: Request,
@@ -41,7 +43,12 @@ async function importBundle(
     if (accessibleProjects(principal) !== undefined && !target)
         throw new RequestError("import a bundle with POST /projects/<id>/bundles", 403);
     if (target) assertAccess(principal, target);
-    const result = await app.backend.importBundle(bytes, { projectId: target });
+    const asPerson =
+        principal.kind === "member" ||
+        (principal.kind === "token" && tokenPurpose(principal) === "app")
+            ? { name: principal.kind === "token" ? principal.authorName : undefined }
+            : undefined;
+    const result = await app.backend.importBundle(bytes, { projectId: target, asPerson });
     return json(result, result.imported > 0 ? 201 : 200);
 }
 
@@ -54,7 +61,12 @@ export const bundleRoutes: Routes = async ({ req, url, path, method, principal, 
         const projectId = projectIdFrom(inProject[0]);
         assertAccess(principal, projectId);
         if (method === "POST") return importBundle(req, principal, projectId, app);
-        if (method === "GET") return json({ items: await backend.listBundles(projectId) });
+        if (method === "GET") {
+            // The newest, as many as asked for up to BUNDLE_LIST_MAX.
+            const asked = Number(url.searchParams.get("limit") ?? BUNDLE_LIST_MAX);
+            const limit = Number.isFinite(asked) ? asked : BUNDLE_LIST_MAX;
+            return json({ items: await backend.listBundles(projectId, limit) });
+        }
     }
     if (path === "/bundles" && method === "POST")
         return importBundle(req, principal, undefined, app);
@@ -72,7 +84,12 @@ export const bundleRoutes: Routes = async ({ req, url, path, method, principal, 
         const record = await backend.getBundle(one[0] ?? "");
         if (!record) return notFound();
         assertAccess(principal, record.projectId);
-        return json({ bundle: record, annotations: await backend.list({ bundleId: record.id }) });
+        // Only its own project's notes: another project may have notes carrying the same bundle id.
+        const annotations = await backend.list({
+            bundleId: record.id,
+            projectId: record.projectId,
+        });
+        return json({ bundle: record, annotations });
     }
 
     const exportProject = match(/^\/projects\/([^/]+)\/export$/);

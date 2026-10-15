@@ -480,15 +480,19 @@ export class SqliteStore implements Store, AuthStore {
         return row ? (JSON.parse(row.json) as BundleRecord) : null;
     }
 
-    async listBundles(projectId?: string): Promise<BundleRecord[]> {
+    async listBundles(projectId?: string, limit?: number): Promise<BundleRecord[]> {
+        // SQLite reads a negative limit as none.
+        const most = limit === undefined ? -1 : Math.max(0, Math.floor(limit));
         const rows = (
             projectId === undefined
-                ? this.db.query("SELECT json FROM bundles ORDER BY imported_at DESC").all()
+                ? this.db
+                      .query("SELECT json FROM bundles ORDER BY imported_at DESC LIMIT ?")
+                      .all(most)
                 : this.db
                       .query(
-                          "SELECT json FROM bundles WHERE project_id = ? ORDER BY imported_at DESC"
+                          "SELECT json FROM bundles WHERE project_id = ? ORDER BY imported_at DESC LIMIT ?"
                       )
-                      .all(projectId)
+                      .all(projectId, most)
         ) as Array<{ json: string }>;
         return rows.map((r) => JSON.parse(r.json) as BundleRecord);
     }

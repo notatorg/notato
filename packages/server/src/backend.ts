@@ -4,6 +4,7 @@ import {
     BundleError,
     buildBundle,
     PEOPLE_ONLY_TEXT,
+    peopleOnlyRecord,
     readBundle,
     screenshotCrop,
     streamBundle,
@@ -179,7 +180,28 @@ export interface BackendHooks {
     beforeIngest?(annotation: Annotation, assetBytes: number): void | Promise<void>;
     /** A project is about to be created through `createProject`. */
     beforeCreateProject?(project: ProjectRecord): void | Promise<void>;
+    /**
+     * A bundle the server has no record of is about to be imported, and recorded once a note of it is stored. Each of
+     * its notes still goes through `beforeIngest`.
+     */
+    beforeImportBundle?(bundle: BundleRecord): void | Promise<void>;
 }
+
+/** What a bundle import keeps, by who sends it. */
+export interface ImportOptions {
+    /** The project the bundle must be for. */
+    projectId?: string;
+    /**
+     * For a credential that speaks for people and never for an agent (an app's token, a member). Each note comes in
+     * as one sent directly would: a person's (under `name`, when the credential always writes under one), open, with
+     * nothing in its thread but who made it People only. Without it, a bundle's authors, statuses and threads are kept,
+     * as reading back an export needs.
+     */
+    asPerson?: { name?: string };
+}
+
+/** The most bundle records a listing holds: the newest. */
+export const BUNDLE_LIST_MAX = 500;
 
 export interface LocalBackendOptions {
     hooks?: BackendHooks;
@@ -319,8 +341,9 @@ export class LocalBackend implements Backend {
      * Validates an incoming annotation, stores its screenshot bytes content-addressed, and rewrites the
      * asset references to the canonical ids. Idempotent on `annotation.id`, so a client retry is safe.
      *
-     * Live annotations always start `open` with an empty thread: a client cannot pre-resolve its own note. The one thing
-     * kept is the record of a person turning People only on or off before the note was sent, so the thread says who did.
+     * Live annotations always start `open` with an empty thread: a client cannot pre-resolve its own note, or offer
+     * itself variants. The one thing kept is that the person who sent a People only note turned it on first, so the
+     * thread says who did; the server writes that line itself.
      */
     ingest(
         raw: unknown,
@@ -441,12 +464,11 @@ export class LocalBackend implements Backend {
         if (!options.preserveLifecycle) {
             annotation = {
                 ...annotation,
-                // Where a note went is for integrations to say, not the app that sent it.
+                // Where a note went is for integrations to say, and what to choose between for the agent.
                 links: undefined,
+                variants: undefined,
                 status: "open",
-                thread: annotation.thread.filter(
-                    (r) => r.automatic && r.peopleOnly !== undefined && r.author.kind === "human"
-                ),
+                thread: sentPeopleOnly(annotation),
                 bundleId: options.bundleId ?? null,
             };
         } else if (options.bundleId !== undefined) {
@@ -777,15 +799,22 @@ export class LocalBackend implements Backend {
         return true;
     }
 
+    /**
+     * `watching: false` is for a caller that may wait for notes but does not speak for an agent (an app's token, a
+     * member): pages are not told an agent is watching while it waits.
+     */
     waitForNew(
         filter: AnnotationFilter,
         timeoutMs: number,
-        signal?: AbortSignal
+        signal?: AbortSignal,
+        { watching = true }: { watching?: boolean } = {}
     ): Promise<boolean> {
         // Someone waiting for annotations is an agent watching (notato_watch, here or attached).
-        const waited = this.agents.waitStarted(
-            filter.projectId === undefined ? undefined : [filter.projectId].flat()
-        );
+        const waited = watching
+            ? this.agents.waitStarted(
+                  filter.projectId === undefined ? undefined : [filter.projectId].flat()
+              )
+            : () => {};
         return new Promise((resolve) => {
             let finished = false;
             const finish = (value: boolean) => {
@@ -817,10 +846,11 @@ export class LocalBackend implements Backend {
         });
     }
 
-    async importBundle(
-        zip: Uint8Array,
-        options: { projectId?: string } = {}
-    ): Promise<ImportResult> {
+    /**
+     * Loads a bundle zip into the store, with a record of the bundle once a note of it is stored. Importing it again
+     * adds only the notes that are new. See `ImportOptions` for what is kept.
+     */
+    async importBundle(zip: Uint8Array, options: ImportOptions = {}): Promise<ImportResult> {
         let read: ReturnType<typeof readBundle>;
         try {
             read = readBundle(zip);
@@ -834,8 +864,19 @@ export class LocalBackend implements Backend {
                 `bundle is for project "${bundle.projectId}", not "${options.projectId}"`
             );
         }
+        if (bundle.annotations.length === 0)
+            throw new RequestError("the bundle has no notes in it: there is nothing to import");
+        // A bundle's id is the one it was given where it was made, so another project can name it too: whoever imported
+        // it first keeps it. Refused before anything is stored, as its record would show this project's notes there.
+        const recorded = await this.store.getBundle(bundle.id);
+        if (recorded && recorded.projectId !== bundle.projectId)
+            throw new RequestError(
+                `a bundle with id "${bundle.id}" was already imported into another project`,
+                409
+            );
         // Check everything first so a bad note cannot leave a half-imported bundle behind.
         await this.ensureProject(bundle.projectId);
+        let fresh = 0;
         for (const a of bundle.annotations) {
             const parsed = Annotation.safeParse(a);
             if (!parsed.success) {
@@ -850,6 +891,7 @@ export class LocalBackend implements Backend {
                 );
             const existing = await this.store.getAnnotation(parsed.data.id);
             if (existing) this.sameProject(existing, parsed.data);
+            else fresh += 1;
             for (const bytes of assetsFor(a, files).values()) {
                 if (!sniffImageMime(bytes))
                     throw new RequestError(
@@ -857,18 +899,7 @@ export class LocalBackend implements Backend {
                     );
             }
         }
-        let imported = 0;
-        let skipped = 0;
-        for (const a of bundle.annotations) {
-            const { created } = await this.ingest(a, assetsFor(a, files), {
-                projectId: bundle.projectId,
-                preserveLifecycle: true,
-                bundleId: bundle.id,
-            });
-            if (created) imported += 1;
-            else skipped += 1;
-        }
-        await this.store.insertBundle({
+        const record: BundleRecord = {
             id: bundle.id,
             projectId: bundle.projectId,
             createdAt: bundle.createdAt,
@@ -877,7 +908,35 @@ export class LocalBackend implements Backend {
             appVersion: bundle.appVersion,
             annotationCount: bundle.annotations.length,
             importedAt: new Date().toISOString(),
-        });
+        };
+        if (!recorded && fresh > 0) await this.hooks.beforeImportBundle?.(record);
+        const asPerson = options.asPerson;
+        let imported = 0;
+        let skipped = 0;
+        for (const a of bundle.annotations) {
+            const sent: Annotation = asPerson
+                ? {
+                      ...a,
+                      author: {
+                          ...a.author,
+                          kind: "human",
+                          ...(asPerson.name ? { name: asPerson.name } : {}),
+                      },
+                  }
+                : a;
+            const { created } = await this.ingest(sent, assetsFor(a, files), {
+                projectId: bundle.projectId,
+                preserveLifecycle: !asPerson,
+                bundleId: bundle.id,
+            });
+            if (created) imported += 1;
+            else skipped += 1;
+        }
+        // Recorded only once a note of it is stored: a bundle whose notes are all here already (another bundle's), or
+        // one refused part way (a limit reached), leaves no record listing nothing. Two imports of one id into different
+        // projects at the same moment both pass the check above, and one of them records it; the other's notes are
+        // still never shown in its bundle, which every read keeps to the project of its record.
+        if (imported > 0) await this.store.insertBundle(record);
         return { bundleId: bundle.id, projectId: bundle.projectId, imported, skipped };
     }
 
@@ -885,8 +944,11 @@ export class LocalBackend implements Backend {
         return this.store.getBundle(id);
     }
 
-    listBundles(projectId?: string) {
-        return this.store.listBundles(projectId);
+    /** The newest first, at most `BUNDLE_LIST_MAX` (or `limit`) of them. */
+    async listBundles(projectId?: string, limit = BUNDLE_LIST_MAX) {
+        const most = Math.min(Math.max(1, Math.floor(limit)), BUNDLE_LIST_MAX);
+        // Kept to the limit here too, for a store that reads every record.
+        return (await this.store.listBundles(projectId, most)).slice(0, most);
     }
 
     /**
@@ -902,7 +964,11 @@ export class LocalBackend implements Backend {
         if ("bundleId" in selector) {
             const record = await this.store.getBundle(selector.bundleId);
             if (!record) return null;
-            items = await this.store.listAnnotations({ bundleId: record.id });
+            // Only its own project's notes: another project may have notes carrying the same bundle id.
+            items = await this.store.listAnnotations({
+                bundleId: record.id,
+                projectId: record.projectId,
+            });
             projectId = record.projectId;
             meta = {
                 id: record.id,
@@ -963,6 +1029,24 @@ export class LocalBackend implements Backend {
         // Mention plugins hear about it here rather than on the bus, which counts the pages and watches listening.
         this.mentions.handle(event);
     }
+}
+
+/**
+ * The thread a new note starts with: when the page recorded that the note's author made it People only before sending
+ * it, that line, in the server's own words and under the note's author. The board shows an automatic entry as something
+ * that happened rather than something said, so no other name, text or entry a page sends is kept.
+ */
+function sentPeopleOnly(a: Annotation): Annotation["thread"] {
+    const made = a.thread.find((r) => r.automatic && r.peopleOnly === true);
+    if (!a.peopleOnly || !made || a.author.kind !== "human") return [];
+    const at = Date.parse(made.createdAt);
+    return [
+        peopleOnlyRecord(
+            true,
+            a.author.name,
+            Number.isNaN(at) ? undefined : new Date(at).toISOString()
+        ),
+    ];
 }
 
 /** Refuses an id no project can have (see `PROJECT_ID`), such as one a bundle names. */

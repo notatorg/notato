@@ -25,6 +25,43 @@ describe("zod schema", () => {
     });
 });
 
+describe("a bundle's own fields", () => {
+    const parse = (over: Record<string, unknown>) => Bundle.safeParse({ ...sampleBundle, ...over });
+
+    it("takes the ids and times every SDK writes", () => {
+        for (const createdAt of [
+            // The browser, React Native, Swift, Android and .NET, to the millisecond.
+            "2026-10-05T10:05:00.000Z",
+            // Flutter, to the microsecond.
+            "2026-10-05T10:05:00.123456Z",
+            "2026-10-05T10:05:00Z",
+            "2026-10-05T12:05:00+02:00",
+        ])
+            expect(parse({ createdAt }).success, createdAt).toBe(true);
+        expect(parse({ id: "01JA0000000000000000000003" }).success).toBe(true);
+        expect(parse({ appName: "x".repeat(200), author: { name: "x".repeat(200) } }).success).toBe(
+            true
+        );
+    });
+
+    it("refuses an id no path can hold, a time that is not one, and names past 200 characters", () => {
+        for (const id of ["", "../x", "a b", "x".repeat(129)])
+            expect(parse({ id }).success, id).toBe(false);
+        for (const createdAt of [
+            "t",
+            "yesterday",
+            "2026-10-05",
+            "2026-10-05T10:05:00",
+            `2026-10-05T10:05:00.${"0".repeat(100)}Z`,
+        ])
+            expect(parse({ createdAt }).success, createdAt).toBe(false);
+        const long = "x".repeat(201);
+        expect(parse({ appName: long }).success).toBe(false);
+        expect(parse({ appVersion: long }).success).toBe(false);
+        expect(parse({ author: { name: long } }).success).toBe(false);
+    });
+});
+
 describe("intent, status, source and context", () => {
     const parse = (over: Record<string, unknown>) =>
         Annotation.safeParse({ ...sampleAnnotation, ...over });
@@ -141,5 +178,8 @@ describe("generated schema.json", () => {
     it("rejects what zod rejects", () => {
         expect(validate("Annotation", { ...sampleAnnotation, severity: "huge" }).ok).toBe(false);
         expect(validate("Bundle", { ...sampleBundle, schemaVersion: 2 }).ok).toBe(false);
+        expect(validate("Bundle", { ...sampleBundle, id: "../x" }).ok).toBe(false);
+        expect(validate("Bundle", { ...sampleBundle, createdAt: "t" }).ok).toBe(false);
+        expect(validate("Bundle", { ...sampleBundle, appName: "x".repeat(201) }).ok).toBe(false);
     });
 });

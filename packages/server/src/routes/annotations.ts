@@ -281,7 +281,12 @@ export const annotationRoutes: Routes = async (route, app) => {
         const timeout = Number.isFinite(asked)
             ? Math.min(Math.max(0, asked), WAIT_MAX_MS)
             : WAIT_DEFAULT_MS;
-        const ready = await backend.waitForNew(filter, timeout, req.signal);
+        // Pages say an agent is watching only for an agent's wait: an app's token or a member may wait for notes too,
+        // but never speaks for an agent.
+        const watching =
+            principal.kind === "admin" ||
+            (principal.kind === "token" && tokenPurpose(principal) === "agent");
+        const ready = await backend.waitForNew(filter, timeout, req.signal, { watching });
         if (app.auth) {
             // A wait can outlast a token or a membership: ask again before saying there is something to read.
             const current = await app.auth.identify(req, url);

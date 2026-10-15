@@ -259,13 +259,18 @@ export const Annotation = z.object({
     links: z.array(ExternalLink).max(20).optional(),
 });
 
+/** The longest name a bundle carries: who it is from, the app and its version. */
+const BUNDLE_NAME_MAX = 200;
+
 export const Bundle = z.object({
-    id: z.string(),
+    /** ULID. A server keeps one record a bundle, under this id, and serves it at `/bundles/<id>`. */
+    id: SafeId,
     projectId: z.string(),
-    createdAt: z.string(),
-    author: z.object({ name: z.string().optional() }),
-    appName: z.string().optional(),
-    appVersion: z.string().optional(),
+    /** ISO 8601: when the tester packaged it. Any precision, but not a fraction of a second that never ends. */
+    createdAt: z.iso.datetime({ offset: true }).max(64),
+    author: z.object({ name: z.string().max(BUNDLE_NAME_MAX).optional() }),
+    appName: z.string().max(BUNDLE_NAME_MAX).optional(),
+    appVersion: z.string().max(BUNDLE_NAME_MAX).optional(),
     annotations: z.array(Annotation),
     schemaVersion: z.literal(SCHEMA_VERSION),
 });
