@@ -9,7 +9,9 @@ describe("notato inject", () => {
         expect(r.stdout).toContain('<script src="http://127.0.0.1:4747/inject.js"></script>');
         expect(r.stdout).toContain("javascript:(function(){");
         expect(r.stdout).toContain("each page's own host and port as its project");
-        expect(r.stdout).toContain("--cors-origin");
+        expect(r.stdout).toContain("NOTATO_CORS_ORIGINS");
+        expect(r.stdout).not.toContain("--cors-origin"); // `notato dev` has no such option
+        expect(r.stdout).not.toContain("your network");
     });
 
     it("follows $NOTATO_PORT, --server, --project and a token, for every way", () => {

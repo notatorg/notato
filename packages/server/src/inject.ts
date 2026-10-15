@@ -130,6 +130,6 @@ export function bookmarkletPage(origin: string, asked: InjectOptions = {}): stri
 <pre>${escapeHtml(consoleSnippet(origin, options))}</pre>
 <p>Or add this to the page's HTML while you are working on it:</p>
 <pre>${escapeHtml(tag)}</pre>
-<p class="note">It reloads with the page, so click it again after a refresh. A page whose Content-Security-Policy does not allow scripts from this server will refuse it; the browser extension is for those. By default this server accepts notes from pages on this machine and local networks; for another site start it with <code>--cors-origin &lt;its origin&gt;</code>.</p>
+<p class="note">It reloads with the page, so click it again after a refresh. A page whose Content-Security-Policy does not allow scripts from this server will refuse it; the browser extension is for those. <code>notato dev</code> takes notes only from pages this machine serves (<code>localhost</code> and its own addresses): for a page from another device or site, list its origin in <code>NOTATO_CORS_ORIGINS</code> where the server runs.</p>
 </body></html>`;
 }

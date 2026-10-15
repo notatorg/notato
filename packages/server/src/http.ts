@@ -15,7 +15,13 @@ import {
 } from "./auth.ts";
 import { type LocalBackend, RequestError } from "./backend.ts";
 import { mcpRefusal } from "./config.ts";
-import { corsHeaders, hostAllowed, parseExtraOrigins, writeOriginRejected } from "./cors.ts";
+import {
+    corsHeaders,
+    hostAllowed,
+    type OriginTrust,
+    parseExtraOrigins,
+    writeOriginRejected,
+} from "./cors.ts";
 import { accountRoutes } from "./routes/account.ts";
 import { annotationRoutes } from "./routes/annotations.ts";
 import { bundleRoutes } from "./routes/bundles.ts";
@@ -33,6 +39,7 @@ import { relayRoutes } from "./routes/relay.ts";
 import { healthRoute, statusRoutes } from "./routes/status.ts";
 import { settingsRoutes } from "./settings.ts";
 import { type ShareLinks, sharedAsset } from "./share.ts";
+import { outsideRefusal } from "./tunnel.ts";
 
 /** Static files of the web UI. `path` is relative, e.g. `index.html` or `assets/app-3f2a.js`. */
 export interface UiAssets {
@@ -50,7 +57,10 @@ export interface AppOptions {
     auth?: AuthProvider;
     /** The board UI, served at `/` and `/ui/*`. */
     ui?: UiAssets | null;
-    /** Extra allowed browser origins, on top of loopback, private networks and the server's own origin. */
+    /**
+     * Extra allowed browser origins, on top of the server's own and the pages it trusts by default: this machine's
+     * without `auth`, and any private network's with it (see `OriginTrust`).
+     */
     corsOrigins?: string[];
     /** Which `Host` headers are answered. Dev mode defaults to loopback names only (DNS-rebinding guard). */
     allowedHosts?: "loopback" | "any" | string[];
@@ -200,6 +210,8 @@ export function createApp(options: AppOptions): AppHandler {
     const { backend, auth } = options;
     const extraOrigins = options.corsOrigins ?? parseExtraOrigins(process.env.NOTATO_CORS_ORIGINS);
     const allowedHosts = options.allowedHosts ?? (options.mode === "dev" ? "loopback" : "any");
+    // Without logins a page the server trusts can read and write every note, so it trusts only this machine's pages.
+    const trust: OriginTrust = options.strictOrigins ? "listed" : auth ? "network" : "machine";
     const app: AppContext = {
         backend,
         auth,
@@ -217,9 +229,7 @@ export function createApp(options: AppOptions): AppHandler {
         const path = url.pathname.replace(/\/+$/, "") || "/";
         let requestOrigins = extraOrigins;
         const withCors = (res: Response) => {
-            for (const [key, value] of Object.entries(
-                corsHeaders(req, requestOrigins, options.strictOrigins)
-            ))
+            for (const [key, value] of Object.entries(corsHeaders(req, requestOrigins, trust)))
                 res.headers.set(key, value);
             for (const [key, value] of Object.entries(options.responseHeaders?.(req, path) ?? {}))
                 res.headers.set(key, value);
@@ -241,7 +251,7 @@ export function createApp(options: AppOptions): AppHandler {
             if (options.originsFor)
                 requestOrigins = [...extraOrigins, ...(await options.originsFor(req, url))];
             if (req.method === "OPTIONS") return withCors(new Response(null, { status: 204 }));
-            if (writeOriginRejected(req, requestOrigins, options.strictOrigins))
+            if (writeOriginRejected(req, requestOrigins, trust))
                 return withCors(json({ error: "origin not allowed" }, 403));
 
             const method = methodOf(req);
@@ -272,6 +282,13 @@ export function createApp(options: AppOptions): AppHandler {
                     principal,
                 });
                 if (denied) return withCors(denied);
+            }
+            // Without `auth`, a request from outside this machine (the dev tunnel, a proxy) is not the person at it: an
+            // app on a phone at most, which reaches what an app uses and nothing of the board's or an agent's. After
+            // `authorize`, so a request without the device token learns nothing.
+            if (!auth) {
+                const refused = outsideRefusal(req, method, path);
+                if (refused) return withCors(refused);
             }
             // What the credential may do at all (capture-only and app tokens, MCP off, agent presence) happens inside
             // `around`, so a deployment's own refusal (a locked account, a limit) comes first.

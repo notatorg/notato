@@ -64,7 +64,7 @@ export function runInject(
                 "",
                 `Notes go to ${server}${project ? ` as project "${project}"` : ", each page's own host and port as its project"}.`,
                 "A page that does not allow scripts from there (a Content-Security-Policy) needs the browser extension instead.",
-                "For a site that is not on this machine or your network, start the server with --cors-origin <its origin>.",
+                "notato dev takes notes only from pages this machine serves (localhost and its own addresses). For a page from another device or site, list its origin in NOTATO_CORS_ORIGINS where the server runs.",
             ].join("\n"),
         };
     } catch (error) {

@@ -89,7 +89,9 @@ describe("GET /bookmarklet", () => {
         expect(html).toContain('class="bm"');
         expect(html).toContain("http://localhost:4747/inject.js?project=shop");
         expect(html).toContain("Notato (shop)");
-        expect(html).toContain("--cors-origin");
+        expect(html).toContain("NOTATO_CORS_ORIGINS");
+        expect(html).not.toContain("--cors-origin"); // `notato dev` has no such option
+        expect(html).not.toContain("local network");
     });
 
     it("does not let a project name or origin break out of the page", () => {

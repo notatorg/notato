@@ -1,6 +1,7 @@
 import { randomBytes, timingSafeEqual } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { AGENT_HEADER } from "./agents.ts";
 import { isLoopbackName } from "./cors.ts";
 
 /**
@@ -45,7 +46,7 @@ export function loadDeviceAccess(dir: string, port: number): DeviceAccess {
 }
 
 export function saveDeviceAccess(dir: string, access: DeviceAccess): void {
-    mkdirSync(dir, { recursive: true });
+    mkdirSync(dir, { recursive: true, mode: 0o700 });
     writeFileSync(join(dir, DEVICE_FILE), `${JSON.stringify(access, null, 2)}\n`, { mode: 0o600 });
 }
 
@@ -59,6 +60,48 @@ export function fromOutside(req: Request): boolean {
         !isLoopbackName(host) ||
         req.headers.has("x-forwarded-for") ||
         req.headers.has("x-forwarded-host")
+    );
+}
+
+/**
+ * What an app asks of the server, by method and path: what the SDKs and the toolbar send, and nothing else. Its notes,
+ * their screenshots, replies and picks, its event stream, a tester's zip, and its answers to the relay. Not the board's
+ * part (settings, webhooks, projects, tokens) and not an agent's (watching, handing notes over, offering variants,
+ * asking a page to annotate).
+ */
+const APP_ROUTES: Array<{ methods: string[]; path: RegExp }> = [
+    { methods: ["GET"], path: /^\/(health|config|status|inject\.js)$/ },
+    { methods: ["GET", "POST"], path: /^\/projects\/[^/]+\/annotations$/ },
+    { methods: ["GET"], path: /^\/projects\/[^/]+\/events$/ },
+    { methods: ["POST"], path: /^\/projects\/[^/]+\/(bundles|connection)$/ },
+    // `/annotations/wait` is an agent's long poll across every project, not a note.
+    { methods: ["GET", "PATCH", "DELETE"], path: /^\/annotations\/(?!wait$)[^/]+$/ },
+    { methods: ["POST"], path: /^\/annotations\/[^/]+\/(replies|variants\/choose)$/ },
+    { methods: ["GET"], path: /^\/annotations\/[^/]+\/screenshot$/ },
+    { methods: ["GET"], path: /^\/assets\/[^/]+$/ },
+    { methods: ["POST"], path: /^\/relay\/[^/]+\/result$/ },
+];
+
+/**
+ * On a server without logins, where every request is taken to be from the person at this machine, refuses one from
+ * outside it (through the dev tunnel or a proxy) that an app would not make. The device token is built into every debug
+ * build of the app, so whoever has a build has the token: it must not change the settings, point a webhook somewhere,
+ * create or delete projects, or act as an agent. `method` is the one the server acts on (a POST may say it means PATCH).
+ */
+export function outsideRefusal(req: Request, method: string, path: string): Response | null {
+    if (!fromOutside(req)) return null;
+    if (req.headers.has(AGENT_HEADER))
+        return Response.json(
+            { error: "agents connect on this machine, not through the dev tunnel or a proxy" },
+            { status: 403 }
+        );
+    if (APP_ROUTES.some((route) => route.methods.includes(method) && route.path.test(path)))
+        return null;
+    return Response.json(
+        {
+            error: "through the dev tunnel (or a proxy) this server only answers what an app asks for: its notes, screenshots and events. Settings, webhooks, projects and tokens are changed on the board, on this machine",
+        },
+        { status: 403 }
     );
 }
 
