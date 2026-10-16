@@ -84,6 +84,14 @@ describe("/status and /config", () => {
         expect(config.agent.connected).toBe(true);
     });
 
+    it("checks project access on the SDK's scoped status request", async () => {
+        const { s, alpha } = await server();
+        expect((await s.call("/status?project=alpha", { headers: bearer(alpha) })).status).toBe(
+            200
+        );
+        expect((await s.call("/status?project=beta", { headers: bearer(alpha) })).status).toBe(403);
+    });
+
     it("keep a broken settings file's path and error to the admin", async () => {
         const { s, alpha, configFile } = await server();
         writeFileSync(configFile, "{ not json");

@@ -4,6 +4,7 @@ Every Notato package is released together, at one version: the `notato` command 
 
 ## 0.3.0
 
+- Scope the browser SDK's server-status request to its project so hosted project-origin CORS rules permit it.
 - Negotiate annotation status filters with the server before listing notes, avoiding rejected requests when a new SDK connects to an older server.
 
 - **Grouped reviews.** The browser, React and Angular toolbar can hold up to 50 related annotations across pages, with one shared instruction, and send the review when ready. Drafts survive reloads, stay out of normal exports, and are scoped to the destination and credential. The board links related targets; `notato_get_review` lets the agent read the whole review before fixing it.

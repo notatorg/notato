@@ -209,6 +209,7 @@ export function createController(props: NotatoProps): NotatoController {
         liveServer && sync
             ? createServerActions({
                   server: liveServer,
+                  project: props.project,
                   token: props.token,
                   sync,
                   author: authorName,

@@ -26,6 +26,8 @@ export interface ServerActions {
 
 interface ServerActionsOptions {
     server: string;
+    /** Project scope lets a hosted server apply this app's browser-origin policy before authentication. */
+    project: string;
     token?: string;
     /** The live mirror of the server's notes: an answer that is a note goes straight into it. */
     sync: ServerSync;
@@ -108,7 +110,10 @@ export function createServerActions(options: ServerActionsOptions): ServerAction
             if (options.captureOnly?.())
                 return { mode: "capture", agent: { connected: false, watching: false } };
             try {
-                const res = await net.fetch(`${server}/status`, { headers: authHeaders(token) });
+                const project = encodeURIComponent(options.project);
+                const res = await net.fetch(`${server}/status?project=${project}`, {
+                    headers: authHeaders(token),
+                });
                 if (!res.ok) return null;
                 const body = (await res.json()) as StatusBody;
                 return {

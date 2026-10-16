@@ -40,6 +40,9 @@ export const statusRoutes: Routes = async ({ req, url, path, method, principal }
     }
 
     if (path === "/status" && method === "GET") {
+        // Browser SDKs name their project for preflight origin checks. The credential must reach it too.
+        const project = url.searchParams.get("project") || undefined;
+        if (project !== undefined) assertAccess(principal, project);
         const projects = await backend.store.listProjects();
         const config = backend.config();
         // How the server is set up (its settings file and what is wrong with it, where they came from, its webhooks)
