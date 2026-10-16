@@ -155,7 +155,7 @@ export interface Store {
     renameProject(id: string, name: string): Promise<ProjectRecord | null>;
     /** Removes the project with its annotations and bundles. Returns the annotations that were removed, or null for an unknown id. */
     deleteProject(id: string): Promise<StoredAnnotation[] | null>;
-    /** The projects with an annotation that shows this screenshot (none once every such note is deleted). */
+    /** Projects with a note showing this asset. With peopleOnly:false, only public-to-agent notes may grant access. */
     projectsWithAsset(
         assetId: string,
         filter?: Pick<AnnotationFilter, "peopleOnly">
