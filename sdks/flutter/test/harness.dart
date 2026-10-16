@@ -47,7 +47,7 @@ class FakeServer {
     final path = request.url.path;
     calls.add('${request.method} $path');
     if (offline) throw const Unreachable();
-    final sending = request.method == 'POST' && path.endsWith('/annotations');
+    final sending = request.method == 'POST' && (path.endsWith('/annotations') || path.endsWith('/bundles'));
     if (captureOnly && path != '/config' && !sending) {
       final refused = http.Response(
         '{"error":"capture tokens can only send new notes; sign in to the board to read them"}',

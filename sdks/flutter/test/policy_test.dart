@@ -94,7 +94,20 @@ void main() {
     await drive(tester, notato.annotate('#add-to-basket', 'Landed before', screenshot: false));
     await settle(tester);
     expect(notato.pendingCount, 1);
-    expect(notato.notes.last.failed, contains("already exists"));
+    expect(notato.notes.last.failed, contains('already exists'));
+    await unmount(tester);
+  });
+
+  testWidgets('a capture-only token uploads test-mode feedback as a batch', (tester) async {
+    final server = FakeServer()..captureOnly = true;
+    await tester.pumpWidget(app(server, mode: NotatoMode.test, serverUrl: 'http://localhost:4799'));
+    await settle(tester);
+    await drive(tester, notato.annotate('#add-to-basket', 'Batch capture', screenshot: false));
+    final package = await drive(tester, notato.packageNotes());
+    expect(package.uploaded, isTrue);
+    expect(server.bundles, hasLength(1));
+    expect(server.calls, contains('POST /projects/shop/bundles'));
+    expect(server.calls.where((call) => call.contains('/events')), isEmpty);
     await unmount(tester);
   });
 
