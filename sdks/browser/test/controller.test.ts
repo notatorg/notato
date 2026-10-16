@@ -610,7 +610,7 @@ describe("saving a note from the composer", () => {
         const box = ui().querySelector(".popover textarea") as HTMLTextAreaElement;
         box.value = note;
         [...ui().querySelectorAll<HTMLButtonElement>(".popover button")]
-            .find((b) => b.textContent === "Save")
+            .find((b) => b.textContent === "Save note")
             ?.click();
     };
     const pins = () => [...ui().querySelectorAll<HTMLElement>(".pin")];

@@ -1,5 +1,6 @@
 // @vitest-environment happy-dom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import * as references from "../src/reference-image.ts";
 import { createPopover, type Popover, type PopoverInit } from "../src/ui/popover.ts";
 import { useReducedMotion } from "./support/motion.ts";
 
@@ -52,9 +53,68 @@ beforeEach(() => {
 afterEach(() => {
     popover.destroy();
     layer.remove();
+    vi.restoreAllMocks();
 });
 
 describe("pasted reference images", () => {
+    it("previews each image once and revokes its local URL on removal or close", async () => {
+        const thumbnail = vi
+            .spyOn(references, "referenceThumbnail")
+            .mockResolvedValue(new Blob(["small"], { type: "image/webp" }));
+        const url = vi
+            .spyOn(URL, "createObjectURL")
+            .mockReturnValueOnce("blob:first")
+            .mockReturnValueOnce("blob:second");
+        const revoke = vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => {});
+        paste(clipboard([image("first.png")]));
+        await vi.waitFor(() =>
+            expect(layer.querySelector(".reference-preview img")?.getAttribute("src")).toBe(
+                "blob:first"
+            )
+        );
+        paste(clipboard([image("second.png")]));
+        await vi.waitFor(() => expect(url).toHaveBeenCalledTimes(2));
+        expect(thumbnail).toHaveBeenCalledTimes(2);
+        layer.querySelector<HTMLButtonElement>('[aria-label="Remove first.png"]')?.click();
+        expect(revoke).toHaveBeenCalledExactlyOnceWith("blob:first");
+        popover.close();
+        expect(revoke.mock.calls).toEqual([["blob:first"], ["blob:second"]]);
+    });
+
+    it("decodes one preview at a time and discards late results after removal or close", async () => {
+        let finish: (blob: Blob) => void = () => {};
+        const thumbnail = vi.spyOn(references, "referenceThumbnail").mockImplementation(
+            () =>
+                new Promise((resolve) => {
+                    finish = resolve;
+                })
+        );
+        const url = vi.spyOn(URL, "createObjectURL");
+        paste(clipboard([image("first.png"), image("second.png")]));
+        await vi.waitFor(() => expect(thumbnail).toHaveBeenCalledOnce());
+        layer.querySelector<HTMLButtonElement>('[aria-label="Remove first.png"]')?.click();
+        finish(new Blob(["small"], { type: "image/webp" }));
+        await vi.waitFor(() => expect(thumbnail).toHaveBeenCalledTimes(2));
+        expect(url).not.toHaveBeenCalled();
+        popover.close();
+        finish(new Blob(["small"], { type: "image/webp" }));
+        await Promise.resolve();
+        expect(url).not.toHaveBeenCalled();
+    });
+
+    it("keeps a removable attachment when the browser cannot preview it", async () => {
+        vi.spyOn(references, "referenceThumbnail").mockRejectedValue(new Error("Decode failed"));
+        const file = image();
+        paste(clipboard([file]));
+        await vi.waitFor(() =>
+            expect(layer.querySelector(".reference-preview")?.getAttribute("title")).toBe(
+                "Preview unavailable"
+            )
+        );
+        save();
+        expect(saved()).toEqual([file]);
+    });
+
     it("focuses the comment when the paste prompt is clicked so the next paste reaches the composer", () => {
         layer.querySelector<HTMLButtonElement>(".reference-choose")?.focus();
         layer.querySelector<HTMLElement>(".reference-paste")?.click();

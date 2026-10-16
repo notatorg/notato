@@ -742,19 +742,26 @@ export function createController(props: NotatoProps): NotatoController {
                 kind: sel.kind,
                 animations: sel.elements.flatMap((e) => animationsOn(e)),
                 frozen: freezer.frozen,
-                screenshotsOff:
-                    props.screenshots === false ||
-                    !settings.get().screenshots ||
-                    !policy.screenshotsNow(),
             });
+        const screenshotsOffNow = () =>
+            props.screenshots === false || !settings.get().screenshots || !policy.screenshotsNow();
         if (popover.isOpen) {
-            popover.update({ ...summary, anchor: anchorOf(sel), hint: hintNow() });
+            popover.update({
+                ...summary,
+                anchor: anchorOf(sel),
+                hint: hintNow(),
+                screenshotsOff: screenshotsOffNow(),
+            });
             return;
         }
         // The server's setting can change at any time, so ask again as the popover opens and correct the line if it did.
         void policy.refresh().then(() => {
             if (popover.isOpen)
-                popover.update({ hint: hintNow(), references: policy.referencesNow() });
+                popover.update({
+                    hint: hintNow(),
+                    screenshotsOff: screenshotsOffNow(),
+                    references: policy.referencesNow(),
+                });
         });
         popover.open({
             ...summary,
@@ -763,6 +770,7 @@ export function createController(props: NotatoProps): NotatoController {
             references: policy.referencesNow(),
             reviewInstruction: review?.instruction,
             hint: hintNow(),
+            screenshotsOff: screenshotsOffNow(),
             anchor: anchorOf(sel),
             onCancel: closeDraft,
             onSave: async ({ comment, severity, intent, peopleOnly, references }) => {

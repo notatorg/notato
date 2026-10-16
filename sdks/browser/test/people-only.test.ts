@@ -76,7 +76,7 @@ describe("the composer", () => {
         const chip = button(layer, "People only") as HTMLButtonElement;
         expect(chip.getAttribute("aria-pressed")).toBe("false");
         expect(chip.title).toBe(PEOPLE_ONLY_HINT);
-        button(layer, "Save")?.click();
+        button(layer, "Save note")?.click();
         await settle();
         expect(onSave.mock.calls[0]?.[0]).toEqual({ comment: "is this green right?" });
         popover.destroy();
@@ -86,7 +86,10 @@ describe("the composer", () => {
         const popover = open();
         button(layer, "People only")?.click();
         expect(button(layer, "People only")?.getAttribute("aria-pressed")).toBe("true");
-        button(layer, "Save")?.click();
+        expect(layer.querySelector(".composer-visibility p")?.textContent).toBe(
+            "Only people can see this note."
+        );
+        button(layer, "Save note")?.click();
         await settle();
         expect(onSave.mock.calls[0]?.[0]).toMatchObject({ peopleOnly: true });
         popover.destroy();
