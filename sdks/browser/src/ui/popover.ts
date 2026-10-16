@@ -1,7 +1,7 @@
 import type { Intent, Severity } from "@notato/schema";
 import { validateReferenceFile } from "../reference-image.ts";
 import { capitalize } from "../text.ts";
-import { h } from "./dom.ts";
+import { h, ICONS, icon } from "./dom.ts";
 import { createFrames, type FrameJob, type Frames } from "./frame.ts";
 import { isMac } from "./keys.ts";
 import { animateIn, animateOut, RISE, settle } from "./motion.ts";
@@ -290,32 +290,48 @@ export function createPopover(layer: HTMLElement, frames: Frames = createFrames(
             });
             if (init.reviewInstruction) textarea.placeholder = "Optional detail for this target";
             const fileList = h("div", { class: "reference-files", "aria-live": "polite" });
+            const fileCount = h("span", { class: "reference-count" }, "0 / 3");
             const fileInput = h("input", {
                 type: "file",
                 accept: "image/png,image/jpeg,image/webp",
                 multiple: true,
+                hidden: true,
                 "aria-label": "Attach reference images",
             });
+            const chooseFiles = h(
+                "button",
+                {
+                    class: "btn reference-choose",
+                    type: "button",
+                    onclick: () => {
+                        if (!saving && current?.references) fileInput.click();
+                    },
+                },
+                "Choose images"
+            );
             const redraw = () => {
+                fileCount.textContent = `${files.length} / 3`;
+                fileCount.setAttribute("aria-label", `${files.length} of 3 images attached`);
                 fileList.replaceChildren(
                     ...files.map((f) =>
                         h(
                             "div",
-                            {},
-                            f.name,
+                            { class: "reference-file" },
+                            h("span", { class: "reference-name", title: f.name }, f.name),
                             h(
                                 "button",
                                 {
-                                    class: "btn",
+                                    class: "btn reference-remove",
                                     type: "button",
                                     "aria-label": `Remove ${f.name}`,
+                                    title: `Remove ${f.name}`,
                                     onclick: () => {
                                         if (saving) return;
                                         files = files.filter((item) => item !== f);
                                         redraw();
                                     },
                                 },
-                                "Remove"
+                                icon(ICONS.close)
                             )
                         )
                     )
@@ -388,13 +404,57 @@ export function createPopover(layer: HTMLElement, frames: Frames = createFrames(
                         class: "reference-picker",
                         style: { display: init.references ? "" : "none" },
                     },
-                    h("label", { class: "field" }, "Reference images (optional)", fileInput),
-                    fileList,
                     h(
-                        "p",
-                        { class: "hint" },
-                        `Choose files or paste an image (${isMac() ? "⌘V" : "Ctrl+V"}). Up to 3 images. Optimised before upload; counts towards workspace storage.`
-                    )
+                        "div",
+                        { class: "reference-heading" },
+                        h(
+                            "span",
+                            {},
+                            "Reference images ",
+                            h("span", { class: "reference-optional" }, "(optional)")
+                        ),
+                        fileCount
+                    ),
+                    fileInput,
+                    h(
+                        "div",
+                        {
+                            class: "reference-attach",
+                            role: "group",
+                            "aria-label": "Add reference images",
+                            onclick: (event: MouseEvent) => {
+                                if (
+                                    event.target instanceof Element &&
+                                    event.target.closest("button")
+                                )
+                                    return;
+                                textarea.focus({ preventScroll: true });
+                            },
+                        },
+                        h(
+                            "span",
+                            { class: "reference-symbol", "aria-hidden": "true" },
+                            icon(ICONS.image)
+                        ),
+                        h(
+                            "div",
+                            { class: "reference-options" },
+                            h(
+                                "p",
+                                { class: "reference-paste" },
+                                "Paste an image ",
+                                h("kbd", {}, isMac() ? "⌘ V" : "Ctrl V")
+                            ),
+                            h(
+                                "div",
+                                { class: "reference-alternative" },
+                                h("span", {}, "or"),
+                                chooseFiles
+                            )
+                        )
+                    ),
+                    fileList,
+                    h("p", { class: "reference-help" }, "PNG, JPG or WebP · Up to 16 MB each")
                 ),
                 h(
                     "div",

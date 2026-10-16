@@ -2,9 +2,6 @@ export const STYLES = /* css */ `
 .review-instruction { padding: 10px; background: color-mix(in oklab, var(--notato-accent, #1f8a78) 10%, transparent); border-radius: 8px; white-space: pre-wrap; overflow-wrap: anywhere; }
 .review-targets { max-height: 200px; overflow: auto; padding-left: 20px; }
 .review-targets li { padding: 4px 0; overflow-wrap: anywhere; }
-.reference-picker { margin-top: 10px; }
-.reference-picker input { max-width: 100%; font: inherit; }
-.reference-files { font-size: 12px; overflow-wrap: anywhere; }
 .review-dialog textarea { width: 100%; box-sizing: border-box; resize: vertical; padding: 10px 12px; border: 1px solid var(--p-line); border-radius: 8px; background: var(--p-field); color: var(--p-text); font: 14px/1.5 var(--ff); }
 .review-dialog textarea:focus { outline: 2px solid var(--notato-accent, #1f8a78); outline-offset: 1px; }
 .review-dialog .status:empty { display: none; }
@@ -392,6 +389,25 @@ button, input, textarea { font: inherit; }
   font-size: 14px; line-height: 1.45; color: var(--p-text); background: var(--p-field); outline: none;
 }
 .popover textarea:focus { border-color: var(--acc); }
+.reference-picker { --ref-accent: var(--acc); display: grid; gap: 7px; }
+@media (prefers-color-scheme: dark) { .reference-picker { --ref-accent: var(--b-acc); } }
+.reference-heading { display: flex; justify-content: space-between; align-items: center; gap: 8px; font-size: 12px; font-weight: 650; }
+.reference-optional { color: var(--p-mute); font-weight: 400; }
+.reference-count { color: var(--p-mute); font: 11px var(--fm); white-space: nowrap; }
+.reference-attach { display: flex; align-items: center; gap: 11px; padding: 12px; border: 1px solid color-mix(in oklab, var(--ref-accent) 32%, var(--p-line)); border-radius: 11px; background: color-mix(in oklab, var(--ref-accent) 5%, var(--p-bg)); }
+.reference-symbol { display: flex; align-items: center; justify-content: center; flex: none; width: 36px; height: 36px; border-radius: 10px; color: var(--ref-accent); background: color-mix(in oklab, var(--ref-accent) 12%, var(--p-bg)); }
+.reference-options { min-width: 0; display: grid; gap: 7px; }
+.reference-paste { display: flex; align-items: center; flex-wrap: wrap; gap: 7px; margin: 0; font-size: 13px; font-weight: 650; }
+.reference-paste kbd { padding: 3px 6px; border: 1px solid var(--p-line); border-radius: 5px; box-shadow: 0 1px 0 var(--p-line); background: var(--p-bg); color: var(--p-text); font: 11px var(--fm); white-space: nowrap; }
+.reference-alternative { display: flex; align-items: center; gap: 7px; color: var(--p-mute); font-size: 12px; }
+.reference-choose.btn { padding: 5px 10px; border: 1px solid color-mix(in oklab, var(--ref-accent) 28%, var(--p-line)); border-radius: 7px; background: var(--p-bg); color: var(--ref-accent); font-size: 12px; font-weight: 650; }
+.reference-choose.btn:hover:not(:disabled) { background: color-mix(in oklab, var(--ref-accent) 10%, var(--p-bg)); color: var(--p-text); }
+.reference-files { display: grid; gap: 5px; font-size: 12px; }
+.reference-files:empty { display: none; }
+.reference-file { display: flex; align-items: center; gap: 8px; min-width: 0; padding: 4px 5px 4px 10px; border: 1px solid var(--p-line); border-radius: 8px; background: var(--p-soft); }
+.reference-name { flex: 1; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.reference-remove.btn { display: flex; align-items: center; justify-content: center; flex: none; width: 28px; height: 28px; padding: 0; border-radius: 6px; color: var(--p-mute); }
+.reference-help { margin: 0; color: var(--p-mute); font-size: 11px; line-height: 1.4; }
 .chips { display: flex; gap: 5px; flex-wrap: wrap; }
 .chip {
   display: inline-flex; align-items: center; gap: 5px; padding: 4px 10px; border: 0; border-radius: 999px;

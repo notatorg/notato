@@ -55,10 +55,33 @@ afterEach(() => {
 });
 
 describe("pasted reference images", () => {
+    it("focuses the comment when the paste prompt is clicked so the next paste reaches the composer", () => {
+        layer.querySelector<HTMLButtonElement>(".reference-choose")?.focus();
+        layer.querySelector<HTMLElement>(".reference-paste")?.click();
+        expect(document.activeElement).toBe(comment());
+        paste(clipboard([image()]));
+        save();
+        expect(saved()).toHaveLength(1);
+    });
+
+    it("opens the file picker from Choose images and disables that action while saving", () => {
+        const chooseButton = layer.querySelector<HTMLButtonElement>(
+            ".reference-choose"
+        ) as HTMLButtonElement;
+        const click = vi.spyOn(input(), "click").mockImplementation(() => {});
+        chooseButton.click();
+        expect(click).toHaveBeenCalledOnce();
+        save();
+        expect(chooseButton.disabled).toBe(true);
+        chooseButton.click();
+        expect(click).toHaveBeenCalledOnce();
+    });
+
     it("attaches an image once when the clipboard exposes it as both a file and an item", () => {
         const file = image();
         expect(paste(clipboard([file])).defaultPrevented).toBe(true);
         expect(attached()).toContain("image.png");
+        expect(layer.querySelector(".reference-count")?.textContent).toBe("1 / 3");
         save();
         expect(saved()).toEqual([file]);
     });
