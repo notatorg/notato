@@ -243,7 +243,7 @@ function cardContents(draw: CardDraw, actions: CardActions): HTMLElement[] {
     const options = h(
         "details",
         { class: "card-options" },
-        h("summary", {}, "⋯ More options"),
+        h("summary", {}, "More options"),
         h("div", { class: "card-option-list" }, replyPrivacy, peopleOnly, ...revert.lead, hide, del)
     );
     options.open = Boolean(state.optionsOpen);

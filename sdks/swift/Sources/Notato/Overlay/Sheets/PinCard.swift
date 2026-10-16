@@ -114,7 +114,7 @@ struct PinCard: View {
                     Button("Delete", role: .destructive) { showDeleteConfirmation = true }
                 }
             } label: {
-                Label("More options", systemImage: "ellipsis")
+                Text("More options")
                     .font(.system(size: 14, weight: .semibold))
                     .padding(.horizontal, 12).padding(.vertical, 10)
             }
