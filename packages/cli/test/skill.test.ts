@@ -101,6 +101,8 @@ describe("the skill text", () => {
                     "notato_watch",
                     "notato_list_open",
                     "notato_get",
+                    "notato_get_review",
+                    "notato_ask_question",
                     "notato_acknowledge",
                     "notato_reply",
                     "notato_resolve",
