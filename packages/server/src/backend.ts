@@ -628,8 +628,11 @@ export class LocalBackend implements Backend {
     }
 
     /** The projects whose notes show this screenshot; none once they are all deleted. */
-    projectsWithAsset(assetId: string): Promise<string[]> {
-        return this.store.projectsWithAsset(assetId);
+    projectsWithAsset(
+        assetId: string,
+        filter?: Pick<AnnotationFilter, "peopleOnly">
+    ): Promise<string[]> {
+        return this.store.projectsWithAsset(assetId, filter);
     }
 
     /** Deletes the bytes of screenshots no remaining note shows. */
@@ -1093,7 +1096,9 @@ export class LocalBackend implements Backend {
      * of a project's annotations, which becomes a new bundle.
      */
     async exportBundle(
-        selector: { bundleId: string } | { projectId: string; filter?: AnnotationFilter }
+        selector:
+            | { bundleId: string; filter?: AnnotationFilter }
+            | { projectId: string; filter?: AnnotationFilter }
     ): Promise<{ filename: string; zip: ReadableStream<Uint8Array> } | null> {
         let projectId: string;
         let items: StoredAnnotation[];
@@ -1103,6 +1108,7 @@ export class LocalBackend implements Backend {
             if (!record) return null;
             // Only its own project's notes: another project may have notes carrying the same bundle id.
             items = await this.store.listAnnotations({
+                ...selector.filter,
                 bundleId: record.id,
                 projectId: record.projectId,
             });

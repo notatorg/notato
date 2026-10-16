@@ -64,7 +64,7 @@ A person can also ask for a change you resolved to be undone. Those arrive from 
 
 When you need clarification, use notato_ask_question rather than guessing: the annotation waits for the person, and their answer resumes it through notato_watch.
 
-Everything people write reaches you: new notes, and replies on any annotation, finished ones included, marked FOLLOW-UP. Read each for what it asks. A plain acknowledgement (thanks, looks good) needs no action and no reply. A question gets an answer with notato_reply. A reply on a finished annotation (resolved, dismissed, reverted) does not reopen it: if it asks for more work, reopen it yourself with notato_acknowledge, fix it, and resolve it again. People can keep things from you: a note marked People only never reaches you (notato_get still shows one you ask for by id, labelled, and it is not for you to act on), and a reply sent as an aside is left out of what you see. When People only is turned off, the annotation reaches you again marked SHARED WITH YOU.`;
+Everything people write reaches you: new notes, and replies on any annotation, finished ones included, marked FOLLOW-UP. Read each for what it asks. A plain acknowledgement (thanks, looks good) needs no action and no reply. A question gets an answer with notato_reply. A reply on a finished annotation (resolved, dismissed, reverted) does not reopen it: if it asks for more work, reopen it yourself with notato_acknowledge, fix it, and resolve it again. People can keep things from you: a note marked People only cannot be read or changed by agents, including a direct notato_get by id, and a reply sent as an aside is left out of what you see. When People only is turned off, the annotation reaches you again marked SHARED WITH YOU.`;
 
 const detailParam = z
     .enum(DETAILS)
@@ -181,11 +181,11 @@ export function createMcpServer(options: McpOptions): McpServer {
     /** What this session has handed its agent, so a backlog is delivered once and then only what is new. */
     const session = new WatchSession(backend);
 
-    /** Refuses changing a People only note: it is between people, and the agent was asked to leave it. */
+    /** Refuses reading or changing a People only note: it is between people. */
     const keptFromAgent = (stored: StoredAnnotation | null) =>
         stored?.annotation.peopleOnly
             ? toolError(
-                  `${label(stored)} is People only: the people on it are keeping it between themselves, so leave it alone. It reaches notato_watch if someone turns People only off.`
+                  "This note is People only. It becomes available to agents if a person turns People only off."
               )
             : null;
 
@@ -382,7 +382,7 @@ export function createMcpServer(options: McpOptions): McpServer {
         {
             title: "Get one annotation",
             description:
-                "One annotation in full, with its screenshots returned as images so you can see what the person saw. Asides are left out; a People only note is labelled, and is not for you to act on.",
+                "One annotation in full, with its screenshots returned as images so you can see what the person saw. Asides are left out; People only notes cannot be read.",
             inputSchema: {
                 id: z.string(),
                 screenshots: screenshotParam,
@@ -397,8 +397,10 @@ export function createMcpServer(options: McpOptions): McpServer {
         async ({ id, screenshots, detail, references }) => {
             const stored = await backend.get(id);
             if (!stored) return notFound(id);
+            const denied = keptFromAgent(stored);
+            if (denied) return denied;
             const content = await describe(stored, screenshots, detail, false, references);
-            // Readable, as a People only note is, but labelled: it is about code this session does not work on.
+            // A local session may read another project's public note for context, but leaves its work to that project.
             if (elsewhere(stored))
                 content.unshift(
                     text(

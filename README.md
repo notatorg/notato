@@ -158,7 +158,7 @@ Behind it: a `variants` record on the annotation (the group and the names, each 
 - **People only**, on a note: the note and its whole thread are between people, and never reach the agent. Turn it on as you write the note, or on an existing one from its card on the board or in the toolbar; anyone on the thread can turn it off again, and each change is recorded in the thread. Turning it off hands the note back to the agent, with what was said meanwhile (it arrives marked SHARED WITH YOU). Webhooks still get People only notes: they are for people.
 - **Aside**, on a reply: one remark for the people on the thread ("Sam, ignore the agent for a sec"). The agent is not sent it and is not shown it, so it never takes an aside as the thing to answer.
 
-The agent can still read a People only note it asks for by id (`notato_get`), labelled as one, and is told not to act on it; its tools refuse to change one.
+Agents cannot read or change a People only note, including direct reads by id, screenshots, references and exports. App tokens and signed-in people retain access. Turning People only off explicitly shares the note and its thread with agents again.
 
 ## The board: every project in one place
 

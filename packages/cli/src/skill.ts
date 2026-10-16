@@ -80,7 +80,7 @@ Everything people write reaches you: \`notato_watch\` delivers each reply in an 
 
 People can keep things between themselves, and you never see them in \`notato_watch\` or \`notato_list_open\`:
 
-- **People only** on a note: the note and its whole thread are between people. If you ask for one by id, \`notato_get\` shows it labelled **PEOPLE ONLY**: leave it alone (no reply, no status change, no code). When someone turns People only off, it reaches you again marked **SHARED WITH YOU**, with what they discussed in the thread; work it as usual.
+- **People only** on a note: the note and its whole thread are between people. Direct reads by id through \`notato_get\` are refused too: leave it alone (no reply, no status change, no code). When someone turns People only off, it reaches you again marked **SHARED WITH YOU**, with what they discussed in the thread; work it as usual.
 - **An aside** on a reply: one remark for the people on the thread. It is left out of what you are shown, so the last message you see is the last one for you.
 
 \`@\` in a note or a reply calls one of the server's plugins (\`@jira\`, say), not you: you get what people write without it.

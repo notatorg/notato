@@ -98,7 +98,7 @@ describe("the latest word, as the agent sees it", () => {
 });
 
 describe("People only", () => {
-    it("never reaches notato_watch or notato_list_open, and is labelled when asked for by id", async () => {
+    it("never reaches notato_watch, notato_list_open or direct reads by id", async () => {
         const t = await setup();
         const kept = await t.add({
             comment: "between us: is this the right green?",
@@ -118,10 +118,11 @@ describe("People only", () => {
         await t.backend.reply(kept.id, "I think it's fine", SAM);
         expect((await call("notato_watch", quiet)).text).toContain("No new annotations");
 
-        const got = (await call("notato_get", { id: kept.id })).text;
-        expect(got).toContain("right green");
-        expect(got).toContain("People only");
-        expect(got).toContain("⊘ PEOPLE ONLY");
+        const got = await call("notato_get", { id: kept.id });
+        expect(got.isError).toBe(true);
+        expect(got.text).not.toContain("right green");
+        expect(got.text).not.toContain("I think it's fine");
+        expect(got.text).toContain("People only");
     });
 
     it("refuses the agent's tools on it", async () => {

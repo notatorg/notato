@@ -156,7 +156,10 @@ export interface Store {
     /** Removes the project with its annotations and bundles. Returns the annotations that were removed, or null for an unknown id. */
     deleteProject(id: string): Promise<StoredAnnotation[] | null>;
     /** The projects with an annotation that shows this screenshot (none once every such note is deleted). */
-    projectsWithAsset(assetId: string): Promise<string[]>;
+    projectsWithAsset(
+        assetId: string,
+        filter?: Pick<AnnotationFilter, "peopleOnly">
+    ): Promise<string[]>;
     /** Returns false when a bundle with that id was already recorded. */
     insertBundle(bundle: BundleRecord): Promise<boolean>;
     getBundle(id: string): Promise<BundleRecord | null>;

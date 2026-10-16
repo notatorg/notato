@@ -2,7 +2,7 @@ import { annotationSummary } from "@notato/core";
 import { accessibleProjects, canAccessProject, type Principal, samePrincipal } from "../auth.ts";
 import type { LocalBackend } from "../backend.ts";
 import type { NotatoEvent } from "../events.ts";
-import { assertAccess, projectIdFrom, type Routes } from "./common.ts";
+import { assertAccess, isAgentToken, projectIdFrom, type Routes } from "./common.ts";
 
 const encoder = new TextEncoder();
 const frame = (event: string, data: unknown) =>
@@ -122,16 +122,23 @@ export class EventStreams {
                     // With a way to ask whether the credential still stands, each change is checked before it is sent,
                     // in order: a revoked token or a removed member never receives another note.
                     let turn: Promise<void> = Promise.resolve();
+                    const sendChange = (e: NotatoEvent) => {
+                        if (principal && isAgentToken(principal) && e.annotation.peopleOnly) {
+                            // Remove a previously public note from an agent's cache without sending its private contents.
+                            enqueue(
+                                frame("deleted", { id: e.id, projectId: e.projectId, seq: e.seq })
+                            );
+                        } else enqueue(changeFrame(e, summary));
+                    };
                     const unsubscribe = backend.bus.subscribe((e) => {
                         const wanted =
                             (projectId === "*" || e.projectId === projectId) && allow(e.projectId);
-                        if (!stillAllowed)
-                            return wanted ? enqueue(changeFrame(e, summary)) : undefined;
+                        if (!stillAllowed) return wanted ? sendChange(e) : undefined;
                         // Any change is a moment to ask, wanted or not: a credential that was revoked, or moved to
                         // another workspace, hears nothing more, and is let go at the next change anywhere.
                         turn = turn.then(async () => {
                             if (!(await stillAllowed().catch(() => false))) cleanup();
-                            else if (wanted) enqueue(changeFrame(e, summary));
+                            else if (wanted) sendChange(e);
                         });
                     });
                     const ping = setInterval(() => {

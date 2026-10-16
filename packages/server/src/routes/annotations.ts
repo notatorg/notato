@@ -17,6 +17,8 @@ import { type AnnotationFilter, type StoredAnnotation, tokenPurpose } from "../s
 import {
     type AppContext,
     assertAccess,
+    forReader,
+    isAgentToken,
     json,
     markdown,
     noContent,
@@ -254,7 +256,7 @@ export const annotationRoutes: Routes = async (route, app) => {
     const annotation = async (id: string | undefined) => {
         const existing = await backend.get(id ?? "");
         if (existing) assertAccess(principal, existing.annotation.projectId);
-        return existing;
+        return existing?.annotation.peopleOnly && isAgentToken(principal) ? null : existing;
     };
 
     const inProject = match(/^\/projects\/([^/]+)\/annotations$/);
@@ -263,7 +265,9 @@ export const annotationRoutes: Routes = async (route, app) => {
         assertAccess(principal, projectId);
         if (method === "POST") return ingest(req, projectId, app, principal);
         if (method === "GET")
-            return json(await page(backend, filterFromQuery(query, projectId), query));
+            return json(
+                await page(backend, forReader(principal, filterFromQuery(query, projectId)), query)
+            );
     }
 
     // ---- the same notes as Markdown, for pasting into any agent or issue ---------------------------------------
@@ -272,7 +276,9 @@ export const annotationRoutes: Routes = async (route, app) => {
         const projectId = projectIdFrom(projectMarkdown[0]);
         assertAccess(principal, projectId);
         const detail = detailFrom(query);
-        const items = await backend.list(filterFromQuery(query, projectId, { whole: true }));
+        const items = await backend.list(
+            forReader(principal, filterFromQuery(query, projectId, { whole: true }))
+        );
         return markdown(
             renderAnnotations(
                 items.map((i) => i.annotation),
@@ -288,14 +294,20 @@ export const annotationRoutes: Routes = async (route, app) => {
     }
 
     if (path === "/annotations" && method === "GET")
-        return json(await page(backend, withinReach(principal, filterFromQuery(query)), query));
+        return json(
+            await page(
+                backend,
+                forReader(principal, withinReach(principal, filterFromQuery(query))),
+                query
+            )
+        );
 
     // What an attached agent was handed, so another session (or a restart) is not handed it again.
     if (path === "/annotations/handed" && method === "POST") {
         const { items } = await readJson(req, HandedBody);
         const reachable = [];
         for (const item of items) {
-            const stored = await backend.get(item.id);
+            const stored = await annotation(item.id);
             if (stored && canAccessProject(principal, stored.annotation.projectId))
                 reachable.push(item);
         }
@@ -304,7 +316,7 @@ export const annotationRoutes: Routes = async (route, app) => {
     }
 
     if (path === "/annotations/wait" && method === "GET") {
-        const filter = withinReach(principal, filterFromQuery(query));
+        const filter = forReader(principal, withinReach(principal, filterFromQuery(query)));
         const asked = Number(query.get("timeoutMs") ?? WAIT_DEFAULT_MS);
         const timeout = Number.isFinite(asked)
             ? Math.min(Math.max(0, asked), WAIT_MAX_MS)
@@ -325,7 +337,7 @@ export const annotationRoutes: Routes = async (route, app) => {
                     ready &&
                     (
                         await backend.list({
-                            ...withinReach(current, filterFromQuery(query)),
+                            ...forReader(current, withinReach(current, filterFromQuery(query))),
                             limit: 1,
                         })
                     ).length > 0,
@@ -342,6 +354,8 @@ export const annotationRoutes: Routes = async (route, app) => {
         if (method === "PATCH") {
             const change = await readJson(req, PatchBody);
             if (!existing) return notFound();
+            if (change.peopleOnly !== undefined && isAgentToken(principal))
+                throw new RequestError("only people can change note visibility", 403);
             // One update: a refused status change must not leave the severity or comment changed behind it.
             const updated = await backend.update(
                 id,
@@ -437,7 +451,7 @@ export const annotationRoutes: Routes = async (route, app) => {
 
 /** `GET /assets/:id`: a screenshot, for whoever may read a note that shows it, and for nobody once no note does. */
 async function screenshot(id: string, principal: Principal, app: AppContext): Promise<Response> {
-    const owners = await app.backend.projectsWithAsset(id);
+    const owners = await app.backend.projectsWithAsset(id, forReader(principal));
     if (!owners.some((p) => canAccessProject(principal, p))) return notFound();
     const asset = await app.backend.asset(id);
     if (!asset) return notFound();

@@ -464,12 +464,15 @@ export class SqliteStore implements Store, AuthStore {
         return run();
     }
 
-    async projectsWithAsset(assetId: string): Promise<string[]> {
+    async projectsWithAsset(
+        assetId: string,
+        filter: Pick<AnnotationFilter, "peopleOnly"> = {}
+    ): Promise<string[]> {
         return (
             this.db
                 .query(
                     `SELECT DISTINCT project_id AS id FROM annotations
-         WHERE json_extract(json, '$.screenshots.full.id') = ?1 OR json_extract(json, '$.screenshots.crop.id') = ?1 OR json_extract(json, '$.screenshots.thumbnail.id') = ?1 OR EXISTS (SELECT 1 FROM json_each(annotations.json, '$.references') r WHERE json_extract(r.value, '$.id') = ?1)`
+         WHERE ${filter.peopleOnly === false ? "people_only = 0 AND " : ""}(json_extract(json, '$.screenshots.full.id') = ?1 OR json_extract(json, '$.screenshots.crop.id') = ?1 OR json_extract(json, '$.screenshots.thumbnail.id') = ?1 OR EXISTS (SELECT 1 FROM json_each(annotations.json, '$.references') r WHERE json_extract(r.value, '$.id') = ?1))`
                 )
                 .all(assetId) as Array<{ id: string }>
         ).map((r) => r.id);

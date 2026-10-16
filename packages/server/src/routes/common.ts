@@ -9,7 +9,7 @@ import {
 import { type LocalBackend, RequestError } from "../backend.ts";
 import { sameOrigin } from "../cors.ts";
 import type { AppOptions, RequestInfo } from "../http.ts";
-import { type AnnotationFilter, PROJECT_ID, type TokenRecord } from "../storage.ts";
+import { type AnnotationFilter, PROJECT_ID, type TokenRecord, tokenPurpose } from "../storage.ts";
 import { fromOutside } from "../tunnel.ts";
 import type { EventStreams } from "./events.ts";
 
@@ -67,6 +67,13 @@ export function json(data: unknown, status = 200, headers: Record<string, string
 export const notFound = () => json({ error: "not found" }, 404);
 
 export const noContent = () => new Response(null, { status: 204 });
+
+/** An agent credential never reads notes that people have kept between themselves. */
+export const isAgentToken = (principal: Principal) =>
+    principal.kind === "token" && tokenPurpose(principal) === "agent";
+
+export const forReader = (principal: Principal, filter: AnnotationFilter = {}): AnnotationFilter =>
+    isAgentToken(principal) ? { ...filter, peopleOnly: false } : filter;
 
 /** Markdown as it is served: text, never cached, and never sniffed into something else. */
 export function markdown(body: string): Response {

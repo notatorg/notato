@@ -6,6 +6,7 @@ import { tokenPurpose } from "../storage.ts";
 import {
     type AppContext,
     assertAccess,
+    forReader,
     json,
     notFound,
     projectIdFrom,
@@ -84,7 +85,9 @@ export const bundleRoutes: Routes = async ({ req, url, path, method, principal, 
     if (exportOne && method === "GET") {
         const record = await backend.getBundle(exportOne[0] ?? "");
         if (record) assertAccess(principal, record.projectId);
-        const exported = record ? await backend.exportBundle({ bundleId: record.id }) : null;
+        const exported = record
+            ? await backend.exportBundle({ bundleId: record.id, filter: forReader(principal) })
+            : null;
         return exported ? zip(exported) : notFound();
     }
 
@@ -94,10 +97,12 @@ export const bundleRoutes: Routes = async ({ req, url, path, method, principal, 
         if (!record) return notFound();
         assertAccess(principal, record.projectId);
         // Only its own project's notes: another project may have notes carrying the same bundle id.
-        const annotations = await backend.list({
-            bundleId: record.id,
-            projectId: record.projectId,
-        });
+        const annotations = await backend.list(
+            forReader(principal, {
+                bundleId: record.id,
+                projectId: record.projectId,
+            })
+        );
         return json({ bundle: record, annotations });
     }
 
@@ -107,7 +112,10 @@ export const bundleRoutes: Routes = async ({ req, url, path, method, principal, 
         assertAccess(principal, projectId);
         const exported = await backend.exportBundle({
             projectId,
-            filter: filterFromQuery(url.searchParams, projectId, { whole: true }),
+            filter: forReader(
+                principal,
+                filterFromQuery(url.searchParams, projectId, { whole: true })
+            ),
         });
         return exported ? zip(exported) : notFound();
     }
