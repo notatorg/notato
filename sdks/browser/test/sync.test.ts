@@ -1,5 +1,5 @@
 import { createMemoryStore } from "@notato/core";
-import { type Annotation, sampleAnnotation } from "@notato/schema";
+import { type Annotation, Status, sampleAnnotation } from "@notato/schema";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { type EventStream, setTransport } from "../src/net.ts";
 import { createServerSync, type ServerSyncOptions } from "../src/sync.ts";
@@ -89,6 +89,7 @@ function start(
         project: "shop",
         store,
         onState: (state) => states.push(state),
+        annotationStatuses: () => Status.options,
         ...over,
     });
     return { sync, store, states, streams };
@@ -114,7 +115,8 @@ describe("reading the server's list", () => {
         await sync.refresh();
         expect(store.list()).toHaveLength(1203);
         expect(store.get(note(1203).id)).toBeDefined();
-        const shown = "open,acknowledged,variant_chosen,resolved,revert_requested,reverted";
+        const shown =
+            "open,acknowledged,awaiting_response,variant_chosen,resolved,revert_requested,reverted";
         expect(server.asked.map((u) => decodeURIComponent(new URL(u).search))).toEqual([
             `?limit=500&status=${shown}`,
             `?limit=500&afterSeq=500&status=${shown}`,
@@ -132,7 +134,38 @@ describe("reading the server's list", () => {
         expect(ids(store)).toEqual([note(1).id, note(3).id]);
     });
 
-    it("reads a server too old to know one of the statuses whole, and goes on doing so", async () => {
+    it("reads an older server without a rejected status request, and still excludes dismissed notes", async () => {
+        const server = serverWith([note(1), note(2, { status: "dismissed" })]);
+        const plain = server.fetch.getMockImplementation();
+        server.fetch.mockImplementation(async (url: string) =>
+            new URL(url).searchParams.has("status")
+                ? Response.json({ error: 'invalid status "awaiting_response"' }, { status: 400 })
+                : (plain?.(url) as Promise<Response>)
+        );
+        const { sync, store } = start(server, { annotationStatuses: () => undefined });
+        await sync.refresh();
+        expect(ids(store)).toEqual([note(1).id]);
+        expect(server.fetch).toHaveBeenCalledTimes(1);
+        expect(new URL(server.asked[0] as string).searchParams.has("status")).toBe(false);
+    });
+
+    it("includes waiting questions only when the server advertises that status", async () => {
+        const server = serverWith([note(1, { status: "awaiting_response" })]);
+        let supported: readonly Status[] = Status.options.filter((s) => s !== "awaiting_response");
+        const { sync, store } = start(server, { annotationStatuses: () => supported });
+        await sync.refresh();
+        expect(new URL(server.asked[0] as string).searchParams.get("status")).not.toContain(
+            "awaiting_response"
+        );
+        supported = Status.options;
+        await sync.refresh();
+        expect(new URL(server.asked[1] as string).searchParams.get("status")).toContain(
+            "awaiting_response"
+        );
+        expect(store.get(note(1).id)?.annotation.status).toBe("awaiting_response");
+    });
+
+    it("falls back to the whole list if an advertised status is refused, and goes on doing so", async () => {
         const server = serverWith([note(1), note(2, { status: "dismissed" })]);
         const plain = server.fetch.getMockImplementation();
         server.fetch.mockImplementation(async (url: string) =>

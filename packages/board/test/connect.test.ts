@@ -46,11 +46,9 @@ describe("connecting an app to a shared server", () => {
             'NotatoConfig(project = "checkout-web", server = "https://notato.example.com", token = "notato_abc-123")'
         );
         expect(code(g.page)).toBe(
-            '<script src="https://notato.example.com/inject.js?project=checkout-web&token=notato_abc-123"></script>'
+            '<script src="https://notato.example.com/inject.js?project=checkout-web" data-notato-token="notato_abc-123"></script>'
         );
-        expect(g.page.steps[0]?.link?.href).toBe(
-            "/bookmarklet?project=checkout-web&token=notato_abc-123"
-        );
+        expect(g.page.steps[0]?.link?.href).toBe("/bookmarklet?project=checkout-web");
     });
 
     it("puts a placeholder where the token goes when the board does not have it", () => {
@@ -64,7 +62,7 @@ describe("connecting an app to a shared server", () => {
         expect(code(later.maui)).toContain(`options.Token = "${TOKEN_PLACEHOLDER}";`);
         // A link never carries a placeholder: the bookmark page is told how to add one.
         expect(later.page.steps[0]?.link?.href).toBe("/bookmarklet?project=checkout-web");
-        expect(text(later.page)).toContain("&token=<the token>");
+        expect(text(later.page)).toContain("npx notato inject --token");
     });
 });
 

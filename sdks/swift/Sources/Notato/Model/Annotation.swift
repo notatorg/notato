@@ -25,11 +25,13 @@ public enum Severity {
 public enum Status {
     public static let open = "open"
     public static let acknowledged = "acknowledged"
+    public static let awaitingResponse = "awaiting_response"
     public static let variantChosen = "variant_chosen"
     public static let resolved = "resolved"
     public static let revertRequested = "revert_requested"
     public static let reverted = "reverted"
     public static let dismissed = "dismissed"
+    public static func label(_ value: String) -> String { value == awaitingResponse ? "Needs your answer" : value.replacingOccurrences(of: "_", with: " ") }
 }
 
 /// Who wrote a note or a reply: a person, or an agent.
@@ -305,7 +307,10 @@ struct AnnotationList: Codable, Sendable {
 }
 
 struct ServerConfig: Codable, Sendable {
+    var derivedScreenshots: Bool?
     var screenshots: Bool?
+    /// The token may only send new notes: no stream, no list, nothing done to a note once sent.
+    var captureOnly: Bool?
 }
 
 struct ErrorBody: Codable, Sendable {

@@ -4,7 +4,12 @@ import type { AgentStep } from "@notato/schema";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { onHistoryChange } from "../src/history.ts";
 import { addServer } from "../src/net.ts";
-import { accessibleName, domIdentityPlugin, visibleText } from "../src/plugins/identity-dom.ts";
+import {
+    accessibleName,
+    domIdentityPlugin,
+    selectionText,
+    visibleText,
+} from "../src/plugins/identity-dom.ts";
 import { networkPlugin } from "../src/plugins/network.ts";
 import { maskClone, maskRects, shouldMask } from "../src/plugins/screenshot.ts";
 import { stepsPlugin } from "../src/plugins/steps.ts";
@@ -155,6 +160,81 @@ describe("regions people type into that are not form fields", () => {
         expect(shouldMask(el('<div contenteditable="false">x</div>'), true)).toBe(false);
         maskClone(editor, true);
         expect(editor.textContent).toBe("");
+    });
+});
+
+describe("text a person selects for a note", () => {
+    const $ = (selector: string) => document.querySelector(selector) as HTMLElement;
+    /** Selects from `offset` in the first text of `from` to `end` in the last text of `to`, as a drag would. */
+    const select = (from: Node, offset: number, to: Node, end: number) => {
+        const range = document.createRange();
+        range.setStart(from, offset);
+        range.setEnd(to, end);
+        const selection = window.getSelection() as Selection;
+        selection.removeAllRanges();
+        selection.addRange(range);
+        return selection;
+    };
+    afterEach(() => window.getSelection()?.removeAllRanges());
+
+    it("is the browser's own text of it when nothing private is in it", () => {
+        document.body.innerHTML = `<p id="p">Your order <b>is</b> on its way</p>`;
+        const p = $("#p");
+        const selection = select(p.firstChild as Node, 5, p.lastChild as Node, 7);
+        expect(selectionText(selection)).toBe(selection.toString());
+        expect(selectionText(selection)).toBe("order is on its");
+    });
+
+    it("leaves out a private element inside it, and the field values beside it", () => {
+        document.body.innerHTML = `<p id="p">Card <span data-notato-mask>4242 4242 4242 4242</span> was declined.
+            Name <input value="Sam Smith"> note <textarea>my secret note</textarea>
+            <select><option>Mr</option></select> end</p>`;
+        const p = $("#p");
+        const selection = select(p.firstChild as Node, 0, p.lastChild as Node, 4);
+        expect(selection.toString()).toContain("4242"); // what used to be recorded
+        const text = selectionText(selection);
+        expect(text).toBe("Card was declined. Name note end");
+        for (const secret of ["4242", "Sam Smith", "secret note", "Mr"])
+            expect(text).not.toContain(secret);
+    });
+
+    it("starting or ending inside a private element, takes only what is outside it", () => {
+        document.body.innerHTML = `<p id="p">IBAN <span data-notato-mask id="m">GB33BUKB20201555555555</span> on file</p>`;
+        const masked = $("#m").firstChild as Node;
+        const p = $("#p");
+        expect(selectionText(select(masked, 4, p.lastChild as Node, 8))).toBe("on file");
+        expect(selectionText(select(p.firstChild as Node, 0, masked, 6))).toBe("IBAN");
+    });
+
+    it("is nothing when all of it is in a region people type into or a private element", () => {
+        document.body.innerHTML = `
+            <div contenteditable="true" id="box">Meet me at <b>the flat</b> at 9</div>
+            <div role="textbox" id="rich">my secret draft</div>
+            <div data-notato-mask><p id="deep">account 12345678</p></div>`;
+        const box = $("#box");
+        expect(selectionText(select(box.firstChild as Node, 0, box.lastChild as Node, 3))).toBe("");
+        const rich = $("#rich").firstChild as Node;
+        expect(selectionText(select(rich, 3, rich, 9))).toBe("");
+        const deep = $("#deep").firstChild as Node;
+        expect(selectionText(select(deep, 0, deep, 7))).toBe("");
+    });
+
+    it("is nothing for a selection in a field's value, which leaves the page's range collapsed", () => {
+        document.body.innerHTML = `<p id="p">Notes: <textarea>typed secret</textarea></p>`;
+        const p = $("#p");
+        const selection = select(p, 1, p, 1);
+        // A browser can say the selected part of the field here: what the page's range holds is what counts.
+        vi.spyOn(selection, "toString").mockReturnValue("typed secret");
+        expect(selectionText(selection)).toBe("");
+    });
+
+    it("keeps a field opted out of screenshot masking only, and a region switched off for typing", () => {
+        document.body.innerHTML = `<p id="p">Plan <span data-notato-mask="false">Pro</span> and
+            <span contenteditable="false">yearly</span> billing <input value="x"></p>`;
+        const p = $("#p");
+        expect(selectionText(select(p.firstChild as Node, 0, p, p.childNodes.length))).toBe(
+            "Plan Pro and yearly billing"
+        );
     });
 });
 

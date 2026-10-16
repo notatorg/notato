@@ -72,6 +72,12 @@ internal interface IOverlayHost : IDisposable
 
     IElementGeometry Geometry { get; }
 
+    /// <summary>
+    /// Whether the app keeps what it shows now out of screenshots: Android's <c>FLAG_SECURE</c> on the window on top or
+    /// the activity's (a one-time code, a card's number). A picture drawn from the views would ignore it. iOS has no such mark.
+    /// </summary>
+    bool SecureWindow { get; }
+
     /// <summary>A picture of what the app shows, never including the overlay.</summary>
     /// <param name="measureMasks">
     /// Where the private parts of the app are. Called on the main thread at the moment the picture is taken, so the

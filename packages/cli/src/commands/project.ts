@@ -1,8 +1,14 @@
-import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { parseArgs } from "node:util";
-import { Authenticator, FileBlobStore, LocalBackend, SqliteStore } from "@notato/server";
-import { dataDir, PROJECT_ID } from "../options.ts";
+import {
+    Authenticator,
+    databaseIn,
+    ensureDataDir,
+    FileBlobStore,
+    LocalBackend,
+    SqliteStore,
+} from "@notato/server";
+import { dataDir, localServer, PROJECT_ID } from "../options.ts";
 import { isInteractive, terminalConfirm } from "../terminal.ts";
 
 const HELP = `notato project
@@ -11,16 +17,21 @@ Manage projects directly in the data directory, for setting up a server without 
 (\`notato serve\`) only takes notes, bundles and tokens for projects created on it; \`notato dev\` creates a
 project on its first note.
 
-  notato project create <id> [--name <name>]   Create a project and print its first app token (shown once)
+  notato project create <id> [--name <name>]   Create a project, with an app token for its SDK and an agent token
+                                               for your coding agent, for this project only (both shown once)
   notato project list                          List the projects, with their notes
   notato project rename <id> <name>            Change what a project is called (its id stays)
   notato project delete <id> [--yes]           Delete a project with its notes, bundles and screenshots,
                                                and stop its tokens working
 
-An app's SDK uses the token printed by create (pass it as the SDK's token). More tokens: \`notato token\`.
+An app's SDK uses the app token (pass it as the SDK's token); a coding agent connects to the server's /mcp with the
+agent token. The app token is printed on stdout, the rest on stderr; --json prints everything on stdout, for a script
+or an agent setting Notato up. --no-agent makes the app token only. More tokens: \`notato token\`.
 
 Options:
   -n, --name <name>   What people call the project (default: its id)
+      --no-agent      Make the app token only
+      --json          Print what was made as JSON on stdout
   -y, --yes           Delete without asking
   -d, --dir <path>    Data directory (default ./.notato, or $NOTATO_DIR)
   -h, --help          Show this help`;
@@ -42,6 +53,9 @@ export async function runProjectCommand(
         options: {
             name: { type: "string", short: "n" },
             yes: { type: "boolean", short: "y" },
+            "no-agent": { type: "boolean" },
+            json: { type: "boolean" },
+            server: { type: "string" },
             dir: { type: "string", short: "d" },
             help: { type: "boolean", short: "h" },
         },
@@ -58,8 +72,8 @@ export async function runProjectCommand(
     const project = id as string;
 
     const dir = dataDir(values.dir);
-    mkdirSync(dir, { recursive: true });
-    const store = new SqliteStore(join(dir, "notato.db"));
+    ensureDataDir(dir);
+    const store = new SqliteStore(databaseIn(dir));
     const backend = new LocalBackend(store, new FileBlobStore(join(dir, "assets")));
     const auth = new Authenticator(store);
     try {
@@ -71,10 +85,45 @@ export async function runProjectCommand(
                 );
             // An app on a shared server cannot send without a token, so the first one comes with the project.
             const { token, record } = await auth.issueToken(project, `${created.name} app`);
+            const agent = values["no-agent"]
+                ? undefined
+                : await auth.issueToken(project, `${created.name} agent`, { purpose: "agent" });
+            const server = (values.server ?? localServer()).replace(/\/$/, "");
+            if (values.json) {
+                console.log(
+                    JSON.stringify(
+                        {
+                            project,
+                            name: created.name,
+                            server,
+                            appToken: token,
+                            ...(agent
+                                ? {
+                                      agentToken: agent.token,
+                                      mcp: {
+                                          url: `${server}/mcp?project=${encodeURIComponent(project)}`,
+                                          header: `Authorization: Bearer ${agent.token}`,
+                                      },
+                                  }
+                                : {}),
+                        },
+                        null,
+                        2
+                    )
+                );
+                return 0;
+            }
             console.log(token);
             console.error(
-                `created project ${project}${created.name === project ? "" : ` ("${created.name}")`} in ${dir}, with its first app token (id ${record.id}); the token is shown once`
+                `created project ${project}${created.name === project ? "" : ` ("${created.name}")`} in ${dir}, with its app token (id ${record.id}), printed above; the tokens are shown once`
             );
+            if (agent)
+                console.error(
+                    [
+                        `agent token for ${project} only (id ${agent.record.id}): ${agent.token}`,
+                        `connect Claude Code: claude mcp add --transport http notato "${server}/mcp?project=${project}" --header "Authorization: Bearer ${agent.token}"`,
+                    ].join("\n")
+                );
             return 0;
         }
         if (action === "list") {

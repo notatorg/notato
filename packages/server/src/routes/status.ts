@@ -1,8 +1,9 @@
-import { sampleAnnotation } from "@notato/schema";
+import { Status, sampleAnnotation } from "@notato/schema";
 import { z } from "zod";
-import { canAccessProject, isAdmin, type Principal } from "../auth.ts";
+import { accessibleProjects, canAccessProject, isAdmin, type Principal } from "../auth.ts";
+import { webhookHost } from "../settings.ts";
 import { buildDelivery, secretOf, sendDelivery } from "../webhooks.ts";
-import { json, type Routes, readJson } from "./common.ts";
+import { assertAccess, assertBoard, isOperator, json, type Routes, readJson } from "./common.ts";
 
 /** What answers `/health`: how a second `notato dev` (and `notato doctor`) knows the port is a Notato server. */
 const HEALTH = { ok: true, service: "notato" } as const;
@@ -22,37 +23,55 @@ export const statusRoutes: Routes = async ({ req, url, path, method, principal }
 
     if (path === "/config" && method === "GET") {
         // What a page needs to know before it captures anything (the server enforces it either way), and whether an
-        // agent is connected, for the page to say so.
+        // agent is connected, for the page to say so: an agent on its own project, never on one it cannot reach.
+        const project = url.searchParams.get("project") || undefined;
+        if (project !== undefined) assertAccess(principal, project);
         return json({
             screenshots: backend.config().screenshots,
-            agent: backend.agents.stateFor(url.searchParams.get("project") ?? undefined),
+            references: true,
+            reviews: true,
+            annotationStatuses: Status.options,
+            derivedScreenshots: backend.derivedScreenshots,
+            captureOnly: principal.kind === "token" && principal.permission === "capture",
+            agent: backend.agents.stateFor(project ?? accessibleProjects(principal)),
+            // The server's `@` plugins, which are the same for every project (the event stream sends them too).
             mentions: backend.mentions.list(),
         });
     }
 
     if (path === "/status" && method === "GET") {
+        // Browser SDKs name their project for preflight origin checks. The credential must reach it too.
+        const project = url.searchParams.get("project") || undefined;
+        if (project !== undefined) assertAccess(principal, project);
         const projects = await backend.store.listProjects();
         const config = backend.config();
+        // How the server is set up (its settings file and what is wrong with it, where they came from, its webhooks)
+        // is for whoever runs it. Anyone else sees what the settings are, and the projects and agents they reach.
+        const operator = isOperator(req, principal, app);
         return json({
             ...HEALTH,
             version: options.version,
             mode: options.mode,
             mcpUrl: options.mcpUrl,
             uptimeSec: Math.round((Date.now() - app.startedAt) / 1000),
-            watchers: backend.bus.size,
-            pages: app.streams.open,
-            agents: backend.agents.state,
+            ...(operator ? { watchers: backend.bus.size } : {}),
+            pages: app.streams.countFor(principal),
+            agents: backend.agents.stateFor(accessibleProjects(principal)),
             mentions: backend.mentions.list(),
             agentProjects: backend.relay.projects().filter((p) => canAccessProject(principal, p)),
             projects: projects.filter((p) => canAccessProject(principal, p.id)),
             config: {
                 screenshots: config.screenshots ? "on" : "off",
-                source: config.source.screenshots,
                 mcp: config.mcp ? "on" : "off",
-                mcpSource: config.source.mcp,
-                file: config.file,
-                error: config.error,
-                webhooks: config.webhooks.length,
+                webhooks: operator ? config.webhooks.length : 0,
+                ...(operator
+                    ? {
+                          source: config.source.screenshots,
+                          mcpSource: config.source.mcp,
+                          file: config.file,
+                          error: config.error,
+                      }
+                    : {}),
             },
         });
     }
@@ -63,9 +82,10 @@ export const statusRoutes: Routes = async ({ req, url, path, method, principal }
         return json({
             items: config.webhooks.map((w, index) => ({
                 index,
-                name: w.name ?? new URL(w.url).host,
-                // The URL itself is a secret for many services (a Slack webhook is one), so only the host is shown.
-                host: new URL(w.url).host,
+                name: w.name ?? webhookHost(w),
+                // The URL itself is a secret for many services (a Slack webhook is one), so only the host is shown: the
+                // one it sends to, for a URL read from the environment (`env:NAME`), or that variable when it is not set.
+                host: webhookHost(w),
                 format: w.format,
                 events: w.events ?? null,
                 project: w.project ?? null,
@@ -77,6 +97,8 @@ export const statusRoutes: Routes = async ({ req, url, path, method, principal }
 
     if (path === "/webhooks/test" && method === "POST") {
         if (!isAdmin(principal)) return json({ error: "only an admin can send a test" }, 403);
+        // It makes the server send a request, so a page cannot ask for one: the board, or the CLI (no Origin).
+        assertBoard(req, "webhooks");
         const { index } = await readJson(req, WebhookTestBody);
         const hook = backend.config().webhooks[index];
         if (!hook) return json({ error: "no such webhook" }, 404);

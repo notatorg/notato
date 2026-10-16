@@ -45,6 +45,10 @@ export const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n ==
  */
 function instructionsFor(a: Annotation, followUp: boolean): string[] | undefined {
     if (a.peopleOnly) return [PEOPLE_ONLY_INSTRUCTIONS];
+    if (a.status === "awaiting_response")
+        return [
+            "NEEDS YOUR ANSWER: this task is paused for the person. Continue other work while they answer; do not guess or resolve it prematurely.",
+        ];
     if (a.status === "revert_requested") return [REVERT_INSTRUCTIONS];
     if (followUp) {
         if (sharedAgain(a)) return [SHARED_AGAIN_INSTRUCTIONS];

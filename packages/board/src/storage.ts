@@ -65,9 +65,9 @@ export function useRemembered<T extends string>(
 /** The name the board signs replies with, or "" for none. */
 export function boardName(): string {
     try {
-        return localStorage.getItem(KEYS.name)?.trim() ?? "";
+        return accountName ?? localStorage.getItem(KEYS.name)?.trim() ?? "";
     } catch {
-        return "";
+        return accountName ?? "";
     }
 }
 
@@ -80,6 +80,14 @@ export function setBoardName(name: string) {
     } catch {
         // kept for this visit only
     }
+    for (const fn of nameListeners) fn();
+}
+
+let accountName: string | undefined;
+
+/** The account's identity takes precedence over the local browser preference, including in API requests. */
+export function setAccountName(name: string | undefined) {
+    accountName = name;
     for (const fn of nameListeners) fn();
 }
 
@@ -108,8 +116,23 @@ export const keepFreshToken = (projectId: string, token: string) =>
 export const freshToken = (projectId: string) => freshTokens.get(projectId) ?? null;
 export const forgetFreshToken = (projectId: string) => freshTokens.delete(projectId);
 
+/** The same for the agent token made with a project: shown once on its Connect page. */
+const freshAgentTokens = new Map<string, string>();
+export const keepFreshAgentToken = (projectId: string, token: string) =>
+    freshAgentTokens.set(projectId, token);
+export const freshAgentToken = (projectId: string) => freshAgentTokens.get(projectId) ?? null;
+export const forgetFreshAgentToken = (projectId: string) => freshAgentTokens.delete(projectId);
+
 /** Projects made in this tab, so the page that follows can say so. */
 const madeHere = new Set<string>();
 export const markMadeHere = (projectId: string) => madeHere.add(projectId);
 export const wasMadeHere = (projectId: string) => madeHere.has(projectId);
 export const forgetMadeHere = (projectId: string) => madeHere.delete(projectId);
+
+/** An account change must not leave the previous person's newly issued credentials in this tab. */
+export function clearAccountMemory() {
+    setAccountName(undefined);
+    freshTokens.clear();
+    freshAgentTokens.clear();
+    madeHere.clear();
+}

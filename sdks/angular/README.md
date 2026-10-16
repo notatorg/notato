@@ -36,7 +36,7 @@ The toolbar runs outside Angular's zone: following the page as it scrolls, its t
 
 ## In production
 
-It starts only in development builds (`isDevMode()`), unless you pass `enabled: true`, for a staging build say, with a project token. In an app built with Vite (Analog, say), `VITE_NOTATO=true` or `false` where it is built decides instead, over `enabled`, and `VITE_NOTATO_SERVER` wins over `server`: what launches the app, such as [.NET Aspire](https://github.com/notatorg/notato/tree/main/sdks/dotnet/src/Notato.Aspire#readme), can switch it without a change to the code. The Angular CLI's own builds do not pass such variables to the page. The toolbar is a separate chunk that is only loaded when it starts, so a production build carries a few hundred bytes of it and never loads the rest. During server-side rendering it does nothing, and on the browser it starts once the app does.
+It starts only in development builds (`isDevMode()`), unless you pass `enabled: true`, for a staging build say, with a project token. In an app built with Vite (Analog, say), `VITE_NOTATO=true` or `false` where it is built decides instead, over `enabled`, and `VITE_NOTATO_SERVER` wins over `server`: what launches the app, such as [Aspire](https://github.com/notatorg/notato/tree/main/sdks/dotnet/src/Notato.Aspire#readme), can switch it without a change to the code. The Angular CLI's own builds do not pass such variables to the page. The toolbar is a separate chunk that is only loaded when it starts, so a production build carries a few hundred bytes of it and never loads the rest. During server-side rendering it does nothing, and on the browser it starts once the app does.
 
 ## What the agent gets
 

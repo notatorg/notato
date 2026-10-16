@@ -57,7 +57,10 @@ public class HostInfo(
  * same space as [View.getLocationInWindow].
  */
 public interface ElementProvider {
-    /** Whether [view] is one this provider sees into (a `ComposeView`): the View tree stops there and asks it. */
+    /**
+     * Whether [view] is one this provider sees into (a `ComposeView`): the View tree asks it what is inside, then goes
+     * on into the Views embedded in it (`AndroidView`), which are read as Views.
+     */
     public fun handles(view: View): Boolean
 
     /** Every element inside [view], in drawing order. */
@@ -92,12 +95,18 @@ internal object ViewInspector {
     /** Views Notato itself added (its overlay): never picked. */
     const val OWN_TAG = "notato.own"
 
+    /**
+     * The views Compose puts between a ComposeView and the Views embedded in it with `AndroidView` (and its own drawing
+     * layers): looked through, as plumbing is, and never taken for the app's own.
+     */
+    private val interop = setOf("AndroidViewsHandler", "AndroidViewHolder", "ViewFactoryHolder", "DrawChildContainer", "ViewLayerContainer", "ViewLayer")
+
     /** Views that are only framework plumbing around the app's content: looked through when describing. */
     private val plumbing = setOf(
         "DecorView", "LinearLayout", "FrameLayout", "ContentFrameLayout", "ActionBarOverlayLayout", "FitWindowsLinearLayout",
         "FitWindowsFrameLayout", "ActionBarContainer", "ViewStub", "FragmentContainerView", "CoordinatorLayout", "ComposeView",
         "AndroidComposeView",
-    )
+    ) + interop
 
     private fun isOwn(view: View) = view.tag == OWN_TAG
 
@@ -142,22 +151,76 @@ internal object ViewInspector {
     // ---- what is where ----------------------------------------------------------------------------------------------
 
     /** The views (and provider elements) at a point of [root]'s window, innermost first. */
-    fun chainAt(root: View, x: Float, y: Float, maskInputs: Boolean): List<ScreenElement> {
-        val reading = Reading()
-        val views = mutableListOf<View>()
-        var current: View? = root
-        var provided: List<ScreenElement> = emptyList()
+    fun chainAt(root: View, x: Float, y: Float, maskInputs: Boolean): List<ScreenElement> =
+        chainFrom(root, root, x, y, maskInputs, Reading(), masked = false, around = null)
+
+    /** The child of [group] drawn topmost at a point, not counting Notato's own views. */
+    private fun childAt(group: ViewGroup, x: Float, y: Float): View? =
+        topmostFirst(group).firstOrNull { child -> !isOwn(child) && visibleBox(child)?.contains(x, y) == true }
+
+    /**
+     * What is at a point from [start] down, innermost first. Inside a view a provider sees into, its elements, and then
+     * the Views embedded in it there (Compose's `AndroidView`), read as Views. [masked]: inside something a provider
+     * marked private. [around]: what a provider marked private in its view, while the walk is between that view and the
+     * first of the app's own Views in it (worked out only then: it reads the provider's whole view).
+     */
+    private fun chainFrom(
+        start: View, root: View, x: Float, y: Float, maskInputs: Boolean, reading: Reading, masked: Boolean, around: (() -> List<Box>)?,
+    ): List<ScreenElement> {
+        // Outermost first.
+        val views = mutableListOf<ScreenElement>()
+        var current: View? = start
+        var inside = masked
+        var pending = around
         while (current != null) {
-            views += current
-            val provider = providers.firstOrNull { it.handles(current!!) }
-            if (provider != null) {
-                provided = runCatching { provider.chainAt(current, x, y, hostInfo(current, reading), maskInputs) }.getOrDefault(emptyList())
-                break
+            val view = current
+            val privateAround = pending
+            if (privateAround != null && controlName(view) !in interop) {
+                val box = visibleBox(view)
+                if (box != null && underPrivate(box, privateAround())) inside = true
+                pending = null
             }
-            val group = current as? ViewGroup ?: break
-            current = topmostFirst(group).firstOrNull { child -> !isOwn(child) && visibleBox(child)?.contains(x, y) == true }
+            if (view !== root && listed(view)) views += describe(view, maskInputs, reading, inside)
+            val provider = providers.firstOrNull { it.handles(view) }
+            if (provider != null) {
+                val provided = runCatching { provider.chainAt(view, x, y, hostInfo(view, reading, insidePrivate = inside), maskInputs) }.getOrDefault(emptyList())
+                val hostMasked = inside
+                val privateInside = lazy { privateIn(view, provider, hostMasked, maskInputs) }
+                val embedded = (view as? ViewGroup)?.let { childAt(it, x, y) }
+                    ?.let { chainFrom(it, root, x, y, maskInputs, reading, masked = hostMasked, around = { privateInside.value }) }.orEmpty()
+                return withEmbedded(provided, embedded) + views.asReversed()
+            }
+            val group = view as? ViewGroup ?: break
+            current = childAt(group, x, y)
         }
-        return provided + views.asReversed().filter { it !== root && listed(it) }.map { describe(it, maskInputs, reading) }
+        return views.reversed()
+    }
+
+    /** Where a provider marked something private in [view] (it, and everything in it), in window pixels. */
+    private fun privateIn(view: View, provider: ElementProvider, masked: Boolean, maskInputs: Boolean): List<Box> =
+        runCatching { provider.elements(view, hostInfo(view, Reading(lite = true), insidePrivate = masked), maskInputs) }
+            .getOrDefault(emptyList()).filter { it.isMasked }.map { it.bounds }
+
+    /**
+     * Whether a View embedded in a provider's view, seen at [box], is in something the provider marked private
+     * ([marked]). Nothing ties the View to the provider's elements but where they are, so one private element over it
+     * by more than a pixel each way makes it private: that covers more rather than less, and still holds when a list
+     * has scrolled part of it out of sight.
+     */
+    internal fun underPrivate(box: Box, marked: List<Box>): Boolean = marked.any { p ->
+        minOf(box.right, p.right) - maxOf(box.left, p.left) > 1f && minOf(box.bottom, p.bottom) - maxOf(box.top, p.top) > 1f
+    }
+
+    /**
+     * A provider's elements at a point and the Views embedded in its view there, innermost first. The Views come first,
+     * as what was tapped is in them, unless the provider's innermost element lies inside them and is smaller: that is
+     * drawn over them (a button over a map).
+     */
+    internal fun withEmbedded(provided: List<ScreenElement>, embedded: List<ScreenElement>): List<ScreenElement> {
+        val inner = provided.firstOrNull() ?: return embedded
+        val outer = embedded.lastOrNull() ?: return provided
+        val over = outer.bounds.contains(inner.bounds) && inner.bounds.area < outer.bounds.area
+        return if (over) provided + embedded else embedded + provided
     }
 
     /**
@@ -211,17 +274,27 @@ internal object ViewInspector {
     fun elements(root: View, maskInputs: Boolean, lite: Boolean = false): List<ScreenElement> {
         val reading = Reading(lite)
         val out = mutableListOf<ScreenElement>()
-        fun visit(view: View) {
-            if (isOwn(view) || visibleBox(view) == null) return
+        // [masked] and [around] as in chainFrom: inside something a provider marked private, and what a provider marked
+        // private in its view, while the walk is between that view and the first of the app's own Views in it.
+        fun visit(view: View, masked: Boolean, around: List<Box>?) {
+            if (isOwn(view)) return
+            val box = visibleBox(view) ?: return
+            val container = around != null && controlName(view) in interop
+            val inside = masked || (around != null && !container && underPrivate(box, around))
             val provider = providers.firstOrNull { it.handles(view) }
-            if (view !== root && (view.javaClass.simpleName !in plumbing || view.id != View.NO_ID || markOf(view) == true)) out += describe(view, maskInputs, reading)
+            if (view !== root && (view.javaClass.simpleName !in plumbing || view.id != View.NO_ID || markOf(view) == true)) out += describe(view, maskInputs, reading, inside)
             if (provider != null) {
-                out += runCatching { provider.elements(view, hostInfo(view, reading), maskInputs) }.getOrDefault(emptyList())
+                val provided = runCatching { provider.elements(view, hostInfo(view, reading, insidePrivate = inside), maskInputs) }.getOrDefault(emptyList())
+                out += provided
+                // The Views embedded in it (Compose's AndroidView) are Views all the same: each is read with its own mark,
+                // fields and password fields, and is private too when something the provider marked private is over it.
+                val privateInside = provided.filter { it.isMasked }.map { it.bounds }
+                if (view is ViewGroup) for (i in 0 until view.childCount) visit(view.getChildAt(i), inside, privateInside)
                 return
             }
-            if (view is ViewGroup) for (i in 0 until view.childCount) visit(view.getChildAt(i))
+            if (view is ViewGroup) for (i in 0 until view.childCount) visit(view.getChildAt(i), inside, if (container) around else null)
         }
-        visit(root)
+        visit(root, masked = false, around = null)
         return out
     }
 
@@ -347,15 +420,19 @@ internal object ViewInspector {
         return names
     }
 
-    /** What a provider is told about [view], the View it reads into; [reading] shares what is worked out once per reading. */
-    fun hostInfo(view: View, reading: Reading? = null, settled: Boolean = true): HostInfo {
+    /**
+     * What a provider is told about [view], the View it reads into; [reading] shares what is worked out once per reading.
+     * [insidePrivate]: the view is embedded in something a provider marked private, which its own tree cannot say.
+     */
+    fun hostInfo(view: View, reading: Reading? = null, settled: Boolean = true, insidePrivate: Boolean = false): HostInfo {
         val density = view.resources.displayMetrics.density
+        val privacy = if (insidePrivate) Privacy.PRIVATE else privacyOf(view)
         // The pins need only how private the view is: not where it is, nor what is around it.
-        if (reading?.lite == true) return HostInfo(null, emptyList(), emptyList(), density, privacyOf(view), lite = true)
+        if (reading?.lite == true) return HostInfo(null, emptyList(), emptyList(), density, privacy, lite = true)
         val fragments = fragmentsOf(view, reading?.fragments)
         val activity = activityOf(view)?.javaClass?.simpleName
         val components = listOfNotNull(activity) + fragments
-        return HostInfo(fragments.lastOrNull() ?: activity, components, ancestorsOf(view), density, privacyOf(view), settled = settled)
+        return HostInfo(fragments.lastOrNull() ?: activity, components, ancestorsOf(view), density, privacy, settled = settled)
     }
 
     private fun shortName(view: View) = controlName(view) + (idName(view)?.let { "#$it" } ?: "")
@@ -420,10 +497,13 @@ internal object ViewInspector {
         return null
     }
 
-    /** Describes one view: what it is, what it says (unless it is private), where it is and what it is in. */
-    fun describe(view: View, maskInputs: Boolean, reading: Reading = Reading()): ScreenElement {
+    /**
+     * Describes one view: what it is, what it says (unless it is private), where it is and what it is in.
+     * [insidePrivate]: it is embedded in something a provider marked private (see [elements]).
+     */
+    fun describe(view: View, maskInputs: Boolean, reading: Reading = Reading(), insidePrivate: Boolean = false): ScreenElement {
         val lite = reading.lite
-        val info = hostInfo(view, reading)
+        val info = hostInfo(view, reading, insidePrivate = insidePrivate)
         val privacy = info.privacy
         // A private view says nothing: no text, hint or content description, and none of the text inside it.
         val hidden = privacy == Privacy.PRIVATE

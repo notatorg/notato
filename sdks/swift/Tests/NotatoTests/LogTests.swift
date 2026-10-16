@@ -61,7 +61,9 @@ struct LogTests {
         let readable = (try? OSLogStore(scope: .currentProcessIdentifier).getEntries())?
             .contains { ($0 as? OSLogEntryLog)?.subsystem == "com.example.notato-tests" } ?? false
         guard readable else { return }
-        let found = LogRecorder.recent(limit: 5, since: since)
+        // Tests running alongside log too (a framework the UIKit tests start up says something once): only ours are
+        // looked at, the last 5 of them.
+        let found = LogRecorder.recent(limit: 40, since: since).filter { $0.message.hasPrefix("[Log] ") }.suffix(5)
         #expect(found.map(\.message) == (15..<20).map { "[Log] app message \($0)" })
         #expect(found.allSatisfy { $0.level == "error" })
     }

@@ -1,5 +1,6 @@
 import type { Annotation } from "@notato/schema";
 import { agentView } from "./agent-view.ts";
+import { screenshotCrop } from "./screenshot.ts";
 
 /**
  * How much of an annotation to write out. `compact` is a line, for scanning. `standard` is what a person or an agent
@@ -216,6 +217,12 @@ const animationLine = (e: AnimationEntry) => {
 };
 
 /** What was offered to choose between, and what was chosen. */
+function linksLine(links: NonNullable<Annotation["links"]>): string {
+    return inline(
+        `Links: ${links.map((l) => `${l.plugin}${l.ref ? ` ${l.ref}` : ""} <${l.url}>`).join(" · ")}`
+    );
+}
+
 function variantsLine(v: NonNullable<Annotation["variants"]>): string {
     const options = v.options
         .map((o) => (o.summary ? `${o.name} (${clip(o.summary, 80)})` : o.name))
@@ -310,7 +317,25 @@ export function renderAnnotation(note: Annotation, options: RenderOptions = {}):
         ...comment,
         // A quote ends at a blank line; without one, the next line would be read as part of it.
         ...(comment.length > 1 ? [""] : []),
+        ...(a.review
+            ? [
+                  inline(
+                      `Review: ${a.review.id} · ${a.review.total ?? "?"} related targets${a.review.draft ? " · DRAFT (not sent)" : ""}`
+                  ),
+                  ...commentLines(a.review.instruction),
+                  "Read every target with notato_get_review before making the shared change.",
+              ]
+            : []),
+        ...(a.references?.length
+            ? [
+                  "Reference images:",
+                  ...a.references.map((r, i) =>
+                      inline(`  ${i + 1}. ${r.name} · ${r.w}×${r.h} · asset ${r.id}`)
+                  ),
+              ]
+            : []),
         ...(a.variants ? [variantsLine(a.variants)] : []),
+        ...(a.links?.length ? [linksLine(a.links)] : []),
         `Target (${a.target.kind}, ${a.target.identity.length} element${a.target.identity.length === 1 ? "" : "s"}):`,
     ];
     a.target.identity.forEach((i, n) => {
@@ -391,9 +416,14 @@ export function renderAnnotation(note: Annotation, options: RenderOptions = {}):
                 w: number;
                 h: number;
             }>;
+            const region = screenshotCrop(a);
             lines.push(
                 `Screenshots: ${refs.map((r) => `${r.w}×${r.h} ${r.id.slice(0, 12)}`).join(", ")}`
             );
+            if (region)
+                lines.push(
+                    `Target crop: ${region.w}×${region.h} at ${region.x},${region.y}, derived from the full screenshot.`
+                );
         }
         lines.push(
             "Identity (as captured):",

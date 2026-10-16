@@ -43,7 +43,7 @@ const note = (text: string) => {
 };
 const save = () => {
     const button = [...layer.querySelectorAll("button")].find(
-        (b) => b.textContent === "Save"
+        (b) => b.textContent === "Save note"
     ) as HTMLButtonElement;
     button.click();
 };

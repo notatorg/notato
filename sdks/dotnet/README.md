@@ -4,6 +4,8 @@ Figma-style comments for a running .NET MAUI app. Tap an element, write a note, 
 
 Works on iOS, Android and Mac Catalyst with .NET 10 and later. Windows builds, but has no overlay yet.
 
+**Screenshot size.** New captures prefer WebP at quality 85 when it is smaller than PNG, after privacy masking and at the same dimensions. PNG remains a fallback, and existing queues and bundles stay readable. See [screenshot storage](../../docs/screenshot-storage.md).
+
 ## Quick start
 
 ```bash
@@ -36,6 +38,7 @@ The iOS simulator shares the Mac's network, so `localhost` works there as it is.
 A phone cannot reach your machine's `localhost` (and iOS has no `adb reverse`). Start the server with a dev tunnel, `notato dev --tunnel` (see [Phones: a dev tunnel](https://github.com/notatorg/notato#phones-a-dev-tunnel); one `devtunnel user login` first), and there is nothing else to do: it writes the tunnel's https URL and a device token to `.notato/device.json` at the repository root, and this package's build targets record them in **debug** builds. When `Server` is not set, an iPhone, an Android phone and the Android emulator then use the tunnel, sending the device token, and the iOS simulator and Mac Catalyst the server's local address (its port included). Build again after the tunnel's URL changes; Visual Studio's up-to-date check knows the file.
 
 - `<NotatoDataDirectory>` points the build at another data folder; `<NotatoDeviceAccess>false</NotatoDeviceAccess>` turns it off, `true` turns it on in other configurations too (the token then ships in that build).
+- The device token opens `notato dev` on your machine to whoever has it, and anyone with a debug build can read it out of the build. Keep debug builds to yourself; a build for testers goes to a shared server with a capture-only token ([below](#physical-devices-and-shared-servers)).
 - A `Server` from configuration, or one typed in the toolbar's settings, wins over the tunnel.
 
 ## Configuration
@@ -64,16 +67,17 @@ builder.UseNotato(o => o.AppVersion = "2.1-beta");                     // the se
 | `Project`                                            | (required)                                  | Project id on the server. Letters, digits and `. _ - @`                                                                                                                |
 | `Mode`                                               | `Dev`                                       | `Dev`, `Test` or `Agent` (see below)                                                                                                                                   |
 | `Server`                                             | `http://localhost:4747` (none in test mode) | An empty string means no server. `NOTATO_SERVER` wins over it (below)                                                                                                  |
-| `Token`                                              |                                             | A project token (`notato_…`) for a shared `notato serve`. Only ever sent to the server configured here, never to one typed into the settings                           |
+| `Token`                                              |                                             | A project token (`notato_…`) for a shared `notato serve`, sent only to the server configured here. A build for testers: a capture-only token (below)                   |
 | `Enabled`                                            | `true`                                      | Whether Notato is on at start-up. The app can switch it at runtime. `NOTATO_ENABLED` wins over both (below)                                                            |
 | `ShowToolbar`, `ToolbarPosition`, `ToolbarCollapsed` | `true`, `BottomRight`, `false`              | The floating toolbar. People can drag it anywhere and fold it into one round button (it opens by itself while annotating); where they leave it, and how, is remembered |
 | `ShakeToToggle`                                      | `true`                                      | Shaking the device shows or hides the toolbar (real devices). It shares the accelerometer if the app reads it too, and only stops it if it started it                  |
 | `Author`                                             |                                             | The name on this person's notes. They can change it in the toolbar's settings                                                                                          |
-| `Screenshots`                                        | `true`                                      | A server that has screenshots off wins either way                                                                                                                      |
+| `Screenshots`                                        | `true`                                      | With a server set (test mode's too), none is taken until it says it takes them, and its "off" wins either way                                                          |
+| `CaptureSecureWindows`                               | `false`                                     | Screenshot Android windows marked `FLAG_SECURE` (one-time codes, card entry) too. Off, a note made on one goes without a screenshot                                    |
 | `MaskInputs`                                         | on in test and agent mode                   | Cover inputs (Entry, Editor, SearchBar) in screenshots and leave what is typed out of notes. Password entries always are                                               |
 | `RememberRuntimeState`                               | `true`                                      | Keep runtime choices (on or off, toolbar, name, a server typed in) across launches                                                                                     |
 | `XamlSourceInfo`                                     | `true`                                      | Turn on MAUI's XAML source info, so notes say which file and line (Debug builds)                                                                                       |
-| `ProjectPath`                                        | worked out at build time                    | The app project's folder from the repository root, put in front of XAML paths                                                                                          |
+| `ProjectPath`                                        | worked out at build time (Debug builds)     | The app project's folder from the repository root, put in front of XAML paths                                                                                          |
 | `CaptureLogs`, `LogLimit`                            | `true`, `50`                                | Attach the app's recent `ILogger` messages and unhandled exceptions                                                                                                    |
 | `AppName`, `AppVersion`                              | from the app                                | Recorded on every note                                                                                                                                                 |
 | `MaxScreenshotScale`                                 | `2`                                         | Phones are 3x; 2x is plenty to read and half the size                                                                                                                  |
@@ -82,7 +86,7 @@ The configuration is read through `IOptionsMonitor`, so a source that reloads ta
 
 ### For one launch: `NOTATO_ENABLED` and `NOTATO_SERVER`
 
-Two environment variables are read whatever the configuration is, after it and after the code in `MauiProgram`, so whoever launches the app decides for that launch without changing it: [.NET Aspire](https://github.com/notatorg/notato/tree/main/sdks/dotnet/src/Notato.Aspire#readme) sets them for an app it runs (`WithReference(notato)`), and so can an IDE's launch profile, or `xcrun simctl launch` with the `SIMCTL_CHILD_` prefix.
+Two environment variables are read whatever the configuration is, after it and after the code in `MauiProgram`, so whoever launches the app decides for that launch without changing it: [Aspire](https://github.com/notatorg/notato/tree/main/sdks/dotnet/src/Notato.Aspire#readme) sets them for an app it runs (`WithReference(notato)`), and so can an IDE's launch profile, or `xcrun simctl launch` with the `SIMCTL_CHILD_` prefix.
 
 ```bash
 SIMCTL_CHILD_NOTATO_ENABLED=false xcrun simctl launch booted com.example.checkout
@@ -133,7 +137,7 @@ Everything the web SDK sends, in the same schema (`environment.platform` is `mau
 - **What was on screen.** The whole window with the element outlined and the pin's number drawn on, and a crop around it. Notato's own toolbar is never in them.
 - **Context** (`context.maui`): the page and its XAML file, the element's and the page's `BindingContext` type (usually the view model), the Shell location, the navigation and modal stacks, the device, OS, idiom, orientation, theme, culture and font scale, and the MAUI and .NET versions.
 - **The app's log** (`context.console`, the web SDK's shape): recent `ILogger` messages from Information up, and unhandled exceptions.
-- **Network** (`context.network`), when the app adds `NotatoNetworkHandler` to its HttpClients: `services.AddHttpClient("api").AddHttpMessageHandler(() => new NotatoNetworkHandler())`. URLs are recorded without their query strings.
+- **Network** (`context.network`), when the app adds `NotatoNetworkHandler` to its HttpClients: `services.AddHttpClient("api").AddHttpMessageHandler(() => new NotatoNetworkHandler())`. URLs are recorded without their query strings, or a user name and password in front of the host.
 
 Mark things up in XAML with `xmlns:notato="clr-namespace:Notato.Maui;assembly=Notato.Maui"`: `notato:Feedback.Mask="True"` makes an element private, and `notato:Feedback.Ignore="True"` makes the picker look through it.
 
@@ -147,6 +151,7 @@ Mark things up in XAML with `xmlns:notato="clr-namespace:Notato.Maui;assembly=No
 What a note never carries:
 
 - **Password entries**, always: covered in every screenshot, and what is in them is never read.
+- **Android windows marked `FLAG_SECURE`** (one-time codes, card entry): no screenshot is taken of them, unless `CaptureSecureWindows` is set. The note still says which element it is.
 - **Inputs**, with `MaskInputs` (on in test and agent mode): the same for every Entry, Editor and SearchBar. `notato:Feedback.Mask="False"` opts one out, a search box say, so it is shown and recorded.
 - **Anything marked private** with `notato:Feedback.Mask="True"`: covered in every screenshot, and neither its text nor the text of anything inside it goes into a note, whether as its text, its accessible name, a container's text or a match for an agent's `:text()` selector. The note still says which element it is (its type, `AutomationId`, `x:Name` and where it is written). A private container wins over an input inside it that opts out. With `MaskInputs`, what is typed into an input is no match for `:text()` either.
 
@@ -173,7 +178,7 @@ A pin sits on the element its note was made on, follows it as the page scrolls, 
 ## Modes
 
 - **Dev**: notes go live to `notato dev`, pins turn amber when the agent acknowledges them and green when it resolves them, and replies arrive in the pin's card. On a resolved pin, **Ask the agent to revert** asks for the change to be undone. A note made while the server is down (or that the server cannot take yet: an unknown project, a missing credential, a busy server) is kept on the device, screenshots and all, and sent when it can be, in order, before the project's notes are read again; its pin's card shows what the server said, the menu says when the server cannot be reached, and **Retry** tries it again at once. A note the server refuses outright (too large, or not valid) says why on its pin's card and does not hold up the ones after it. On connecting, the app reads the project's notes without what only the agent needs (their `context` and `steps`), page by page.
-- **Test**: notes stay on the device (they survive a restart). **Package and share** in the toolbar's menu makes the bundle zip `notato_import_bundle` reads (`feedback.md`, `annotations.json`, `shots/`), opens the share sheet, and uploads it when a server is set. A zip over the server's 100 MB limit is shared but not uploaded, and the menu says so.
+- **Test**: notes stay on the device (they survive a restart), out of the device's backups: in Android's no-backup folder, and on iOS and Mac Catalyst in a folder marked to be left out of them (on iOS, also unreadable while the device is locked unless open). **Package and share** in the toolbar's menu makes the bundle zip `notato_import_bundle` reads (`feedback.md`, `annotations.json`, `shots/`), opens the share sheet, and uploads it when a server is set. With a server set, the zip has the screenshots only while the server says it takes them. A zip over the server's 100 MB limit is shared but not uploaded, and the menu says so.
 - **Agent**: like dev, and the app also takes `notato_annotate` requests from the agent: `notato_annotate { target: "#PromoBanner", comment: "…" }` is relayed to the app, which finds the element by its selector, takes the screenshot and files the note as the agent.
 
 ## How the overlay works
@@ -191,10 +196,18 @@ The picker hit-tests the visual tree with the native views' real positions (scro
 
 `notato dev` listens on loopback only. Your own phones reach it through a dev tunnel ([On a phone](#on-a-phone)), and a USB-connected Android phone also with `adb reverse`. For testers elsewhere, run a shared server (`notato serve`, see the main README) and give the app its address and a project token in configuration. The token only ever goes to that server (its scheme, host and port): a server typed into the toolbar's settings gets no token, so a note sent there goes without one.
 
+A build you hand out (TestFlight, an internal track, a device farm) holds whatever is in it, and anyone with it can read that out. Give it a **capture-only** token, which can send notes and nothing else, so one read out of the app cannot read, change or delete anyone's feedback:
+
+```bash
+npx notato token create checkout-app --purpose app --capture-only --expires 30
+```
+
+Notato asks the server what the token may do before it connects. With a capture-only token it sends notes (and those kept on the device) without following the project, the notes' cards point to the board for replies, status and revert, and a test-mode package uploads its captured notes when a server is configured.
+
 ## Known limits
 
 - Windows has no overlay yet: the package builds there, and `INotato` calls that need a window fail with a message.
-- XAML line numbers need MAUI's XAML diagnostics, which are on in Debug builds. A Release build gets the component and its XAML file where the XAML compiler records it, and selectors.
+- XAML line numbers need MAUI's XAML diagnostics, which are on in Debug builds. A Release build gets the component and its XAML file where the XAML compiler records it (from the project's folder, unless `ProjectPath` is set), and selectors.
 - Items in a `CollectionView` are recycled, so a selector to one item can point at another after scrolling. A pin in a list stays on its element only while that element still shows the note's item (the same `BindingContext`, or the same text); when a row is reused for another item, the pin is looked for again, and goes faint where it was until its item is back on screen.
 - Variants (comparing versions in the page) are web only.
 - Shaking does not reach the iOS simulator. Use `INotato.ShowToolbar()` there.
@@ -222,4 +235,6 @@ The code, in `src/Notato.Maui`:
 
 The sample is a small Shell shop with a modal checkout and a **Feedback** tab that drives `INotato`. Point it at another server with an environment variable (`Notato__Server=http://localhost:4790`; on the simulator, `SIMCTL_CHILD_Notato__Server` with `xcrun simctl launch`). Build it with `-p:NotatoSampleDevFlow=true` to include the MAUI DevFlow agent, for driving it from a terminal.
 
-`src/Notato.Maui/build/Notato.Maui.targets` ships in the package (`buildTransitive`) and records each assembly's project path from the repository root; a project reference imports it by hand, as the sample does.
+`src/Notato.Maui/build/Notato.Maui.targets` ships in the package (`buildTransitive`) and records each assembly's project path from the repository root, in Debug builds only (the repository's absolute path names your machine and user: `<NotatoSourceInfo>true</NotatoSourceInfo>` records it in other configurations too, `false` in none); a project reference imports it by hand, as the sample does.
+
+Capture-only uploads and retries follow the [shared capture contract](../../docs/capture-contract.md). With a server configured, screenshots require an explicit `screenshots: true` policy; unknown or unavailable initial policy means text-only capture. Local-only capture continues without a policy request.

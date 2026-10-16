@@ -124,6 +124,16 @@ internal object Windows {
         return (candidates.lastOrNull() as? ViewGroup) ?: base
     }
 
+    /**
+     * Whether [root]'s window is marked secure (`FLAG_SECURE`): the app has said it must never be captured (a one-time
+     * code, card entry). The activity's own window says so in its attributes, a dialog's in its root's layout params.
+     */
+    fun isSecure(activity: Activity, root: View): Boolean {
+        val window = activity.window
+        val params = if (window != null && root === window.decorView) window.attributes else root.layoutParams as? WindowManager.LayoutParams
+        return params != null && params.flags and WindowManager.LayoutParams.FLAG_SECURE != 0
+    }
+
     /** Waits for a frame to begin. */
     suspend fun nextFrame() = suspendCancellableCoroutine { continuation ->
         val callback = Choreographer.FrameCallback { continuation.resume(Unit) }

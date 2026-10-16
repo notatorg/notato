@@ -20,6 +20,7 @@ import { DEFAULT_TEST_ID_ATTRIBUTES } from "./plugins/identity-dom.ts";
 import { routeString } from "./plugins/route.ts";
 import { blobFromBase64, ensureVisible } from "./plugins/screenshot.ts";
 import { createPolicy } from "./policy.ts";
+import { referenceImage } from "./reference-image.ts";
 import { querySelectorDeep } from "./resolve.ts";
 import { createServerActions, type RelayOutcome } from "./server-actions.ts";
 import { createSettings, MARKER_COLORS } from "./settings.ts";
@@ -54,6 +55,7 @@ import {
 } from "./ui/picker.ts";
 import { createPins, nextPinNumber } from "./ui/pins.ts";
 import { createPopover } from "./ui/popover.ts";
+import { createReviewDialog } from "./ui/review-dialog.ts";
 import { createSettingsPanel } from "./ui/settings-panel.ts";
 import { addSheet, setStyleNonce } from "./ui/sheet.ts";
 import { STYLES } from "./ui/styles.ts";
@@ -62,6 +64,7 @@ import { type ConnectionState, createToolbar } from "./ui/toolbar.ts";
 import { createVariants } from "./ui/variants.ts";
 import { redactUrl } from "./url.ts";
 import { SDK } from "./version.ts";
+import { createHiddenNotes, privateScope } from "./view-preferences.ts";
 
 export interface NotatoController {
     /** Turns annotate mode on or off, as the toolbar's Annotate button and the shortcut do. */
@@ -99,6 +102,13 @@ export function createController(props: NotatoProps): NotatoController {
     const server = props.server?.replace(/\/$/, "");
     /** The server each note is posted to as it is made: dev and agent mode. Test mode sends it only bundles. */
     const liveServer = mode === "test" ? undefined : server;
+    const scope = privateScope([server, props.project, mode, props.token, props.author]);
+    const draftPersistence = createIdbPersistence(scope.then((s) => `review:${s}`));
+    let review: Annotation["review"] | undefined;
+    const reviewNotes = () =>
+        store
+            .list()
+            .filter((r) => r.annotation.review?.draft && r.annotation.review.id === review?.id);
     const currentRoute = () => routeString(window.location, props.hashRoutes ?? false);
     const warn = (message: string, error?: unknown) =>
         console.warn(`[notato] ${message}`, error ?? "");
@@ -107,7 +117,20 @@ export function createController(props: NotatoProps): NotatoController {
     const settings = createSettings();
     const authorName = () => props.author ?? (settings.get().name || undefined);
     // What the server allows, asked before each screenshot; this page's own `screenshots` prop can only narrow it.
-    const policy = createPolicy({ baseUrl: server, token: props.token });
+    const policy = createPolicy({
+        baseUrl: server,
+        project: props.project,
+        token: props.token,
+        onCapabilities: () => {
+            if (policy.captureOnlyNow() && !destroyed) {
+                sync?.stop();
+                connection = "connected";
+                agentNames = [];
+                describeConnection();
+                void sink?.flush();
+            }
+        },
+    });
     const screenshotsOn = async () =>
         props.screenshots !== false && settings.get().screenshots && (await policy.screenshots());
     const identity = identityPlugins(props, settings);
@@ -122,6 +145,9 @@ export function createController(props: NotatoProps): NotatoController {
               onPending: () => describeConnection(),
               onSent: (id) => {
                   localCopy.sent(id);
+                  void draftPersistence
+                      ?.remove(id)
+                      .catch((error) => warn("could not clear the delivered review draft", error));
                   release(id);
               },
               onRefused: (id, message) => {
@@ -155,6 +181,8 @@ export function createController(props: NotatoProps): NotatoController {
               project: props.project,
               token: props.token,
               store,
+              canRead: () => !policy.captureOnlyNow(),
+              annotationStatuses: () => policy.annotationStatusesNow(),
               onState: (state) => {
                   connection = state;
                   describeConnection();
@@ -167,7 +195,13 @@ export function createController(props: NotatoProps): NotatoController {
                   agentNames = info.names;
               },
               // Not on the server yet, or refused by it: still this page's, whatever the server's list says.
-              keep: () => sink?.unsent() ?? [],
+              keep: () => [
+                  ...(sink?.unsent() ?? []),
+                  ...store
+                      .list()
+                      .filter((r) => r.annotation.review?.draft)
+                      .map((r) => r.annotation.id),
+              ],
               onApplied: (change) => localCopy.applied(change),
           })
         : undefined;
@@ -175,9 +209,11 @@ export function createController(props: NotatoProps): NotatoController {
         liveServer && sync
             ? createServerActions({
                   server: liveServer,
+                  project: props.project,
                   token: props.token,
                   sync,
                   author: authorName,
+                  captureOnly: () => policy.captureOnlyNow(),
               })
             : undefined;
     let connection: ConnectionState = "connecting";
@@ -190,7 +226,9 @@ export function createController(props: NotatoProps): NotatoController {
     // The page holds the only copy in test and agent mode, so it must survive a reload. Kept per mode so a tester's
     // notes never end up in an agent's bundle.
     const localCopy = createLocalCopy(
-        (props.persist ?? mode !== "dev") ? createIdbPersistence(`${props.project}:${mode}`) : null,
+        (props.persist ?? mode !== "dev")
+            ? createIdbPersistence(props.token ? scope : `${props.project}:${mode}`)
+            : null,
         warn
     );
     /**
@@ -203,9 +241,10 @@ export function createController(props: NotatoProps): NotatoController {
     /** A note made in this page: into the store, kept in this browser, and its screenshots let go if the server has them. */
     const addMade = (record: AnnotationRecord) => {
         const id = record.annotation.id;
-        const unsent = sink?.unsent().includes(id);
+        const unsent = record.annotation.review?.draft || sink?.unsent().includes(id);
         store.add(record);
-        localCopy.keep(record, { unsent, refused: sink?.refusal(id) });
+        if (!record.annotation.review?.draft)
+            localCopy.keep(record, { unsent, refused: sink?.refusal(id) });
         if (sink && !unsent) release(id);
     };
     /**
@@ -226,7 +265,11 @@ export function createController(props: NotatoProps): NotatoController {
         appVersion: props.appVersion,
         author: () => ({ kind: "human", name: authorName() }),
         identity,
-        capture: capturePlugins(props, screenshotsOn),
+        capture: capturePlugins(
+            props,
+            screenshotsOn,
+            () => Boolean(liveServer) && policy.derivedScreenshotsNow()
+        ),
         sinks,
         // The URL as recorded: what reaches the agent, webhooks and bundles. Secrets in it are blanked out.
         locate: () => ({ url: redactUrl(window.location.href), route: currentRoute() }),
@@ -277,19 +320,29 @@ export function createController(props: NotatoProps): NotatoController {
      * once for each change to the notes or the settings: it is asked for several times a frame, over every note.
      */
     let shownNow: AnnotationRecord[] | undefined;
+    const hiddenNotes = createHiddenNotes(scope, () => {
+        shownNow = undefined;
+        syncUi();
+    });
     const shown = () =>
         (shownNow ??= store
             .list()
             .filter(
                 (r) =>
                     r.annotation.status !== "dismissed" &&
+                    !hiddenNotes.has(r.annotation) &&
                     (!settings.get().mineOnly || isMine(r.annotation))
             ));
     const pins = createPins({
         layer,
         records: shown,
+        captureOnly: () => policy.captureOnlyNow(),
         currentRoute,
         onDelete: (id) => void deleteAnnotation(id),
+        onHide: (id) => {
+            const a = store.get(id)?.annotation;
+            if (a) void hiddenNotes.hide(a);
+        },
         // Asking the agent to undo a change only means something when there is a server it can read the request from.
         onRequestRevert: actions
             ? (id, note) =>
@@ -322,6 +375,12 @@ export function createController(props: NotatoProps): NotatoController {
         pins.refresh();
         variants.redraw();
         toolbar.setCount(countOnRoute());
+        reviewButton.setTitle(
+            review
+                ? `Review (${plural(reviewNotes().length, "target")}): finish and send`
+                : "Start a grouped review"
+        );
+        reviewButton.setPressed(Boolean(review));
     };
     // The store says so for each note it takes, reading the server's list hands it hundreds at once, and a busy project
     // sends many changes a second: the pins are brought up to date at most once a frame, after the lot.
@@ -349,6 +408,7 @@ export function createController(props: NotatoProps): NotatoController {
     // ---- the toolbar and what opens from it -----------------------------------------------------------------
     const popover = createPopover(layer, frames);
     const packageDialog = createPackageDialog(layer);
+    const reviewDialog = createReviewDialog(layer);
     const shortcut = props.shortcut ?? ANNOTATE_SHORTCUT;
     const pauseKeys = shortcutLabel(PAUSE_SHORTCUT);
     const toolbar = createToolbar({
@@ -392,6 +452,137 @@ export function createController(props: NotatoProps): NotatoController {
         }
     );
 
+    const reviewButton = toolbar.addButton({
+        title: "Start a grouped review",
+        icon: ICONS.review,
+        onClick: () => void openReview(),
+    });
+    async function openReview() {
+        await restoring;
+        await making;
+        await policy.refresh();
+        if (!policy.reviewsNow()) {
+            toast.show(
+                "This server does not support grouped reviews yet. Update the server first.",
+                6000
+            );
+            return;
+        }
+        if (!draftPersistence?.saveMany) {
+            toast.show(
+                "Grouped reviews need browser storage. Allow IndexedDB for this page.",
+                6000
+            );
+            return;
+        }
+        reviewDialog.open({
+            instruction: review?.instruction ?? "",
+            notes: reviewNotes().map((r) => r.annotation),
+            onExport: reviewNotes().length
+                ? async (instruction) => {
+                      const result = await packageNotes(readyReview(instruction), {
+                          project: props.project,
+                          author: authorName(),
+                          sinks: [],
+                          send: false,
+                      });
+                      downloadZip(result.zip, result.filename);
+                  }
+                : undefined,
+            onDiscard: review
+                ? async () => {
+                      for (const r of reviewNotes()) {
+                          await draftPersistence?.remove(r.annotation.id);
+                          store.remove(r.annotation.id);
+                      }
+                      review = undefined;
+                      syncUi();
+                  }
+                : undefined,
+            onSubmit: async (instruction) => {
+                if (!review) {
+                    review = {
+                        id:
+                            crypto.randomUUID?.() ??
+                            `review_${Date.now().toString(36)}_${Math.random().toString(36).slice(2)}`,
+                        instruction,
+                        draft: true,
+                    };
+                    setAnnotateMode(true);
+                    syncUi();
+                    return;
+                }
+                if (!reviewNotes().length) {
+                    review = { ...review, instruction };
+                    setAnnotateMode(true);
+                    syncUi();
+                    return;
+                }
+                await submitReview(instruction);
+            },
+        });
+    }
+    function readyReview(instruction: string): AnnotationRecord[] {
+        const held = reviewNotes();
+        if (!review || !held.length || held.length > 50)
+            throw new Error("Add between 1 and 50 targets to this review.");
+        const id = review.id;
+        return held.map((r) => ({
+            ...r,
+            annotation: { ...r.annotation, review: { id, instruction, total: held.length } },
+        }));
+    }
+    async function submitReview(instruction: string) {
+        return oneAtATime(async () => {
+            const persistence = draftPersistence;
+            if (!persistence?.saveMany)
+                throw new Error(
+                    "Browser storage is unavailable. Download the review to keep a copy."
+                );
+            const sent = readyReview(instruction);
+            // One transaction: after a crash a review is either held, or all ready for delivery.
+            await persistence.saveMany(sent);
+            store.upsertMany(sent.map((r) => r.annotation));
+            review = undefined;
+            if (mode === "test") {
+                for (const r of sent) localCopy.keep(r, { unsent: true });
+                const packaged = await packageNotes(sent, {
+                    project: props.project,
+                    author: authorName(),
+                    sinks,
+                    send: true,
+                });
+                const failed = packaged.delivery.find((d) => !d.ok);
+                if (failed) {
+                    toast.show(
+                        `Review saved, but delivery failed: ${failed.error ?? "unknown error"}. Use Export to retry.`,
+                        8000
+                    );
+                    syncUi();
+                    return;
+                }
+                for (const r of sent) await persistence.remove(r.annotation.id);
+            } else {
+                for (const r of sent) {
+                    const results = await Promise.allSettled(
+                        sinks.map((s) => s.deliver(r.annotation, r.assets))
+                    );
+                    const failed = results.find((r) => r.status === "rejected");
+                    if (failed?.status === "rejected")
+                        warn("a review destination could not be reached", failed.reason);
+                    addMade(r);
+                }
+            }
+            syncUi();
+            toast.show(
+                server
+                    ? "Review submitted. Unsent targets will retry when the server is available."
+                    : "Review ready. Use Export to copy or download it.",
+                6000
+            );
+        });
+    }
+
     const settingsButton = toolbar.addButton({
         title: "Settings",
         icon: ICONS.gear,
@@ -405,6 +596,7 @@ export function createController(props: NotatoProps): NotatoController {
         anchor: () => settingsButton.el.getBoundingClientRect(),
         serverScreenshots: () => policy.screenshotsNow(),
         onHide: () => setHidden(true),
+        hiddenNotes: { count: hiddenNotes.count, restore: hiddenNotes.clear },
         onToggle: (open) => settingsButton.setExpanded(open),
         owner: () => settingsButton.el,
         server:
@@ -550,27 +742,53 @@ export function createController(props: NotatoProps): NotatoController {
                 kind: sel.kind,
                 animations: sel.elements.flatMap((e) => animationsOn(e)),
                 frozen: freezer.frozen,
-                screenshotsOff:
-                    props.screenshots === false ||
-                    !settings.get().screenshots ||
-                    !policy.screenshotsNow(),
             });
+        const screenshotsOffNow = () =>
+            props.screenshots === false || !settings.get().screenshots || !policy.screenshotsNow();
         if (popover.isOpen) {
-            popover.update({ ...summary, anchor: anchorOf(sel), hint: hintNow() });
+            popover.update({
+                ...summary,
+                anchor: anchorOf(sel),
+                hint: hintNow(),
+                screenshotsOff: screenshotsOffNow(),
+            });
             return;
         }
         // The server's setting can change at any time, so ask again as the popover opens and correct the line if it did.
         void policy.refresh().then(() => {
-            if (popover.isOpen) popover.update({ hint: hintNow() });
+            if (popover.isOpen)
+                popover.update({
+                    hint: hintNow(),
+                    screenshotsOff: screenshotsOffNow(),
+                    references: policy.referencesNow(),
+                });
         });
         popover.open({
             ...summary,
             // Versions are put in the code by the agent, which is on the other end of a server.
-            variants: Boolean(liveServer),
+            variants: Boolean(liveServer) && !policy.captureOnlyNow(),
+            references: policy.referencesNow(),
+            reviewInstruction: review?.instruction,
             hint: hintNow(),
+            screenshotsOff: screenshotsOffNow(),
             anchor: anchorOf(sel),
             onCancel: closeDraft,
-            onSave: async ({ comment, severity, intent, peopleOnly }) => {
+            onSave: async ({ comment, severity, intent, peopleOnly, references }) => {
+                if (review && reviewNotes().length + saving >= 50)
+                    throw new Error("Send this review before adding more than 50 targets.");
+                if (review && peopleOnly)
+                    throw new Error(
+                        "Grouped reviews are for the agent. Save private notes outside the review."
+                    );
+                if (references?.length) {
+                    await policy.refresh();
+                    if (!policy.referencesNow())
+                        throw new Error("This server does not support reference images yet.");
+                }
+                const attached = references?.length
+                    ? await Promise.all(references.map(referenceImage))
+                    : undefined;
+                const thisReview = review ? { ...review } : undefined;
                 const current = draft;
                 if (!current) return;
                 // The composer goes at once and the note's pin is there: the screenshot, the identity and the upload
@@ -597,9 +815,22 @@ export function createController(props: NotatoProps): NotatoController {
                         severity,
                         intent,
                         peopleOnly,
+                        references: attached,
+                        review: thisReview,
                     });
                     addMade(record);
                     pending.done(record.annotation.id);
+                    if (thisReview?.draft) {
+                        try {
+                            await draftPersistence?.save(record);
+                        } catch (error) {
+                            warn("could not persist the review draft", error);
+                            toast.show(
+                                "This review draft is only in this tab: browser storage failed. Send or export it before leaving.",
+                                8000
+                            );
+                        }
+                    }
                 })
                     .catch((error) => {
                         pending.cancel();
@@ -687,7 +918,9 @@ export function createController(props: NotatoProps): NotatoController {
         try {
             // Not sent yet: it must not go out after all, and there is nothing on the server to delete. One on its way is
             // waited for, so the delete comes after it.
-            if (sink && (await sink.discard(id))) await actions?.remove(id);
+            const isDraft = store.get(id)?.annotation.review?.draft;
+            if (!isDraft && sink && (await sink.discard(id))) await actions?.remove(id);
+            await draftPersistence?.remove(id);
             store.remove(id);
             await localCopy.forget(id);
         } catch (error) {
@@ -700,6 +933,8 @@ export function createController(props: NotatoProps): NotatoController {
      * here, recording it the same way, so a bundle carries it.
      */
     const setPeopleOnly = async (id: string, on: boolean) => {
+        if (store.get(id)?.annotation.review?.draft)
+            throw new Error("Finish this grouped review before changing its visibility.");
         if (actions) return actions.setPeopleOnly(id, on);
         store.update(id, (a) => {
             const { peopleOnly: _was, ...rest } = a;
@@ -711,8 +946,9 @@ export function createController(props: NotatoProps): NotatoController {
         });
     };
 
-    const packageBundle = (options: { send?: boolean; name?: string } = {}) =>
-        packageNotes(store.list(), {
+    const packageBundle = async (options: { send?: boolean; name?: string } = {}) => {
+        const records = store.list().filter((r) => !r.annotation.review?.draft);
+        const result = await packageNotes(records, {
             project: props.project,
             appName: props.appName,
             appVersion: props.appVersion,
@@ -720,9 +956,13 @@ export function createController(props: NotatoProps): NotatoController {
             sinks,
             send: options.send,
         });
+        if (options.send && result.delivery.every((d) => d.ok))
+            for (const r of records) await draftPersistence?.remove(r.annotation.id);
+        return result;
+    };
 
     function openPackageDialog() {
-        const records = store.list();
+        const records = store.list().filter((r) => !r.annotation.review?.draft);
         if (records.length === 0) return;
         packageDialog.open({
             count: records.length,
@@ -741,8 +981,10 @@ export function createController(props: NotatoProps): NotatoController {
                 if (zip && !zip.ok) throw new Error(zip.error ?? "could not build the zip");
                 if (!zip) downloadZip(result.zip, result.filename);
                 if (clear) {
-                    store.clear();
-                    await localCopy.forgetAll();
+                    for (const r of records) {
+                        store.remove(r.annotation.id);
+                        await localCopy.forget(r.annotation.id);
+                    }
                 }
                 const upload = result.delivery.find((d) => d.sink === "server" && !d.ok);
                 return upload
@@ -823,6 +1065,10 @@ export function createController(props: NotatoProps): NotatoController {
         // What has not reached the server goes on with the toolbar that replaces this one (HMR, StrictMode).
         if (sink) {
             const items: Carried[] = [
+                ...store
+                    .list()
+                    .filter((r) => r.annotation.review?.draft)
+                    .map((r) => ({ annotation: r.annotation, assets: r.assets })),
                 ...sink.queued(),
                 ...sink.unsent().flatMap((id) => {
                     const refused = sink.refusal(id);
@@ -853,6 +1099,7 @@ export function createController(props: NotatoProps): NotatoController {
         picker.destroy();
         popover.destroy();
         packageDialog.close();
+        reviewDialog.close();
         pins.destroy();
         teardownPlugins();
         stopIsolating();
@@ -867,20 +1114,33 @@ export function createController(props: NotatoProps): NotatoController {
         for (const item of items)
             if (!store.get(item.annotation.id))
                 store.add({ annotation: item.annotation, assets: new Map(item.assets) });
-        sink?.restore(items);
+        sink?.restore(items.filter((item) => !item.annotation.review?.draft));
     }
-    const carryKey = `${server ?? ""}|${props.project}|${mode}`;
+    const carryKey = JSON.stringify([server, props.project, mode, props.token, props.author]);
     const carried = window.__notatoUnsent;
     window.__notatoUnsent = undefined;
-    if (carried?.key === carryKey) adopt(carried.items);
+    if (carried?.key === carryKey) {
+        adopt(carried.items);
+        review = carried.items.find((r) => r.annotation.review?.draft)?.annotation.review;
+    }
 
     async function restore() {
         try {
             const saved = await localCopy.load();
+            const held = (await draftPersistence?.load()) ?? [];
+            if (destroyed) return;
+            for (const record of held) {
+                if (record.annotation.review?.draft) {
+                    if (!store.get(record.annotation.id)) store.add(record);
+                    review ??= record.annotation.review;
+                } else if (mode !== "test") adopt([record]);
+                else if (!store.get(record.annotation.id)) store.add(record);
+            }
             if (destroyed || saved.length === 0) return;
             const waiting: Carried[] = [];
             for (const { record, unsent } of saved) {
-                if (sink && unsent) waiting.push({ ...record, refused: unsent.refused });
+                if (sink && unsent && !record.annotation.review?.draft)
+                    waiting.push({ ...record, refused: unsent.refused });
                 // Anything the store has already is at least as new as this browser's copy.
                 else if (!store.get(record.annotation.id)) store.add(record);
             }
@@ -891,7 +1151,7 @@ export function createController(props: NotatoProps): NotatoController {
     }
     // The server's list is read only after: so it is compared with everything this page had, and corrects it.
     const unregister = server ? addServer(server) : () => {};
-    void restore().then(() => {
+    const restoring = Promise.all([restore(), policy.refresh()]).then(() => {
         if (!destroyed) sync?.start();
     });
 

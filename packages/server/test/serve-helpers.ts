@@ -51,13 +51,18 @@ export async function createProject(s: Server, id: string) {
 }
 
 /** A token for `projectId` (`*` for every project), issued by the admin as the board would. */
-export async function issue(s: Server, projectId: string, name = "test"): Promise<string> {
+export async function issue(
+    s: Server,
+    projectId: string,
+    name = "test",
+    extra: Record<string, unknown> = {}
+): Promise<string> {
     await createProject(s, projectId);
     const cookie = await adminCookie(s);
     const res = await s.call("/admin/tokens", {
         method: "POST",
         headers: { cookie, "content-type": "application/json" },
-        body: JSON.stringify({ projectId, name }),
+        body: JSON.stringify({ projectId, name, ...extra }),
     });
     expect(res.status).toBe(201);
     return ((await res.json()) as { token: string }).token;

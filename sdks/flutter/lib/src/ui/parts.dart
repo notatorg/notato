@@ -686,8 +686,8 @@ class PeopleOnlyBadge extends StatelessWidget {
         borderRadius: BorderRadius.circular(999),
       ),
       child: Text(
-        'PEOPLE ONLY',
-        semanticsLabel: 'People only',
+        'HIDDEN FROM AGENT',
+        semanticsLabel: 'Hidden from agent',
         style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w700, letterSpacing: 0.4, color: p.muted),
       ),
     );

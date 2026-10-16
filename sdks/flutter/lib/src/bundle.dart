@@ -31,11 +31,11 @@ import 'ids.dart';
       final fullBytes = full == null ? null : assetOf(full['id'] as String);
       final cropBytes = crop == null ? null : assetOf(crop['id'] as String);
       if (full != null && fullBytes != null) {
-        final fullRef = {...full, 'path': 'shots/$n-full.png'};
+        final fullRef = {...full, 'path': 'shots/$n-full.${full['mime'] == 'image/webp' ? 'webp' : 'png'}'};
         archive.addFile(ArchiveFile.bytes(fullRef['path'] as String, fullBytes)..compression = CompressionType.none);
         Map<String, Object?>? cropRef;
         if (crop != null && cropBytes != null) {
-          cropRef = {...crop, 'path': 'shots/$n-crop.png'};
+          cropRef = {...crop, 'path': 'shots/$n-crop.${crop['mime'] == 'image/webp' ? 'webp' : 'png'}'};
           archive.addFile(ArchiveFile.bytes(cropRef['path'] as String, cropBytes)..compression = CompressionType.none);
         }
         placed['screenshots'] = {'full': fullRef, 'crop': ?cropRef};

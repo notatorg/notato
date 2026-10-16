@@ -82,6 +82,8 @@ interface Identity {
     authRequired: boolean;
     authenticated: boolean;
     projectId?: string;
+    /** A token that can only send notes: it reads nothing back, so the checks that read are skipped. */
+    captureOnly?: boolean;
 }
 
 /** The server's settings, as `/status` reports them. */
@@ -118,7 +120,9 @@ export async function runDoctor(options: DoctorOptions): Promise<Check[]> {
     if (server.status === "ok") {
         const access = await checkAccess(get);
         checks.push(access.check);
-        if (access.identity) {
+        if (access.identity?.captureOnly) {
+            checks.push(await checkCapture(get, options.project));
+        } else if (access.identity) {
             const config = await readConfig(get);
             checks.push(...settingsChecks(config));
             const screenshotsOff = config?.screenshots === "off" || Boolean(config?.error);
@@ -126,7 +130,8 @@ export async function runDoctor(options: DoctorOptions): Promise<Check[]> {
             checks.push(await checkBrowser(get));
         }
     }
-    if (options.agents !== false) checks.push(...(await checkAgents(options)));
+    if (options.agents !== false && !checks.some((c) => c.name === "Capture connection"))
+        checks.push(...(await checkAgents(options)));
     const app = options.cwd ? checkApp(options.cwd) : undefined;
     if (app) checks.push(app);
     return checks;
@@ -163,6 +168,22 @@ async function checkAccess(get: Get): Promise<{ check: Check; identity?: Identit
         const res = await get("/auth/me");
         // A server older than this CLI has no /auth/me, and no login either, so there is nothing to check.
         if (res.ok) me = (await res.json()) as Identity;
+        else if (res.status === 401 || res.status === 403) {
+            // A token that can only send notes is refused everywhere but here: ask what it is.
+            const policy = await get("/config");
+            const body = policy.ok ? ((await policy.json()) as { captureOnly?: boolean }) : null;
+            if (body?.captureOnly === true)
+                me = { authRequired: true, authenticated: true, mode: "serve", captureOnly: true };
+            else
+                return {
+                    check: {
+                        name: "Access",
+                        status: "fail",
+                        detail: "the token is missing, expired, revoked or refused",
+                        fix: "use a current token for this server",
+                    },
+                };
+        }
         if (me.authRequired && !me.authenticated) {
             return {
                 check: {
@@ -191,6 +212,45 @@ async function checkAccess(get: Get): Promise<{ check: Check; identity?: Identit
                 detail: error instanceof Error ? error.message : String(error),
             },
         };
+    }
+}
+
+/** What a token that can only send notes can be checked with: that the server accepts it for the project, storing nothing. */
+async function checkCapture(get: Get, project: string | undefined): Promise<Check> {
+    const name = "Capture connection";
+    if (!project)
+        return {
+            name,
+            status: "fail",
+            detail: "a token that can only send notes needs an explicit project",
+            fix: "pass --project with the exact id shown on the board",
+        };
+    try {
+        const response = await get(`/projects/${encodeURIComponent(project)}/connection`, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: "{}",
+        });
+        if (response.ok) {
+            const body = (await response.json()) as { ok?: boolean; projectId?: string };
+            if (body.ok && body.projectId === project)
+                return {
+                    name,
+                    status: "ok",
+                    detail: "the token and project are accepted; no note was stored",
+                };
+        }
+        return {
+            name,
+            status: "fail",
+            detail:
+                response.status === 404
+                    ? "the project, or the connection check, was not found"
+                    : "the server refused the token for this project",
+            fix: "check the project id exactly as the board shows it, and that the token has not expired",
+        };
+    } catch {
+        return { name, status: "fail", detail: "the connection check could not reach the server" };
     }
 }
 

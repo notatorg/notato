@@ -284,6 +284,7 @@ export function Inbox(props: Props) {
             <section className="card detail-col" aria-label="Note">
                 {current ? (
                     <Detail
+                        loadDetails
                         key={current.id}
                         annotation={current}
                         project={project}
@@ -377,6 +378,11 @@ const Row = memo(function Row({
                     <span className="row-route" title={a.url}>
                         {lastSegment(a.route)}
                     </span>
+                    {a.review ? (
+                        <span className="sev" title={a.review.instruction}>
+                            Review · {a.review.total ?? "?"} targets
+                        </span>
+                    ) : null}
                     {a.severity ? (
                         <span className={`sev sev-${a.severity}`}>{a.severity}</span>
                     ) : null}
@@ -385,7 +391,7 @@ const Row = memo(function Row({
                             className="sev people"
                             title="Between people: the agent doesn't see it"
                         >
-                            People only
+                            Hidden from agent
                         </span>
                     ) : null}
                     {a.author.kind === "agent" ? (
@@ -395,7 +401,16 @@ const Row = memo(function Row({
             </span>
             {crop ? (
                 <span className="row-thumb">
-                    <img src={assetHref(crop.id)} alt="" loading="lazy" />
+                    <img
+                        src={`/annotations/${encodeURIComponent(a.id)}/screenshot?view=thumbnail`}
+                        alt=""
+                        loading="lazy"
+                        onError={(event) => {
+                            const fallback = assetHref(crop.id);
+                            if (!event.currentTarget.src.endsWith(fallback))
+                                event.currentTarget.src = fallback;
+                        }}
+                    />
                     <span className="tape" aria-hidden="true" />
                 </span>
             ) : null}

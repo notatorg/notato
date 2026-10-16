@@ -14,7 +14,15 @@ internal sealed record AnnotationList
 
 internal sealed record ServerConfig
 {
-    public bool Screenshots { get; init; } = true;
+    public bool DerivedScreenshots { get; init; }
+
+    /// <summary>Whether the server takes screenshots. Not said: not known, so none is taken.</summary>
+    public bool Screenshots { get; init; }
+
+    /// <summary>
+    /// The app's token may only send new notes (a capture-only token): no event stream, no list, nothing to change.
+    /// </summary>
+    public bool CaptureOnly { get; init; }
 
     /// <summary>Whether an agent has Notato's MCP open. Absent from older servers.</summary>
     public AgentState? Agent { get; init; }

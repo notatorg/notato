@@ -55,7 +55,7 @@ export const PAGES: Page[] = [
         slug: "swiftui",
         group: "Mobile apps",
         title: "SwiftUI",
-        summary: "iOS 17 and later, as a Swift package with no dependencies.",
+        summary: "iOS 17 and later, as a Swift package with native WebP compression.",
         file: "sdks/swift/README.md",
     },
     {
@@ -115,7 +115,7 @@ export const PAGES: Page[] = [
     {
         slug: "aspire",
         group: "Agents and teams",
-        title: ".NET Aspire",
+        title: "Aspire",
         summary:
             "AddNotato() in an Aspire app host runs the board and MCP with your apps, and switches Notato on in each of them.",
         file: "sdks/dotnet/src/Notato.Aspire/README.md",
@@ -143,10 +143,20 @@ export const PAGES: Page[] = [
         sections: [
             "What you can say, and what the agent gets",
             "Variants: compare versions in the page",
+            "Reviewing related feedback",
             "The board: every project in one place",
             "Copy as Markdown, and export",
+            "Screenshot size",
             "Screenshots: on or off",
         ],
+    },
+    {
+        slug: "extensions",
+        group: "Reference",
+        title: "Building on Notato",
+        summary: "Extend the server and board with your own storage, accounts and screens.",
+        file: "README.md",
+        sections: ["Building on Notato"],
     },
     {
         slug: "limits",

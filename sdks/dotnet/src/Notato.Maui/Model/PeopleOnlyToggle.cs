@@ -6,9 +6,9 @@ namespace Notato.Maui.Model;
 /// </summary>
 internal static class PeopleOnlyToggle
 {
-    public const string Label = "People only";
+    public const string Label = "Hide from agent";
     public const string Hint = "Keep this between people: the agent won't see it.";
-    public const string AsideLabel = "Aside";
+    public const string AsideLabel = "Hide reply from agent";
     public const string AsideHint = "Just for people: the agent won't see this reply.";
 
     /// <summary>The thread entry for turning People only on, as the server words it.</summary>

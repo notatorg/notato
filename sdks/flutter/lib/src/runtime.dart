@@ -71,6 +71,17 @@ class Skipped extends SendOutcome {
 /// How long the server's changes are gathered before they are applied together: about a frame.
 const _batch = Duration(milliseconds: 16);
 
+/// How old the server's word on screenshots may be before it is asked again, and how long a screenshot waits for it.
+const _policyFresh = Duration(seconds: 5);
+const _policyWait = Duration(milliseconds: 1500);
+
+/// Capture-only: the pause before notes that could not go are tried again, doubled each time, up to the longest.
+const _firstResend = Duration(seconds: 3);
+const _longestResend = Duration(seconds: 60);
+
+/// What a capture-only app is told when it tries to read or change a note it sent.
+const _onTheBoard = 'This app can only send notes: read, reply to and change them on the Notato board.';
+
 /// A change the server's events bring: a note as it is now, or the id of one it deleted.
 typedef _Change = ({Map<String, Object?>? annotation, String? deleted});
 
@@ -136,7 +147,19 @@ class NotatoRuntime extends ChangeNotifier implements NotatoController {
   String? _connectionDetail;
   String? _problem;
   List<String> _agents = const [];
-  bool _serverScreenshots = true;
+
+  /// What the server said it allows (`/config`), asked as Notato connects and again before a screenshot. Null until it
+  /// answers, and then no screenshot is taken.
+  ({bool screenshots, bool derived, bool captureOnly})? _policy;
+
+  /// When the server was last asked, whether it answered or not.
+  DateTime? _askedAt;
+  ({int generation, Future<void> done})? _asking;
+
+  /// Capture-only: the next try at the notes that could not go, while one is planned, and how long it waits.
+  Timer? _resend;
+  var _resendWait = _firstResend;
+  bool get derivedScreenshots => hasServer && (_policy?.derived ?? false);
 
   // ---- what the app and the overlay read ------------------------------------------------------------------------
 
@@ -166,8 +189,12 @@ class NotatoRuntime extends ChangeNotifier implements NotatoController {
   @override
   List<String> get agents => _agents;
 
-  /// Whether the server takes screenshots. One that does not wins over the app and the person.
-  bool get serverScreenshots => _serverScreenshots;
+  /// Whether the server takes screenshots: false when it has them off, or has not said yet. One that does not wins over
+  /// the app and the person.
+  bool get serverScreenshots => _policy?.screenshots ?? server == null;
+
+  /// Whether the server takes new notes from this app and nothing else (a capture-only token).
+  bool get captureOnly => server != null && (_policy?.captureOnly ?? false);
   @override
   NotatoMode get mode => _config?.mode ?? NotatoMode.dev;
 
@@ -183,8 +210,23 @@ class NotatoRuntime extends ChangeNotifier implements NotatoController {
   /// Whether the person wants screenshots taken.
   bool get screenshotsWanted => _settings['screenshots'] as bool? ?? _config?.screenshots ?? true;
 
-  /// Whether screenshots are taken: the person wants them, and the server takes them.
-  bool get screenshotsOn => screenshotsWanted && _serverScreenshots;
+  /// Whether screenshots are taken: the person wants them and, when there is a server (test mode's too), it has said it
+  /// takes them. With no server at all, they stay on the device and the person decides.
+  bool get screenshotsOn => screenshotsWanted && (server == null || (_policy?.screenshots ?? false));
+
+  /// Whether a screenshot may be taken now ([screenshotsOn]). An answer from the server older than a few seconds is
+  /// asked for again first, waiting a moment at most: a slow server must not hold up the note.
+  Future<bool> screenshotsAllowed() async {
+    final client = _client;
+    final asked = _askedAt;
+    if (screenshotsWanted &&
+        server != null &&
+        client != null &&
+        (asked == null || DateTime.now().difference(asked) > _policyFresh)) {
+      await _askServer(client).timeout(_policyWait, onTimeout: () {});
+    }
+    return screenshotsOn;
+  }
 
   /// Whether text fields are covered in screenshots and their values left out of notes.
   bool get maskInputs => _config?.maskInputs ?? false;
@@ -227,6 +269,7 @@ class NotatoRuntime extends ChangeNotifier implements NotatoController {
       notifyListeners();
       return;
     }
+    if (config.tokenWithheld != null) debugPrint('[notato] ${config.tokenWithheld}');
     final generation = _generation;
     final storage = await _openStorage(config.project);
     // Stopped, or started again for another project or server, meanwhile. (A rebuild that gave the same connection
@@ -271,6 +314,7 @@ class NotatoRuntime extends ChangeNotifier implements NotatoController {
     _generation++;
     _follower?.cancel();
     _follower = null;
+    _cancelResend();
     _dropIncoming();
     _releaseLogs?.call();
     _releaseLogs = null;
@@ -565,7 +609,9 @@ class NotatoRuntime extends ChangeNotifier implements NotatoController {
     final picked = await host.resolve(target);
     final pin = nextPin(host.route());
     final id = ulid();
-    final shots = screenshot && screenshotsOn ? await host.capture(picked, pin, id) : (full: null, crop: null);
+    final shots = screenshot && await screenshotsAllowed()
+        ? await host.capture(picked, pin, id)
+        : (full: null, crop: null);
     final made = await createNote(
       picked,
       comment: comment,
@@ -592,7 +638,10 @@ class NotatoRuntime extends ChangeNotifier implements NotatoController {
   }) {
     _network.add({
       'method': method.toUpperCase(),
-      'url': url.replaceFirst(RegExp(r'[?#].*$'), ''),
+      // Without its query string, or a user name and password in front of the host.
+      'url': url
+          .replaceFirst(RegExp(r'[?#].*$'), '')
+          .replaceFirstMapped(RegExp(r'^([a-zA-Z][a-zA-Z\d+.-]*://)[^/]*@'), (m) => m[1]!),
       'status': status,
       'durationMs': duration.inMilliseconds,
       'at': (at ?? DateTime.now()).toUtc().toIso8601String(),
@@ -650,6 +699,7 @@ class NotatoRuntime extends ChangeNotifier implements NotatoController {
       final annotation = (stored['annotation'] as Map?)?.cast<String, Object?>() ?? record.annotation;
       // The server's events may have brought a newer copy while the answer was on its way: that one stays.
       _notes.update(id, (r) => r.pending ? NoteRecord(annotation, mine: r.mine) : r);
+      _sentState(null);
       _persist();
       notifyListeners();
       return const Sent();
@@ -661,20 +711,25 @@ class NotatoRuntime extends ChangeNotifier implements NotatoController {
         notifyListeners();
         return Refused(error.message);
       }
-      return _hold(id, error);
+      return _hold(id, error, generation);
     } catch (error) {
       // Anything else (an answer that is not a note, say): kept, like a note the server could not be reached for.
-      return _hold(id, NotatoException('$error'));
+      return _hold(id, NotatoException('$error'), generation);
     }
   }
 
   /// A note that did not go now: it and the notes after it wait, with the server's reason when it gave one.
-  Held _hold(String id, NotatoException error) {
+  Held _hold(String id, NotatoException error, int generation) {
     _notes.update(
       id,
       (r) =>
           NoteRecord(r.annotation, pending: true, mine: r.mine, waiting: error.status == null ? null : error.message),
     );
+    if (generation == _generation) {
+      // With no stream to say when the server is back, a capture-only app tries again in a while.
+      _sentState(error);
+      _planResend();
+    }
     _persist();
     notifyListeners();
     return Held(error);
@@ -693,28 +748,58 @@ class NotatoRuntime extends ChangeNotifier implements NotatoController {
 
   // ---- the server: live updates over server-sent events ------------------------------------------------------------
 
+  /// Opens a fresh connection to the server, or says there is none. What the server allows is asked first, whenever
+  /// there is a server (test mode's too): it says whether screenshots may be taken, and whether this app may do more
+  /// than send notes.
   void _restartSync() {
     _generation++;
     _follower?.cancel();
     _follower = null;
+    _cancelResend();
     _dropIncoming();
     _agents = const [];
+    _policy = null;
+    _askedAt = null;
     final s = server;
-    _client = s == null ? null : _clientFor(s);
-    if (!_enabled || _client == null || !hasServer) {
+    final client = _client = s == null ? null : _clientFor(s);
+    if (!_enabled || client == null || !hasServer) {
       _connection = NotatoConnection.local;
       _connectionDetail = mode == NotatoMode.test ? null : 'No server is set: notes stay on this device.';
+      if (_enabled && client != null) unawaited(_askServer(client));
       return;
     }
     final generation = _generation;
-    final client = _client!;
     _connection = NotatoConnection.connecting;
+    unawaited(
+      _askServer(client).then((_) {
+        if (generation == _generation) _connect(client, generation);
+      }),
+    );
+  }
+
+  /// Follows the server's events; or, for a capture-only token, which may not, only sends the notes. A server that
+  /// could not be asked first, and then refuses the stream, is asked again: the token may be capture-only.
+  void _connect(NotatoClient client, int generation) {
+    if (captureOnly) {
+      _sendOnly(generation);
+      return;
+    }
     _follower = client.follow(
       (event) {
         if (generation == _generation) unawaited(_handle(event, client, generation));
       },
       (state, detail) {
         if (generation != _generation) return;
+        if (state == StreamState.refused) {
+          unawaited(
+            _askServer(client).then((_) {
+              if (generation != _generation || !captureOnly) return;
+              _follower?.cancel();
+              _follower = null;
+              _sendOnly(generation);
+            }),
+          );
+        }
         _connection = switch (state) {
           StreamState.connecting => NotatoConnection.connecting,
           StreamState.connected => NotatoConnection.connected,
@@ -729,11 +814,95 @@ class NotatoRuntime extends ChangeNotifier implements NotatoController {
     );
   }
 
+  /// Asks the server what it allows (`/config`). An answer that does not come leaves the last one standing: none, at
+  /// first, and then no screenshots are taken. One question at a time per connection.
+  Future<void> _askServer(NotatoClient client) {
+    final asking = _asking;
+    if (asking != null && asking.generation == _generation) return asking.done;
+    final generation = _generation;
+    final done = _ask(client, generation);
+    _asking = (generation: generation, done: done);
+    return done;
+  }
+
+  Future<void> _ask(NotatoClient client, int generation) async {
+    try {
+      final config = await client.capabilities();
+      if (generation != _generation) return;
+      _policy = (
+        screenshots: config['screenshots'] == true,
+        derived: config['derivedScreenshots'] == true,
+        captureOnly: config['captureOnly'] == true,
+      );
+      notifyListeners();
+    } catch (_) {
+      // no answer: the last one stands
+    } finally {
+      if (generation == _generation) _askedAt = DateTime.now();
+      if (_asking?.generation == generation) _asking = null;
+    }
+  }
+
+  /// A capture-only token: the server takes new notes from this app and nothing else (no stream, no list), so there is
+  /// nothing to wait for. The notes kept here go now, and are tried again in a while when they cannot.
+  void _sendOnly(int generation) {
+    _connection = NotatoConnection.connected;
+    _connectionDetail = null;
+    _agents = const [];
+    notifyListeners();
+    unawaited(_sendKept(generation));
+  }
+
+  /// Capture-only: sends the notes kept here, and says how that went.
+  Future<void> _sendKept(int generation) async {
+    final held = await flush();
+    if (generation != _generation) return;
+    _sentState(held);
+    if (held != null) {
+      _planResend();
+    } else {
+      _resendWait = _firstResend;
+    }
+    notifyListeners();
+  }
+
+  /// Capture-only: there is no stream to say how the connection stands, so the last note sent (or not) says it.
+  void _sentState(NotatoException? held) {
+    if (!captureOnly) return;
+    _connection = held == null
+        ? NotatoConnection.connected
+        : held.permanent
+        ? NotatoConnection.refused
+        : NotatoConnection.offline;
+    _connectionDetail = held?.message;
+  }
+
+  /// Capture-only: tries the notes kept here again in a while, waiting longer each time they cannot go.
+  void _planResend() {
+    if (_resend != null || !captureOnly || !hasServer) return;
+    final generation = _generation;
+    _resend = Timer(_resendWait, () {
+      _resend = null;
+      if (generation == _generation) unawaited(_sendKept(generation));
+    });
+    final doubled = _resendWait * 2;
+    _resendWait = doubled > _longestResend ? _longestResend : doubled;
+  }
+
+  void _cancelResend() {
+    _resend?.cancel();
+    _resend = null;
+    _resendWait = _firstResend;
+  }
+
   /// Tries the server again now, instead of waiting out the pause between attempts (the menu's Retry).
   void retryConnection() {
     if (!_enabled || !hasServer) return;
     if (_follower != null) {
       _follower!.retry();
+    } else if (captureOnly) {
+      _cancelResend();
+      unawaited(_sendKept(_generation));
     } else {
       _restartSync();
     }
@@ -747,12 +916,8 @@ class NotatoRuntime extends ChangeNotifier implements NotatoController {
         _connectionDetail = null;
         _agents = _agentNames(data['agent']);
         notifyListeners();
-        try {
-          final screenshots = await client.screenshots();
-          if (generation == _generation && screenshots != null) _serverScreenshots = screenshots;
-        } catch (_) {
-          // the screenshots stay as they were
-        }
+        // Asked again on each connection: the server's settings may have changed while it was away.
+        await _askServer(client);
         // The notes kept on the device go first, so the list read after them has them.
         final held = await flush();
         if (generation != _generation) return;
@@ -959,6 +1124,7 @@ class NotatoRuntime extends ChangeNotifier implements NotatoController {
   NotatoClient _connected() {
     final client = _client;
     if (!hasServer || client == null) throw const NotatoException('Not connected to a Notato server.');
+    if (captureOnly) throw const NotatoException(_onTheBoard);
     return client;
   }
 
@@ -1052,7 +1218,10 @@ class NotatoRuntime extends ChangeNotifier implements NotatoController {
   String describeConnection() {
     final host = serverHost;
     return switch (_connection) {
-      NotatoConnection.connected => 'Connected to ${host ?? 'the server'}',
+      NotatoConnection.connected =>
+        captureOnly
+            ? 'Sending notes to ${host ?? 'the server'}; they are read on the board'
+            : 'Connected to ${host ?? 'the server'}',
       NotatoConnection.connecting => 'Connecting to ${host ?? 'the server'}…',
       NotatoConnection.offline => _connectionDetail ?? 'Cannot reach ${host ?? 'the server'}',
       NotatoConnection.refused => _connectionDetail ?? '${host ?? 'The server'} refused this app',
@@ -1070,17 +1239,30 @@ class NotatoRuntime extends ChangeNotifier implements NotatoController {
 
   @override
   Future<({List<int> zip, String name, String? path, bool uploaded})> packageNotes({bool upload = true}) async {
+    final packaged = await _package(upload: upload);
+    return (zip: packaged.zip, name: packaged.name, path: packaged.path, uploaded: packaged.uploaded);
+  }
+
+  /// A package, and whether its screenshots are in it: with a server set, only when the server says it takes them. They
+  /// may have been taken while it did, but a package is shared by hand, so it follows what the server says now. A
+  /// capture-only token can upload these notes as a batch.
+  Future<({List<int> zip, String name, String? path, bool uploaded, bool screenshots})> _package({
+    required bool upload,
+  }) async {
     final config = _config;
     if (config == null) throw const NotatoException('Notato has not been started.');
     final mine = notes.where((r) => r.pending || (mode == NotatoMode.test && r.mine)).toList();
     if (mine.isEmpty) throw const NotatoException('Nothing to package yet: make at least one note.');
+    final client = _client;
+    if (server != null && client != null) await _askServer(client).timeout(_policyWait, onTimeout: () {});
+    final screenshots = server == null || (_policy?.screenshots ?? false);
     final written = writeBundle(
       [for (final r in mine) r.annotation],
       project: config.project,
       author: authorName,
       appName: config.appName,
       appVersion: config.appVersion,
-      assetOf: (id) => _assets[id] ?? _storage.loadAsset(id),
+      assetOf: (id) => screenshots ? _assets[id] ?? _storage.loadAsset(id) : null,
     );
     String? path;
     try {
@@ -1094,20 +1276,21 @@ class NotatoRuntime extends ChangeNotifier implements NotatoController {
       await _clientFor(s).uploadBundle(written.zip);
       uploaded = true;
     }
-    return (zip: written.zip, name: written.name, path: path, uploaded: uploaded);
+    return (zip: written.zip, name: written.name, path: path, uploaded: uploaded, screenshots: screenshots);
   }
 
   /// The menu's Package and share: the zip, uploaded when there is a server, and offered to the share sheet.
   Future<String> packageAndShare() async {
-    final result = await packageNotes();
+    final result = await _package(upload: true);
+    final bare = result.screenshots ? '' : ', without screenshots (the server does not take them)';
     final path = result.path;
     final host = _host;
     if (path != null && host != null) {
       final shared = await host.share(path).catchError((_) => false);
-      if (shared) return result.uploaded ? 'Packaged, uploaded and shared' : 'Packaged and shared';
+      if (shared) return '${result.uploaded ? 'Packaged, uploaded and shared' : 'Packaged and shared'}$bare';
     }
-    if (result.uploaded) return 'Packaged and uploaded to the server';
-    if (path != null) return 'Packaged: ${result.name}';
+    if (result.uploaded) return 'Packaged and uploaded to the server$bare';
+    if (path != null) return 'Packaged: ${result.name}$bare';
     throw const NotatoException('There is nowhere to write a package here: set a server to upload it.');
   }
 }

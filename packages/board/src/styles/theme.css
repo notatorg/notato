@@ -78,3 +78,7 @@
 .s-dismissed {
     --c: var(--s-dis);
 }
+
+.s-awaiting_response {
+    --c: var(--s-ack);
+}

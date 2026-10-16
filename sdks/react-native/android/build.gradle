@@ -1,0 +1,13 @@
+apply plugin: 'com.android.library'
+
+android {
+    namespace 'dev.notato.imagecodec'
+    compileSdkVersion rootProject.ext.has('compileSdkVersion') ? rootProject.ext.compileSdkVersion : 36
+    defaultConfig {
+        minSdkVersion rootProject.ext.has('minSdkVersion') ? rootProject.ext.minSdkVersion : 24
+    }
+}
+
+dependencies {
+    implementation 'com.facebook.react:react-android'
+}

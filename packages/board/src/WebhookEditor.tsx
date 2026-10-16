@@ -10,14 +10,20 @@ import {
 import { TestPanel } from "./TestPanel.tsx";
 import { Modal } from "./ui.tsx";
 import {
+    CONFIG_FILE,
     draftOf,
     EVENT_LABELS,
+    envName,
     eventLabel,
     FORMATS,
     formFor,
     formProblem,
     orderEvents,
     PICTURED,
+    saveProblem,
+    secretGoesInFile,
+    secretProblem,
+    urlProblem,
     type WebhookForm,
 } from "./webhook-form.ts";
 
@@ -40,30 +46,40 @@ export function WebhookEditor({ existing, projects, publicUrl, onClose, onSaved,
     const [error, setError] = useState<string | null>(null);
     /** The form, or the test panel for what the form says (saved or not). */
     const [view, setView] = useState<"form" | "test">("form");
-    const [tried, setTried] = useState(false);
+    /** What was last tried with the form: a test needs less of it than saving does. */
+    const [tried, setTried] = useState<"test" | "save" | null>(null);
     const first = useRef<HTMLInputElement>(null);
     const id = useId();
     const format = FORMATS.find((f) => f.id === form.format) ?? FORMATS[0];
     const problem = formProblem(form, existing);
+    const shown =
+        tried === "save" ? saveProblem(form, existing) : tried === "test" ? problem : null;
     const events = orderEvents(Object.keys(EVENT_LABELS));
+    /** A secret typed as it is, which saving would write into the settings file. */
+    const literalSecret = secretGoesInFile(form);
 
     const set = (next: Partial<WebhookForm>) => setForm((f) => ({ ...f, ...next }));
 
     useEffect(() => first.current?.focus(), []);
 
     const test = () => {
-        setTried(true);
+        setTried("test");
         if (!problem) setView("test");
     };
 
     const save = async () => {
-        setTried(true);
-        if (problem) return;
+        setTried("save");
+        if (saveProblem(form, existing)) return;
         setBusy(true);
         setError(null);
         try {
             const draft = draftOf(form, existing);
-            onSaved(await (existing ? editWebhook(existing, draft) : addWebhook(draft)));
+            const options = { secretInFile: literalSecret && form.secretInFile };
+            onSaved(
+                await (existing
+                    ? editWebhook(existing, draft, options)
+                    : addWebhook(draft, options))
+            );
         } catch (e) {
             if (isStale(e)) return onStale((e as Error).message);
             setError(e instanceof Error ? e.message : "Could not save.");
@@ -78,6 +94,8 @@ export function WebhookEditor({ existing, projects, publicUrl, onClose, onSaved,
         <Modal
             title={title}
             onClose={onClose}
+            // The form says what is wrong with the URL itself, `env:NAME` included.
+            noValidate
             onSubmit={(e) => {
                 e.preventDefault();
                 save();
@@ -154,14 +172,24 @@ export function WebhookEditor({ existing, projects, publicUrl, onClose, onSaved,
                                     autoComplete="off"
                                     spellCheck={false}
                                     aria-invalid={
-                                        tried && problem?.includes("URL") ? true : undefined
+                                        tried && urlProblem(form, existing) ? true : undefined
                                     }
                                 />
                             )}
                             <span className="field-hint">
-                                {existing && !form.replaceUrl
-                                    ? "The full URL stays on the server: it works like a password for the channel."
-                                    : format?.help}
+                                {existing && !form.replaceUrl ? (
+                                    envName(existing.url) !== undefined ? (
+                                        "Read from that environment variable where the server runs, so it is in no file."
+                                    ) : (
+                                        "The full URL stays on the server: it works like a password for the channel."
+                                    )
+                                ) : (
+                                    <>
+                                        {format?.help} Or write <code>env:NAME</code> to have the
+                                        server read it from that environment variable, so it never
+                                        goes in the settings file.
+                                    </>
+                                )}
                             </span>
                         </div>
 
@@ -293,24 +321,51 @@ export function WebhookEditor({ existing, projects, publicUrl, onClose, onSaved,
                                         placeholder="env:NOTATO_WEBHOOK_SECRET"
                                         autoComplete="off"
                                         spellCheck={false}
+                                        aria-invalid={
+                                            tried === "save" && secretProblem(form)
+                                                ? true
+                                                : undefined
+                                        }
                                     />
                                 )}
-                                <span className="field-hint">
-                                    Optional. Signs each body (HMAC-SHA256 in{" "}
-                                    <code>X-Notato-Signature</code>). Write <code>env:NAME</code> to
-                                    read it from an environment variable where the server runs, so
-                                    it never goes in the settings file.
-                                </span>
+                                {literalSecret ? (
+                                    <>
+                                        <label className="check">
+                                            <input
+                                                type="checkbox"
+                                                checked={form.secretInFile}
+                                                onChange={(e) =>
+                                                    set({ secretInFile: e.target.checked })
+                                                }
+                                            />
+                                            Store this secret in {CONFIG_FILE}
+                                        </label>
+                                        <span className="field-hint">
+                                            That file is meant to be committed, so anyone who can
+                                            read it could sign messages as this server. Better:
+                                            write <code>env:NAME</code> here and set that variable
+                                            where the server runs.
+                                        </span>
+                                    </>
+                                ) : (
+                                    <span className="field-hint">
+                                        Optional. Signs each body (HMAC-SHA256 in{" "}
+                                        <code>X-Notato-Signature</code>). Write{" "}
+                                        <code>env:NAME</code> to read it from an environment
+                                        variable where the server runs, so it never goes in the
+                                        settings file.
+                                    </span>
+                                )}
                             </div>
                         ) : null}
                     </div>
 
-                    {(tried && problem) || error ? (
+                    {shown || error ? (
                         // Outside the scrolling part, so what the save said is always in view.
                         <div className="modal-status">
-                            {tried && problem ? (
+                            {shown ? (
                                 <p className="error small" role="alert">
-                                    {problem}
+                                    {shown}
                                 </p>
                             ) : null}
                             {error ? (

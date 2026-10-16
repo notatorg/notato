@@ -122,6 +122,39 @@ struct PrivacyTests {
         #expect(Privacy.apply(once, masks: Self.masks, optOuts: Self.optOuts, maskInputs: true) == once)
     }
 
+    // Fields the app's views have and the accessibility tree does not say are fields: a card number in a row combined
+    // into one element, and a field the tree describes only as a view.
+    static let cardField = InputField(frame: CGRect(x: 16, y: 620, width: 370, height: 44), isSecure: false, text: "4242 4242 4242 4242")
+    let row = ScreenElement(role: nil, label: "Card number, 4242 4242 4242 4242, Visa", value: nil, identifier: "CardRow",
+                            frame: CGRect(x: 0, y: 610, width: 402, height: 64), control: "View")
+    let unnamed = ScreenElement(role: nil, label: "Promo code", value: "AUTUMN20", identifier: nil,
+                                frame: CGRect(x: 16, y: 700, width: 370, height: 44), control: "SomeHostingView")
+
+    @Test func whatIsTypedInAFieldTheTreeMissedLeavesTheElementAroundIt() {
+        let promo = InputField(frame: unnamed.frame.insetBy(dx: 1, dy: 1), isSecure: false, text: "AUTUMN20")
+        let out = Privacy.apply([row, unnamed], masks: [], optOuts: [], fields: [Self.cardField, promo], maskInputs: true)
+        #expect(out[0].label == "Card number, Visa" && out[0].identifier == "CardRow", "the rest of what it says is kept")
+        #expect(!out[0].isTextInput, "a row around a field is not covered: the field is")
+        #expect(out[1].isTextInput && out[1].value == nil && out[1].text == "Promo code", "the field itself, by its frame")
+        // Dev mode leaves what is typed in a plain field, as it does a field the tree knows.
+        let dev = Privacy.apply([row, unnamed], masks: [], optOuts: [], fields: [Self.cardField, promo], maskInputs: false)
+        #expect(dev[0].label == row.label && dev[1].value == "AUTUMN20")
+        // A field that opted out is left as it is.
+        #expect(Privacy.apply([row], masks: [], optOuts: [Self.cardField.frame], fields: [Self.cardField], maskInputs: true)[0].label == row.label)
+        #expect(Privacy.without("4242", in: "4242") == nil && Privacy.without("x", in: nil) == nil)
+        #expect(Privacy.without("line one\nline two", in: "Notes, line one, line two, Save") == "Notes, Save")
+    }
+
+    @Test func aFieldTheTreeMissedIsCoveredAndASecureOneAlways() {
+        let secure = InputField(frame: Self.password, isSecure: true, text: nil)
+        #expect(Privacy.covered([], masks: Self.masks, fields: [Self.cardField, secure], maskInputs: true) == Self.masks + [Self.cardField.frame, Self.password])
+        #expect(Privacy.covered([], masks: [], fields: [Self.cardField, secure], maskInputs: false) == [Self.password], "dev mode")
+        #expect(Privacy.covered([], masks: [], fields: [Self.cardField, secure], optOuts: [Self.cardField.frame, Self.password], maskInputs: true)
+            == [Self.password], "opted out, unless secure")
+        let shot = Captured("the picture", size: CGSize(width: 402, height: 874), elements: [], privateViews: [], fields: [Self.cardField], maskInputs: true)
+        #expect(shot.covers == [Self.cardField.frame])
+    }
+
     @Test @MainActor func theMaskModifierTakesNoArgumentOrFalse() {
         // Compiles: `.notatoMask()` to make a view private, and `.notatoMask(false)` to opt a field out.
         _ = Text("4242 4242 4242 4242").notatoMask()

@@ -1,7 +1,20 @@
-import { type Detail as DetailLevel, pinNumber, renderAnnotation } from "@notato/core";
+import {
+    canRequestRevert,
+    type Detail as DetailLevel,
+    pinNumber,
+    renderAnnotation,
+} from "@notato/core";
 import type { Annotation, Severity, Status } from "@notato/schema";
-import { type KeyboardEvent, useLayoutEffect, useRef, useState } from "react";
-import { chooseVariant, remove, reply, setPeopleOnly, setSeverity, setStatus } from "./api.ts";
+import { type KeyboardEvent, useEffect, useLayoutEffect, useRef, useState } from "react";
+import {
+    chooseVariant,
+    getAnnotation,
+    remove,
+    reply,
+    setPeopleOnly,
+    setSeverity,
+    setStatus,
+} from "./api.ts";
 import {
     authorName,
     capitalise,
@@ -12,6 +25,8 @@ import {
     serial,
 } from "./model.ts";
 import { MoreFacts, TargetFacts } from "./NoteFacts.tsx";
+import { References } from "./References.tsx";
+import { Review } from "./Review.tsx";
 import { go, projectHref } from "./route.ts";
 import { Screenshots } from "./Screenshots.tsx";
 import { useBoardName } from "./storage.ts";
@@ -20,6 +35,7 @@ import { copyText, FLASH_MS, Icon, StatusPill, When } from "./ui.tsx";
 
 interface Props {
     annotation: Annotation;
+    loadDetails?: boolean;
     project: string;
     /** How much to write when this is copied as Markdown. */
     detail: DetailLevel;
@@ -67,7 +83,46 @@ const REPLY_MAX_HEIGHT = 160;
 type Look = "primary" | "tonal" | "ghost";
 
 /** One note, open beside the inbox: everything it recorded, its thread, and the reply box and status buttons. */
-export function Detail({ annotation: a, project, detail, hidden, onChange, onDeleted }: Props) {
+export function Detail(props: Props) {
+    const [loaded, setLoaded] = useState<Annotation | null>(null);
+    const [error, setError] = useState<string | null>(null);
+    const [attempt, retry] = useState(0);
+    const id = props.annotation.id;
+    useEffect(() => {
+        if (!props.loadDetails) return;
+        const request = new AbortController();
+        setLoaded(null);
+        setError(null);
+        getAnnotation(id, request.signal).then(
+            (a) => {
+                if (!request.signal.aborted) setLoaded(a);
+            },
+            (e) => {
+                if (!request.signal.aborted)
+                    setError(e instanceof Error ? e.message : "Could not load the note.");
+            }
+        );
+        return () => request.abort(`Note request ${attempt} cancelled`);
+    }, [id, props.loadDetails, attempt]);
+    if (props.loadDetails && loaded?.id !== id)
+        return (
+            <div className="empty">
+                <p role={error ? "alert" : "status"}>{error ?? "Loading note…"}</p>
+                {error ? (
+                    <button type="button" onClick={() => retry((n) => n + 1)}>
+                        Try again
+                    </button>
+                ) : null}
+            </div>
+        );
+    const annotation =
+        props.loadDetails && loaded
+            ? { ...props.annotation, context: loaded.context, steps: loaded.steps }
+            : props.annotation;
+    return <LoadedDetail {...props} annotation={annotation} />;
+}
+
+function LoadedDetail({ annotation: a, project, detail, hidden, onChange, onDeleted }: Props) {
     const [text, setText] = useState("");
     /** The next reply goes as an aside: for the people on the thread, not the agent. */
     const [aside, setAside] = useState(false);
@@ -202,6 +257,7 @@ export function Detail({ annotation: a, project, detail, hidden, onChange, onDel
                         {to("resolved", "Resolve", { look: "primary" })}
                     </>
                 );
+            case "awaiting_response":
             case "acknowledged":
                 return (
                     <>
@@ -215,10 +271,11 @@ export function Detail({ annotation: a, project, detail, hidden, onChange, onDel
             case "resolved":
                 return (
                     <>
-                        {to("revert_requested", "Ask the agent to revert", {
-                            fallback: "Please revert this change.",
-                            look: "ghost",
-                        })}
+                        {canRequestRevert(a) &&
+                            to("revert_requested", "Ask the agent to revert", {
+                                fallback: "Please revert this change.",
+                                look: "ghost",
+                            })}
                         {to("open", "Reopen")}
                     </>
                 );
@@ -235,10 +292,16 @@ export function Detail({ annotation: a, project, detail, hidden, onChange, onDel
         }
     })();
 
+    const needsAnswer = a.status === "awaiting_response";
     const long = a.comment.length > LONG_COMMENT || a.comment.includes("\n");
 
     return (
         <article className="detail">
+            {needsAnswer ? (
+                <p className="answer-needed" role="status">
+                    The agent needs your answer before continuing. Reply below to resume the task.
+                </p>
+            ) : null}
             <header className="detail-head">
                 <button
                     type="button"
@@ -263,7 +326,7 @@ export function Detail({ annotation: a, project, detail, hidden, onChange, onDel
                     type="button"
                     className={a.peopleOnly ? "tag people on" : "tag people"}
                     aria-pressed={Boolean(a.peopleOnly)}
-                    aria-label="People only"
+                    aria-label="Hide from agent"
                     disabled={busy}
                     title={
                         a.peopleOnly
@@ -272,7 +335,7 @@ export function Detail({ annotation: a, project, detail, hidden, onChange, onDel
                     }
                     onClick={() => run(() => setPeopleOnly(a.id, !a.peopleOnly), undefined, false)}
                 >
-                    People only
+                    Hide from agent
                 </button>
                 <select
                     className={a.severity ? `sev-select set sev-${a.severity}` : "sev-select"}
@@ -344,14 +407,35 @@ export function Detail({ annotation: a, project, detail, hidden, onChange, onDel
                     </p>
                 </div>
                 {a.target.selectedText ? <blockquote>“{a.target.selectedText}”</blockquote> : null}
+                <Review annotation={a} />
                 <Screenshots annotation={a} />
+                <References annotation={a} />
                 <TargetFacts annotation={a} />
                 {a.variants ? (
                     <Variants
                         annotation={a}
-                        busy={busy}
+                        busy={busy || needsAnswer}
                         onPick={(name) => run(() => chooseVariant(a.id, name, note), taking)}
                     />
+                ) : null}
+                {a.links?.length ? (
+                    <section className="links">
+                        <h3>Linked</h3>
+                        <ul>
+                            {a.links.map((l) => (
+                                <li key={`${l.plugin}:${l.url}`}>
+                                    <a href={l.url} target="_blank" rel="noopener noreferrer">
+                                        {l.title ?? l.ref ?? l.url}
+                                    </a>
+                                    <span className="muted small">
+                                        {" "}
+                                        · {l.plugin}
+                                        {l.ref && l.title ? ` ${l.ref}` : ""}
+                                    </span>
+                                </li>
+                            ))}
+                        </ul>
+                    </section>
                 ) : null}
                 <Thread annotation={a} />
                 <MoreFacts annotation={a} />
@@ -368,7 +452,7 @@ export function Detail({ annotation: a, project, detail, hidden, onChange, onDel
                         ref={field}
                         placeholder={
                             aside
-                                ? `Aside to the people here, as ${name || "Anonymous"}…`
+                                ? `Reply hidden from agent, as ${name || "Anonymous"}…`
                                 : `Reply as ${name || "Anonymous"}… press Enter to send`
                         }
                         value={text}
@@ -385,7 +469,7 @@ export function Detail({ annotation: a, project, detail, hidden, onChange, onDel
                         title={ASIDE_HINT}
                         onClick={() => setAside(!aside)}
                     >
-                        Aside
+                        Hide reply from agent
                     </button>
                     <button
                         type="button"

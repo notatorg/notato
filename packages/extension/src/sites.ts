@@ -17,6 +17,15 @@ export async function saveSite(origin: string, config: SiteConfig): Promise<void
     await chrome.storage.local.set({ [KEY]: sites });
 }
 
+/**
+ * Keeps the sites' settings, and every token in them, from content scripts: only the extension's own pages and its
+ * background worker can read them. A content script runs in the page's process, so a page that took over its renderer
+ * could read whatever one can; the relay asks the background worker for its own site's settings instead.
+ */
+export async function closeToContentScripts(): Promise<void> {
+    await chrome.storage.local.setAccessLevel({ accessLevel: "TRUSTED_CONTEXTS" });
+}
+
 /** What a site starts with: the server on this machine, and the page's own host as the project. */
 export function defaultConfig(origin: string): SiteConfig {
     let host = origin;

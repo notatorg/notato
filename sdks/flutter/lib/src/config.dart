@@ -1,3 +1,5 @@
+import 'package:flutter/foundation.dart';
+
 /// Who annotates, and where the notes go: the same three modes as every Notato SDK.
 enum NotatoMode {
   /// The developer, live to a local `notato dev` server that your coding agent reads over MCP.
@@ -35,6 +37,7 @@ class NotatoConfig {
     this.mode = NotatoMode.dev,
     this.server,
     this.token,
+    this.tokenWithheld,
     this.appName = 'Flutter app',
     this.appVersion,
     this.author,
@@ -56,6 +59,9 @@ class NotatoConfig {
   /// The server notes go to, or none.
   final String? server;
   final String? token;
+
+  /// Why the token the app gave is not sent from this build (see [tokenProblem]), or null.
+  final String? tokenWithheld;
   final String appName;
   final String? appVersion;
   final String? author;
@@ -80,6 +86,8 @@ class NotatoConfig {
     NotatoMode mode = NotatoMode.dev,
     String? server,
     String? token,
+    bool allowTokenInRelease = false,
+    bool debugBuild = kDebugMode,
     String? appName,
     String? appVersion,
     String? author,
@@ -95,15 +103,24 @@ class NotatoConfig {
     double maxScreenshotScale = 2,
   }) {
     final trimmed = server?.trim().replaceAll(RegExp(r'/+$'), '');
+    final resolved = trimmed == null
+        ? (mode == NotatoMode.test ? null : defaultServer)
+        : trimmed.isEmpty
+        ? null
+        : trimmed;
+    final given = token == null || token.isEmpty ? null : token;
+    final withheld = tokenProblem(
+      token: given,
+      server: resolved,
+      allowTokenInRelease: allowTokenInRelease,
+      debugBuild: debugBuild,
+    );
     return NotatoConfig(
       project: project,
       mode: mode,
-      server: trimmed == null
-          ? (mode == NotatoMode.test ? null : defaultServer)
-          : trimmed.isEmpty
-          ? null
-          : trimmed,
-      token: token == null || token.isEmpty ? null : token,
+      server: resolved,
+      token: withheld == null ? given : null,
+      tokenWithheld: withheld,
       appName: appName == null || appName.trim().isEmpty ? 'Flutter app' : appName.trim(),
       appVersion: appVersion,
       author: author,
@@ -137,6 +154,30 @@ class NotatoConfig {
   /// The same project and server: a change of anything else does not need a new connection.
   bool sameConnection(NotatoConfig other) =>
       project == other.project && mode == other.mode && server == other.server && token == other.token;
+}
+
+/// Whether a server is a Microsoft dev tunnel: how `notato dev --tunnel` puts the developer's own machine online.
+bool _isDevTunnel(String server) =>
+    RegExp(r'^https?://[^/?#]*\.devtunnels\.ms(:\d+)?([/?#]|$)', caseSensitive: false).hasMatch(server);
+
+/// Why [token] is not sent from this build, or null when it is. A debug build sends it. A profile or release build is
+/// in the hands of everyone who has the app, and whatever is in it can be read out: it sends a token only when the app
+/// says so ([allowTokenInRelease], for a capture-only token), and never `notato dev --tunnel`'s device token, nor any
+/// token to a dev tunnel, which opens the developer's own server.
+String? tokenProblem({
+  required String? token,
+  required String? server,
+  required bool allowTokenInRelease,
+  bool debugBuild = kDebugMode,
+}) {
+  if (token == null || debugBuild) return null;
+  if (token.startsWith('notato_device_') || (server != null && _isDevTunnel(server))) {
+    return "A dev tunnel's device token is for debug builds only: this build does not send it.";
+  }
+  if (!allowTokenInRelease) {
+    return 'This build does not send `token`: for testers, set allowTokenInRelease with a capture-only project token.';
+  }
+  return null;
 }
 
 /// The server as people know it: `localhost:4747`.

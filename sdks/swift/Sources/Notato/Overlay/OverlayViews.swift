@@ -261,7 +261,7 @@ struct PinsLayer: View {
                         .opacity(pin.detached ? 0.55 : 1)
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel("Note \(pin.number), \(pin.status.replacingOccurrences(of: "_", with: " "))")
+                .accessibilityLabel("Note \(pin.number), \(Status.label(pin.status))")
                 .region("pin.\(pin.key)", model)
                 .offset(x: pin.origin.x, y: pin.origin.y)
                 // Grows from its own middle: the anchor is in the unmoved frame's terms, as the offset is outside it.

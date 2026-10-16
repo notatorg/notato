@@ -9,21 +9,24 @@ describe("notato inject", () => {
         expect(r.stdout).toContain('<script src="http://127.0.0.1:4747/inject.js"></script>');
         expect(r.stdout).toContain("javascript:(function(){");
         expect(r.stdout).toContain("each page's own host and port as its project");
-        expect(r.stdout).toContain("--cors-origin");
+        expect(r.stdout).toContain("NOTATO_CORS_ORIGINS");
+        expect(r.stdout).not.toContain("--cors-origin"); // `notato dev` has no such option
+        expect(r.stdout).not.toContain("your network");
     });
 
     it("follows $NOTATO_PORT, --server, --project and a token, for every way", () => {
         const r = runInject(["--project", "shop", "--token", "notato_abc"], {
             NOTATO_PORT: "5050",
         });
-        expect(r.stdout).toContain(
-            "http://127.0.0.1:5050/bookmarklet?project=shop&token=notato_abc"
-        );
-        expect(r.stdout).toContain("inject.js?project=shop&token=notato_abc");
+        expect(r.stdout).toContain("http://127.0.0.1:5050/bookmarklet?project=shop");
+        expect(r.stdout).not.toContain("inject.js?project=shop&token=");
+        expect(r.stdout).toContain('data-notato-token="notato_abc"');
         expect(r.stdout).toContain('as project "shop"');
         const other = runInject(["--server", "http://192.168.1.5:4747/"], {});
         expect(other.stdout).toContain("http://192.168.1.5:4747/bookmarklet");
-        expect(runInject([], { NOTATO_TOKEN: "notato_env" }).stdout).toContain("token=notato_env");
+        expect(runInject([], { NOTATO_TOKEN: "notato_env" }).stdout).toContain(
+            'data-notato-token="notato_env"'
+        );
     });
 
     it("says what is wrong with a project id or a server address, as a usage error", () => {

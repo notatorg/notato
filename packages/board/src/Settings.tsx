@@ -27,7 +27,18 @@ const settingLabel = (name: string) => SETTING_LABELS[name] ?? name;
 const POLL_MS = 5000;
 
 /** The server's settings (the same file `notato config` edits), its webhooks, and this browser's own preferences. */
-export function Settings({ projects }: { projects: ProjectSummary[] | null }) {
+export function Settings({
+    projects,
+    manageServer = true,
+    accountName,
+    onSignOut,
+}: {
+    projects: ProjectSummary[] | null;
+    /** False for someone who may not see or change the server's own settings: they get this browser's preferences. */
+    manageServer?: boolean;
+    accountName?: string;
+    onSignOut?: () => Promise<void>;
+}) {
     const [view, setView] = useState<SettingsView | null>(null);
     const [status, setStatus] = useState<ServerStatus | null>(null);
     const [error, setError] = useState<string | null>(null);
@@ -39,6 +50,7 @@ export function Settings({ projects }: { projects: ProjectSummary[] | null }) {
     const [testing, setTesting] = useState<WebhookView | null>(null);
 
     useEffect(() => {
+        if (!manageServer) return;
         getSettings().then(
             (v) => {
                 setView(v);
@@ -53,7 +65,7 @@ export function Settings({ projects }: { projects: ProjectSummary[] | null }) {
             getSettings().then(setView, () => {});
         }, POLL_MS);
         return () => clearInterval(timer);
-    }, []);
+    }, [manageServer]);
 
     /** Runs a change and shows the settings it answers with; a refusal (a stale copy, a broken file) is shown instead. */
     const change = async (key: string, fn: () => Promise<SettingsView>) => {
@@ -99,12 +111,30 @@ export function Settings({ projects }: { projects: ProjectSummary[] | null }) {
         </header>
     );
 
+    if (!manageServer) {
+        return (
+            <div className="sheet">
+                <div className="sheet-inner settings">
+                    <header className="sheet-head">
+                        <div>
+                            <h1>Settings</h1>
+                            <p>Preferences for this browser.</p>
+                        </div>
+                    </header>
+                    <BrowserPreferences accountName={accountName} />
+                    <AccountSection name={accountName} onSignOut={onSignOut} />
+                </div>
+            </div>
+        );
+    }
+
     if (!view) {
         return (
             <div className="sheet">
                 <div className="sheet-inner settings">
                     {head}
                     {error ? <p className="error">{error}</p> : <p className="muted">Loading…</p>}
+                    <AccountSection name={accountName} onSignOut={onSignOut} />
                 </div>
             </div>
         );
@@ -171,7 +201,8 @@ export function Settings({ projects }: { projects: ProjectSummary[] | null }) {
                     onDelete={(w) => change(`delete-${w.index}`, () => deleteWebhook(w))}
                 />
 
-                <BrowserPreferences />
+                <BrowserPreferences accountName={accountName} />
+                <AccountSection name={accountName} onSignOut={onSignOut} />
 
                 {status ? <ServerSection status={status} /> : null}
             </div>
@@ -378,7 +409,7 @@ function WebhooksSection({
 }
 
 /** Kept in this browser only: the name on replies, how much a Markdown copy says, and the theme. */
-function BrowserPreferences() {
+function BrowserPreferences({ accountName }: { accountName?: string }) {
     const saved = useBoardName();
     const [name, setName] = useState(saved);
     const [flash, setFlash] = useState(false);
@@ -392,32 +423,34 @@ function BrowserPreferences() {
                 <p>Stored here only. Other people and browsers have their own.</p>
             </div>
             <div className="set-body">
-                <form
-                    className="setting-row"
-                    onSubmit={(e) => {
-                        e.preventDefault();
-                        setBoardName(name);
-                        setFlash(true);
-                        setTimeout(() => setFlash(false), FLASH_MS);
-                    }}
-                >
-                    <label className="setting-text" htmlFor="pref-name">
-                        <strong>Your name on replies</strong>
-                        <span className="muted small">Shown next to what you write.</span>
-                    </label>
-                    <div className="inline-field">
-                        <input
-                            id="pref-name"
-                            value={name}
-                            onChange={(e) => setName(e.target.value)}
-                            placeholder="Anonymous"
-                            maxLength={80}
-                        />
-                        <button type="submit" className="primary">
-                            {flash ? "Saved" : "Save"}
-                        </button>
-                    </div>
-                </form>
+                {accountName === undefined ? (
+                    <form
+                        className="setting-row"
+                        onSubmit={(e) => {
+                            e.preventDefault();
+                            setBoardName(name);
+                            setFlash(true);
+                            setTimeout(() => setFlash(false), FLASH_MS);
+                        }}
+                    >
+                        <label className="setting-text" htmlFor="pref-name">
+                            <strong>Your name on replies</strong>
+                            <span className="muted small">Shown next to what you write.</span>
+                        </label>
+                        <div className="inline-field">
+                            <input
+                                id="pref-name"
+                                value={name}
+                                onChange={(e) => setName(e.target.value)}
+                                placeholder="Anonymous"
+                                maxLength={80}
+                            />
+                            <button type="submit" className="primary">
+                                {flash ? "Saved" : "Save"}
+                            </button>
+                        </div>
+                    </form>
+                ) : null}
                 <div className="setting-row">
                     <div className="setting-text">
                         <strong>Markdown detail</strong>
@@ -435,7 +468,9 @@ function BrowserPreferences() {
                 <div className="setting-row">
                     <div className="setting-text">
                         <strong>Appearance</strong>
-                        <span className="muted small">Also at the bottom of the sidebar.</span>
+                        <span className="muted small">
+                            Choose a light or dark theme for this browser.
+                        </span>
                     </div>
                     <ThemeSwitch />
                 </div>
@@ -482,6 +517,54 @@ function ServerSection({ status }: { status: ServerStatus }) {
                     </>
                 ) : null}
             </dl>
+        </section>
+    );
+}
+
+/** Session controls belong to Settings and remain separate from server-wide administration. */
+function AccountSection({ name, onSignOut }: { name?: string; onSignOut?: () => Promise<void> }) {
+    const [busy, setBusy] = useState(false);
+    const [error, setError] = useState<string | null>(null);
+    if (!onSignOut) return null;
+    return (
+        <section className="set-section">
+            <div className="set-label">
+                <h2>Account</h2>
+                <p>Your signed-in account.</p>
+            </div>
+            <div className="set-body">
+                <div className="setting-row">
+                    <div className="setting-text">
+                        <strong>Your name on replies</strong>
+                        <span className="muted small">Provided by your signed-in account.</span>
+                    </div>
+                    <span className="account-name">{name}</span>
+                </div>
+                <button
+                    type="button"
+                    disabled={busy}
+                    onClick={async () => {
+                        setBusy(true);
+                        setError(null);
+                        try {
+                            await onSignOut();
+                        } catch (reason) {
+                            setError(
+                                reason instanceof Error ? reason.message : "Could not sign out."
+                            );
+                        } finally {
+                            setBusy(false);
+                        }
+                    }}
+                >
+                    {busy ? "Signing out…" : "Sign out"}
+                </button>
+                {error ? (
+                    <p className="error" role="alert">
+                        {error}
+                    </p>
+                ) : null}
+            </div>
         </section>
     );
 }

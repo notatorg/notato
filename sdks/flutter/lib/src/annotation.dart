@@ -1,15 +1,24 @@
 import 'ids.dart';
 import 'version.dart';
 
-/// A screenshot, as its PNG bytes and the reference the note carries (the server stores it under its own hash).
+/// A screenshot and its media type (the server stores the bytes under their own hash).
 class Shot {
-  const Shot({required this.id, required this.bytes, required this.width, required this.height});
+  const Shot({
+    required this.id,
+    required this.bytes,
+    required this.width,
+    required this.height,
+    this.mime = 'image/png',
+    this.cropRect,
+  });
   final String id;
   final List<int> bytes;
   final int width;
   final int height;
+  final String mime;
+  final Map<String, int>? cropRect;
 
-  Map<String, Object?> get ref => {'id': id, 'mime': 'image/png', 'w': width, 'h': height};
+  Map<String, Object?> get ref => {'id': id, 'mime': mime, 'w': width, 'h': height};
 }
 
 /// The device a note is made on.
@@ -50,9 +59,9 @@ String routeName(String? route) {
 
 /// The words every Notato SDK uses for keeping things from the agent.
 abstract final class PeopleOnlyCopy {
-  static const title = 'People only';
+  static const title = 'Hide from agent';
   static const hint = "Keep this between people: the agent won't see it.";
-  static const aside = 'Aside';
+  static const aside = 'Hide reply from agent';
   static const asideHint = "Just for people: the agent won't see this reply.";
   static const on = "Made this people only: the agent won't see it.";
   static const off = 'Shared this with the agent.';
@@ -143,7 +152,7 @@ Map<String, Object?> buildAnnotation({
     if (full != null) 'screenshots': {'full': full.ref, if (crop != null) 'crop': crop.ref},
     if (steps != null && steps.isNotEmpty) 'steps': steps,
     'context': {
-      'screenshot': {'method': 'native', 'pin': pin},
+      'screenshot': {'method': 'native', 'pin': pin, if (full?.cropRect != null) 'cropRect': full!.cropRect},
       'flutter': {'os': device.os, 'osVersion': device.osVersion, 'dart': ?device.dart},
       if (console != null && console.isNotEmpty) 'console': console,
       if (network != null && network.isNotEmpty) 'network': network,

@@ -4,6 +4,16 @@ dist
 *.tsbuildinfo
 packages/board/dist
 
+# Local checkouts of other branches (git worktree); one may be a private repository
+.worktrees/
+
+# Secrets: environment files, private keys and certificates, wherever they are
+**/.env
+**/.env.*
+!**/.env.example
+**/*.key
+**/*.pem
+
 # Swift: the package manifest is at the root (Package.swift), so SwiftPM builds here
 .build/
 .swiftpm/

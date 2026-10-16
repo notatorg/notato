@@ -18,7 +18,7 @@
     },
     "packages/board": {
       "name": "@notato/board",
-      "version": "0.1.0",
+      "version": "0.3.0",
       "dependencies": {
         "@fontsource-variable/bricolage-grotesque": "^5.3.0",
         "@fontsource-variable/figtree": "^5.3.0",
@@ -35,7 +35,7 @@
     },
     "packages/cli": {
       "name": "@notato/cli",
-      "version": "0.1.0",
+      "version": "0.3.0",
       "bin": {
         "notato": "./src/main.ts",
       },
@@ -50,7 +50,7 @@
     },
     "packages/core": {
       "name": "@notato/core",
-      "version": "0.1.0",
+      "version": "0.3.0",
       "dependencies": {
         "@notato/schema": "workspace:*",
         "fflate": "^0.8.2",
@@ -59,7 +59,7 @@
     },
     "packages/extension": {
       "name": "@notato/extension",
-      "version": "0.1.0",
+      "version": "0.3.0",
       "dependencies": {
         "@notato/browser": "workspace:*",
         "@notato/schema": "workspace:*",
@@ -72,26 +72,30 @@
     },
     "packages/schema": {
       "name": "@notato/schema",
-      "version": "0.1.0",
+      "version": "0.3.0",
       "dependencies": {
         "zod": "^4.3.0",
       },
     },
     "packages/server": {
       "name": "@notato/server",
-      "version": "0.1.0",
+      "version": "0.3.0",
       "dependencies": {
         "@modelcontextprotocol/sdk": "^1.32.0",
         "@notato/core": "workspace:*",
         "@notato/schema": "workspace:*",
         "fflate": "^0.8.2",
+        "pngjs": "^7.0.0",
         "ulid": "^3.0.2",
         "zod": "^4.3.0",
+      },
+      "devDependencies": {
+        "@types/pngjs": "^6.0.0",
       },
     },
     "packages/vite": {
       "name": "@notato/vite",
-      "version": "0.1.0",
+      "version": "0.3.0",
       "dependencies": {
         "@babel/parser": "^7.29.9",
         "magic-string": "^1.4.3",
@@ -102,7 +106,7 @@
     },
     "sdks/angular": {
       "name": "@notato/angular",
-      "version": "0.1.0",
+      "version": "0.3.0",
       "dependencies": {
         "@notato/browser": "workspace:*",
       },
@@ -136,8 +140,9 @@
     },
     "sdks/browser": {
       "name": "@notato/browser",
-      "version": "0.1.0",
+      "version": "0.3.0",
       "dependencies": {
+        "@noble/hashes": "^2.4.0",
         "@notato/core": "workspace:*",
         "@notato/schema": "workspace:*",
         "fflate": "^0.8.2",
@@ -150,7 +155,7 @@
     },
     "sdks/react": {
       "name": "@notato/react",
-      "version": "0.1.0",
+      "version": "0.3.0",
       "dependencies": {
         "@notato/browser": "workspace:*",
       },
@@ -164,7 +169,7 @@
     },
     "sdks/react-native": {
       "name": "@notato/react-native",
-      "version": "0.1.0",
+      "version": "0.3.0",
       "dependencies": {
         "@notato/schema": "workspace:*",
         "fflate": "^0.8.2",
@@ -629,6 +634,8 @@
 
     "@napi-rs/nice-win32-x64-msvc": ["@napi-rs/nice-win32-x64-msvc@1.1.1", "", { "os": "win32", "cpu": "x64" }, "sha512-vB+4G/jBQCAh0jelMTY3+kgFy00Hlx2f2/1zjMoH821IbplbWZOkLiTYXQkygNTzQJTq5cvwBDgn2ppHD+bglQ=="],
 
+    "@noble/hashes": ["@noble/hashes@2.4.0", "", {}, "sha512-X5XaVWZIBCT7HHZGm5I7ZQXDwLG+bGXuSrMQAW+7Zvl87h1kmc1ZB1VSRJcpUfoUrGQp4Fkoxm5kZ+Ms+aW+eA=="],
+
     "@notato/angular": ["@notato/angular@workspace:sdks/angular"],
 
     "@notato/board": ["@notato/board@workspace:packages/board"],
@@ -854,6 +861,8 @@
     "@types/jsesc": ["@types/jsesc@2.5.1", "", {}, "sha512-9VN+6yxLOPLOav+7PwjZbxiID2bVaeq0ED4qSQmdQTdjnXJSaCVKTR58t15oqH1H5t8Ng2ZX1SabJVoN9Q34bw=="],
 
     "@types/node": ["@types/node@26.6.4", "", { "dependencies": { "undici-types": "~8.9.0" } }, "sha512-ldVPDCzj7fsaGZrLB0NuHuTvJcsNasysBAqMolr/cgxrLd1xbqxIr3XJiPnHHJUCxj5sNF1vnRj9aWnrVh5Jcg=="],
+
+    "@types/pngjs": ["@types/pngjs@6.0.5", "", { "dependencies": { "@types/node": "*" } }, "sha512-0k5eKfrA83JOZPppLtS2C7OUtyNAl2wKNxfyYl9Q5g9lPkgBl/9hNyAu6HuEH2J4XmIv2znEpkDd0SaZVxW6iQ=="],
 
     "@types/react": ["@types/react@19.3.0", "", { "dependencies": { "csstype": "^3.2.2" } }, "sha512-N0rFCuH9YoxG9/m61l9MfpJKfmLOVU0em7ipIz6TRgSSkvReLB9vL85GB+yr8Bs5leqpvg96JSwF4ZS1s4viQg=="],
 
@@ -1519,7 +1528,7 @@
 
     "plist": ["plist@3.1.1", "", { "dependencies": { "@xmldom/xmldom": "^0.9.10", "base64-js": "^1.5.1", "xmlbuilder": "^15.1.1" } }, "sha512-ZIfcLJC+7E7FBFnDxm9MPmt7D+DidyQ26lewieO75AdhA2ayMtsJSES0iWzqJQbcVRSrTufQoy0DR94xHue0oA=="],
 
-    "pngjs": ["pngjs@3.4.0", "", {}, "sha512-NCrCHhWmnQklfH4MtJMRjZ2a8c80qXeMlQMv2uVp9ISJMTt562SbGd6n2oq0PaPgKm7Z6pL9E2UlLIhC+SHL3w=="],
+    "pngjs": ["pngjs@7.0.0", "", {}, "sha512-LKWqWJRhstyYo9pGvgor/ivk2w94eSjE3RGVuzLGlr3NmD8bf7RcYGze1mNdEHRP6TRP6rMuDHk5t44hnTRyow=="],
 
     "postcss": ["postcss@8.5.29", "", { "dependencies": { "nanoid": "^3.3.19", "picocolors": "^1.1.1", "source-map-js": "^1.2.2" } }, "sha512-49cGhUbXj8Qenv0iTMxA1cFBzxXoctpC9Ujd77t1WcbJIr6nF/eI7g/8MgxrYldFRuAXvja7xQRwavoW7kgrxQ=="],
 
@@ -2168,6 +2177,8 @@
     "ora/string-width": ["string-width@8.3.0", "", { "dependencies": { "get-east-asian-width": "^1.5.0", "strip-ansi": "^7.1.2" } }, "sha512-ZbmZM0JCihQN91dWnxoipT2KOEyHqEyfRXUyjuRhW8b/xnqPDoq4gWEVApTVa9db2wN8mmoikgFBbjh71+cGeQ=="],
 
     "oxc-parser/@oxc-project/types": ["@oxc-project/types@0.150.0", "", {}, "sha512-rDS5/31E9HfPl/CIzGrn0DOlvBbXFseQ5URJ9sYMfstbKLD/c6Gm9vmRzRGDdAXyOIL4zmO37lc9RIwYqVruZw=="],
+
+    "parse-png/pngjs": ["pngjs@3.4.0", "", {}, "sha512-NCrCHhWmnQklfH4MtJMRjZ2a8c80qXeMlQMv2uVp9ISJMTt562SbGd6n2oq0PaPgKm7Z6pL9E2UlLIhC+SHL3w=="],
 
     "parse5/entities": ["entities@8.1.0", "", {}, "sha512-kxL7msIffSuh9aaFAMD7rxAIuTRMAHMeBtgHW2yUdWw732ZNh4MehkF2gdjvtdmikkaIP9bFDDJOPlsvm7avrA=="],
 

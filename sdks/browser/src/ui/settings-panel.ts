@@ -40,6 +40,7 @@ export interface SettingsPanelOptions {
     serverScreenshots(): boolean;
     /** Hides Notato until the page is reloaded. */
     onHide(): void;
+    hiddenNotes?: { count(): number; restore(): void };
     /** The panel opened or closed, however it happened (the toolbar shows its button pressed while it is open). */
     onToggle?(open: boolean): void;
     /** The button that opens and closes the panel: a press on it is left to its click, which closes the panel. */
@@ -260,7 +261,7 @@ export function createSettingsPanel(options: SettingsPanelOptions): SettingsPane
                 toggle("Screenshots", "Take a screenshot with each note.", "screenshots", () =>
                     options.serverScreenshots()
                         ? undefined
-                        : "The server has screenshots turned off."
+                        : "Screenshots are unavailable until the server allows them."
                 ).row,
                 mine.row
             ),
@@ -284,6 +285,21 @@ export function createSettingsPanel(options: SettingsPanelOptions): SettingsPane
             });
             rows.push(go);
         }
+        if (options.hiddenNotes)
+            rows.push(
+                h(
+                    "button",
+                    {
+                        class: "slink",
+                        type: "button",
+                        onclick: () => {
+                            options.hiddenNotes?.restore();
+                            close();
+                        },
+                    },
+                    `Restore hidden annotations (${options.hiddenNotes.count()})`
+                )
+            );
         rows.push(hide);
         return rows;
     }
@@ -302,16 +318,21 @@ export function createSettingsPanel(options: SettingsPanelOptions): SettingsPane
 
         void server.status().then((info) => {
             if (!el || view !== "server") return;
-            status.textContent = info
-                ? [
-                      info.version ? `Notato ${info.version}` : "",
-                      info.mode ? `${info.mode} mode` : "",
-                      info.pages !== undefined ? `${plural(info.pages, "page")} connected` : "",
-                      info.screenshots ? `screenshots ${info.screenshots}` : "",
-                  ]
-                      .filter(Boolean)
-                      .join(" · ")
-                : "The server did not answer.";
+            status.textContent =
+                info?.mode === "capture"
+                    ? "Upload only. Review submitted feedback in the Notato dashboard."
+                    : info
+                      ? [
+                            info.version ? `Notato ${info.version}` : "",
+                            info.mode ? `${info.mode} mode` : "",
+                            info.pages !== undefined
+                                ? `${plural(info.pages, "page")} connected`
+                                : "",
+                            info.screenshots ? `screenshots ${info.screenshots}` : "",
+                        ]
+                            .filter(Boolean)
+                            .join(" · ")
+                      : "The server did not answer.";
             showAgent(info?.agent);
         });
 

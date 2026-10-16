@@ -1,5 +1,12 @@
 import { afterEach, describe, expect, it } from "bun:test";
-import { boardName, remember, remembered, setBoardName } from "../src/storage.ts";
+import {
+    boardName,
+    clearAccountMemory,
+    remember,
+    remembered,
+    setAccountName,
+    setBoardName,
+} from "../src/storage.ts";
 
 /** A localStorage as far as the board uses one, or one that refuses everything, like a locked-down browser's. */
 function useStorage(kind: "working" | "refusing") {
@@ -19,6 +26,7 @@ function useStorage(kind: "working" | "refusing") {
 
 const original = globalThis.localStorage;
 afterEach(() => {
+    clearAccountMemory();
     globalThis.localStorage = original;
 });
 
@@ -52,5 +60,17 @@ describe("what the board remembers in this browser", () => {
         setBoardName("   ");
         expect(boardName()).toBe("");
         expect(items.size).toBe(0);
+    });
+    it("uses the signed-in account for reply attribution, even with stale or blocked browser storage", () => {
+        useStorage("working");
+        setBoardName("Someone from an earlier visit");
+        setAccountName("Alice");
+        expect(boardName()).toBe("Alice");
+        setBoardName("Spoofed name");
+        expect(boardName()).toBe("Alice");
+        useStorage("refusing");
+        expect(boardName()).toBe("Alice");
+        clearAccountMemory();
+        expect(boardName()).toBe("");
     });
 });

@@ -200,9 +200,10 @@ public class ClientTests
     [Fact]
     public async Task A_body_may_take_as_long_as_it_keeps_coming_but_one_that_stops_times_out()
     {
-        TimeSpan limit = TimeSpan.FromMilliseconds(150);
-        // Ten pieces 40 ms apart: far longer than the limit in all, but never that long without a byte.
-        IdleTimeoutStream steady = new(new Trickle(10, TimeSpan.FromMilliseconds(40), stall: false), limit);
+        TimeSpan limit = TimeSpan.FromMilliseconds(600);
+        // Ten pieces 100 ms apart: longer than the limit in all, but never that long without a byte. The margin is
+        // generous because a busy CI runner can hold a timer back by hundreds of milliseconds.
+        IdleTimeoutStream steady = new(new Trickle(10, TimeSpan.FromMilliseconds(100), stall: false), limit);
         ServerConfig? config = await JsonSerializer.DeserializeAsync(steady, NotatoJsonContext.Default.ServerConfig);
         Assert.False(config!.Screenshots);
 

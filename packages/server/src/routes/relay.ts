@@ -2,7 +2,7 @@ import { z } from "zod";
 import { RequestError } from "../backend.ts";
 import { RelayArgs, RelayError } from "../relay.ts";
 import { PROJECT_ID } from "../storage.ts";
-import { assertAccess, json, type Routes, readJson, tokenProject } from "./common.ts";
+import { assertAccess, json, onlyProject, type Routes, readJson } from "./common.ts";
 
 const RelayBody = RelayArgs.extend({
     projectId: z.string().regex(PROJECT_ID).optional(),
@@ -30,15 +30,9 @@ export const relayRoutes: Routes = async ({ req, path, method, principal, match 
         const { projectId, timeoutMs, ...args } = await readJson(req, RelayBody);
         // A project token can only ever reach a page of its own project: naming another one is refused, and leaving
         // it out means its own.
-        if (projectId) assertAccess(principal, projectId);
+        const project = onlyProject(principal, projectId);
         try {
-            return json(
-                await backend.requestAnnotation(
-                    tokenProject(principal) ?? projectId,
-                    args,
-                    timeoutMs
-                )
-            );
+            return json(await backend.requestAnnotation(project, args, timeoutMs));
         } catch (error) {
             if (error instanceof RelayError) throw new RequestError(error.message, error.status);
             throw error;

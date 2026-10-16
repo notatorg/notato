@@ -3,7 +3,7 @@ import { unzipSync } from "fflate";
 import { describe, expect, it, vi } from "vitest";
 import { NotatoError } from "../../src/client.ts";
 import { memoryStorage } from "../../src/storage.ts";
-import { fakeHost, fakeServer, PNG, start } from "./harness.ts";
+import { fakeHost, fakeServer, PNG, settle, start } from "./harness.ts";
 
 describe("test mode", () => {
     it("keeps notes on the device, survives a restart, packages them as a bundle, and clears them", async () => {
@@ -71,8 +71,9 @@ describe("agent mode", () => {
         args: { target, comment: `Request ${requestId}`, author: "Claude" },
     });
 
-    it("follows the project's events with the agent's requests", () => {
+    it("follows the project's events with the agent's requests", async () => {
         const { server } = start({ project: "shop", mode: "agent" });
+        await settle();
         expect(server.transport.follow).toHaveBeenCalledWith(
             expect.anything(),
             true,

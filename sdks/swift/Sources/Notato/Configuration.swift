@@ -186,7 +186,7 @@ public struct NotatoConfiguration: Sendable, Equatable {
 }
 
 /// What whoever launched the app asks of Notato for this launch: `NOTATO_ENABLED` and `NOTATO_SERVER`, set in an
-/// Xcode scheme, as `SIMCTL_CHILD_NOTATO_…` with `xcrun simctl launch`, or by a launcher such as .NET Aspire. They are
+/// Xcode scheme, as `SIMCTL_CHILD_NOTATO_…` with `xcrun simctl launch`, or by a launcher such as Aspire. They are
 /// read however Notato is started, from code too, and win over the configuration; `NOTATO_ENABLED` also wins over
 /// the on or off remembered from an earlier launch (`Notato.enabledAtStart`). A value that cannot be read is left
 /// out, as if it were not set. The names and the order are the same in every Notato SDK.

@@ -14,7 +14,13 @@ Directory repository() {
 
 String? _bun() {
   final home = Platform.environment['HOME'];
-  for (final candidate in [if (home != null) '$home/.bun/bin/bun', '/opt/homebrew/bin/bun', '/usr/local/bin/bun']) {
+  final paths = (Platform.environment['PATH'] ?? '').split(Platform.isWindows ? ';' : ':');
+  for (final candidate in [
+    if (home != null) '$home/.bun/bin/bun',
+    '/opt/homebrew/bin/bun',
+    '/usr/local/bin/bun',
+    for (final path in paths) '$path/bun${Platform.isWindows ? '.exe' : ''}',
+  ]) {
     if (File(candidate).existsSync()) return candidate;
   }
   return null;

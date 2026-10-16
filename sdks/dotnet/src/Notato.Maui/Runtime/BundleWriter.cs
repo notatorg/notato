@@ -57,12 +57,12 @@ internal static class BundleWriter
             Screenshots? shots = null;
             if (a.Screenshots is { } s && Kept(assets, s.Full.Id) is { } fullFile)
             {
-                AssetRef full = s.Full with { Path = $"shots/{n}-full.png" };
+                AssetRef full = s.Full with { Path = $"shots/{n}-full.{(s.Full.Mime == "image/webp" ? "webp" : "png")}" };
                 files[full.Path] = fullFile;
                 AssetRef? crop = null;
                 if (s.Crop is { } c && Kept(assets, c.Id) is { } cropFile)
                 {
-                    crop = c with { Path = $"shots/{n}-crop.png" };
+                    crop = c with { Path = $"shots/{n}-crop.{(c.Mime == "image/webp" ? "webp" : "png")}" };
                     files[crop.Path] = cropFile;
                 }
                 shots = new Screenshots { Full = full, Crop = crop };

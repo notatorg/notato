@@ -1,3 +1,4 @@
+import { awaitsAgent, lastWord } from "@notato/core";
 import type { Annotation, Intent, Severity, Status } from "@notato/schema";
 
 export interface AnnotationFilter {
@@ -5,6 +6,7 @@ export interface AnnotationFilter {
     projectId?: string | string[];
     status?: Status | Status[];
     route?: string;
+    reviewId?: string;
     severity?: Severity;
     /** What the person wants done: fix, change, question, approve. */
     intent?: Intent | Intent[];
@@ -35,6 +37,8 @@ export interface AnnotationFilter {
     unhanded?: true;
     /** `false` leaves out `notato doctor`'s test note (marked `context.notatoDiagnostic`), which is nobody's work. */
     diagnostic?: false;
+    /** Leave bulky diagnostics and agent steps in the database for an SDK's summary list. */
+    summary?: true;
     limit?: number;
 }
 
@@ -42,6 +46,28 @@ export interface AnnotationFilter {
 export function inProjects(wanted: AnnotationFilter["projectId"], projectId: string): boolean {
     if (wanted === undefined) return true;
     return Array.isArray(wanted) ? wanted.includes(projectId) : wanted === projectId;
+}
+
+/**
+ * What the filters and the project list ask of a note, for a store to keep in columns beside its JSON so they are read
+ * from an index rather than by parsing every note: whether the last word waits on the agent (`awaitsAgent`, which an
+ * agent's watch polls), People only, a diagnostic note, its intent and author, and when it last saw activity (made, or
+ * replied to). The keys are column names, always in this order; the SQLite store keeps them, and any other store can.
+ */
+export function annotationColumns(a: Annotation) {
+    let last = a.createdAt;
+    for (const r of a.thread) if (Date.parse(r.createdAt) > Date.parse(last)) last = r.createdAt;
+    return {
+        awaits_agent: awaitsAgent(a) ? 1 : 0,
+        people_only: a.peopleOnly ? 1 : 0,
+        diagnostic: (a.context as { notatoDiagnostic?: unknown } | undefined)?.notatoDiagnostic
+            ? 1
+            : 0,
+        intent: a.intent ?? null,
+        author_name: a.author.name ?? null,
+        last_activity_at: last,
+        last_word_id: lastWord(a)?.id ?? null,
+    };
 }
 
 /** A note, and the id of its latest word as an agent was handed it. */
@@ -54,6 +80,12 @@ export interface HandedEntry {
 export interface StoredAnnotation {
     seq: number;
     annotation: Annotation;
+}
+
+/** Private ingestion metadata, stored atomically with the note and never exported as feedback. */
+export interface CaptureReceipt {
+    scope: string;
+    fingerprint: string;
 }
 
 export interface BundleRecord {
@@ -94,7 +126,17 @@ export interface ProjectSummary {
  * resolves synchronously underneath.
  */
 export interface Store {
-    insertAnnotation(annotation: Annotation): Promise<StoredAnnotation>;
+    /**
+     * Stores a new note. `assetBytes` is the size of its screenshots, for a store that keeps account of what each
+     * project or customer holds; the built-in ones ignore it.
+     */
+    insertAnnotation(
+        annotation: Annotation,
+        assetBytes?: number,
+        receipt?: CaptureReceipt
+    ): Promise<StoredAnnotation>;
+    /** Optional for third-party stores: without it, capture retries safely remain conflicts. */
+    getCaptureReceipt?(id: string): Promise<CaptureReceipt | null>;
     getAnnotation(id: string): Promise<StoredAnnotation | null>;
     listAnnotations(filter?: AnnotationFilter): Promise<StoredAnnotation[]>;
     /** Applies `mutate` to the stored annotation atomically. Returns null when the id is unknown. */
@@ -113,12 +155,19 @@ export interface Store {
     renameProject(id: string, name: string): Promise<ProjectRecord | null>;
     /** Removes the project with its annotations and bundles. Returns the annotations that were removed, or null for an unknown id. */
     deleteProject(id: string): Promise<StoredAnnotation[] | null>;
-    /** The projects with an annotation that shows this screenshot (none once every such note is deleted). */
-    projectsWithAsset(assetId: string): Promise<string[]>;
+    /** Projects with a note showing this asset. With peopleOnly:false, only public-to-agent notes may grant access. */
+    projectsWithAsset(
+        assetId: string,
+        filter?: Pick<AnnotationFilter, "peopleOnly">
+    ): Promise<string[]>;
     /** Returns false when a bundle with that id was already recorded. */
     insertBundle(bundle: BundleRecord): Promise<boolean>;
     getBundle(id: string): Promise<BundleRecord | null>;
-    listBundles(projectId?: string): Promise<BundleRecord[]>;
+    /**
+     * The newest first. With `limit`, only the newest that many; a store that ignores it still works, as the backend
+     * keeps to the limit itself, but then reads every record of the project to do so.
+     */
+    listBundles(projectId?: string, limit?: number): Promise<BundleRecord[]>;
     close(): void;
 }
 
@@ -147,6 +196,31 @@ export interface TokenRecord {
     createdAt: string;
     lastUsedAt?: string;
     revokedAt?: string;
+    /** Absent on tokens made before 0.3: full feedback access. Capture permission only submits new feedback. */
+    permission?: "capture" | "full";
+    /** App/tester credentials never authenticate MCP. Agent credentials always have full feedback access. */
+    purpose?: "app" | "agent";
+    expiresAt?: string;
+    createdBy?: string;
+}
+
+/**
+ * What a token is for. An app token goes in an SDK and must name one project; an agent token is for MCP and the
+ * API. Tokens made before 0.3 have neither field: capture-only ones are for apps, the rest keep working as agents.
+ */
+export function tokenPurpose(token: Pick<TokenRecord, "purpose" | "permission">): "app" | "agent" {
+    return token.purpose ?? (token.permission === "capture" ? "app" : "agent");
+}
+
+/** Throws a message fit for the person who asked for the token if its purpose, permission and project disagree. */
+export function assertTokenPurpose(
+    token: Pick<TokenRecord, "purpose" | "permission" | "projectId">
+): void {
+    const purpose = tokenPurpose(token);
+    if (purpose === "app" && token.projectId === "*")
+        throw new Error("app tokens must name one project");
+    if (purpose === "agent" && token.permission === "capture")
+        throw new Error("agent tokens need read and write access to feedback");
 }
 
 /** Accounts, sessions and API tokens for serve mode. Kept apart from `Store` so each can move independently. */
@@ -172,6 +246,11 @@ export interface AuthStore {
 
 /** Content-addressed binary storage for screenshots. Ids are the sha-256 of the bytes. */
 export interface BlobStore {
+    /** Pages of what is stored, for clearing out screenshots no note shows. `cursor` is the store's own. */
+    list?(
+        cursor?: string,
+        limit?: number
+    ): Promise<{ items: Array<{ id: string; createdAt: string }>; cursor?: string }>;
     put(bytes: Uint8Array): Promise<{ id: string; size: number }>;
     get(id: string): Promise<{ bytes: Uint8Array; mime: string } | null>;
     /** Forgets the bytes; false when there were none. */

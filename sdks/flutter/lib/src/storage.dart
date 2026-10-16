@@ -39,10 +39,10 @@ abstract interface class NotatoStorage {
   /// Keeps these notes in place of those kept before.
   void saveNotes(List<LocalNote> notes);
 
-  /// A screenshot's PNG, by its id, or null when it is not kept.
+  /// A screenshot's encoded bytes, by its id, or null when it is not kept.
   List<int>? loadAsset(String id);
 
-  /// Keeps a screenshot's PNG under its id.
+  /// Keeps a screenshot's encoded bytes under its id.
   void saveAsset(String id, List<int> bytes);
 
   /// Forgets a screenshot, once its note is on the server or deleted.

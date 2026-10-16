@@ -1,4 +1,4 @@
-import { mkdir, readFile, rename, stat, unlink, writeFile } from "node:fs/promises";
+import { lstat, mkdir, readdir, readFile, rename, stat, unlink, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { ASSET_ID, type BlobStore, sniffImageMime } from "./storage.ts";
 
@@ -13,6 +13,31 @@ export class FileBlobStore implements BlobStore {
 
     private path(id: string) {
         return join(this.dir, id.slice(0, 2), id);
+    }
+
+    async list(cursor?: string, limit = 100) {
+        const items: Array<{ id: string; createdAt: string }> = [];
+        const first = cursor ? parseInt(cursor.slice(0, 2), 16) : 0;
+        for (let bucket = first; bucket < 256; bucket++) {
+            const prefix = bucket.toString(16).padStart(2, "0");
+            const names = await readdir(join(this.dir, prefix)).catch(
+                (error: NodeJS.ErrnoException) => {
+                    if (error.code === "ENOENT") return [];
+                    throw error;
+                }
+            );
+            for (const id of names.sort()) {
+                if (!ASSET_ID.test(id) || !id.startsWith(prefix) || (cursor && id <= cursor))
+                    continue;
+                if (items.length >= limit) return { items, cursor: items.at(-1)?.id };
+                const info = await lstat(this.path(id)).catch((error: NodeJS.ErrnoException) => {
+                    if (error.code === "ENOENT") return null;
+                    throw error;
+                });
+                if (info?.isFile()) items.push({ id, createdAt: info.mtime.toISOString() });
+            }
+        }
+        return { items };
     }
 
     async put(bytes: Uint8Array) {

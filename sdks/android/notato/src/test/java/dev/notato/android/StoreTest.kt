@@ -3,6 +3,7 @@ package dev.notato.android
 import dev.notato.android.internal.LocalStore
 import dev.notato.android.internal.PeopleOnly
 import dev.notato.android.internal.SafeIds
+import dev.notato.android.internal.moveStore
 import dev.notato.android.internal.writeAtomically
 import dev.notato.android.model.Author
 import dev.notato.android.model.NotatoJson
@@ -154,6 +155,34 @@ class StoreTest {
 
         writeAtomically(File(folder, "annotation.json"), "{}".toByteArray())
         assertEquals("{}", File(folder, "annotation.json").readText())
+    }
+
+    @Test
+    fun notesKeptWhereBackupsReachAreMovedOut() {
+        val files = filesDir()
+        val noBackup = temp.newFolder("no_backup")
+        val old = LocalStore(base(files), "android-sample")
+        val note = Fixture.annotation()
+        val full = note.screenshots!!.full.id
+        old.save(note, mapOf(full to byteArrayOf(1, 2, 3)))
+        // One this version has written since is the newer copy.
+        val other = note.copy(id = "01J9ZQ3V4X5Y6Z7A8B9C0D1E2G", comment = "old copy")
+        old.save(other)
+        val store = LocalStore(base(noBackup), "android-sample")
+        store.save(other.copy(comment = "new copy"))
+
+        moveStore(base(files), base(noBackup))
+
+        val loaded = store.load().associateBy { it.annotation.id }
+        assertEquals(note, loaded.getValue(note.id).annotation)
+        assertEquals(listOf(1, 2, 3), loaded.getValue(note.id).assets.getValue(full).readBytes().map { it.toInt() })
+        assertEquals("new copy", loaded.getValue(other.id).annotation.comment)
+        // Nothing is left where backups reach, and the app's own files there are not touched.
+        assertFalse(base(files).exists())
+        assertTrue(File(files, "app-data.db").isFile)
+        // At the next launch there is nothing to move.
+        moveStore(base(files), base(noBackup))
+        assertEquals(2, store.load().size)
     }
 
     @Test

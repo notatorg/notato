@@ -212,7 +212,7 @@ internal sealed partial class NotatoOverlay
         foreach ((int number, NoteRecord record) in list.Take(10))
         {
             Annotation a = record.Annotation;
-            string about = string.Join(" · ", new[] { Ui.Humanize(a.Status), PeopleOnlyToggle.IsOn(a) ? PeopleOnlyToggle.Label : null, Ui.Ago(a.CreatedAt) }
+            string about = string.Join(" · ", new[] { Ui.Humanize(a.Status), PeopleOnlyToggle.IsOn(a) ? "Hidden from agent" : null, Ui.Ago(a.CreatedAt) }
                 .Where(s => !string.IsNullOrEmpty(s)));
             string id = a.Id;
             Border row = Ui.SheetRow(Ui.PinTile(number, a.Status, record.Pending), a.Comment, about, () => _controller.OpenPin(_session, id, back: OpenList),
@@ -249,7 +249,7 @@ internal sealed partial class NotatoOverlay
         Entry server = Fields.Text(_controller.ServerOverride, _controller.ConfiguredServer ?? "No server: notes stay on this device");
         server.Keyboard = Keyboard.Url;
         (Grid shotsRow, Switch screenshots) = Ui.SwitchTileRow(Ui.IconTile(Ui.IconCamera), "Screenshots",
-            _controller.ServerScreenshotsAllowed ? "Each note takes one of the screen" : "The server has them turned off",
+            _controller.ServerScreenshotsAllowed || _controller.Server is null ? "Each note takes one of the screen" : "Off until the server says it takes them",
             _controller.ScreenshotsWanted, "NotatoScreenshots");
 
         Label connection = Ui.Text(_controller.DescribeConnection(), 12, Ui.CardMuted);

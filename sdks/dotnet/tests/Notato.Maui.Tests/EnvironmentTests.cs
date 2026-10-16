@@ -4,7 +4,7 @@ using Notato.Maui.Runtime;
 
 namespace Notato.Maui.Tests;
 
-/// <summary>NOTATO_ENABLED and NOTATO_SERVER, as .NET Aspire or a launch profile sets them.</summary>
+/// <summary>NOTATO_ENABLED and NOTATO_SERVER, as Aspire or a launch profile sets them.</summary>
 public class EnvironmentTests
 {
     private const string Tunnel = "https://abc123xy-4747.uks1.devtunnels.ms";

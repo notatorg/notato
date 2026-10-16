@@ -18,8 +18,11 @@ import {
     buildDelivery,
     type Delivery,
     parseWebhooks,
+    redactUrl,
     secretEnvName,
     secretOf,
+    urlEnvName,
+    urlOf,
     WEBHOOK_EVENTS,
     WEBHOOK_FORMATS,
     type Webhook,
@@ -35,12 +38,16 @@ import {
 export const fingerprint = (w: Webhook) =>
     createHash("sha256").update(JSON.stringify(w)).digest("hex").slice(0, 16);
 
-/** `https://hooks.slack.com/services/…/••••`: enough to recognise it, not enough to use it. */
-export function maskUrl(raw: string): string {
-    const url = new URL(raw);
-    const first = url.pathname.split("/").filter(Boolean)[0];
-    const rest = url.pathname.length > (first ? first.length + 1 : 1) || url.search;
-    return `${url.protocol}//${url.host}${first ? `/${first}` : ""}${rest ? "/••••" : ""}`;
+/**
+ * `https://hooks.slack.com/••••`: the host, to recognise it by, and nothing of the path that makes it work. A URL read
+ * from the environment is shown as it is written, `env:NAME`.
+ */
+export const maskUrl = (raw: string): string => redactUrl(raw);
+
+/** The host a webhook sends to, or `$NAME` when its URL is read from a variable that is not set where the server runs. */
+export function webhookHost(w: Webhook, env: Record<string, string | undefined> = process.env) {
+    const url = urlOf(w, env);
+    return url === null ? `$${urlEnvName(w)}` : new URL(url).host;
 }
 
 export interface WebhookView {
@@ -102,7 +109,7 @@ export function settingsView(
             fingerprint: fingerprint(w),
             name: w.name ?? null,
             url: maskUrl(w.url),
-            host: new URL(w.url).host,
+            host: webhookHost(w, env),
             format: w.format,
             events: w.events ?? null,
             project: w.project ?? null,
@@ -140,8 +147,15 @@ const Draft = z
 type Draft = z.infer<typeof Draft>;
 
 const Which = z.object({ index: z.number().int().min(0), fingerprint: z.string().max(64) });
-const AddBody = z.object({ hook: Draft }).strict();
-const EditBody = z.object({ fingerprint: z.string().max(64), hook: Draft }).strict();
+/** `secretInFile`: save a secret written as it is in the settings file anyway, as `--secret-in-file` does. */
+const AddBody = z.object({ hook: Draft, secretInFile: z.boolean().optional() }).strict();
+const EditBody = z
+    .object({
+        fingerprint: z.string().max(64),
+        hook: Draft,
+        secretInFile: z.boolean().optional(),
+    })
+    .strict();
 /** What a test or a preview sends: which event, about which note (a made-up one when none is named). */
 const TestBody = z
     .object({
@@ -173,6 +187,18 @@ export function fromDraft(draft: Draft, base?: Webhook): Webhook {
     return checked.webhooks[0] as Webhook;
 }
 
+/**
+ * Refuses to write a signing secret typed as it is into the settings file, which is meant to be committed, unless the
+ * request says to (`secretInFile`). One named by `env:NAME` is read where the server runs and never written.
+ */
+function assertSecretNotInFile(draft: Draft, file: string, inFile = false): void {
+    const secret = blank(draft.secret);
+    if (!secret || draft.format !== "json" || inFile || secretEnvName(secret) !== undefined) return;
+    throw new RequestError(
+        `a signing secret written as it is would be saved in ${file}, which is meant to be committed. Write env:NAME to read it from an environment variable where the server runs (env:NOTATO_WEBHOOK_SECRET)`
+    );
+}
+
 export interface TestResult {
     ok: boolean;
     /** The HTTP status the other end answered with, when it answered. */
@@ -194,6 +220,8 @@ const sampleNote = (): Annotation => ({
 export interface Prepared {
     delivery: Delivery;
     hook: Webhook;
+    /** Where it goes, with a URL written as `env:NAME` read from the environment. */
+    url: string;
     annotation: Annotation;
     /** The screenshot links the message carries, mapped to where the board can show them. */
     images: Record<string, string>;
@@ -211,6 +239,12 @@ export function prepareTest(
         env?: Record<string, string | undefined>;
     } = {}
 ): Prepared | { error: string } {
+    const url = urlOf(hook, options.env);
+    if (url === null) {
+        return {
+            error: `${urlEnvName(hook)} is not set to an http or https URL where the server runs, so a test cannot be sent (and no events will be).`,
+        };
+    }
     const secret = secretOf(hook, options.env);
     if (secret === null) {
         return {
@@ -249,6 +283,7 @@ export function prepareTest(
     return {
         delivery: buildDelivery(hook, event, annotation, secret, undefined, links),
         hook,
+        url,
         annotation,
         images,
         notes,
@@ -260,11 +295,11 @@ const TEST_TIMEOUT_MS = 10_000;
 
 /** Sends a prepared message once and reports what came back: for the board's Test button. */
 export async function sendTest(prepared: Prepared): Promise<TestResult> {
-    const { delivery, hook } = prepared;
+    const { delivery, url } = prepared;
     const started = performance.now();
     const ms = () => Math.round(performance.now() - started);
     try {
-        const res = await fetch(hook.url, {
+        const res = await fetch(url, {
             method: "POST",
             headers: delivery.headers,
             body: delivery.body,
@@ -374,8 +409,9 @@ export const settingsRoutes: Routes = async ({ req, url, path, method, principal
     }
 
     if (path === "/settings/webhooks" && method === "POST") {
-        const { hook } = await readJson(req, AddBody);
+        const { hook, secretInFile } = await readJson(req, AddBody);
         const file = writable(config);
+        assertSecretNotInFile(hook, file, secretInFile);
         const added = fromDraft(hook);
         return changed(() =>
             writeWebhooks(file, (list) => {
@@ -432,6 +468,7 @@ export const settingsRoutes: Routes = async ({ req, url, path, method, principal
         if (method === "PUT") {
             const edit = await readJson(req, EditBody);
             const file = writable(config);
+            assertSecretNotInFile(edit.hook, file, edit.secretInFile);
             return changed(() =>
                 writeWebhooks(file, (list) => {
                     const next = fromDraft(

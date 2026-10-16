@@ -58,6 +58,8 @@ describe("tool surface", () => {
                 "notato_annotate",
                 "notato_dismiss",
                 "notato_get",
+                "notato_get_review",
+                "notato_ask_question",
                 "notato_import_bundle",
                 "notato_list_open",
                 "notato_reply",
@@ -349,6 +351,19 @@ describe("asking for a resolved change to be undone", () => {
             status: 409,
         });
         expect((await backend.get(open.annotation.id))?.annotation.status).toBe("open");
+    });
+
+    it("refuses reverting a resolved question or approval without changing its thread", async () => {
+        const { backend } = await setup();
+        for (const intent of ["question", "approve"] as const) {
+            const { annotation } = await add(backend, { intent });
+            await backend.setStatus(annotation.id, "resolved", "Answered", HUMAN);
+            const before = await backend.get(annotation.id);
+            await expect(
+                backend.setStatus(annotation.id, "revert_requested", "undo", HUMAN)
+            ).rejects.toMatchObject({ status: 409 });
+            expect(await backend.get(annotation.id)).toEqual(before);
+        }
     });
 
     it("a request reaches notato_watch with the instruction, the thread and the screenshots", async () => {

@@ -125,8 +125,13 @@ export function multipart(
     text(JSON.stringify(annotation));
     text("\r\n");
     for (const file of files) {
+        const ref = [annotation.screenshots?.full, annotation.screenshots?.crop].find(
+            (shot) => shot?.id === file.id
+        );
+        const mime = ref?.mime === "image/webp" ? "image/webp" : "image/png";
+        const extension = mime === "image/webp" ? "webp" : "png";
         text(
-            `--${boundary}\r\nContent-Disposition: form-data; name="asset:${file.id}"; filename="${file.id}.png"\r\nContent-Type: image/png\r\n\r\n`
+            `--${boundary}\r\nContent-Disposition: form-data; name="asset:${file.id}"; filename="${file.id}.${extension}"\r\nContent-Type: ${mime}\r\n\r\n`
         );
         parts.push(file.bytes);
         text("\r\n");
@@ -216,9 +221,16 @@ export type RelayResult = { ok: true; annotationId: string } | { ok: false; erro
 export const relayResult = (c: Connection, requestId: string, result: RelayResult) =>
     call<void>(c, "POST", `/relay/${segment(requestId)}/result`, result);
 
-/** What the server says before anything is captured: whether it takes screenshots. */
+/**
+ * What the server says before anything is captured: whether it takes screenshots, and whether this app's token may
+ * only send notes (`captureOnly`: no event stream, no list, nothing to change).
+ */
 export const getConfig = (c: Connection) =>
-    call<{ screenshots?: boolean }>(c, "GET", `/config?project=${segment(c.project)}`);
+    call<{ screenshots?: boolean; derivedScreenshots?: boolean; captureOnly?: boolean }>(
+        c,
+        "GET",
+        `/config?project=${segment(c.project)}`
+    );
 
 export const uploadBundle = (c: Connection, zip: Uint8Array) =>
     call<{ bundleId: string; imported: number }>(
@@ -291,7 +303,7 @@ export function followEvents(
         };
         req.open(
             "GET",
-            `${c.server}/projects/${segment(c.project)}/events${agent ? "?agent=1" : ""}`
+            `${c.server}/projects/${segment(c.project)}/events?fields=summary${agent ? "&agent=1" : ""}`
         );
         req.setRequestHeader("Accept", "text/event-stream");
         for (const [name, value] of Object.entries(auth(c))) req.setRequestHeader(name, value);

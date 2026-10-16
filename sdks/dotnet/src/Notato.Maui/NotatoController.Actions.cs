@@ -8,7 +8,10 @@ namespace Notato.Maui;
 // What a person does with a note from its card, and the settings sheet: reply, People only, ask for a revert, delete.
 internal sealed partial class NotatoController
 {
-    private NotatoClient Client => _client is not null && HasServer ? _client : throw new InvalidOperationException("Not connected to a Notato server.");
+    /// <summary>The server, for acting on a note there. A capture-only token may only send notes: anything else is on the board.</summary>
+    private NotatoClient Client => CaptureOnly
+        ? throw new InvalidOperationException(OnTheBoard)
+        : _client is not null && HasServer ? _client : throw new InvalidOperationException("Not connected to a Notato server.");
 
     private Author Me => Author.Human(AuthorName);
 

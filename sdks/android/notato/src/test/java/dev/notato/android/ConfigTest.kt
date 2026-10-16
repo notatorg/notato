@@ -1,5 +1,6 @@
 package dev.notato.android
 
+import android.content.pm.ApplicationInfo
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -94,5 +95,21 @@ class ConfigTest {
         assertEquals("notato_abc", NotatoConfig("shop", token = "notato_abc").tokenFor("http://LOCALHOST:4747/"))
         assertTrue(NotatoConfig.sameServer("http://example.com", "http://example.com:80"))
         assertFalse(NotatoConfig.sameServer("http://example.com", "https://example.com:80"))
+    }
+
+    @Test
+    fun windowsMarkedSecureAreCapturedOnlyWhenTheAppSaysSo() {
+        assertFalse(NotatoConfig("shop").captureSecureWindows)
+        assertFalse(NotatoConfig.from(mapOf("project" to "shop"))!!.captureSecureWindows)
+        assertTrue(NotatoConfig.from(mapOf("project" to "shop", "captureSecureWindows" to "true"))!!.captureSecureWindows)
+    }
+
+    @Test
+    fun systemPropertiesCountOnlyInADebuggableBuild() {
+        // Anyone with adb can set them: on a release build they must not start Notato, hide it, or point it elsewhere.
+        assertFalse(Notato.debuggable(0))
+        assertFalse(Notato.debuggable(ApplicationInfo.FLAG_SYSTEM or ApplicationInfo.FLAG_HAS_CODE))
+        assertTrue(Notato.debuggable(ApplicationInfo.FLAG_DEBUGGABLE))
+        assertTrue(Notato.debuggable(ApplicationInfo.FLAG_DEBUGGABLE or ApplicationInfo.FLAG_HAS_CODE))
     }
 }

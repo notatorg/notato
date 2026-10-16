@@ -1,5 +1,5 @@
 import type { MemoryStore } from "@notato/core";
-import { Annotation, Status } from "@notato/schema";
+import { Annotation, type Status } from "@notato/schema";
 import { authHeaders } from "./auth.ts";
 import { type EventStream, net, STREAM_CLOSED } from "./net.ts";
 import type { AnnotateArgs } from "./types.ts";
@@ -25,6 +25,9 @@ export interface ServerSyncOptions {
     onApplied?(change: { updated: Annotation[]; removed: string[] }): void;
     /** First wait before opening the stream again after the server refused it; doubles up to 30 seconds. */
     retryMs?: number;
+    canRead?(): boolean;
+    /** Only filter by statuses the server advertised. Missing on older servers: read the unfiltered list. */
+    annotationStatuses?(): readonly Status[] | undefined;
 }
 
 /** What the server says about the agents with its MCP open. */
@@ -73,12 +76,9 @@ const EVENTS = ["created", "updated", "replied"] as const;
 /** The most the server sends at once. */
 const PAGE = 500;
 /**
- * A dismissed note has no pin and is counted nowhere in the page, so it is neither read nor kept: on a project people
- * have triaged, most of the list. The statuses are named, as the server has no "all but"; one too old to know a status
- * refuses the lot, and is then read whole.
+ * A dismissed note has no pin and is counted nowhere in the page. New servers advertise their supported filters so
+ * it need not be read; older servers are read whole, without a speculative request they might reject.
  */
-const SHOWN = Status.options.filter((s) => s !== "dismissed").join(",");
-/** Neither read nor kept: a dismissed note. */
 const unwanted = (a: Annotation) => a.status === "dismissed";
 /** Far more than any project has: a server that never stops saying `next` cannot keep the page reading forever. */
 const MAX_PAGES = 400;
@@ -143,17 +143,21 @@ export function createServerSync(options: ServerSyncOptions): ServerSync {
     const readAll = async (): Promise<Annotation[]> => {
         const all: Annotation[] = [];
         let after: number | undefined;
+        const shown = options
+            .annotationStatuses?.()
+            ?.filter((s) => s !== "dismissed")
+            .join(",");
         const ask = () => {
             const query = new URLSearchParams({ limit: String(PAGE) });
             if (after !== undefined) query.set("afterSeq", String(after));
-            if (!whole) query.set("status", SHOWN);
+            if (!whole && shown) query.set("status", shown);
             return net.fetch(`${base}/projects/${project}/annotations?${query}`, {
                 headers: authHeaders(options.token),
             });
         };
         for (let page = 0; page < MAX_PAGES; page++) {
             let res = await ask();
-            if (res.status === 400 && !whole) {
+            if (res.status === 400 && !whole && shown) {
                 whole = true; // a status this server does not know: the whole list, then
                 res = await ask();
             }
@@ -208,6 +212,7 @@ export function createServerSync(options: ServerSyncOptions): ServerSync {
     let running: Promise<void> | undefined;
     let again: Promise<void> | undefined;
     const refresh = (): Promise<void> => {
+        if (options.canRead?.() === false) return Promise.resolve();
         if (!running) {
             running = load().finally(() => {
                 running = undefined;
@@ -266,13 +271,18 @@ export function createServerSync(options: ServerSyncOptions): ServerSync {
     };
 
     const open = () => {
+        if (options.canRead?.() === false) {
+            options.onState("connected");
+            options.onAgent?.({ connected: false, watching: false, names: [] });
+            options.onConnected?.();
+            return;
+        }
         options.onState("connecting");
-        // EventSource cannot set headers, so the token travels in the query string for this one GET.
-        const query = new URLSearchParams();
+        const query = new URLSearchParams({ fields: "summary" });
         if (options.agent) query.set("agent", "1");
-        if (options.token) query.set("token", options.token);
         const stream = net.events(
-            `${base}/projects/${project}/events${query.size ? `?${query}` : ""}`
+            `${base}/projects/${project}/events${query.size ? `?${query}` : ""}`,
+            { headers: authHeaders(options.token) }
         );
         source = stream;
         stream.addEventListener("hello", (ev) => {

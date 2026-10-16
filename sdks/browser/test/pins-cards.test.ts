@@ -59,6 +59,22 @@ const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
 const shown = (el: HTMLElement) => el.style.display === "block";
 
 describe("a card is always drawn from where the note is now", () => {
+    it("keeps the card inside the visible page when a scrollbar takes part of the viewport", () => {
+        const width = vi.spyOn(window, "innerWidth", "get").mockReturnValue(390);
+        const visible = vi
+            .spyOn(document.documentElement, "clientWidth", "get")
+            .mockReturnValue(375);
+        const t = mount("open", { fallbackAnchor: () => ({ left: 40, top: 200 }) });
+        try {
+            t.pin.click();
+            expect(Number.parseFloat(t.card().style.left) + 320).toBeLessThanOrEqual(367);
+        } finally {
+            t.pins.destroy();
+            width.mockRestore();
+            visible.mockRestore();
+        }
+    });
+
     it("after a request finishes while its card is closed, opening it shows the note as it is, not as it was", async () => {
         let answer: () => void = () => {};
         const onRequestRevert = vi.fn(

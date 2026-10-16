@@ -21,8 +21,17 @@ export interface NotatoConfig {
      * server set here gets the packages. `null` for none in any mode: notes stay on the device.
      */
     server?: string | null;
-    /** A project token (`notato_…`), for a shared server (`notato serve`). It is only ever sent to `server`. */
+    /**
+     * A project token (`notato_…`), for a shared server (`notato serve`). It is only ever sent to `server`, and only
+     * from a development build unless `allowTokenInRelease` says otherwise.
+     */
     token?: string;
+    /**
+     * Send `token` from a release build too. Only for a capture-only project token (`notato token create <project>
+     * --purpose app --capture-only`), which sends notes and reads nothing back: whoever has the app has the token. A dev
+     * tunnel's device token, and any token for a dev tunnel, is never sent from a release build.
+     */
+    allowTokenInRelease?: boolean;
     /** The app's name and version, recorded on every note. Default "React Native app". */
     appName?: string;
     appVersion?: string;
@@ -41,6 +50,11 @@ export interface NotatoConfig {
     toolbarPosition?: ToolbarCorner;
     /** Take screenshots. A server that has them off wins either way. */
     screenshots?: boolean;
+    /**
+     * Take screenshots of a screen Android has marked never to be captured (`FLAG_SECURE`), too. Off by default: such a
+     * screen's note goes without one. Only an app built with Notato's native module can tell (not Expo Go).
+     */
+    captureSecureScreens?: boolean;
     /**
      * Cover text fields in screenshots and leave their values out of notes. Default: on in test and agent mode.
      * Password fields (`secureTextEntry`) always are; `<NotatoMask private={false}>` opts a field out.
@@ -70,6 +84,8 @@ export interface Resolved {
     mode: NotatoMode;
     server?: string;
     token?: string;
+    /** Why the configured token is not sent from this build (see `tokenProblem`). */
+    tokenWithheld?: string;
     appName: string;
     appVersion?: string;
     author?: string;
@@ -77,6 +93,7 @@ export interface Resolved {
     showToolbar: boolean;
     toolbarPosition: ToolbarCorner;
     screenshots: boolean;
+    captureSecureScreens: boolean;
     maskInputs: boolean;
     rememberRuntimeState: boolean;
     captureLogs: boolean;
@@ -95,6 +112,25 @@ export const normalizeServer = (server: string) => server.trim().replace(/\/+$/,
 /** Whether a server address is one Notato can talk to: http or https, with a host. */
 export const isHttpUrl = (server: string) => /^https?:\/\/[^/\s]+/i.test(server);
 
+/** Whether a server is a Microsoft dev tunnel: how `notato dev --tunnel` puts the developer's own machine online. */
+const isDevTunnel = (server: string) =>
+    /^https?:\/\/[^/?#]*\.devtunnels\.ms(?::\d+)?(?:[/?#]|$)/i.test(server);
+
+/**
+ * Why `token` is not sent from this build, or undefined when it is. A development build sends it. A release build is
+ * in the hands of everyone who has the app, and whatever is in it can be read out: it sends a token only when the app
+ * says so (`allowTokenInRelease`, for a capture-only token), and never `notato dev --tunnel`'s device token, nor any
+ * token to a dev tunnel, which opens the developer's own server.
+ */
+export function tokenProblem(config: NotatoConfig, server: string | undefined): string | undefined {
+    if (!config.token || isDev()) return undefined;
+    if (config.token.startsWith("notato_device_") || (server && isDevTunnel(server)))
+        return "A dev tunnel's device token is for development builds only: this release build does not send it.";
+    if (!config.allowTokenInRelease)
+        return "This release build does not send `token`. For testers, use a capture-only project token and set allowTokenInRelease.";
+    return undefined;
+}
+
 export function resolveConfig(config: NotatoConfig): Resolved {
     const mode = config.mode ?? "dev";
     const server =
@@ -105,11 +141,13 @@ export function resolveConfig(config: NotatoConfig): Resolved {
               : mode === "test"
                 ? undefined
                 : DEFAULT_SERVER;
+    const withheld = tokenProblem(config, server);
     return {
         project: config.project,
         mode,
         ...(server ? { server } : {}),
-        ...(config.token ? { token: config.token } : {}),
+        ...(config.token && !withheld ? { token: config.token } : {}),
+        ...(withheld ? { tokenWithheld: withheld } : {}),
         appName: config.appName?.trim() || "React Native app",
         ...(config.appVersion ? { appVersion: config.appVersion } : {}),
         ...(config.author ? { author: config.author } : {}),
@@ -117,6 +155,7 @@ export function resolveConfig(config: NotatoConfig): Resolved {
         showToolbar: config.showToolbar ?? true,
         toolbarPosition: config.toolbarPosition ?? "bottom-right",
         screenshots: config.screenshots ?? true,
+        captureSecureScreens: config.captureSecureScreens ?? false,
         maskInputs: config.maskInputs ?? mode !== "dev",
         rememberRuntimeState: config.rememberRuntimeState ?? true,
         captureLogs: config.captureLogs ?? true,

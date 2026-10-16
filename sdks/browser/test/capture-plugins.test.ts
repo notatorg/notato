@@ -7,6 +7,7 @@ import { networkPlugin } from "../src/plugins/network.ts";
 import { routePlugin, routeString } from "../src/plugins/route.ts";
 import {
     cropBox,
+    encodeScreenshot,
     maskClone,
     planCapture,
     shiftFixed,
@@ -238,5 +239,43 @@ describe("networkPlugin", () => {
         teardowns.pop()?.();
         expect(window.fetch).toBe(base);
         window.fetch = realFetch;
+    });
+});
+
+describe("screenshot encoding", () => {
+    function canvas(png: Blob | null, webp: Blob | null | Error) {
+        return {
+            toBlob: vi.fn((callback: BlobCallback, type: string) => {
+                if (type === "image/png") callback(png);
+                else if (webp instanceof Error) throw webp;
+                else callback(webp);
+            }),
+        } as unknown as HTMLCanvasElement;
+    }
+    const options = { format: "auto", quality: 0.85 } as const;
+    it("uses WebP only when the encoder produces a smaller WebP", async () => {
+        const png = new Blob([new Uint8Array(100)], { type: "image/png" });
+        const webp = new Blob([new Uint8Array(40)], { type: "image/webp" });
+        const target = canvas(png, webp);
+        expect(await encodeScreenshot(target, options)).toBe(webp);
+        expect(target.toBlob).toHaveBeenLastCalledWith(expect.any(Function), "image/webp", 0.85);
+        for (const fallback of [
+            png,
+            null,
+            new Error("no encoder"),
+            new Blob([], { type: "image/webp" }),
+            new Blob([new Uint8Array(120)], { type: "image/webp" }),
+        ]) {
+            expect(await encodeScreenshot(canvas(png, fallback), options)).toBe(png);
+        }
+    });
+    it("honours explicit PNG and fails only if neither encoding succeeds", async () => {
+        const png = new Blob(["png"], { type: "image/png" });
+        const target = canvas(png, new Error("must not run"));
+        expect(await encodeScreenshot(target, { ...options, format: "png" })).toBe(png);
+        expect(target.toBlob).toHaveBeenCalledTimes(1);
+        await expect(encodeScreenshot(canvas(null, null), options)).rejects.toThrow(
+            "canvas.toBlob"
+        );
     });
 });

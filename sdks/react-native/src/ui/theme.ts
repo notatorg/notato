@@ -68,6 +68,7 @@ export const PROBLEM_DOT = {
 /** A pin's colour for its note's status, as the board shows it. */
 export function statusColor(status: string): string {
     switch (status) {
+        case "awaiting_response":
         case "acknowledged":
             return "#d99a1e";
         case "resolved":
@@ -95,3 +96,6 @@ export function ago(iso: string, now = Date.now()): string | undefined {
     if (s < 86400) return `${Math.floor(s / 3600)}h ago`;
     return `${Math.floor(s / 86400)}d ago`;
 }
+
+export const statusLabel = (value: string): string =>
+    value === "awaiting_response" ? "Needs your answer" : value.replace(/_/g, " ");

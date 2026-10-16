@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "bun:test";
-import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -10,12 +10,13 @@ import {
     fromOutside,
     type HostedProcess,
     loadDeviceAccess,
+    outsideRefusal,
     runDev,
     saveDeviceAccess,
     startTunnel,
     tunnelUrlIn,
 } from "../src/index.ts";
-import { makeApp } from "./helpers.ts";
+import { annotationFixture, makeApp, multipart } from "./helpers.ts";
 
 const dirs: string[] = [];
 const runtimes: DevRuntime[] = [];
@@ -323,5 +324,188 @@ describe("notato dev --tunnel", () => {
         runtimes.push(dev);
         expect(dev.tunnel).toBeUndefined();
         expect(existsSync(join(dir, "device.json"))).toBe(false);
+    });
+});
+
+describe("what the device token reaches", () => {
+    /** Whether a request from outside is refused, as `createApp` asks (a POST may say it means PATCH). */
+    const refused = (method: string, path: string, headers: Record<string, string> = {}) =>
+        outsideRefusal(tunnelled(path, headers), method, path)?.status ?? null;
+
+    it("is what an app asks for: its notes, screenshots, events, bundles and relay answers", () => {
+        for (const [method, path] of [
+            ["GET", "/health"],
+            ["GET", "/config"],
+            ["GET", "/status"],
+            ["GET", "/inject.js"],
+            ["GET", "/projects/shop/annotations"],
+            ["POST", "/projects/shop/annotations"],
+            ["GET", "/projects/shop/events"],
+            ["POST", "/projects/shop/bundles"],
+            ["POST", "/projects/shop/connection"],
+            ["GET", "/annotations/a1"],
+            ["PATCH", "/annotations/a1"],
+            ["DELETE", "/annotations/a1"],
+            ["POST", "/annotations/a1/replies"],
+            ["POST", "/annotations/a1/variants/choose"],
+            ["GET", "/annotations/a1/screenshot"],
+            ["GET", `/assets/${"a".repeat(64)}`],
+            ["POST", "/relay/r1/result"],
+        ] as const)
+            expect(refused(method, path), `${method} ${path}`).toBeNull();
+    });
+
+    it("is never the board's part or an agent's", () => {
+        for (const [method, path] of [
+            ["GET", "/settings"],
+            ["PUT", "/settings/screenshots"],
+            ["PUT", "/settings/mcp"],
+            ["POST", "/settings/webhooks"],
+            ["POST", "/settings/webhooks/test"],
+            ["POST", "/settings/webhooks/preview"],
+            ["DELETE", "/settings/webhooks/0"],
+            ["GET", "/webhooks"],
+            ["POST", "/webhooks/test"],
+            ["GET", "/projects"],
+            ["POST", "/projects"],
+            ["PATCH", "/projects/shop"],
+            ["DELETE", "/projects/shop"],
+            ["GET", "/projects/shop/export"],
+            ["GET", "/tokens"],
+            ["POST", "/tokens"],
+            ["DELETE", "/tokens/t1"],
+            ["POST", "/admin/tokens"],
+            ["GET", "/annotations"],
+            ["GET", "/annotations/wait"],
+            ["POST", "/annotations/handed"],
+            ["PUT", "/annotations/a1/variants"],
+            ["POST", "/annotations/a1/links"],
+            ["POST", "/relay/annotate"],
+            ["POST", "/bundles"],
+            ["GET", "/"],
+        ] as const)
+            expect(refused(method, path), `${method} ${path}`).toBe(403);
+        // An agent connects on this machine: an app's route with an agent's header is refused too.
+        expect(refused("GET", "/config", { [AGENT_HEADER]: "spoofed" })).toBe(403);
+    });
+
+    it("is everything from this machine, as before", () => {
+        const local = new Request("http://localhost:4748/settings", {
+            headers: { host: "localhost:4748" },
+        });
+        expect(outsideRefusal(local, "PUT", "/settings/mcp")).toBeNull();
+    });
+
+    it("cannot change the settings, test a webhook or touch projects through the tunnel, even with the token", async () => {
+        const dir = tmp();
+        const hits: string[] = [];
+        const target = Bun.serve({
+            port: 0,
+            fetch(req) {
+                hits.push(req.url);
+                return new Response("internal");
+            },
+        });
+        try {
+            const configFile = join(dir, "notato.config.json");
+            writeFileSync(configFile, "{}\n");
+            const dev = await runDev({
+                port: 0,
+                dir: join(dir, "data"),
+                version: "test",
+                stdio: false,
+                log: () => {},
+                configFile,
+                tunnel: true,
+                tunnelDriver: fakeDevtunnel(),
+            });
+            runtimes.push(dev);
+            await dev.tunnel?.ready;
+            const { token } = JSON.parse(readFileSync(join(dir, "data", "device.json"), "utf8"));
+            const base = `http://127.0.0.1:${dev.port}`;
+            /** Through the tunnel with the device token: what an app on a phone sends. */
+            const through = (path: string, init: RequestInit = {}) =>
+                fetch(`${base}${path}`, {
+                    ...init,
+                    headers: {
+                        host: tunnelHost(dev.port),
+                        "x-forwarded-for": "85.255.17.194",
+                        authorization: `Bearer ${token}`,
+                        ...(init.headers as Record<string, string> | undefined),
+                    },
+                });
+            const sendJson = (method: string, body: unknown) => ({
+                method,
+                headers: { "content-type": "application/json" },
+                body: JSON.stringify(body),
+            });
+
+            const note = annotationFixture({ projectId: "shop" });
+            const posted = await through("/projects/shop/annotations", {
+                method: "POST",
+                body: multipart(note),
+            });
+            expect(posted.status).toBe(201);
+            expect((await through("/config?project=shop")).status).toBe(200);
+            // Android cannot send PATCH, so it says it means one: still what an app does.
+            const patched = await through(`/annotations/${note.id}`, {
+                method: "POST",
+                headers: { "x-http-method-override": "PATCH", "content-type": "application/json" },
+                body: JSON.stringify({ status: "acknowledged" }),
+            });
+            expect(patched.status).toBe(200);
+
+            const webhookTest = await through(
+                "/settings/webhooks/test",
+                sendJson("POST", {
+                    hook: { url: `http://127.0.0.1:${target.port}/admin`, format: "json" },
+                })
+            );
+            expect(webhookTest.status).toBe(403);
+            expect(((await webhookTest.json()) as { error: string }).error).toContain("board");
+            expect(hits).toEqual([]);
+            expect((await through("/settings")).status).toBe(403);
+            expect((await through("/settings/mcp", sendJson("PUT", { value: "on" }))).status).toBe(
+                403
+            );
+            expect(
+                (
+                    await through(
+                        "/settings/webhooks",
+                        sendJson("POST", {
+                            hook: { url: "https://collector.example/x", format: "json" },
+                        })
+                    )
+                ).status
+            ).toBe(403);
+            expect(readFileSync(configFile, "utf8")).toBe("{}\n");
+            expect((await through("/projects", sendJson("POST", { id: "squat" }))).status).toBe(
+                403
+            );
+            expect((await through("/projects/shop", { method: "DELETE" })).status).toBe(403);
+            expect(await dev.local?.store.getProject("shop")).toBeTruthy();
+
+            // The same requests from this machine are the person at it.
+            expect((await fetch(`${base}/settings`)).status).toBe(200);
+        } finally {
+            target.stop(true);
+        }
+    });
+
+    it("keeps a proxy's requests to an app's too, without --tunnel", async () => {
+        const ctx = makeApp();
+        try {
+            const proxied = { "x-forwarded-for": "203.0.113.9" };
+            expect((await ctx.call("/settings", { headers: proxied })).status).toBe(403);
+            expect((await ctx.call("/config", { headers: proxied })).status).toBe(200);
+            // How the server is set up is for the person at this machine, not for an app through a proxy.
+            const status = (await (await ctx.call("/status", { headers: proxied })).json()) as {
+                config: Record<string, unknown>;
+            };
+            expect(status.config).not.toHaveProperty("file");
+            expect((await ctx.call("/settings")).status).toBe(200);
+        } finally {
+            ctx.cleanup();
+        }
     });
 });

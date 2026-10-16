@@ -33,12 +33,12 @@ internal object BundleWriter {
             val refs = item.annotation.screenshots
             val full = refs?.full?.let { item.assets[it.id] }?.takeIf { it.isFile }
             if (refs != null && full != null) {
-                val fullRef = refs.full.copy(path = "shots/$n-full.png")
+                val fullRef = refs.full.copy(path = "shots/$n-full.${if (refs.full.mime == "image/webp") "webp" else "png"}")
                 files[fullRef.path!!] = full
                 var cropRef: AssetRef? = null
                 val cropFile = refs.crop?.let { item.assets[it.id] }?.takeIf { it.isFile }
                 if (refs.crop != null && cropFile != null) {
-                    cropRef = refs.crop.copy(path = "shots/$n-crop.png")
+                    cropRef = refs.crop.copy(path = "shots/$n-crop.${if (refs.crop.mime == "image/webp") "webp" else "png"}")
                     files[cropRef.path!!] = cropFile
                 }
                 shots = Screenshots(fullRef, cropRef)
@@ -112,6 +112,9 @@ internal object BundleWriter {
         }
     }
 }
+
+/** A note as a package carries it when the server has screenshots off: without them, and without their files. */
+internal fun LocalAnnotation.withoutScreenshots(): LocalAnnotation = LocalAnnotation(annotation.copy(screenshots = null), emptyMap())
 
 /** The folder in the app's cache that packages are written to, and that Notato's FileProvider shares from. */
 private const val PACKAGE_FOLDER = "notato"

@@ -303,6 +303,9 @@ describe("one project's token against another project", () => {
 
     it("scopes the agent relay: only to its own project's page, and results only from it", async () => {
         const { s, a, b } = await twoProjects();
+        // The agent's side of the relay needs agent tokens; the page's side is the app's own.
+        const agentA = await issue(s, "alpha", "agent", { purpose: "agent" });
+        const agentB = await issue(s, "beta", "agent", { purpose: "agent" });
         // A beta page registers (agent=1) and waits for a request.
         const controller = new AbortController();
         const events = await s.call("/projects/beta/events?agent=1", {
@@ -315,13 +318,13 @@ describe("one project's token against another project", () => {
         // alpha's token cannot aim a relay request at beta, by body or by omission.
         const aimed = await s.call("/relay/annotate", {
             method: "POST",
-            headers: bearer(a),
+            headers: bearer(agentA),
             body: JSON.stringify({ projectId: "beta", target: "#x", comment: "c" }),
         });
         expect(aimed.status).toBe(403);
         const implicit = await s.call("/relay/annotate", {
             method: "POST",
-            headers: bearer(a),
+            headers: bearer(agentA),
             body: JSON.stringify({ target: "#x", comment: "c", timeoutMs: 1000 }),
         });
         expect(implicit.status).toBe(409); // alpha has no page; it never touches beta's
@@ -329,7 +332,7 @@ describe("one project's token against another project", () => {
         // beta asks its own page; alpha's token cannot answer for it.
         const pending = s.call("/relay/annotate", {
             method: "POST",
-            headers: bearer(b),
+            headers: bearer(agentB),
             body: JSON.stringify({ target: "#x", comment: "c", timeoutMs: 5000 }),
         });
         const { requestId } = (await next("annotate-request")) as { requestId: string };

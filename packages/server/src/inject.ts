@@ -30,16 +30,18 @@ async function load(): Promise<string | null> {
 export interface InjectOptions {
     /** The project the notes go to. Each page's own host and port when left out. */
     project?: string;
-    /** For a shared server that needs one. Visible to anyone who can read the page, like the SDK's. */
+    /**
+     * For a shared server that needs one. Visible to anyone who can read the page, like the SDK's. It travels as an
+     * attribute of the script tag, never in the script's address, so it stays out of server logs and referrers.
+     */
     token?: string;
     author?: string;
 }
 
-/** The address of the script, with what it was asked to do. */
+/** The address of the script, with what it was asked to do (the token is not part of it: see `scriptTag`). */
 export function scriptUrl(origin: string, options: InjectOptions = {}): string {
     const query = new URLSearchParams();
     if (options.project) query.set("project", options.project);
-    if (options.token) query.set("token", options.token);
     if (options.author) query.set("author", options.author);
     const q = query.toString();
     return `${origin.replace(/\/$/, "")}/inject.js${q ? `?${q}` : ""}`;
@@ -54,12 +56,13 @@ export function bookmarklet(origin: string, options: InjectOptions = {}): string
     if (!SAFE_ORIGIN.test(origin))
         throw new Error(`not an origin a bookmark can point at: ${origin}`);
     const { project, token } = plain(options);
-    const url = scriptUrl(origin, { project, token });
+    const url = scriptUrl(origin, { project });
     const where = `${origin.replace(/\/$/, "")}/inject.js`;
     // Single quotes only. The time makes a second click on the same page load it afresh.
     return (
         `javascript:(function(){var s=document.createElement('script');` +
         `s.src='${url}${url.includes("?") ? "&" : "?"}t='+Date.now();` +
+        (token ? `s.setAttribute('data-notato-token','${token}');` : "") +
         `s.onerror=function(){alert('Notato: could not load ${where}. Is it running, and does this page allow scripts from there?')};` +
         `document.documentElement.appendChild(s)})();`
     );
@@ -85,7 +88,7 @@ function plain(options: InjectOptions): { project?: string; token?: string } {
 
 /** The same thing to paste into the browser's console on a page. */
 export function consoleSnippet(origin: string, options: InjectOptions = {}): string {
-    return `(()=>{const s=document.createElement("script");s.src=${JSON.stringify(scriptUrl(origin, options))};document.documentElement.append(s)})()`;
+    return `(()=>{const s=document.createElement("script");s.src=${JSON.stringify(scriptUrl(origin, options))};${options.token ? `s.setAttribute("data-notato-token",${JSON.stringify(options.token)});` : ""}document.documentElement.append(s)})()`;
 }
 
 const escapeHtml = (text: string) =>
@@ -95,13 +98,18 @@ const escapeHtml = (text: string) =>
             ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c] as string
     );
 
+/** A script tag for a page's HTML: the project in the address, the token (if any) in an attribute. */
+export function scriptTag(origin: string, options: InjectOptions = {}): string {
+    return `<script src="${escapeHtml(scriptUrl(origin, options))}"${options.token ? ` data-notato-token="${escapeHtml(options.token)}"` : ""}></script>`;
+}
+
 /** The page at `/bookmarklet`: a link to drag to the bookmarks bar, and the other ways to load the script. */
 export function bookmarkletPage(origin: string, asked: InjectOptions = {}): string {
     // What the query string asked for, kept only if it is plain: the page shows exactly what the bookmark will use.
     const options = { ...asked, ...plain(asked) };
     if (!SAFE_ORIGIN.test(origin)) origin = "http://localhost:4747";
     const label = options.project ? `Notato (${options.project})` : "Notato";
-    const tag = `<script src="${scriptUrl(origin, options)}"></script>`;
+    const tag = scriptTag(origin, options);
     return `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Notato on any page</title>
@@ -122,6 +130,6 @@ export function bookmarkletPage(origin: string, asked: InjectOptions = {}): stri
 <pre>${escapeHtml(consoleSnippet(origin, options))}</pre>
 <p>Or add this to the page's HTML while you are working on it:</p>
 <pre>${escapeHtml(tag)}</pre>
-<p class="note">It reloads with the page, so click it again after a refresh. A page whose Content-Security-Policy does not allow scripts from this server will refuse it; the browser extension is for those. By default this server accepts notes from pages on this machine and local networks; for another site start it with <code>--cors-origin &lt;its origin&gt;</code>.</p>
+<p class="note">It reloads with the page, so click it again after a refresh. A page whose Content-Security-Policy does not allow scripts from this server will refuse it; the browser extension is for those. <code>notato dev</code> takes notes only from pages this machine serves (<code>localhost</code> and its own addresses): for a page from another device or site, list its origin in <code>NOTATO_CORS_ORIGINS</code> where the server runs.</p>
 </body></html>`;
 }

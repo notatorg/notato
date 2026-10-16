@@ -279,3 +279,13 @@ button.add-button:hover:not(:disabled) {
 .field > label.confirm-label {
     display: block;
 }
+
+/* Long account identities and preference choices must fit the available settings column. */
+.account-name {
+    max-width: 100%;
+    overflow-wrap: anywhere;
+}
+.settings .segmented {
+    max-width: 100%;
+    flex-wrap: wrap;
+}

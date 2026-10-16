@@ -11,10 +11,34 @@ export interface Me {
     authenticated: boolean;
     username?: string;
     projectId?: string;
+    /** Whatever an extension's own `/auth/me` adds. */
+    [key: string]: unknown;
 }
 
+let managePolicy: ((me: Me) => boolean) | undefined;
+/** An extension's say on who may change things; the board's own rule applies without one. */
+export const setManagePolicy = (policy?: (me: Me) => boolean) => {
+    managePolicy = policy;
+};
+
+let serverAdminPolicy: ((me: Me) => boolean) | undefined;
+/** An extension's say on who may see and change the server's own settings (its webhooks, its agents setting). */
+export const setServerAdminPolicy = (policy?: (me: Me) => boolean) => {
+    serverAdminPolicy = policy;
+};
+
+let tokenPolicy: ((me: Me) => boolean) | undefined;
+export const setTokenPolicy = (policy?: (me: Me) => boolean) => {
+    tokenPolicy = policy;
+};
+export const canManageTokens = (me: Me) => (tokenPolicy ? tokenPolicy(me) : isAdmin(me));
+
 /** Who may change things (projects, tokens, settings): anyone in dev mode, and anyone signed in on a shared server. */
-export const isAdmin = (me: Me) => me.mode === "dev" || Boolean(me.username);
+export const isAdmin = (me: Me) =>
+    managePolicy ? managePolicy(me) : me.mode === "dev" || Boolean(me.username);
+
+/** Who may see and change the server's own settings: whoever manages it, unless an extension says otherwise. */
+export const isServerAdmin = (me: Me) => (serverAdminPolicy ? serverAdminPolicy(me) : isAdmin(me));
 
 export interface ProjectSummary {
     id: string;
@@ -26,6 +50,9 @@ export interface ProjectSummary {
     /** Absent from servers older than the multi-project board. */
     statuses?: Partial<Record<Status, number>>;
     lastActivityAt?: string;
+    /** When the signed-in account last looked at the project, and the notes it has not seen: on servers that keep that. */
+    readAt?: string;
+    unread?: number;
 }
 
 export interface BundleRecord {
@@ -46,7 +73,23 @@ export interface TokenInfo {
     createdAt: string;
     lastUsedAt?: string;
     revokedAt?: string;
+    /** App tokens go in an SDK; agent tokens are for MCP. Tokens made before 0.3 have neither field. */
+    purpose?: "app" | "agent";
+    permission?: "capture" | "full";
+    expiresAt?: string;
 }
+
+/** What a token is for, with the older ones that never said. */
+export const tokenPurpose = (token: Pick<TokenInfo, "purpose" | "permission">): "app" | "agent" =>
+    token.purpose ?? (token.permission === "capture" ? "app" : "agent");
+export const tokenKind = tokenPurpose;
+/** What a token may do, in words. */
+export const tokenLabel = (token: Pick<TokenInfo, "purpose" | "permission">) =>
+    tokenPurpose(token) === "agent"
+        ? "Agent · MCP"
+        : token.permission === "capture"
+          ? "App/tester · Capture only"
+          : "App/tester · Capture and feedback";
 
 export interface ServerStatus {
     version: string;
@@ -79,16 +122,34 @@ export const setUnauthorizedHandler = (fn: () => void) => {
 /** The session is over (it expired, or the person signed out elsewhere): back to signing in. */
 export const signedOut = () => onUnauthorized();
 
-async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
-    const res = await fetch(path, { credentials: "same-origin", ...init });
+/** An extension's ear on failed answers: a 402 that says a workspace needs putting right, say. */
+let onFailure: (status: number, body: Record<string, unknown> | null) => void = () => {};
+export const setFailureHandler = (
+    fn: (status: number, body: Record<string, unknown> | null) => void
+) => {
+    onFailure = fn;
+};
+
+/** Asks the server, as the board: the header says so, which a server that guards its cookie asks for. */
+export async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
+    const headers = new Headers(init.headers);
+    headers.set("X-Notato-Board", "1");
+    const res = await fetch(path, { credentials: "same-origin", ...init, headers });
     if (res.status === 401 && !path.startsWith("/auth/login")) onUnauthorized();
     if (res.status === 204) return undefined as T;
-    const body = (await res.json().catch(() => null)) as { error?: string } | null;
-    if (!res.ok) throw new ApiError(body?.error ?? `request failed (${res.status})`, res.status);
+    const body = (await res.json().catch(() => null)) as
+        | (Record<string, unknown> & {
+              error?: string;
+          })
+        | null;
+    if (!res.ok) {
+        onFailure(res.status, body);
+        throw new ApiError(body?.error ?? `request failed (${res.status})`, res.status);
+    }
     return body as T;
 }
 
-const json = (method: string, body: unknown): RequestInit => ({
+export const json = (method: string, body: unknown): RequestInit => ({
     method,
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
@@ -114,11 +175,20 @@ export interface CreatedProject {
     project: ProjectSummary;
     /** Its first app token, on a server with logins. The plaintext exists only in this answer. */
     token?: { token: string; record: TokenInfo };
+    /** A token for a coding agent, for this project only, when one was asked for. */
+    agentToken?: { token: string; record: TokenInfo };
 }
 
 /** Admins only. A 409 means the id is taken. */
-export const createProject = (id: string, name?: string) =>
-    request<CreatedProject>("/projects", json("POST", { id, ...(name ? { name } : {}) }));
+export const createProject = (id: string | undefined, name?: string, agent = false) =>
+    request<CreatedProject>(
+        "/projects",
+        json("POST", {
+            ...(id ? { id } : {}),
+            ...(name ? { name } : {}),
+            ...(agent ? { agent: true } : {}),
+        })
+    );
 export const renameProject = (id: string, name: string) =>
     request<ProjectSummary>(projectPath(id), json("PATCH", { name }));
 /** Deletes the project, every note in it with its screenshots and bundles, and revokes its tokens. */
@@ -134,20 +204,27 @@ const PAGE = 500;
  * starts (`next`) while there is one, so this pages until a page has no `next`. Throws if any page fails: a part of
  * the list must never be taken for all of it.
  */
-export async function listAnnotations(project: string): Promise<Annotation[]> {
+export async function listAnnotations(project: string, summary = false): Promise<Annotation[]> {
     const out: Annotation[] = [];
     let after = 0;
     for (;;) {
         const page = await request<{
             items: Array<{ seq: number; annotation: Annotation }>;
             next?: number;
-        }>(`${projectPath(project)}/annotations?limit=${PAGE}&afterSeq=${after}`);
+        }>(
+            `${projectPath(project)}/annotations?limit=${PAGE}&afterSeq=${after}${summary ? "&fields=summary" : ""}`
+        );
         for (const item of page.items) out.push(item.annotation);
         // A server older than paging never sends `next`: its one page is the whole list.
         if (page.next === undefined || page.next <= after) return out;
         after = page.next;
     }
 }
+
+export const getAnnotation = (id: string, signal?: AbortSignal) =>
+    request<{ annotation: Annotation }>(annotationPath(id), { signal }).then(
+        (item) => item.annotation
+    );
 
 /** Whoever is using the board, as the author of what it writes in a thread. */
 const me = (): Author => {
@@ -223,15 +300,23 @@ export const exportHref = (project: string, filters: Filters) =>
 
 // ---- tokens -----------------------------------------------------------------------------------------------------
 
-export const listTokens = async () =>
-    (await request<{ items: TokenInfo[] }>("/admin/tokens")).items;
-export const createToken = (projectId: string, name: string) =>
+export const listTokens = async () => (await request<{ items: TokenInfo[] }>("/tokens")).items;
+export const createToken = (
+    projectId: string,
+    name: string,
+    options: {
+        purpose?: "app" | "agent";
+        permission?: "capture" | "full";
+        expiresInDays?: number;
+        [key: string]: unknown;
+    } = {}
+) =>
     request<{ token: string; record: TokenInfo }>(
-        "/admin/tokens",
-        json("POST", { projectId, name })
+        "/tokens",
+        json("POST", { projectId, name, ...options })
     );
 export const revokeToken = (id: string) =>
-    request<void>(`/admin/tokens/${encodeURIComponent(id)}`, { method: "DELETE" });
+    request<void>(`/tokens/${encodeURIComponent(id)}`, { method: "DELETE" });
 
 // ---- settings: notato.config.json, as the server shows it (webhook URLs masked, secrets never) -----------------
 
@@ -251,8 +336,9 @@ export interface WebhookView {
     /** Which version of the webhook this is; an edit or delete against an older one is refused. */
     fingerprint: string;
     name: string | null;
-    /** Masked: enough to recognise, not enough to use. */
+    /** Masked, the host only: enough to recognise, not enough to use. One read from the environment is `env:NAME`. */
     url: string;
+    /** Where it sends, or `$NAME` when its URL is read from a variable that is not set where the server runs. */
     host: string;
     format: "json" | "slack" | "discord" | "teams";
     events: string[] | null;
@@ -315,12 +401,18 @@ export const isStale = (e: unknown) =>
     e instanceof ApiError && e.status === 409 && /changed or removed/.test(e.message);
 export const setSetting = (name: string, value: OnOff | null) =>
     request<SettingsView>(`/settings/${encodeURIComponent(name)}`, json("PUT", { value }));
-export const addWebhook = (hook: WebhookDraft) =>
-    request<SettingsView>("/settings/webhooks", json("POST", { hook }));
-export const editWebhook = (w: WebhookView, hook: WebhookDraft) =>
+/** `secretInFile`: store a signing secret typed as it is in the settings file, which the server otherwise refuses. */
+export interface SaveWebhookOptions {
+    secretInFile?: boolean;
+}
+const inFile = (options: SaveWebhookOptions) =>
+    options.secretInFile ? { secretInFile: true } : {};
+export const addWebhook = (hook: WebhookDraft, options: SaveWebhookOptions = {}) =>
+    request<SettingsView>("/settings/webhooks", json("POST", { hook, ...inFile(options) }));
+export const editWebhook = (w: WebhookView, hook: WebhookDraft, options: SaveWebhookOptions = {}) =>
     request<SettingsView>(
         `/settings/webhooks/${w.index}`,
-        json("PUT", { fingerprint: w.fingerprint, hook })
+        json("PUT", { fingerprint: w.fingerprint, hook, ...inFile(options) })
     );
 export const deleteWebhook = (w: WebhookView) =>
     request<SettingsView>(

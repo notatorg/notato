@@ -42,7 +42,7 @@ enum Palette {
     /// A pin's colour for its note's status.
     static func status(_ status: String) -> Color {
         switch status {
-        case Status.acknowledged: return Color(hex: 0xd99a1e)
+        case Status.acknowledged, Status.awaitingResponse: return Color(hex: 0xd99a1e)
         case Status.resolved: return Color(hex: 0x2e9a5b)
         case Status.revertRequested: return Color(hex: 0x8b5cf6)
         case Status.variantChosen: return Color(hex: 0x0891b2)

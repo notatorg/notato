@@ -8,6 +8,8 @@ Notato puts a small toolbar in the web or mobile app you are building. Click an 
 
 <p align="center"><img src="assets/loop.png" alt="A checkout page whose pay button has just turned into a green Place order button with a resolved pin, beside the coding agent's terminal: it received the note “Make it green and say Place order” with the button's file and line, edited PayButton.tsx, committed the change and resolved the note" width="900" /></p>
 
+Screenshots prefer WebP when it is smaller. Compatible servers receive one full image plus crop coordinates, generate the compressed crop and tiny inbox thumbnail once, and serve each view at the size needed. The board loads diagnostics on demand. [Screenshot storage and compatibility](docs/screenshot-storage.md).
+
 Every piece of feedback is an **annotation**: an element, a note and screenshots. Nothing is recorded between annotations, so it is a feedback loop for building, not analytics or session replay.
 
 | Mode      | Who annotates               | Where it goes                                              |
@@ -30,7 +32,9 @@ claude mcp add --transport http --scope user notato http://localhost:4747/mcp
 
 The board's **Settings › Agents** has the same line for Codex, Cursor, Gemini CLI and VS Code, and shows which agents are connected. Then put the toolbar in your app (below), or on any page with the [bookmark](#any-page-with-nothing-to-install). `npx notato --tunnel` adds a [dev tunnel](#phones-a-dev-tunnel) for phones; `npx notato --help` lists the rest. Run it again while one is running and it tells you where that one is.
 
-**In a .NET Aspire app host**, `builder.AddNotato()` (NuGet `Notato.Aspire`) runs the same with your apps, and `.WithReference(notato)` turns Notato on in each app and points it there, a production build of a Vite app included: [Notato for .NET Aspire](sdks/dotnet/src/Notato.Aspire/README.md).
+**Setting it up with a coding agent?** Point it at this repository's [AGENTS.md](AGENTS.md): it is the whole job, from `npx notato init` to a shared server with a project, an app token and an agent token.
+
+**In an Aspire app host**, `builder.AddNotato()` (NuGet `Notato.Aspire`) runs the same with your apps, and `.WithReference(notato)` turns Notato on in each app and points it there, a production build of a Vite app included: [Notato for Aspire](sdks/dotnet/src/Notato.Aspire/README.md).
 
 ## Add it to your app
 
@@ -43,7 +47,7 @@ The board's **Settings › Agents** has the same line for Codex, Cursor, Gemini 
 | SwiftUI and UIKit, iOS 17 and later            | `Notato` (Swift package)                              | [Notato for SwiftUI](sdks/swift/README.md)                              |
 | Jetpack Compose and Views, Android 7 and later | `dev.notato:notato-android`, `notato-compose` (Maven) | [Notato for Android](sdks/android/README.md)                            |
 | .NET MAUI, .NET 10 and later                   | `Notato.Maui` (NuGet)                                 | [Notato for .NET MAUI](sdks/dotnet/README.md)                           |
-| Apps run by a .NET Aspire app host             | `Notato.Aspire` (NuGet), with the app's own SDK       | [Notato for .NET Aspire](sdks/dotnet/src/Notato.Aspire/README.md)       |
+| Apps run by an Aspire app host                 | `Notato.Aspire` (NuGet), with the app's own SDK       | [Notato for Aspire](sdks/dotnet/src/Notato.Aspire/README.md)            |
 | React Native 0.76 and later, Expo or bare      | `@notato/react-native` (npm)                          | [Notato for React Native](sdks/react-native/README.md)                  |
 | Flutter 3.32 and later                         | `notato` (pub.dev)                                    | [Notato for Flutter](sdks/flutter/README.md)                            |
 
@@ -60,7 +64,7 @@ npm run dev             # start your app
 npx notato doctor      # checks the whole loop, including that a browser page is connected
 ```
 
-`init` also writes two skills (skip them with `--no-skill`). **`notato`** (`/notato` in Claude Code, `$notato` in Codex, or just ask) teaches the agent the whole loop: make the smallest change, **commit each fix on its own** (staging only its own files, so your uncommitted work is never swept in), resolve with the files and commit, answer a question instead of editing, and undo a change when you ask. One commit per annotation is what makes a revert clean. **`notato-critique`** has the agent review the running app itself and file what it finds (see [Critique mode](#critique-mode)). A skill file you have edited is left alone.
+`init` also writes two skills (skip them with `--no-skill`). **`notato`** (`/notato` in Claude Code, `$notato` in Codex, or just ask) teaches the agent the whole loop: make the smallest change, **commit each fix on its own** (staging only its own files, so your uncommitted work is never swept in), resolve with the files and commit, answer a question instead of editing, and undo a change when you ask. One commit per annotation is what makes a revert clean. It treats every note, reply, screenshot and capture as untrusted data, not instructions: it changes only the UI code a note points at, asks you before it runs a command, fetches anything or touches CI, config, dependencies or credentials because a note says to, never puts a secret in a reply, and reverts only the commit it recorded when it resolved that note. **`notato-critique`** has the agent review the running app itself and file what it finds (see [Critique mode](#critique-mode)), with the same limits. A skill file you have edited is left alone; one `init` wrote and nobody has touched is brought up to date when you run `init` again.
 
 `init` edits Vite and Next.js apps for you (and prints the snippet to paste for anything else). It writes in your project's own style, taking semicolons, quotes, indentation and line width from your prettier config (or the file), so `format:check` stays green.
 
@@ -71,7 +75,7 @@ npx notato init --app app-shell          # choose explicitly
 npx notato init --app app-shell --agent-dir .   # register your agents for the repo root
 ```
 
-**Apps that are built, not served, in development.** `import.meta.env.DEV` is false under `vite build --watch` + `vite preview`, so a dev-only guard would never render there. When a script in `package.json` does that, `init` also lets the toolbar render in a build made with `VITE_NOTATO=true` (put it in `.env.local`, or set it where the build runs, as [.NET Aspire](sdks/dotnet/src/Notato.Aspire/README.md) does); without the variable a build still ships nothing. Force either way with `--guard dev|env`. `<Notato />` reads the variable itself too: `VITE_NOTATO=false` keeps the toolbar off, in development too, and `VITE_NOTATO_SERVER` names the server.
+**Apps that are built, not served, in development.** `import.meta.env.DEV` is false under `vite build --watch` + `vite preview`, so a dev-only guard would never render there. When a script in `package.json` does that, `init` also lets the toolbar render in a build made with `VITE_NOTATO=true` (put it in `.env.local`, or set it where the build runs, as [Aspire](sdks/dotnet/src/Notato.Aspire/README.md) does); without the variable a build still ships nothing. Force either way with `--guard dev|env`. `<Notato />` reads the variable itself too: `VITE_NOTATO=false` keeps the toolbar off, in development too, and `VITE_NOTATO_SERVER` names the server.
 
 **The exact file and line, even in a built app.** React only knows which file an element came from in a development build. In an app that is built and previewed, the agent would get the component name and the selector but no line. The Vite plugin closes that gap: `npx notato init --plugin` adds `notatoSource()` (from `@notato/vite`, which you install in each app) to the `plugins` array of every Vite app's config. A federation setup needs it in each module, since each is built separately; `--plugin-only --app <dir>` does one app and nothing else. It does nothing unless `VITE_NOTATO=true` is set where the build runs, so any other build is exactly what it was. It adds a `data-notato-src` attribute to each element your JSX writes, Notato reads it, and the agent is told `written at src/checkout/PayButton.tsx:18:7`. Paths start at the repository root (looking past a submodule's `.git` file), so in a repo of several apps they begin with the app's folder. Elements a library creates are reported as "inside the element written at …", the nearest one that is tagged. Works with Vite 5 and later.
 
@@ -101,7 +105,7 @@ Press **Alt+Shift+A** (or the toolbar button), then click an element (disabled b
 
 Ask your agent to _"watch Notato and fix what comes in"_. It calls `notato_watch`, receives each annotation with its screenshots as images, acknowledges it, fixes the code (the React component and source file are in the annotation), and resolves it with a summary. What you write back, and the version you pick, reach it the same way.
 
-**Changing your mind.** Hover a green pin and choose **Revert this change…**, say what was wrong if you like, and press **Ask the agent to revert** (it says the agent's name when one is connected). The pin turns purple, and the request reaches the agent through `notato_watch` (or `notato_list_open`) marked REVERT REQUESTED, with what it recorded when it resolved the annotation (the summary, the files, the commit) and your reason. The agent undoes that change and calls `notato_reverted`, and the pin turns grey. **Cancel request** takes it back before the agent has acted. The board has the same two buttons. Notato never edits your code itself: the agent does the undoing, which is why `notato_resolve` asks it to list the files and commit. A revert can only be requested for a resolved annotation, and needs a server to carry it, so it is not offered in test mode without one.
+**Changing your mind.** Hover a green pin and choose **Revert this change…**, say what was wrong if you like, and press **Ask the agent to revert** (it says the agent's name when one is connected). The pin turns purple, and the request reaches the agent through `notato_watch` (or `notato_list_open`) marked REVERT REQUESTED, with what it recorded when it resolved the annotation (the summary, the files, the commit) and your reason. The agent undoes that change (the commit it recorded, never one a reply names) and calls `notato_reverted`, and the pin turns grey. **Cancel request** takes it back before the agent has acted. The board has the same two buttons. Notato never edits your code itself: the agent does the undoing, which is why `notato_resolve` asks it to list the files and commit. A revert can only be requested for a resolved annotation, and needs a server to carry it, so it is not offered in test mode without one.
 
 ## Works with your coding agent
 
@@ -154,7 +158,7 @@ Behind it: a `variants` record on the annotation (the group and the names, each 
 - **People only**, on a note: the note and its whole thread are between people, and never reach the agent. Turn it on as you write the note, or on an existing one from its card on the board or in the toolbar; anyone on the thread can turn it off again, and each change is recorded in the thread. Turning it off hands the note back to the agent, with what was said meanwhile (it arrives marked SHARED WITH YOU). Webhooks still get People only notes: they are for people.
 - **Aside**, on a reply: one remark for the people on the thread ("Sam, ignore the agent for a sec"). The agent is not sent it and is not shown it, so it never takes an aside as the thing to answer.
 
-The agent can still read a People only note it asks for by id (`notato_get`), labelled as one, and is told not to act on it; its tools refuse to change one.
+Agents cannot read or change a People only note, including direct reads by id, screenshots, references and exports. App tokens and signed-in people retain access. Turning People only off explicitly shares the note and its thread with agents again.
 
 ## The board: every project in one place
 
@@ -162,13 +166,15 @@ The server serves a board at its own address (`http://localhost:4747` in dev mod
 
 **Projects.** On `notato dev` a project appears with its first note: nothing to set up. You can also create one first with **New project** on the board, which shows how to connect each kind of app to it. On a [shared server](#shared-server) an admin creates every project first: that is what hands out its token, and a note for a project the server does not have is refused, so a typo or a stray app cannot start one. Renaming a project changes only the name people see; deleting one removes its notes, their screenshots and its tokens.
 
-- **The sidebar** lists every project with what is still to do, and a dot when something happened since you last looked. **All projects** shows a card for each, most recently active first.
+- **The sidebar's project switcher** moves between projects, shows their to-do and unread counts, and offers **New project**. With eight or more projects it has a search box. The sidebar's Inbox, Activity and Overview links follow the selected project. The logo returns to **All projects**, with a card for each, most recently active first.
 - **Inbox**, per project: the notes on the left, the one you open on the right with its screenshot, where it is in the code, the conversation with the agent, and the buttons to reply, resolve, reopen, dismiss, ask for a revert or pick a version. **To do**, **Done**, **Dismissed** and **All** split it by status; search looks through the notes, the replies, the pages, the selectors and the components; **Filter** narrows it by page, person, severity, intent, author or bundle; it sorts by recent activity, age or severity and groups by page, status, person or severity. Notes with something new since your last visit are marked.
 - **Activity**: everything said in the project, newest first, a day at a time.
 - **Overview**: what is to do and done, new notes a day for the last 30 days, the typical time to a first reply, the pages with the most to do and who is giving feedback. Every row opens the inbox on that slice.
-- **Settings** (for whoever can administer the server: anyone on this machine in dev mode, the admin in serve mode): whether agents can connect, with the MCP address and how to connect each agent (see [MCP over HTTP](#mcp-tools)), screenshots on or off, the webhooks (see [Webhooks](#webhooks)), your name on replies and how much a Markdown copy says. Server settings go in `notato.config.json`, the file `notato config` edits, and apply at once. Only the board itself can change them: a request from an app's page is refused, so a page cannot point a webhook somewhere.
+- **Tokens** (an admin on a shared server): create and revoke app/tester or agent tokens, choose their project and expiry, and copy the connection details when a token is created. A project's settings show just its tokens. A token's value is shown once.
+- **Connect** has a guide for each SDK and a **Check the connection** section: the exact project id, live versus bundled capture, environment overrides (including Aspire), and the right token for an SDK or an agent.
+- **Settings** (for whoever can administer the server: anyone on this machine in dev mode, the admin in serve mode): whether agents can connect, with the MCP address and how to connect each agent (see [MCP over HTTP](#mcp-tools)), screenshots on or off and the webhooks (see [Webhooks](#webhooks)). Server settings go in `notato.config.json`, the file `notato config` edits, and apply at once. Only the board itself can change them: a request from an app's page is refused, so a page cannot point a webhook somewhere. Browser preferences here hold your name on replies, Markdown detail and the light or dark theme.
 
-It updates as things happen. Keys in the inbox: `j`/`k` (or the arrows) move, `/` searches, `r` replies, Cmd/Ctrl+Enter sends, Esc closes. Every note has its own link (`#/p/<project>/a/<id>`). **Replying as**, at the foot of the sidebar (or in Settings), sets the name your replies carry (kept in this browser). On a phone the projects are a drawer and a note opens over the list.
+It updates as things happen. Keys in the inbox: `j`/`k` (or the arrows) move, `/` searches, `r` replies, Cmd/Ctrl+Enter sends, Esc closes. Every note has its own link (`#/p/<project>/a/<id>`). In dev mode, the name at the foot of the sidebar (or in Settings) sets the name your replies carry, kept in this browser. On a server with accounts, replies use the signed-in account's name. **Sign out** is under **Settings › Account**. Dialogs keep keyboard focus inside until closed. On a phone the sidebar is a drawer and a note opens over the list.
 
 ## Copy as Markdown, and export
 
@@ -199,20 +205,22 @@ The `notato-critique` skill has the agent do what a careful reviewer would: open
 The server can tell other systems when an annotation is created or changes, such as a Slack or Discord channel, a build hook, your own service:
 
 ```bash
-npx notato config webhook add https://hooks.slack.com/services/T000/B000/XXXX --format slack --event resolved
+npx notato config webhook add env:SLACK_WEBHOOK_URL --format slack --event resolved   # the URL is read from $SLACK_WEBHOOK_URL
 npx notato config webhook add https://ci.example.com/notato --secret env:NOTATO_HOOK_SECRET
-npx notato config webhook                  # list them
+npx notato config webhook                  # list them, by host
 npx notato config webhook test ci.example.com   # send a sample now, and see what the other end said
 ```
 
-Or on the board, under **Settings › Webhooks**: pick Slack, Discord, Teams or JSON, paste the URL, choose the project and the events, add a signing secret for JSON, and save. **Test** (or **Preview and test…** while editing, before you save) lets you pick an event and a real note (or a made-up one), shows the message exactly as it will go out (the Teams card drawn as Teams shows it, the chat line, or the JSON and its headers) and says what is left out and why, then **Send this test** sends that very message and shows what the other end answered (the HTTP status, how long it took and what it said back). The board writes the same file, never shows a saved URL or a secret written in the file again (it shows `https://hooks.slack.com/services/••••` and "a secret is set"; replace them to change them), and refuses an edit made to a copy that has since changed in another tab or with `notato config`.
+Or on the board, under **Settings › Webhooks**: pick Slack, Discord, Teams or JSON, paste the URL, choose the project and the events, add a signing secret for JSON, and save. **Test** (or **Preview and test…** while editing, before you save) lets you pick an event and a real note (or a made-up one), shows the message exactly as it will go out (the Teams card drawn as Teams shows it, the chat line, or the JSON and its headers) and says what is left out and why, then **Send this test** sends that very message and shows what the other end answered (the HTTP status, how long it took and what it said back). The board writes the same file, never shows a saved URL or a secret written in the file again (it shows `https://hooks.slack.com/••••` and "a secret is set"; replace them to change them), and refuses an edit made to a copy that has since changed in another tab or with `notato config`.
 
-They live in `notato.config.json` (`"webhooks": [{ "url": …, "events": […], "format": "json", "secret": "env:NAME", "name": …, "project": … }]`), so they can be committed, and a running server picks a change up on the next event. Events: `annotation.created`, `acknowledged`, `variants_ready`, `variant_chosen`, `resolved`, `revert_requested`, `reverted`, `dismissed`, `reopened`, `updated`, `replied`, `deleted`; leave `events` out for all of them.
+They live in `notato.config.json` (`"webhooks": [{ "url": "https://…" or "env:NAME", "events": […], "format": "json", "secret": "env:NAME", "name": …, "project": … }]`), so they can be committed, and a running server picks a change up on the next event. Events: `annotation.created`, `acknowledged`, `variants_ready`, `variant_chosen`, `resolved`, `revert_requested`, `reverted`, `dismissed`, `reopened`, `updated`, `replied`, `deleted`; leave `events` out for all of them.
 
 - **json** (default) posts `{ id, event, at, project, annotation, markdown }`: the whole annotation and ready-made standard Markdown. **slack** and **discord** post one line they accept as is.
 - **teams** posts an Adaptive Card in the message shape a Microsoft Teams workflow takes ("Post to a channel when a webhook request is received", or the chat version): what happened, the note, the latest reply, the page, status, severity and element, and a button to open the page when it is a web address. Use it for a Teams or Power Automate workflow URL; given `json`, those templates try to post the whole body as a card and Teams answers BadRequest.
 - **Screenshots.** A **teams** card shows the note's screenshot (a tap opens it full size), and a **json** payload adds `screenshotUrls: { full, crop }`. Teams fetches the image itself and can send no token, so each link is signed for that one image (`/shared/<id>.png?sig=…`, with a key in `share.key` beside the data) and opens nothing else without signing in. It needs an address the outside world can reach: the dev tunnel's with `notato dev --tunnel`, or `NOTATO_PUBLIC_URL` (for `notato serve` behind a proxy, say). Without one, messages go without the screenshot. The images load while the server is running. `"screenshots": false` on a webhook (or the switch in the board) leaves them out.
 - **Signing.** With a `secret`, each body is signed: `X-Notato-Signature: sha256=<HMAC-SHA256 of the raw body>`, so the receiver can tell it came from your server. Write `env:NAME` to read the secret from an environment variable in the server's environment instead of keeping it in a file you commit. If that variable is not set, nothing is sent to that webhook (an unsigned request when a signature was asked for would be worse), and the server log says so once. `X-Notato-Event` and `X-Notato-Delivery` (a unique id, for de-duplication) are always sent.
+- **Keeping them out of the file.** A Slack, Discord or Teams URL lets anyone who has it post to the channel, so it is a secret as well. Write `env:NAME` as the `url` and the server reads it from that environment variable where it runs; if it is not set to an http or https URL, nothing is sent to that webhook and the server log says so once. A `--secret` written as it is (not `env:NAME`) is refused unless you add `--secret-in-file`. `notato config` and `notato config webhook` show each URL by its host only (`https://hooks.slack.com/••••`).
+- **Where they go.** A webhook in a committed config sends every clone's notes on, so the server says where annotation events go, by host, when it starts and whenever that changes: `annotation events go to 1 webhook: team (hooks.slack.com) (from …/notato.config.json)`.
 - **Delivery.** Sent off to the side, so a slow or dead endpoint never holds up the API. Deliveries to one URL go in order. A network error, a 5xx, a 429 or a 408 is retried after 1s, 4s and 15s; any other refusal (a 401, a 404) is not, since it would be refused again. Redirects are not followed. It gives up after that and logs it: there is no queue that survives a restart.
 - The test annotation `notato doctor` files and deletes is not sent, so a channel never hears about a health check.
 - A broken config file sends nothing and screenshots stay off (see above); `doctor` and `notato config` say so.
@@ -244,7 +252,7 @@ npx notato dev
 npx notato inject        # prints the bookmark's page, a line for the console, and a script tag
 ```
 
-Drag the button to your bookmarks bar and click it on the page you want to annotate: the toolbar appears, and notes go to the server as a project named after the page's host and port (`localhost-5173`). It is the same code as the SDK (the server serves it at `/inject.js`): component names for React apps, source locations if the Vite plugin is in, variants, settings, all of it. It works with any framework or none, and with or without hot reload (click it again after a refresh). A page that is on your machine or your network works as it is; a page whose Content-Security-Policy forbids scripts from the server will refuse it, and a site elsewhere needs the server started with `--cors-origin <its origin>`. The [extension](#browser-extension) is for those.
+Drag the button to your bookmarks bar and click it on the page you want to annotate: the toolbar appears, and notes go to the server as a project named after the page's host and port (`localhost-5173`). It is the same code as the SDK (the server serves it at `/inject.js`): component names for React apps, source locations if the Vite plugin is in, variants, settings, all of it. It works with any framework or none, and with or without hot reload (click it again after a refresh). A page your machine serves works as it is; a page whose Content-Security-Policy forbids scripts from the server will refuse it, and one from another device on your network or a site elsewhere needs its origin listed (`NOTATO_CORS_ORIGINS`, or `--cors-origin` on `notato serve`; see [below](#mcp-tools)). The [extension](#browser-extension) is for those.
 
 ## Browser extension
 
@@ -259,6 +267,10 @@ Then in `chrome://extensions` turn on Developer mode, **Load unpacked**, and cho
 **No server.** Under **Notes go to**, choose **This browser only** and the site needs no Notato server at all. The toolbar runs as it does in [test mode](#test-mode-testers-send-you-a-zip): notes and their screenshots are kept in this browser across reloads, what is typed is covered in screenshots, and the toolbar's export button downloads them as a zip (with a `feedback.md`) or copies them as Markdown. A Notato board imports the zip into the same project, so a tester can annotate a site with only the extension and send you the file. For such a site the extension reaches no server at all, and asks Chrome for the site alone.
 
 How it stays safe and works on pages with their own security policy: the part that reads the page runs in the page; it cannot call the server itself, so it asks a relay, which asks the extension's background worker. The worker only reaches the server set for that site, and only Notato's own API on it, so a page cannot use the extension to reach anything else on your machine. It asks for almost nothing up front: scripting and storage, plus loopback addresses; each site and any other server address is asked for when you turn it on. An unpacked build has a fixed id that the server accepts by default; a build from a store has its own, which you list with `--cors-origin chrome-extension://<id>`. The extension is not on any store. A page that is turned on could write notes to your project through the extension (it could with an SDK token too), so turn it on for sites you trust.
+
+## Screenshot size
+
+Browser and mobile SDKs encode the finished, masked screenshot as WebP at quality 85 when it is smaller than PNG. They keep the same dimensions and use PNG if the encoder is unavailable or PNG wins. Old PNG notes, offline queues and bundles continue to work. React Native needs a native rebuild for its optional encoder; Expo Go keeps PNG. See [screenshot storage](docs/screenshot-storage.md) for platform dependencies, compatibility and measured examples.
 
 ## Screenshots: on or off
 
@@ -280,6 +292,8 @@ A broken settings file fails safe: screenshots stay off until it is fixed, `doct
 | --------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
 | `notato_list_open`                                                          | Open annotations, filterable by project, route, severity, intent, bundle, a page at a time                       |
 | `notato_get`                                                                | One annotation, with its screenshots as image content, at the `detail` level you ask for                         |
+| `notato_get_review` | Read every target and the shared instruction in a grouped review; images are off by default |
+| `notato_ask_question` | Pause an annotation until the person answers, preserving variant and revert work |
 | `notato_watch`                                                              | Block until new annotations, replies or revert requests arrive (with a collection window), then return the batch |
 | `notato_acknowledge` · `notato_reply` · `notato_resolve` · `notato_dismiss` | Work through it, with notes in the thread. `notato_resolve` also takes the `files` and `commit` of the change    |
 | `notato_variants_ready`                                                     | Offer versions you put in the code for the person to compare; they pick one in the page                          |
@@ -288,6 +302,8 @@ A broken settings file fails safe: screenshots stay off until it is fixed, `doct
 | `notato_annotate`                                                           | Agent mode: ask a connected page to annotate an element (a `>>>` selector reaches into iframes and shadow roots) |
 
 `notato dev` binds to loopback only. A second agent session (another Claude Code, or a Codex beside it) attaches to the first one's server as an MCP-only client, and takes over if it goes away.
+
+**Which pages it trusts.** `notato dev` has no logins, so a page it trusts can read every note and screenshot, and write notes your agent acts on. It trusts the pages your machine serves, at any of its addresses (`localhost`, `*.localhost`, `127.0.0.1`, and its own network addresses, such as the `http://192.168.1.5:5173` a dev server prints with `--host`), and the [extension](#browser-extension). A page from any other device, on your network or not, is refused until you list its origin, comma-separated, where the server starts: `NOTATO_CORS_ORIGINS=http://192.168.1.20:5173 npx notato`. A `notato serve`, where every request needs a token or a login, also trusts private networks.
 
 **Several repositories, one server.** Every repository's `notato dev` shares the server on 4747, so without a project each agent would be handed every app's notes, and could "fix" one in the wrong codebase. `--project <id>` (repeat it, or separate ids with commas, for a repository with several apps; or `NOTATO_PROJECT`) keeps an agent to its own projects. `notato_watch` and `notato_list_open` hand over only their notes. A note from another project can still be read by id, labelled as not this session's, but not changed. The app's toolbar says an agent is there only when that agent works on its project. Over HTTP it is `/mcp?project=<id>`. `init` writes `--project` into the registration for this repository (Claude Code's local and project scopes, Cursor, Gemini CLI, VS Code); when a second app in the same repository is set up, its project is added beside the first. Codex and Claude Code's user scope keep one list for every folder, so they stay on every project.
 
@@ -313,7 +329,8 @@ claude mcp add notato -- npx notato dev --port 4748 --tunnel   # or codex mcp ad
 ```
 
 - It makes the tunnel the first time and reuses it after, so the URL stays the same (a tunnel unused for 30 days expires, and a new one is made). The tunnel runs while the server does.
-- The tunnel allows anonymous access, so a phone needs no Microsoft sign-in; the server answers anything that comes through it only with a device token, made once and kept. Requests from your own machine are unchanged. The MCP is never served through it, token or not.
+- The tunnel allows anonymous access, so a phone needs no Microsoft sign-in; the server answers anything that comes through it only with a device token, made once and kept. Requests from your own machine are unchanged.
+- The token is built into every debug build of your app, so whoever has a build has it, and it reaches only what an app does: its notes, their screenshots, replies and picks, its events, test bundles and the relay's answers. Settings, webhooks (and their test), creating, renaming or deleting projects, and tokens are refused through the tunnel (`403`), token or not, and so is acting as an agent; so is the MCP. The same goes for anything that comes through another proxy. Change them on the board or with the CLI on your machine.
 - The URL and the token are written to `.notato/device.json`. The .NET MAUI package reads it into debug builds, and then a phone and the Android emulator use the tunnel and the iOS simulator localhost, with nothing to configure. Keep `.notato/` out of git: the token is a key to your server.
 - Only the process that runs the server hosts its tunnel: give a project that needs one its own port, so it is not attached to another project's `notato dev`.
 - Or run one server for everything, apart from any agent session: `npx notato --tunnel --dir ~/.notato` runs just the server until it is stopped (`notato dev --standalone` is the same), and every session's own `notato dev` attaches to it on the same port, so the board shows every project. Agents can also connect to its `/mcp` directly. Point an app's build at its folder (`<NotatoDataDirectory>`, for .NET MAUI).
@@ -364,9 +381,10 @@ NOTATO_ADMIN_PASSWORD=… npx notato serve --host 0.0.0.0 --trust-proxy
 
 Put a TLS-terminating reverse proxy in front. It serves the board UI at `/` (sign in as `admin`), the API, and **MCP over HTTP at `/mcp`**.
 
-- **Projects come first.** Create each one on the board (**New project**) or with `npx notato project create <id>`. Either way you get the project's first token (`notato_…`, shown once) and, on the board, what to paste into each kind of app. Apps can only send to projects that exist: anything else is answered `404` with how to create it.
-- **More tokens** are made in the board (the project's settings, or Tokens) or with `npx notato token create <project>`. A token for one project reads and writes only that project; a token for `*` is for your agent. Deleting a project stops its tokens working.
-- Give the SDK `server` and `token`. Connect an agent to `https://notato.example.com/mcp` with the header `Authorization: Bearer notato_…` (Settings › Agents on the board has the line for each agent). Turning agents off (`--no-mcp`, or Settings) closes `/mcp` and refuses agent tokens, while apps keep sending. Claude Code:
+- **Projects come first.** Create each one on the board (**New project**) or with `npx notato project create <id>`. The CLI makes an app token and an agent token (`notato_…`, shown once); add `--json` for both tokens and the MCP connection details in a machine-readable result. The board's **Also make a token for my coding agent** checkbox is on by default, and its connection guide shows what to paste into each kind of app and agent. Apps can only send to projects that exist: anything else is answered `404` with how to create it.
+- **More tokens** are made in the board (the project's settings, or Tokens) or with `npx notato token create <project>`. Tokens have a purpose. An **app** token goes in an SDK, is for one project, and cannot use MCP; add `--capture-only` for a page that should only be able to send notes, never read them back. An **agent** token is for your coding agent over MCP, for one project or `*` for all of them (`--purpose agent`). `--expires <days>` makes a token stop working on its own. Tokens made before 0.3 keep working as they did. Deleting a project stops its tokens working.
+  Capture-only tokens can also submit test bundles as batches of new notes. Matching retries are acknowledged without reading stored feedback; conflicts retain the local capture. See the [capture contract](docs/capture-contract.md).
+- Give the SDK `server` and `token`. Connect an agent to `https://notato.example.com/mcp` with an agent token in the header `Authorization: Bearer notato_…` (Settings › Agents on the board has the line for each agent). Turning agents off (`--no-mcp`, or Settings) closes `/mcp` and refuses agent tokens, while apps keep sending. Claude Code:
   `claude mcp add --transport http notato https://notato.example.com/mcp --header "Authorization: Bearer notato_…"`. Codex: `url = "https://notato.example.com/mcp"` and `bearer_token_env_var = "NOTATO_TOKEN"` under `[mcp_servers.notato]` in `~/.codex/config.toml`.
 - `NOTATO_CORS_ORIGINS` allows browser origins beyond loopback and private networks. CORS is not authentication: every request needs a token or a login.
 
@@ -386,6 +404,66 @@ docker run -p 4747:4747 -v notato:/data -e NOTATO_ADMIN_PASSWORD=… ghcr.io/not
 | `NOTATO_MCP`                                  | `off` refuses agents whatever the file says. See [MCP over HTTP](#mcp-tools)                                             |
 | `NOTATO_PROJECT`                              | `notato dev`: the projects this agent works on, comma-separated. See [Several repositories](#mcp-tools)                  |
 
+## Reviewing related feedback
+
+The browser, React and Angular toolbar can collect a **grouped review** across pages:
+write one instruction, annotate each target, then send the group when ready. Drafts
+survive reloads and stay off the server until sent. Each note can include up to three
+optimised **design reference images**, with private asset access and bounded uploads.
+The board links the targets and can group the inbox **By review**.
+
+**Hide from this app** on a completed SDK card hides it privately in this browser;
+Settings can restore it and the dashboard always retains it. Agents use
+`notato_ask_question` to pause a task as **Needs your answer**, then a public human
+reply resumes it. `notato_get_review` reads the whole group before a consistent fix;
+`notato_get` retrieves references on demand. See the [browser workflow](sdks/browser/README.md#grouped-reviews-references-and-hiding-completed-notes).
+
+## Building on Notato
+
+The server is a library as well as a command. `runServe` takes a **`ServerExtension`**, which is how a hosted product (Notato Cloud is one) is built on the same server instead of a copy of it: annotations, MCP, relay, webhooks and the event streams are the server's own, and the extension brings what differs.
+
+```ts
+import { runServe, type ServerExtension } from "@notato/server";
+
+const extension: ServerExtension = {
+    name: "my-deployment",
+    store: () => new MyPostgresStore(url),            // notes, projects and accounts
+    blobs: () => new MyObjectStore(bucket),           // screenshots
+    hooks: ({ store }) => ({ beforeIngest: (note, bytes) => checkQuota(store, note, bytes) }), // throw a RequestError to refuse
+    auth: ({ store }) => new MyAccounts(store),       // who is signed in: admins, members, tokens
+    http: ({ backend, auth }) => ({
+        routes: { private: [extraRoutes], public: [callbackRoute], isPublic: (_m, p) => p === "/callback" },
+        around: (request, next) => audit(request, next),   // wraps every request once its credential is known
+    }),
+    mcp: () => ({ requireToken: true, maxSessions: 128 }),
+    start: (runtime) => startWorkers(runtime),        // returns how to stop them
+};
+await runServe({ version, extension });
+```
+
+The extension's parts are made in stages. Later stages receive the parts already made:
+
+| Part             | What it supplies                                                                                                          |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| `store`, `blobs` | Records and accounts through `Store & AuthStore`, and screenshots through `BlobStore`; the defaults are SQLite and files  |
+| `config`         | A `ConfigSource` wrapping the settings file                                                                               |
+| `hooks`          | Checks before backend changes, such as refusing a note or project that would exceed a limit                               |
+| `backend`        | An optional `LocalBackend` subclass, made with the assembled store, blobs, config and hooks                               |
+| `auth`           | An `AuthProvider`; replacing it also takes over account creation from the built-in admin login                            |
+| `http`           | Extra routes and rules for the built-in ones, authorization, middleware, allowed origins, headers, CSP and upload limits  |
+| `mcp`            | Session limits, a guard, a token requirement, tool auditing, and how a locked credential is refused                       |
+| `fetch`          | A wrapper around every request, including MCP, before the HTTP handlers                                                   |
+| `start`          | Background work after the server starts, returning an optional stop function run before the store closes                  |
+
+- **Accounts.** A credential is an `admin`, a `token`, or a `member`: a signed-in person who reaches only the `projectIds` your accounts give them. The core's routes, event streams and MCP sessions enforce that scope and end streams and sessions when the credential stops being valid. Extra routes must apply their own authorization checks. Set `share: false` to omit signed screenshot links from webhooks when screenshots must stay behind authentication.
+- **The built-in routes, by your rules.** Instead of replacing a built-in route, `http` can return rules for it. `projectRules` says who may create, rename and delete projects (`assertManager`), what `GET /projects` lists for a credential (`list`; only projects the credential reaches are ever shown), and what a new project is made with (`create`: its id, extra fields for its record, and how its first tokens are issued). `tokenRules` opens `/tokens` to more than the admin (`assertManager`), says which tokens each credential sees and may revoke (`visible`; by default only an admin sees any), and issues and shows them (`issue`, `shown`); `/admin/tokens` stays the admin's. `aboutCaller` adds fields to `/auth/me`. From `mcp`, `lockedRefusal` is the status and message a `locked` credential gets (403 by default). With `strictOrigins`, sign-in and sign-out are taken from the board only.
+- **Extending the built-in accounts.** `Authenticator` can be subclassed rather than replaced. It keeps reading, rate-limiting, minting and storing credentials, and its protected hooks decide the rest: `tokenPrincipal` and `sessionPrincipal` say who a valid token or session is (null refuses it), `passwordRefusal` turns a password sign-in away before the password is checked, `newSession` says what a session holds and how long it lasts, and `endSession` and `addAdmin` run as a session ends and the admin account is created. `startSession`, `mintToken`, `cookie` and `sessionId` are there for a sign-in of your own. The `cookieName` option renames the session cookie (a `__Host-` name is always `Secure`), and `queryTokens: false` refuses tokens in `?token=`.
+- **Typed parts and helpers.** `ServerExtension<S, B, A>` names the store, backend and accounts your extension makes: every later part receives them as those types, and so does what `runServe` returns. For a store or routes of your own, `annotationColumns` gives the values the SQLite store indexes for each note, `shownToken` a token record without its hash, and `checkBody` checks a body the way `readJson` does. A command built on `notato` can import `main`, `parsePort`, `localServer` and `stopOnSignals` from `@notato/cli`.
+- **Private asset reads.** A custom store must honour `projectsWithAsset(id, { peopleOnly: false })`: only notes shared with agents may grant an agent credential access to those image bytes. Returning the unfiltered projects could expose an image attached only to a People only note.
+- **The board's screens.** `mountBoard({ extension })` takes a `BoardExtension`: `Login` replaces sign-in, `Frame` wraps or gates the signed-in board, `pages` adds routes at `#/x/<page>`, and `nav` links to them. `SidebarTop` adds a slot above the project's navigation, `ProjectNav` can replace that navigation, and `ProjectSettingsExtra` adds a section to project settings. `signOut` ends the extension's session.
+- **The board's account behavior.** `readState.markRead` persists read markers for the signed-in account; `accountScope` separates its browser read markers by an additional scope; `accountName` supplies its name. `automaticProjectIds` omits the id field when the server generates ids, and `requireTokenExpiry` removes the no-expiry choice. `canManage` controls project and token management, while `canAdminServer` controls the server's own settings independently. `canManageTokens` can permit token management separately; `tokens` supplies creation choices, extra request options, scope labels, and whether agents or an all-projects choice are offered. The server must enforce those policies. An authentication extension may set a token principal's `authorName` to bind app feedback to an account; captured and supplied reply names cannot override it.
+- **From a checkout.** `@notato/server` and `@notato/board` are not published to npm: use this repository as a git submodule or a workspace. Build a board from your own page with `bun packages/board/scripts/build.ts --html your.html`, and serve it with `NOTATO_WEB_DIST`. A server with no extension keeps the SQLite store, local files and existing dev and shared-server behavior. Extension checks are in [`packages/server/test/extension.test.ts`](packages/server/test/extension.test.ts).
+
 ## SDK props
 
 | Prop                                                                                        |                                                                                                                                                                         |
@@ -399,7 +477,7 @@ docker run -p 4747:4747 -v notato:/data -e NOTATO_ADMIN_PASSWORD=… ghcr.io/not
 | `screenshots`                                                                               | `false` never takes a screenshot from this page. A server that has them off wins either way                                                                             |
 | `hashRoutes`, `testIdAttributes`, `maskInputs`, `shortcut`, `position`, `author`, `persist` | See the types                                                                                                                                                           |
 
-**From the environment.** In an app built with Vite, `VITE_NOTATO` and `VITE_NOTATO_SERVER` where it is built or served win over `enabled` and `server` in `<Notato />` and `provideNotato`: `true` starts the toolbar in a production build too, and `false` keeps it off in development. The Swift and .NET MAUI SDKs read `NOTATO_ENABLED` and `NOTATO_SERVER` the same way from the app's environment, and Flutter from `--dart-define`. [.NET Aspire](sdks/dotnet/src/Notato.Aspire/README.md) sets them for the apps it runs.
+**From the environment.** In an app built with Vite, `VITE_NOTATO` and `VITE_NOTATO_SERVER` where it is built or served win over `enabled` and `server` in `<Notato />` and `provideNotato`: `true` starts the toolbar in a production build too, and `false` keeps it off in development. The Swift and .NET MAUI SDKs read `NOTATO_ENABLED` and `NOTATO_SERVER` the same way from the app's environment, and Flutter from `--dart-define`. [Aspire](sdks/dotnet/src/Notato.Aspire/README.md) sets them for the apps it runs.
 
 The toolbar lives in a shadow root, so your styles cannot leak in or out. Identity resolves a test id attribute (`data-testid`, `data-qa`, `data-cy`, `data-test`), then role and accessible name, then the shortest unique CSS selector; in a React development build it also records the component and source file.
 
@@ -417,7 +495,7 @@ The toolbar lives in a shadow root, so your styles cannot leak in or out. Identi
     - a note takes at most 1,000 replies (an agent can still close it with a note); a reply or a comment is at most 10,000 characters, a note's context at most 512 kB, and a whole note with its screenshots at most 25 MB;
     - `notato_watch` hands each reply over once (a new agent session is not handed old ones again), at most twenty a call, and `notato_get` writes out a thread's latest twenty replies;
     - a bundle zip is at most 100 MB with 20,000 files, and an export of any size streams a screenshot at a time;
-    - an app's list can ask for `?fields=summary`, which leaves each note's context (console, network, styles) and steps out;
+    - an app's list can ask for `?fields=summary`, which leaves bulky context (console, network, styles) and steps in the database instead of transferring them with each list;
     - a webhook that is down keeps at most 1,000 deliveries waiting, and deleting a whole project sends none.
 
     The board draws a project's list two hundred notes at a time. There is no rate limit on writes yet.

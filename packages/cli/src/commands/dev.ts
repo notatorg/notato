@@ -28,7 +28,8 @@ Options:
                         ($NOTATO_TUNNEL=1). Needs the devtunnel CLI, signed in once (\`devtunnel user login\`).
                         The same tunnel and URL are reused every run; anything that comes through it needs the
                         device token. Both are written to <data dir>/device.json, where an app's debug build
-                        picks them up.
+                        picks them up. The token reaches only what an app does: never the settings, webhooks,
+                        projects or tokens, which are changed on this machine.
       --standalone      Run only the server (and its tunnel), with no MCP on stdio, until stopped: one server
                         that outlives agent sessions, whose own \`notato dev\` attaches to it on the same port.
                         Agents can also connect to its /mcp. \`notato start\` (or just \`npx notato\`) is the

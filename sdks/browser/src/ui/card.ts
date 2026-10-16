@@ -1,4 +1,4 @@
-import { agentLogoSvg, knownAgent } from "@notato/core";
+import { agentLogoSvg, annotationStatusLabel, canRequestRevert, knownAgent } from "@notato/core";
 import type { Annotation, Author } from "@notato/schema";
 import { colorForName } from "../settings.ts";
 import { capitalize, messageOf } from "../text.ts";
@@ -17,6 +17,7 @@ interface FormState {
 
 /** What a pin's card keeps between draws: whether it is held open, and the forms open on it. */
 export interface CardState {
+    optionsOpen?: boolean;
     /** Shown until clicked away: reachable with the keyboard and by touch. */
     pinned: boolean;
     /** The Revert form is open on the card, with what has been typed in it so far. */
@@ -31,8 +32,10 @@ export interface CardState {
 
 /** What a card can ask for on a note. Each is left out where it cannot be done now. */
 export interface CardActions {
+    captureOnly?(): boolean;
     /** Called when the person confirms deleting an annotation from its card. */
     onDelete?(id: string): void;
+    onHide?(id: string): void;
     /**
      * Asks the agent to undo the change it made for a resolved annotation. Only passed when there is a server
      * for the request to reach; without it a card offers no Revert. Rejects with a message to show.
@@ -73,17 +76,6 @@ export interface CardDraw {
     close(): void;
 }
 
-/** How a status reads on a card. */
-const STATUS_LABEL: Record<Annotation["status"], string> = {
-    open: "Open",
-    acknowledged: "Acknowledged",
-    variant_chosen: "Variant chosen",
-    resolved: "Resolved",
-    revert_requested: "Revert requested",
-    reverted: "Reverted",
-    dismissed: "Dismissed",
-};
-
 /** How long Delete waits for the second click that confirms it. */
 const DELETE_ARMED_MS = 3000;
 
@@ -92,8 +84,11 @@ export const cardSignature = (a: Annotation, refused = "") =>
     [
         refused,
         a.status,
+        a.intent,
         a.comment,
         a.severity ?? "",
+        JSON.stringify(a.review),
+        ...(a.references?.map((r) => `${r.id}:${r.name}`) ?? []),
         a.variants?.offeredAt ?? "",
         a.variants?.chosen ?? "",
         a.peopleOnly ? "people" : "",
@@ -109,7 +104,7 @@ export function pruneForms(state: CardState, a: Annotation, actions: CardActions
     if (
         state.reverting &&
         !state.reverting.busy &&
-        !(a.status === "resolved" && actions.onRequestRevert)
+        !(canRequestRevert(a) && actions.onRequestRevert)
     )
         state.reverting = undefined;
     if (state.asking && !state.asking.busy && !(offersVersions(a) && actions.onReply))
@@ -118,6 +113,7 @@ export function pruneForms(state: CardState, a: Annotation, actions: CardActions
 
 /** A card nobody is looking at keeps only a form being sent, and a reply with something typed in it. */
 export function closeForms(state: CardState): void {
+    state.optionsOpen = false;
     if (!state.reverting?.busy) state.reverting = undefined;
     if (!state.asking?.busy) state.asking = undefined;
     if (!state.replying?.busy && !state.replying?.note) state.replying = undefined;
@@ -175,6 +171,7 @@ const FIELD_STATE = {
  * it: their text, their caret and their focus are kept.
  */
 export function drawCard(draw: CardDraw, actions: CardActions): void {
+    if (actions.captureOnly?.()) actions = { refusal: actions.refusal };
     const { card, state } = draw;
     const fields = [
         ...card.querySelectorAll<HTMLInputElement | HTMLTextAreaElement>("[data-field]"),
@@ -227,12 +224,51 @@ function cardContents(draw: CardDraw, actions: CardActions): HTMLElement[] {
     });
     const revert = revertControls(draw, actions);
     const peopleOnly = peopleOnlyControl(draw, actions);
+    const hide =
+        actions.onHide && ["resolved", "reverted", "dismissed"].includes(a.status)
+            ? h(
+                  "button",
+                  {
+                      class: "link",
+                      type: "button",
+                      onclick: () => actions.onHide?.(a.id),
+                      title: "Hide in this browser; keep it in the dashboard",
+                  },
+                  "Hide from this app"
+              )
+            : null;
     const del = actions.onDelete ? deleteButton(() => actions.onDelete?.(a.id)) : null;
+    const replies = replyControls(draw, actions);
+    const replyPrivacy = replyPrivacyControl(draw, actions);
+    const options = h(
+        "details",
+        { class: "card-options" },
+        h("summary", {}, "More options"),
+        h("div", { class: "card-option-list" }, replyPrivacy, peopleOnly, ...revert.lead, hide, del)
+    );
+    options.open = Boolean(state.optionsOpen);
+    options.addEventListener("toggle", () => {
+        if (!options.isConnected) return;
+        state.optionsOpen = options.open;
+        if (options.open) state.pinned = true;
+    });
+    options.addEventListener("keydown", (event) => {
+        if (event.key !== "Escape" || !options.open) return;
+        event.preventDefault();
+        event.stopPropagation();
+        options.open = false;
+        state.optionsOpen = false;
+        options.querySelector("summary")?.focus();
+    });
     return [
         h(
             "div",
             { class: "card-head" },
-            h("span", { class: "badge status", "data-v": a.status }, STATUS_LABEL[a.status]),
+            h(
+                "span",
+                { class: "badge status", "data-v": a.status },
+                annotationStatusLabel(a.status)
+            ),
             a.intent
                 ? h(
                       "span",
@@ -244,7 +280,7 @@ function cardContents(draw: CardDraw, actions: CardActions): HTMLElement[] {
                 ? h("span", { class: "badge sev", "data-v": a.severity }, capitalize(a.severity))
                 : null,
             a.peopleOnly
-                ? h("span", { class: "badge people", title: PEOPLE_ONLY_HINT }, "People only")
+                ? h("span", { class: "badge people", title: PEOPLE_ONLY_HINT }, "Hidden from agent")
                 : null,
             close
         ),
@@ -257,7 +293,35 @@ function cardContents(draw: CardDraw, actions: CardActions): HTMLElement[] {
             h("b", {}, nameOf(a.author)),
             ` · ${a.route} · #${draw.number}`
         ),
+        ...(a.review
+            ? [
+                  h(
+                      "div",
+                      { class: "review-instruction" },
+                      a.review.draft ? "Draft review · " : "Grouped review · ",
+                      a.review.instruction
+                  ),
+              ]
+            : []),
         h("div", { class: "body" }, a.comment),
+        ...(a.references?.length
+            ? [
+                  h(
+                      "p",
+                      { class: "hint" },
+                      `${a.references.length} reference image${a.references.length === 1 ? "" : "s"} attached`
+                  ),
+              ]
+            : []),
+        ...(a.status === "awaiting_response"
+            ? [
+                  h(
+                      "p",
+                      { class: "hint warn", role: "status" },
+                      "The agent needs your answer. Reply below to resume."
+                  ),
+              ]
+            : []),
         ...(refused ? [h("div", { class: "err refused" }, `Not sent: ${refused}`)] : []),
         ...a.thread.map((r) => {
             const name = nameOf(r.author);
@@ -273,19 +337,23 @@ function cardContents(draw: CardDraw, actions: CardActions): HTMLElement[] {
                         {},
                         name,
                         r.aside
-                            ? h("span", { class: "aside-tag", title: ASIDE_HINT }, "Aside")
+                            ? h(
+                                  "span",
+                                  { class: "aside-tag", title: ASIDE_HINT },
+                                  "Hidden from agent"
+                              )
                             : null
                     ),
                     r.body
                 )
             );
         }),
-        ...replyControls(draw, actions),
+        ...replies,
         ...variantControls(draw, actions),
         ...(revert.box ? [revert.box] : []),
         ...(state.sharing?.error ? [h("div", { class: "say-err" }, state.sharing.error)] : []),
-        ...(revert.lead.length || peopleOnly || del
-            ? [h("div", { class: "card-foot" }, ...revert.lead, peopleOnly, del)]
+        ...(revert.lead.length || peopleOnly || del || hide || replyPrivacy
+            ? [h("div", { class: "card-foot" }, options)]
             : []),
     ];
 }
@@ -402,9 +470,10 @@ function peopleOnlyControl(draw: CardDraw, actions: CardActions): HTMLElement | 
             class: "chip people",
             type: "button",
             "aria-pressed": String(on),
+            "aria-label": "Hide from agent",
             title: on ? "Share this with the agent again" : PEOPLE_ONLY_HINT,
         },
-        "People only"
+        "Hide from agent"
     );
     toggle.disabled = Boolean(state.sharing?.busy);
     toggle.addEventListener("click", () => {
@@ -466,26 +535,38 @@ function replyControls(draw: CardDraw, actions: CardActions): HTMLElement[] {
             }
         );
     });
-    // On a People only note too: an aside stays from the agent even if the note is later shared with it.
+    return [
+        h("div", { class: "say-row" }, say),
+        ...(reply.aside
+            ? [h("p", { class: "reply-privacy", role: "status" }, "Next reply hidden from agent")]
+            : []),
+        ...(reply.error ? [h("div", { class: "say-err" }, reply.error)] : []),
+    ];
+}
+
+function replyPrivacyControl(draw: CardDraw, actions: CardActions): HTMLElement | null {
+    const reply = draw.state.replying;
+    if (!actions.onReply || !reply || draw.state.asking || draw.state.reverting) return null;
     const aside = h(
         "button",
         {
             class: "chip aside",
             type: "button",
             "aria-pressed": String(Boolean(reply.aside)),
+            "aria-label": "Hide reply from agent",
             title: ASIDE_HINT,
         },
-        "Aside"
+        "Hide reply from agent"
     );
+    aside.disabled = reply.busy;
     aside.addEventListener("click", () => {
         reply.aside = !reply.aside;
-        aside.setAttribute("aria-pressed", String(reply.aside));
-        state.pinned = true;
+        draw.state.pinned = true;
+        draw.state.optionsOpen = true;
+        draw.draw();
+        draw.card.querySelector<HTMLButtonElement>(".chip.aside")?.focus();
     });
-    return [
-        h("div", { class: "say-row" }, say, aside),
-        ...(reply.error ? [h("div", { class: "say-err" }, reply.error)] : []),
-    ];
+    return aside;
 }
 
 /** What a card says and offers about versions to choose between. */
@@ -579,10 +660,10 @@ function revertControls(
     const { state, annotation: a } = draw;
     const { onRequestRevert, onCancelRevert } = actions;
     const who = actions.agentName?.() ?? "the agent";
-    if (a.status === "resolved" && onRequestRevert) {
+    if (canRequestRevert(a) && onRequestRevert) {
         const reverting = state.reverting;
         if (!reverting) {
-            const open = opensForm(draw, "Revert this change…", "link violet", () => {
+            const open = opensForm(draw, "Revert this change…", "link", () => {
                 state.reverting = { note: "", busy: false };
             });
             return { box: null, lead: [open] };
@@ -605,7 +686,7 @@ function revertControls(
             },
             onSend: () => {
                 // Drawn for a resolved note; if it has moved on since, say what it is now instead of acting on that.
-                if (draw.current().status !== "resolved") return draw.draw();
+                if (!canRequestRevert(draw.current())) return draw.draw();
                 send(
                     draw,
                     reverting,

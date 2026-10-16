@@ -318,17 +318,26 @@ button.danger-button:hover:not(:disabled) {
     background: color-mix(in oklab, var(--bad) 86%, black);
 }
 
-/* a block of code to copy, with its button in the corner */
+/* Code and its copy control have separate columns, so long commands cannot sit underneath the button. */
 .code-block {
-    position: relative;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: start;
     min-width: 0;
+    width: 100%;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    background: var(--code);
 }
 .code-block pre {
+    min-width: 0;
     margin: 0;
-    padding: 12px 84px 12px 14px;
+    padding: 12px 14px;
+    border-radius: 0;
+    background: transparent;
     line-height: 1.55;
-    white-space: pre;
-    /* What is copied is what is shown: => stays two characters, not an arrow. */
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
     font-variant-ligatures: none;
 }
 .code-block code {
@@ -338,11 +347,9 @@ button.danger-button:hover:not(:disabled) {
     word-break: normal;
 }
 .code-block button.copy {
-    position: absolute;
-    top: 7px;
-    right: 7px;
+    margin: 7px;
     gap: 5px;
-    height: 26px;
+    height: 28px;
     padding: 0 9px;
     background: var(--panel);
     box-shadow: inset 0 0 0 1px var(--line);
@@ -351,7 +358,6 @@ button.danger-button:hover:not(:disabled) {
 .code-block button.copy:hover:not(:disabled) {
     background: var(--hover);
 }
-/* A token has no words to break between. */
 .code-block.token code {
     word-break: break-all;
 }

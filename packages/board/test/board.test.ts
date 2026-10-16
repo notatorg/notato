@@ -308,6 +308,7 @@ describe("routes", () => {
     it("round-trips every page through the hash", () => {
         const routes = [
             { page: "home" },
+            { page: "not-found" },
             { page: "tokens" },
             { page: "settings" },
             { page: "project", project: "checkout web", tab: "inbox" },
@@ -316,19 +317,24 @@ describe("routes", () => {
             { page: "project", project: "x", tab: "overview" },
             { page: "project", project: "x", tab: "connect" },
             { page: "project", project: "x@y.z", tab: "settings" },
+            { page: "ext", name: "billing", rest: "" },
+            { page: "ext", name: "workspace", rest: "members/invite" },
         ] as const;
         for (const r of routes) expect(parseRoute(href(r))).toEqual(r);
     });
 
-    it("reads the old board's links, and treats anything unknown as home", () => {
+    it("reads the old board's links and gives unknown addresses their own not-found route", () => {
         expect(parseRoute("#/p/checkout-web")).toEqual({
             page: "project",
             project: "checkout-web",
             tab: "inbox",
         });
         expect(parseRoute("")).toEqual({ page: "home" });
-        expect(parseRoute("#/nope")).toEqual({ page: "home" });
-        expect(parseRoute("#/p/x/bogus")).toEqual({ page: "project", project: "x", tab: "inbox" });
+        expect(parseRoute("#/nope")).toEqual({ page: "not-found" });
+        expect(parseRoute("#/p/x/bogus")).toEqual({ page: "not-found" });
+        expect(parseRoute("#/p/x/a/")).toEqual({ page: "not-found" });
+        expect(parseRoute("#/p/x/settings/extra")).toEqual({ page: "not-found" });
+        expect(parseRoute("#/p/x/")).toEqual({ page: "project", project: "x", tab: "inbox" });
     });
 });
 
@@ -578,4 +584,21 @@ describe("project ids", () => {
         expect(projectIdProblem("a/b")).toMatch(/letters, digits/);
         expect(projectIdProblem("x".repeat(129))).toMatch(/128/);
     });
+});
+
+it("groups linked targets by review and searches the shared instruction", () => {
+    const review = { id: "r", instruction: "Use consistent spacing", total: 2 };
+    const one = annotation({ id: "one", route: "/one", review });
+    const two = annotation({ id: "two", route: "/two", review });
+    const standalone = annotation({ id: "three" });
+    const groups = groupAnnotations([one, two, standalone], "review");
+    expect(groups.find((g) => g.key === "r")?.items.map((a) => a.id)).toEqual(["one", "two"]);
+    expect(groups.find((g) => g.key === "r")?.label).toBe(review.instruction);
+    expect(matchesSearch(one, "consistent spacing")).toBe(true);
+    expect(
+        countsMayChange(
+            { type: "replied", id: one.id, annotation: { ...one, status: "acknowledged" } },
+            "awaiting_response"
+        )
+    ).toBe(true);
 });

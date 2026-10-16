@@ -15,12 +15,12 @@ enum BundleWriter {
             let n = String(format: "%02d", index + 1)
             if let shots = annotation.screenshots, let full = item.assets[shots.full.id], full.isThere {
                 var fullRef = shots.full
-                let fullPath = "shots/\(n)-full.png"
+                let fullPath = "shots/\(n)-full.\(shots.full.mime == "image/webp" ? "webp" : "png")"
                 fullRef.path = fullPath
                 files[fullPath] = full
                 var cropRef: AssetRef?
                 if var crop = shots.crop, let kept = item.assets[crop.id], kept.isThere {
-                    let cropPath = "shots/\(n)-crop.png"
+                    let cropPath = "shots/\(n)-crop.\(crop.mime == "image/webp" ? "webp" : "png")"
                     crop.path = cropPath
                     files[cropPath] = kept
                     cropRef = crop

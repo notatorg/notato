@@ -6,6 +6,8 @@ It is the same client as the Swift, Android and .NET MAUI SDKs: the toolbar and 
 
 Flutter 3.38.1 and later, on iOS, Android and macOS. On the web, notes are kept in memory and a package cannot be shared, only uploaded.
 
+**Screenshot size.** New captures prefer WebP at quality 85 when it is smaller than PNG, after privacy masking and at the same dimensions. PNG remains a fallback, and existing queues and bundles stay readable. Run `flutter pub get` and rebuild to include the encoder; unsupported platforms keep PNG. See [screenshot storage](../../docs/screenshot-storage.md).
+
 ## Set up
 
 ```bash
@@ -31,7 +33,7 @@ MaterialApp(navigatorObservers: [Notato.navigatorObserver], ...)
 
 A small dark toolbar appears in the corner. Drag it anywhere; it stays where you leave it, and its chevron folds it into a round button. Tap **Annotate**, tap a widget, write the note, and press **Send**. A numbered pin marks it, and turns amber when the agent is on it and green when it is resolved; tap a pin for the note's card. Then ask your agent to _"watch Notato and fix what comes in"_. Everything else is in the toolbar's **⋯** sheet: pins, the notes list, settings, hiding the toolbar or turning Notato off, and the server's state, with **Retry** when it cannot be reached.
 
-Notes not sent yet, test-mode notes, their screenshots and people's choices (on or off, the toolbar's place, a name) are kept in the app's support folder (`path_provider`), so they survive a restart. A package is shared through the share sheet (`share_plus`).
+Notes not sent yet, test-mode notes, their screenshots and people's choices (on or off, the toolbar's place, a name) are kept in the app's support folder (`path_provider`), so they survive a restart; on Android, in the no-backup folder beside it, so a tester's screenshots stay out of Google's backups. On iOS and macOS the support folder is in the device's backups, and Dart cannot mark a folder to be left out: pass a `storage` that writes elsewhere to keep them out. A package is shared through the share sheet (`share_plus`).
 
 **Reaching the server.** The default is `http://localhost:4747`. The iOS simulator and desktop apps reach it as it is. The Android emulator, and a phone plugged in over USB, reach it once the port is forwarded:
 
@@ -39,7 +41,25 @@ Notes not sent yet, test-mode notes, their screenshots and people's choices (on 
 adb reverse tcp:4747 tcp:4747
 ```
 
-A phone on Wi-Fi needs the server's [dev tunnel](../../README.md#phones-a-dev-tunnel): pass its URL as `server`, or from the build (`--dart-define=NOTATO_SERVER=…`, [below](#from-the-build)), and the device token as `token`. A sandboxed macOS app needs the `com.apple.security.network.client` entitlement in its debug profile, as the example has.
+A phone on Wi-Fi needs the server's [dev tunnel](../../README.md#phones-a-dev-tunnel): pass its URL as `server`, or from the build (`--dart-define=NOTATO_SERVER=…`, [below](#from-the-build)), and the device token as `token`, in debug builds only. The device token opens `notato dev` on your machine to whoever has it, and whatever a build is given with `--dart-define` can be read out of it: give it to `flutter run` from a file your repository ignores, never to a build you hand out, and never commit it.
+
+```dart
+Notato(project: 'shop', token: const String.fromEnvironment('NOTATO_TOKEN'), child: MyApp())
+```
+
+```bash
+flutter run --dart-define-from-file=notato.local.json   # {"NOTATO_SERVER": "https://…devtunnels.ms", "NOTATO_TOKEN": "notato_device_…"}
+```
+
+Notato sends a token only from a debug build unless you set `allowTokenInRelease`, and never the device token, or any token to a dev tunnel, from a profile or release build, whatever you set. A sandboxed macOS app needs the `com.apple.security.network.client` entitlement in its debug profile, as the example has.
+
+**Builds for testers.** A build you hand out (TestFlight, an internal track, a device farm) holds whatever is in it, and anyone with it can read that out. Give it a shared server (`notato serve`) and a **capture-only** project token, and set `allowTokenInRelease`:
+
+```bash
+npx notato token create shop --purpose app --capture-only --expires 30
+```
+
+A capture-only token can send notes and nothing else: one read out of the app cannot read, change or delete anyone's feedback. Notato asks the server what the token may do before it connects, then sends notes (and those kept on the device) without following the project; replies, status and revert are on the board, and a note's card says so. A test-mode package uploads its captured notes to the configured server too; it grants no access to existing feedback.
 
 ## Options
 
@@ -48,12 +68,13 @@ A phone on Wi-Fi needs the server's [dev tunnel](../../README.md#phones-a-dev-tu
 | `project`                        | (required)                                   | Project id on the server. Letters, digits and `. _ - @`, not only dots                                            |
 | `mode`                           | `NotatoMode.dev`                             | `dev`, `test` or `agent` (see below)                                                                              |
 | `server`                         | `http://localhost:4747` (none in test mode)  | `''` for no server: notes stay on the device                                                                      |
-| `token`                          |                                              | A project token (`notato_…`) for a shared `notato serve`                                                          |
+| `token`                          |                                              | A project token (`notato_…`) for a shared `notato serve`. Debug builds only, unless `allowTokenInRelease`         |
+| `allowTokenInRelease`            | `false`                                      | Send `token` from profile and release builds: a capture-only token only, never a device token                     |
 | `route`                          | the top named route `navigatorObserver` sees | A function that says the screen: notes are filed under it, and its pins shown on it                               |
 | `enabled`                        | debug builds                                 | Whether Notato is on at launch. The app can switch it at runtime. Picking a widget needs a debug build either way |
 | `showToolbar`, `toolbarPosition` | `true`, `bottomRight`                        | The toolbar and the corner it starts in. Where people drag it is remembered                                       |
 | `author`                         |                                              | The name on this person's notes. They can change it in the settings                                               |
-| `screenshots`                    | `true`                                       | A server that has screenshots off wins either way                                                                 |
+| `screenshots`                    | `true`                                       | With a server set (test mode's too), none until it says it takes them; its "off" wins either way                  |
 | `maskInputs`                     | on in test and agent mode                    | Cover text fields in screenshots and leave their values out of notes (password fields always are)                 |
 | `rememberRuntimeState`           | `true`                                       | Keep runtime choices across launches                                                                              |
 | `captureLogs`, `logLimit`        | `true`, `50`                                 | Attach the app's recent errors (`FlutterError`, uncaught ones) and `debugPrint` messages                          |
@@ -68,7 +89,7 @@ In a release build `Notato` is your app and nothing else, unless `enabled` or `N
 Two declarations win over the options in code, so a build can switch Notato or send its notes elsewhere without a change to the app. Give them with `--dart-define` or `--dart-define-from-file`:
 
 - `NOTATO_ENABLED`: `true`, `1`, `yes` or `on`, or `false`, `0`, `no` or `off`, in any case. It wins over `enabled` and over the choice remembered from an earlier launch: `true` puts Notato in a profile or release build (picking still needs a debug build), and `false` keeps it off in debug. The app and the **⋯** menu still switch it for the rest of the launch, and that choice is remembered for a launch that declares nothing; `resetRuntimeState()` goes back to the declaration.
-- `NOTATO_SERVER`: the server, over `server`. It counts as a server set in code, so the `token` goes to it (one typed into the settings never gets the token).
+- `NOTATO_SERVER`: the server, over `server`. It counts as a server set in code, so the `token` goes to it, as from code (one typed into the settings never gets the token).
 
 A blank value, or any other, is ignored, and the option in code stands. A release build that does not declare `NOTATO_ENABLED` decides from `enabled` alone, as before.
 
@@ -108,12 +129,13 @@ A tap hit-tests your app's render tree, as Flutter's own widget inspector does, 
 - **The widgets around it**: your own widget classes, outermost first. Flutter's (`Card`, `Padding`) and builders that only hand on your widgets (`Builder`, `StreamBuilder`, providers) are left out.
 - **A selector** made of those: `ProductCard > FilledButton#add-to-basket > Text`.
 - **Screenshots**: the screen as the person saw it, with the widget outlined and numbered, the toolbar left out and private widgets covered, and a crop of the widget.
-- **Context**: the platform (`flutter`), OS and version, Dart's version, the window's size and pixel ratio, the app's recent errors (`context.console`), and requests the app recorded (`context.network`).
+- **Context**: the platform (`flutter`), OS and version, Dart's version, the window's size and pixel ratio, the app's recent errors (`context.console`), and requests the app recorded (`context.network`). Credentials are blanked out of the messages (`Bearer …`, cookies, API keys, and tokens and passwords as a printed map or a form writes them), and a request's address is kept without its query string or a user name and password.
 
 ### What is never recorded
 
 - **Password fields** (`obscureText`), always: covered in screenshots, and their value is never recorded.
 - **Text fields** when `maskInputs` is on (by default in test and agent mode): covered, and their value left out. Their hint is still recorded, so a note can say which field it is.
+- **Screens the app keeps out of screenshots** (Android's `FLAG_SECURE`: a one-time code, a card's number) only when they are inside `NotatoMask`. Flutter draws Notato's screenshots from its own layers, which the flag does not reach, and Dart cannot see it: wrap such a screen in `NotatoMask`.
 - **Anything inside `NotatoMask`**: covered in screenshots, and none of its text is recorded anywhere: not as its text or label, not in the text of a widget around it, and not in its selector. Its key is left out too (an app may key a widget with what it shows: `ValueKey(email)`). A selector cannot find it by its text or its key either.
 
 ```dart
@@ -170,3 +192,5 @@ cd example && flutter run --dart-define=NOTATO_SERVER=http://localhost:4799 --da
 ```
 
 The contract tests run the server's own Zod schema over the JSON this package writes (`scripts/validate.ts`), and are skipped when `bun` is not installed. The toolbar's icons are white PNGs tinted where they are drawn, made by `swift scripts/icons/render.swift` at the repository's root.
+
+Capture-only uploads and retries follow the [shared capture contract](../../docs/capture-contract.md). With a server configured, screenshots require an explicit `screenshots: true` policy; unknown or unavailable initial policy means text-only capture. Local-only capture continues without a policy request.

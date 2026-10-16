@@ -73,7 +73,7 @@ export function createLive(options: LiveOptions) {
 
     const open = () => {
         if (source || retry !== null || users === 0) return;
-        const stream = options.open("/projects/*/events");
+        const stream = options.open("/projects/*/events?fields=summary");
         source = stream;
         const forward = (type: LiveEvent["type"]) => (ev: Event) => {
             try {
@@ -201,7 +201,14 @@ export function useLiveState(): LiveState {
 // What is kept is the newest activity time the server reported while the person was looking, never this browser's
 // clock: the dots compare it with the server's own times, and two clocks need not agree.
 
-const seenKey = (project: string) => `notato.seen.${project}`;
+let seenAccount = "";
+/** Keeps browsers shared by several accounts from sharing their read markers. Local dev keeps its old keys. */
+export function setSeenAccount(username?: string, scope?: string) {
+    seenAccount = username
+        ? `${encodeURIComponent(username)}.${encodeURIComponent(scope ?? "")}.`
+        : "";
+}
+const seenKey = (project: string) => `notato.seen.${seenAccount}${project}`;
 
 /** The newest activity this browser has seen in the project, or null if it never looked. */
 export function lastSeen(project: string): string | null {

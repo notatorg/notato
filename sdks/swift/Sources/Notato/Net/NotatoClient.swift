@@ -112,8 +112,10 @@ final class NotatoClient: Sendable {
         }
     }
 
-    func config() async throws -> ServerConfig {
-        try decode(ServerConfig.self, try await send(request("GET", "/config")))
+    /// What the server allows: screenshots, and whether the token may only send. Asked for the project, which a
+    /// capture-only token is refused for when it is not the token's own.
+    func config(project: String? = nil) async throws -> ServerConfig {
+        try decode(ServerConfig.self, try await send(request("GET", "/config" + (project.map { "?project=\(Self.segment($0))" } ?? ""))))
     }
 
     /// The multipart form the server ingests: the annotation as JSON, and each screenshot as an `asset:<id>` file.
@@ -209,7 +211,7 @@ final class NotatoClient: Sendable {
     /// Follows the project's event stream until cancelled or the connection drops: `hello` first, then `created`,
     /// `updated`, `replied`, `deleted`, and (with `agent`) `annotate-request`.
     func events(project: String, agent: Bool) -> AsyncThrowingStream<ServerSentEvent, Error> {
-        var stream = request("GET", "/projects/\(Self.segment(project))/events\(agent ? "?agent=1" : "")")
+        var stream = request("GET", "/projects/\(Self.segment(project))/events?fields=summary\(agent ? "&agent=1" : "")")
         stream.timeoutInterval = 60
         stream.setValue("text/event-stream", forHTTPHeaderField: "Accept")
         let request = stream
