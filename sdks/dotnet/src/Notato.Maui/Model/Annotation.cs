@@ -30,6 +30,7 @@ public static class Statuses
 {
     public const string Open = "open";
     public const string Acknowledged = "acknowledged";
+    public const string AwaitingResponse = "awaiting_response";
     public const string VariantChosen = "variant_chosen";
     public const string Resolved = "resolved";
     public const string RevertRequested = "revert_requested";

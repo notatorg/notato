@@ -31,7 +31,7 @@ internal fun Ui.field(hint: String, value: String? = null, lines: Int = 1): Edit
     }
 }
 
-internal fun Ui.badge(text: String, color: Int): TextView = text(text.replace('_', ' '), 11f, color, bold = true, maxLines = 1).apply {
+internal fun Ui.badge(text: String, color: Int): TextView = text(dev.notato.android.model.Status.label(text), 11f, color, bold = true, maxLines = 1).apply {
     background = rounded(Color.argb(38, Color.red(color), Color.green(color), Color.blue(color)), 9)
     setPadding(dp(7), dp(2), dp(7), dp(2))
 }

@@ -20,6 +20,7 @@ export const Intent = z.enum(["fix", "change", "question", "approve", "variants"
 export const Status = z.enum([
     "open",
     "acknowledged",
+    "awaiting_response",
     "variant_chosen",
     "resolved",
     "revert_requested",
@@ -237,7 +238,22 @@ export const Annotation = z.object({
     /** Set by the agent when it has put the versions in the code for the person to compare. */
     variants: Variants.optional(),
 
+    /** Related targets in one review. Drafts stay on the client until the person sends the review. */
+    review: z
+        .object({
+            id: SafeId,
+            instruction: z.string().trim().min(1).max(8000),
+            total: z.number().int().min(1).max(50).optional(),
+            draft: z.boolean().optional(),
+        })
+        .optional(),
+
     // evidence
+    /** Explicitly attached design references; independent of automatic screenshot capture. */
+    references: z
+        .array(AssetRef.extend({ name: z.string().min(1).max(120) }))
+        .max(3)
+        .optional(),
     /** `full` has the target outlined. Absent when screenshots are turned off (see `notato config`). */
     screenshots: z
         .object({ full: AssetRef, crop: AssetRef.optional(), thumbnail: AssetRef.optional() })
@@ -249,6 +265,10 @@ export const Annotation = z.object({
 
     // lifecycle
     status: Status,
+    /** Server-owned: the task resumes here after the person answers the agent's question. */
+    awaitingResponse: z
+        .object({ resumeStatus: z.enum(["acknowledged", "variant_chosen", "revert_requested"]) })
+        .optional(),
     thread: z.array(Reply),
     /**
      * People only: the note and its whole thread are between people, and never reach the agent. Anyone on the thread can
@@ -292,6 +312,14 @@ export type Target = z.infer<typeof Target>;
 export type Annotation = z.infer<typeof Annotation>;
 export type ExternalLink = z.infer<typeof ExternalLink>;
 export type Bundle = z.infer<typeof Bundle>;
+
+/** Every image belonging to a note, for transport, authorisation, quotas and garbage collection. */
+export function annotationAssets(a: Pick<Annotation, "screenshots" | "references">): AssetRef[] {
+    return [
+        ...Object.values(a.screenshots ?? {}).filter((r): r is AssetRef => !!r),
+        ...(a.references ?? []),
+    ];
+}
 
 /** Everything exported into schema.json, keyed by definition name. */
 export const definitions = {

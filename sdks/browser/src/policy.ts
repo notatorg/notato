@@ -8,6 +8,8 @@ export interface Policy {
     screenshotsNow(): boolean;
     captureOnlyNow(): boolean;
     derivedScreenshotsNow(): boolean;
+    referencesNow(): boolean;
+    reviewsNow(): boolean;
     /** Asks the server now. Never throws. */
     refresh(): Promise<void>;
 }
@@ -28,6 +30,8 @@ export function createPolicy(options: {
     let allowed = !options.baseUrl;
     let captureOnly = false;
     let derived = false;
+    let references = !options.baseUrl;
+    let reviews = !options.baseUrl;
     let askedAt = 0;
     let pending: Promise<void> | undefined;
 
@@ -44,10 +48,14 @@ export function createPolicy(options: {
                 });
                 if (res.ok) {
                     const body = (await res.json()) as {
+                        references?: unknown;
+                        reviews?: unknown;
                         screenshots?: unknown;
                         captureOnly?: unknown;
                         derivedScreenshots?: unknown;
                     };
+                    references = body.references === true;
+                    reviews = body.reviews === true;
                     allowed = body.screenshots === true;
                     captureOnly = body.captureOnly === true;
                     derived = body.derivedScreenshots === true;
@@ -68,6 +76,8 @@ export function createPolicy(options: {
         screenshotsNow: () => allowed,
         captureOnlyNow: () => captureOnly,
         derivedScreenshotsNow: () => derived,
+        referencesNow: () => references,
+        reviewsNow: () => reviews,
         async screenshots() {
             if (Date.now() - askedAt > FRESH_MS) {
                 // A slow server must not hold up the annotation: stop waiting and go with what is known.

@@ -378,6 +378,11 @@ const Row = memo(function Row({
                     <span className="row-route" title={a.url}>
                         {lastSegment(a.route)}
                     </span>
+                    {a.review ? (
+                        <span className="sev" title={a.review.instruction}>
+                            Review · {a.review.total ?? "?"} targets
+                        </span>
+                    ) : null}
                     {a.severity ? (
                         <span className={`sev sev-${a.severity}`}>{a.severity}</span>
                     ) : null}

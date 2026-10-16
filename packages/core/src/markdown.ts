@@ -317,6 +317,23 @@ export function renderAnnotation(note: Annotation, options: RenderOptions = {}):
         ...comment,
         // A quote ends at a blank line; without one, the next line would be read as part of it.
         ...(comment.length > 1 ? [""] : []),
+        ...(a.review
+            ? [
+                  inline(
+                      `Review: ${a.review.id} · ${a.review.total ?? "?"} related targets${a.review.draft ? " · DRAFT (not sent)" : ""}`
+                  ),
+                  ...commentLines(a.review.instruction),
+                  "Read every target with notato_get_review before making the shared change.",
+              ]
+            : []),
+        ...(a.references?.length
+            ? [
+                  "Reference images:",
+                  ...a.references.map((r, i) =>
+                      inline(`  ${i + 1}. ${r.name} · ${r.w}×${r.h} · asset ${r.id}`)
+                  ),
+              ]
+            : []),
         ...(a.variants ? [variantsLine(a.variants)] : []),
         ...(a.links?.length ? [linksLine(a.links)] : []),
         `Target (${a.target.kind}, ${a.target.identity.length} element${a.target.identity.length === 1 ? "" : "s"}):`,

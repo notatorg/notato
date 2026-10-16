@@ -1,4 +1,17 @@
 export const STYLES = /* css */ `
+.review-instruction { padding: 10px; background: color-mix(in oklab, var(--notato-accent, #1f8a78) 10%, transparent); border-radius: 8px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.review-targets { max-height: 200px; overflow: auto; padding-left: 20px; }
+.review-targets li { padding: 4px 0; overflow-wrap: anywhere; }
+.reference-picker { margin-top: 10px; }
+.reference-picker input { max-width: 100%; font: inherit; }
+.reference-files { font-size: 12px; overflow-wrap: anywhere; }
+.review-dialog textarea { width: 100%; box-sizing: border-box; resize: vertical; padding: 10px 12px; border: 1px solid var(--p-line); border-radius: 8px; background: var(--p-field); color: var(--p-text); font: 14px/1.5 var(--ff); }
+.review-dialog textarea:focus { outline: 2px solid var(--notato-accent, #1f8a78); outline-offset: 1px; }
+.review-dialog .status:empty { display: none; }
+.review-dialog { max-height: calc(100dvh - 32px); overflow-y: auto; }
+.review-dialog .actions, .card-foot { flex-wrap: wrap; }
+.popover { max-height: calc(100dvh - 16px); overflow-y: auto; }
+
 :host {
   all: initial;
   /* the bar and its menus: always dark */
@@ -43,7 +56,7 @@ button, input, textarea { font: inherit; }
   box-shadow: 0 2px 6px rgba(20, 24, 32, 0.3), 0 0 0 2px #fff; will-change: transform;
 }
 /* Literal colours (the same as --st-*), so the settings tests can hold the pin colours apart from them. */
-.pin[data-status="acknowledged"] { background: #d99a1e; }
+.pin[data-status="awaiting_response"], .pin[data-status="acknowledged"] { background: #d99a1e; }
 .pin[data-status="resolved"] { background: #2e9a5b; }
 .pin[data-status="revert_requested"] { background: #8b5cf6; }
 .pin[data-status="variant_chosen"] { background: #0891b2; }
@@ -82,7 +95,7 @@ button, input, textarea { font: inherit; }
 }
 .badge.status { --c: var(--st-open); box-shadow: none; background: color-mix(in oklab, var(--c) 15%, transparent); font-weight: 700; }
 .badge.status::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--c); }
-.badge[data-v="acknowledged"] { --c: var(--st-ack); }
+.badge[data-v="awaiting_response"], .badge[data-v="acknowledged"] { --c: var(--st-ack); }
 .badge[data-v="resolved"] { --c: var(--st-res); }
 .badge[data-v="revert_requested"] { --c: var(--st-rev); }
 .badge[data-v="variant_chosen"] { --c: var(--st-var); }

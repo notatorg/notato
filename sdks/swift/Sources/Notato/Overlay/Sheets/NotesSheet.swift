@@ -42,7 +42,7 @@ struct NotesSheet: View {
             ForEach(newest, id: \.record.id) { number, record in
                 let a = record.annotation
                 MenuRow(icon: .pin(number: number, status: a.status, pending: record.pending), title: a.comment,
-                        detail: [a.status.replacingOccurrences(of: "_", with: " "), a.isPeopleOnly ? PeopleOnlyCopy.title : nil, Ago.text(a.createdAt)]
+                        detail: [Status.label(a.status), a.isPeopleOnly ? PeopleOnlyCopy.title : nil, Ago.text(a.createdAt)]
                             .compactMap { $0 }.joined(separator: " · "),
                         titleLines: 2, opens: true) { open(a.id) }
             }

@@ -33,11 +33,13 @@ public object Severity {
 public object Status {
     public const val OPEN: String = "open"
     public const val ACKNOWLEDGED: String = "acknowledged"
+    public const val AWAITING_RESPONSE: String = "awaiting_response"
     public const val VARIANT_CHOSEN: String = "variant_chosen"
     public const val RESOLVED: String = "resolved"
     public const val REVERT_REQUESTED: String = "revert_requested"
     public const val REVERTED: String = "reverted"
     public const val DISMISSED: String = "dismissed"
+    public fun label(value: String): String = if (value == AWAITING_RESPONSE) "Needs your answer" else value.replace('_', ' ')
 }
 
 /** Who wrote a note or a reply: a person, or an agent. */

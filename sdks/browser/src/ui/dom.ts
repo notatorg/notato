@@ -34,6 +34,7 @@ export function icon(svg: string): HTMLSpanElement {
 }
 
 export const ICONS = {
+    review: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="7" y="3" width="14" height="15" rx="2"/><path d="M17 21H5a2 2 0 0 1-2-2V7M11 7h6M11 11h6M11 15h3"/></svg>',
     crosshair:
         '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="12" cy="12" r="8"/><path d="M12 1.5V6M12 18v4.5M1.5 12H6M18 12h4.5"/></svg>',
     package:

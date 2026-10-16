@@ -1,5 +1,5 @@
 import type { AssetMap, SinkPlugin } from "@notato/core";
-import type { Annotation, Bundle } from "@notato/schema";
+import { type Annotation, annotationAssets, type Bundle } from "@notato/schema";
 import { authHeaders } from "../auth.ts";
 import { net } from "../net.ts";
 import { bundleToZip } from "./zip.ts";
@@ -71,7 +71,7 @@ const REFUSED = new Set([400, 409, 413, 415, 422]);
 export function buildAnnotationForm(annotation: Annotation, assets: AssetMap): FormData {
     const form = new FormData();
     form.set("annotation", JSON.stringify(annotation));
-    for (const ref of [annotation.screenshots?.full, annotation.screenshots?.crop]) {
+    for (const ref of annotationAssets(annotation)) {
         const blob = ref && assets.get(ref.id);
         if (blob) form.set(`asset:${ref.id}`, blob, ref.id);
     }

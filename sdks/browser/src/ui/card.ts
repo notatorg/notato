@@ -34,6 +34,7 @@ export interface CardActions {
     captureOnly?(): boolean;
     /** Called when the person confirms deleting an annotation from its card. */
     onDelete?(id: string): void;
+    onHide?(id: string): void;
     /**
      * Asks the agent to undo the change it made for a resolved annotation. Only passed when there is a server
      * for the request to reach; without it a card offers no Revert. Rejects with a message to show.
@@ -78,6 +79,7 @@ export interface CardDraw {
 const STATUS_LABEL: Record<Annotation["status"], string> = {
     open: "Open",
     acknowledged: "Acknowledged",
+    awaiting_response: "Needs your answer",
     variant_chosen: "Variant chosen",
     resolved: "Resolved",
     revert_requested: "Revert requested",
@@ -95,6 +97,8 @@ export const cardSignature = (a: Annotation, refused = "") =>
         a.status,
         a.comment,
         a.severity ?? "",
+        JSON.stringify(a.review),
+        ...(a.references?.map((r) => `${r.id}:${r.name}`) ?? []),
         a.variants?.offeredAt ?? "",
         a.variants?.chosen ?? "",
         a.peopleOnly ? "people" : "",
@@ -229,6 +233,19 @@ function cardContents(draw: CardDraw, actions: CardActions): HTMLElement[] {
     });
     const revert = revertControls(draw, actions);
     const peopleOnly = peopleOnlyControl(draw, actions);
+    const hide =
+        actions.onHide && ["resolved", "reverted", "dismissed"].includes(a.status)
+            ? h(
+                  "button",
+                  {
+                      class: "link",
+                      type: "button",
+                      onclick: () => actions.onHide?.(a.id),
+                      title: "Hide in this browser; keep it in the dashboard",
+                  },
+                  "Hide from this app"
+              )
+            : null;
     const del = actions.onDelete ? deleteButton(() => actions.onDelete?.(a.id)) : null;
     return [
         h(
@@ -259,7 +276,35 @@ function cardContents(draw: CardDraw, actions: CardActions): HTMLElement[] {
             h("b", {}, nameOf(a.author)),
             ` · ${a.route} · #${draw.number}`
         ),
+        ...(a.review
+            ? [
+                  h(
+                      "div",
+                      { class: "review-instruction" },
+                      a.review.draft ? "Draft review · " : "Grouped review · ",
+                      a.review.instruction
+                  ),
+              ]
+            : []),
         h("div", { class: "body" }, a.comment),
+        ...(a.references?.length
+            ? [
+                  h(
+                      "p",
+                      { class: "hint" },
+                      `${a.references.length} reference image${a.references.length === 1 ? "" : "s"} attached`
+                  ),
+              ]
+            : []),
+        ...(a.status === "awaiting_response"
+            ? [
+                  h(
+                      "p",
+                      { class: "hint warn", role: "status" },
+                      "The agent needs your answer. Reply below to resume."
+                  ),
+              ]
+            : []),
         ...(refused ? [h("div", { class: "err refused" }, `Not sent: ${refused}`)] : []),
         ...a.thread.map((r) => {
             const name = nameOf(r.author);
@@ -286,8 +331,8 @@ function cardContents(draw: CardDraw, actions: CardActions): HTMLElement[] {
         ...variantControls(draw, actions),
         ...(revert.box ? [revert.box] : []),
         ...(state.sharing?.error ? [h("div", { class: "say-err" }, state.sharing.error)] : []),
-        ...(revert.lead.length || peopleOnly || del
-            ? [h("div", { class: "card-foot" }, ...revert.lead, peopleOnly, del)]
+        ...(revert.lead.length || peopleOnly || del || hide
+            ? [h("div", { class: "card-foot" }, ...revert.lead, peopleOnly, hide, del)]
             : []),
     ];
 }

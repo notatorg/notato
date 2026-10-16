@@ -23,6 +23,7 @@
         "src"
     ],
     "dependencies": {
+        "@noble/hashes": "^2.4.0",
         "@notato/core": "workspace:*",
         "@notato/schema": "workspace:*",
         "fflate": "^0.8.2",

@@ -585,3 +585,20 @@ describe("project ids", () => {
         expect(projectIdProblem("x".repeat(129))).toMatch(/128/);
     });
 });
+
+it("groups linked targets by review and searches the shared instruction", () => {
+    const review = { id: "r", instruction: "Use consistent spacing", total: 2 };
+    const one = annotation({ id: "one", route: "/one", review });
+    const two = annotation({ id: "two", route: "/two", review });
+    const standalone = annotation({ id: "three" });
+    const groups = groupAnnotations([one, two, standalone], "review");
+    expect(groups.find((g) => g.key === "r")?.items.map((a) => a.id)).toEqual(["one", "two"]);
+    expect(groups.find((g) => g.key === "r")?.label).toBe(review.instruction);
+    expect(matchesSearch(one, "consistent spacing")).toBe(true);
+    expect(
+        countsMayChange(
+            { type: "replied", id: one.id, annotation: { ...one, status: "acknowledged" } },
+            "awaiting_response"
+        )
+    ).toBe(true);
+});

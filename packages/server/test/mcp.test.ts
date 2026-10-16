@@ -58,6 +58,8 @@ describe("tool surface", () => {
                 "notato_annotate",
                 "notato_dismiss",
                 "notato_get",
+                "notato_get_review",
+                "notato_ask_question",
                 "notato_import_bundle",
                 "notato_list_open",
                 "notato_reply",

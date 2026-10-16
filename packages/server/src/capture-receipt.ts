@@ -34,6 +34,7 @@ export async function captureReceipt(
         thread: _thread,
         links: _links,
         variants: _variants,
+        awaitingResponse: _awaiting,
         ...note
     } = annotation;
     // Zip entry paths are packaging details, not part of the captured image.
@@ -53,7 +54,16 @@ export async function captureReceipt(
         scope,
         fingerprint: await sha256Hex(
             new TextEncoder().encode(
-                JSON.stringify(canonical({ note: { ...note, screenshots }, assets }))
+                JSON.stringify(
+                    canonical({
+                        note: {
+                            ...note,
+                            screenshots,
+                            references: note.references?.map((r) => ({ ...r, path: undefined })),
+                        },
+                        assets,
+                    })
+                )
             )
         ),
     };

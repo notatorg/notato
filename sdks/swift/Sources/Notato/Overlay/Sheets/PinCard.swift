@@ -245,7 +245,7 @@ struct Badge: View {
     let color: Color
 
     var body: some View {
-        Text(text.replacingOccurrences(of: "_", with: " "))
+        Text(Status.label(text))
             .font(.caption2.weight(.bold))
             .padding(.horizontal, 7).padding(.vertical, 2)
             .foregroundStyle(color)

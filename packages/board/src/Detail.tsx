@@ -20,6 +20,8 @@ import {
     serial,
 } from "./model.ts";
 import { MoreFacts, TargetFacts } from "./NoteFacts.tsx";
+import { References } from "./References.tsx";
+import { Review } from "./Review.tsx";
 import { go, projectHref } from "./route.ts";
 import { Screenshots } from "./Screenshots.tsx";
 import { useBoardName } from "./storage.ts";
@@ -250,6 +252,7 @@ function LoadedDetail({ annotation: a, project, detail, hidden, onChange, onDele
                         {to("resolved", "Resolve", { look: "primary" })}
                     </>
                 );
+            case "awaiting_response":
             case "acknowledged":
                 return (
                     <>
@@ -283,10 +286,16 @@ function LoadedDetail({ annotation: a, project, detail, hidden, onChange, onDele
         }
     })();
 
+    const needsAnswer = a.status === "awaiting_response";
     const long = a.comment.length > LONG_COMMENT || a.comment.includes("\n");
 
     return (
         <article className="detail">
+            {needsAnswer ? (
+                <p className="answer-needed" role="status">
+                    The agent needs your answer before continuing. Reply below to resume the task.
+                </p>
+            ) : null}
             <header className="detail-head">
                 <button
                     type="button"
@@ -392,12 +401,14 @@ function LoadedDetail({ annotation: a, project, detail, hidden, onChange, onDele
                     </p>
                 </div>
                 {a.target.selectedText ? <blockquote>“{a.target.selectedText}”</blockquote> : null}
+                <Review annotation={a} />
                 <Screenshots annotation={a} />
+                <References annotation={a} />
                 <TargetFacts annotation={a} />
                 {a.variants ? (
                     <Variants
                         annotation={a}
-                        busy={busy}
+                        busy={busy || needsAnswer}
                         onPick={(name) => run(() => chooseVariant(a.id, name, note), taking)}
                     />
                 ) : null}

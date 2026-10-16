@@ -292,6 +292,8 @@ A broken settings file fails safe: screenshots stay off until it is fixed, `doct
 | --------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
 | `notato_list_open`                                                          | Open annotations, filterable by project, route, severity, intent, bundle, a page at a time                       |
 | `notato_get`                                                                | One annotation, with its screenshots as image content, at the `detail` level you ask for                         |
+| `notato_get_review` | Read every target and the shared instruction in a grouped review; images are off by default |
+| `notato_ask_question` | Pause an annotation until the person answers, preserving variant and revert work |
 | `notato_watch`                                                              | Block until new annotations, replies or revert requests arrive (with a collection window), then return the batch |
 | `notato_acknowledge` · `notato_reply` · `notato_resolve` · `notato_dismiss` | Work through it, with notes in the thread. `notato_resolve` also takes the `files` and `commit` of the change    |
 | `notato_variants_ready`                                                     | Offer versions you put in the code for the person to compare; they pick one in the page                          |
@@ -401,6 +403,20 @@ docker run -p 4747:4747 -v notato:/data -e NOTATO_ADMIN_PASSWORD=… ghcr.io/not
 | `NOTATO_CONFIG`, `NOTATO_SCREENSHOTS`         | Settings file (default `./notato.config.json`); `on`/`off` overrides the file. See [Screenshots](#screenshots-on-or-off) |
 | `NOTATO_MCP`                                  | `off` refuses agents whatever the file says. See [MCP over HTTP](#mcp-tools)                                             |
 | `NOTATO_PROJECT`                              | `notato dev`: the projects this agent works on, comma-separated. See [Several repositories](#mcp-tools)                  |
+
+## Reviewing related feedback
+
+The browser, React and Angular toolbar can collect a **grouped review** across pages:
+write one instruction, annotate each target, then send the group when ready. Drafts
+survive reloads and stay off the server until sent. Each note can include up to three
+optimised **design reference images**, with private asset access and bounded uploads.
+The board links the targets and can group the inbox **By review**.
+
+**Hide from this app** on a completed SDK card hides it privately in this browser;
+Settings can restore it and the dashboard always retains it. Agents use
+`notato_ask_question` to pause a task as **Needs your answer**, then a public human
+reply resumes it. `notato_get_review` reads the whole group before a consistent fix;
+`notato_get` retrieves references on demand. See the [browser workflow](sdks/browser/README.md#grouped-reviews-references-and-hiding-completed-notes).
 
 ## Building on Notato
 

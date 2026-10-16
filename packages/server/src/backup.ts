@@ -18,6 +18,7 @@ import {
     writeSync,
 } from "node:fs";
 import { dirname, join, resolve } from "node:path";
+import { annotationAssets } from "@notato/schema";
 import { Unzip, UnzipPassThrough } from "fflate";
 import {
     BACKUP_CHUNK,
@@ -114,7 +115,7 @@ export function backupLocal(options: {
             .query<{ json: string }, []>("SELECT json FROM annotations")
             .iterate()) {
             const a = JSON.parse(row.json);
-            for (const ref of [a.screenshots?.full, a.screenshots?.crop, a.screenshots?.thumbnail])
+            for (const ref of annotationAssets(a))
                 if (ref) {
                     if (!ASSET_ID.test(ref.id)) throw new Error("invalid stored asset ID");
                     ids.add(ref.id);
@@ -322,7 +323,7 @@ function publishRestored(data: string, dir: string, seen: Set<string>, format: n
             .query<{ json: string }, []>("SELECT json FROM annotations")
             .iterate()) {
             const a = JSON.parse(row.json);
-            for (const ref of [a.screenshots?.full, a.screenshots?.crop, a.screenshots?.thumbnail])
+            for (const ref of annotationAssets(a))
                 if (ref && !seen.has(`assets/${ref.id.slice(0, 2)}/${ref.id}`))
                     throw new Error("backup lacks a referenced screenshot");
         }

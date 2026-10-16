@@ -170,3 +170,30 @@ async function assetKeys(factory: IDBFactory, project: string): Promise<string[]
     db.close();
     return keys.map(String).sort();
 }
+
+it("commits a whole review and retains shared reference images until the last note is forgotten", async () => {
+    const factory = new IDBFactory();
+    const persistence = createIdbPersistence("review", factory);
+    const ref = { id: "ref1", mime: "image/webp" as const, w: 1, h: 1, name: "Reference" };
+    const one = record(1, {
+        screenshots: undefined,
+        references: [ref],
+        review: { id: "r", instruction: "Same fix", total: 2 },
+    });
+    one.assets = new Map([[ref.id, new Blob([new Uint8Array([1, 2, 3])], { type: ref.mime })]]);
+    const two = record(2, {
+        screenshots: undefined,
+        references: [ref],
+        review: one.annotation.review,
+    });
+    two.assets = one.assets;
+    await persistence?.saveMany?.([one, two]);
+    expect([...((await persistence?.unsent())?.keys() ?? [])]).toEqual([
+        one.annotation.id,
+        two.annotation.id,
+    ]);
+    await persistence?.remove(one.annotation.id);
+    expect(await bytes((await persistence?.load())?.[0]?.assets.get(ref.id))).toEqual([1, 2, 3]);
+    await persistence?.remove(two.annotation.id);
+    expect(await persistence?.load()).toEqual([]);
+});

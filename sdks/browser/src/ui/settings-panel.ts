@@ -40,6 +40,7 @@ export interface SettingsPanelOptions {
     serverScreenshots(): boolean;
     /** Hides Notato until the page is reloaded. */
     onHide(): void;
+    hiddenNotes?: { count(): number; restore(): void };
     /** The panel opened or closed, however it happened (the toolbar shows its button pressed while it is open). */
     onToggle?(open: boolean): void;
     /** The button that opens and closes the panel: a press on it is left to its click, which closes the panel. */
@@ -284,6 +285,21 @@ export function createSettingsPanel(options: SettingsPanelOptions): SettingsPane
             });
             rows.push(go);
         }
+        if (options.hiddenNotes)
+            rows.push(
+                h(
+                    "button",
+                    {
+                        class: "slink",
+                        type: "button",
+                        onclick: () => {
+                            options.hiddenNotes?.restore();
+                            close();
+                        },
+                    },
+                    `Restore hidden annotations (${options.hiddenNotes.count()})`
+                )
+            );
         rows.push(hide);
         return rows;
     }

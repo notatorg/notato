@@ -18,8 +18,11 @@ export interface PopoverInit {
      * left out where there is none (test mode, or no server).
      */
     variants?: boolean;
+    references?: boolean;
+    reviewInstruction?: string;
     onSave(value: {
         comment: string;
+        references?: File[];
         severity?: Severity;
         intent?: Intent;
         /** Kept between people: the agent never gets it. */
@@ -32,7 +35,9 @@ export interface Popover {
     readonly isOpen: boolean;
     open(init: PopoverInit): void;
     /** Refresh title, targets and anchor while keeping what the person has typed (multi-select). */
-    update(patch: Partial<Pick<PopoverInit, "title" | "targets" | "anchor" | "hint">>): void;
+    update(
+        patch: Partial<Pick<PopoverInit, "title" | "targets" | "anchor" | "hint" | "references">>
+    ): void;
     /** Closes it: it fades away, and is gone for `isOpen` at once. */
     close(): void;
     /** Places it again at the next frame, with the other things over the page (see frame.ts). */
@@ -99,6 +104,7 @@ export function createPopover(layer: HTMLElement, frames: Frames = createFrames(
     const idle = () => `${isMac() ? "⌘↵" : "Ctrl+↵"} save · Esc cancel`;
     let targetsEl: HTMLElement;
     let saving = false;
+    let files: File[] = [];
 
     /** Where it goes, worked out from its height as last laid out. */
     let height = 0;
@@ -132,7 +138,7 @@ export function createPopover(layer: HTMLElement, frames: Frames = createFrames(
 
     const save = async () => {
         if (!current || saving) return;
-        const comment = textarea.value.trim();
+        const comment = textarea.value.trim() || current.reviewInstruction || "";
         if (!comment) {
             status.textContent = "Write a note first.";
             status.className = "status error";
@@ -146,6 +152,7 @@ export function createPopover(layer: HTMLElement, frames: Frames = createFrames(
         try {
             await current.onSave({
                 comment,
+                ...(files.length ? { references: [...files] } : {}),
                 severity,
                 intent,
                 ...(peopleOnly ? { peopleOnly } : {}),
@@ -179,6 +186,7 @@ export function createPopover(layer: HTMLElement, frames: Frames = createFrames(
         severity = undefined;
         intent = undefined;
         peopleOnly = false;
+        files = [];
         saving = false;
     };
 
@@ -269,11 +277,54 @@ export function createPopover(layer: HTMLElement, frames: Frames = createFrames(
                     }
                 },
             });
+            if (init.reviewInstruction) textarea.placeholder = "Optional detail for this target";
+            const fileList = h("div", { class: "reference-files" });
+            const fileInput = h("input", {
+                type: "file",
+                accept: "image/png,image/jpeg,image/webp",
+                multiple: true,
+                "aria-label": "Attach reference images",
+            });
+            fileInput.addEventListener("change", () => {
+                const selected = [...(fileInput.files ?? [])];
+                if (files.length + selected.length > 3) {
+                    status.textContent = "Attach at most three reference images.";
+                    fileInput.value = "";
+                    return;
+                }
+                files.push(...selected);
+                fileInput.value = "";
+                const redraw = () =>
+                    fileList.replaceChildren(
+                        ...files.map((f) =>
+                            h(
+                                "div",
+                                {},
+                                f.name,
+                                h(
+                                    "button",
+                                    {
+                                        class: "btn",
+                                        type: "button",
+                                        "aria-label": `Remove ${f.name}`,
+                                        onclick: () => {
+                                            files = files.filter((item) => item !== f);
+                                            redraw();
+                                        },
+                                    },
+                                    "Remove"
+                                )
+                            )
+                        )
+                    );
+                redraw();
+                place();
+            });
             status = h("span", { class: "status" }, idle());
             saveBtn = h(
                 "button",
                 { class: "btn primary", type: "button", onclick: () => void save() },
-                "Save"
+                init.reviewInstruction ? "Add to review" : "Save"
             );
             el = h(
                 "div",
@@ -281,7 +332,24 @@ export function createPopover(layer: HTMLElement, frames: Frames = createFrames(
                 titleEl,
                 targetsEl,
                 hintEl,
+                init.reviewInstruction
+                    ? h("p", { class: "review-instruction" }, "Review: ", init.reviewInstruction)
+                    : null,
                 textarea,
+                h(
+                    "div",
+                    {
+                        class: "reference-picker",
+                        style: { display: init.references ? "" : "none" },
+                    },
+                    h("label", { class: "field" }, "Reference images (optional)", fileInput),
+                    fileList,
+                    h(
+                        "p",
+                        { class: "hint" },
+                        "Up to 3 images. Optimised before upload; counts towards workspace storage."
+                    )
+                ),
                 h(
                     "div",
                     { class: "chips", role: "group", "aria-label": "What should happen" },
@@ -291,7 +359,7 @@ export function createPopover(layer: HTMLElement, frames: Frames = createFrames(
                 h(
                     "div",
                     { class: "chips", role: "group", "aria-label": "Who it is for" },
-                    peopleChip
+                    init.reviewInstruction ? null : peopleChip
                 ),
                 h(
                     "div",
@@ -315,6 +383,10 @@ export function createPopover(layer: HTMLElement, frames: Frames = createFrames(
             if (!current) return;
             current = { ...current, ...patch };
             if ("hint" in patch) showHint(patch.hint);
+            if ("references" in patch) {
+                const picker = el?.querySelector<HTMLElement>(".reference-picker");
+                if (picker) picker.style.display = patch.references ? "" : "none";
+            }
             renderTargets();
             place();
         },

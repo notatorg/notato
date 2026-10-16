@@ -92,6 +92,9 @@ export interface CreateInput {
     intent?: Intent;
     /** People only: the note and its thread are between people, and never reach the agent. */
     peopleOnly?: boolean;
+    review?: Annotation["review"];
+    /** Already normalised PNG/WebP references. Explicit uploads fail the note if they cannot be attached. */
+    references?: Array<{ blob: Blob; name: string; w: number; h: number }>;
     steps?: AgentStep[];
     /** Real pixels of the viewport from a driver; see `DraftAnnotation.screenshot`. */
     screenshot?: Blob;

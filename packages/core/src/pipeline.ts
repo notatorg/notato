@@ -165,6 +165,19 @@ export function createPipeline(config: PipelineConfig): Pipeline {
 
             // No screenshots is a valid annotation: they can be turned off, and then nothing produces them.
 
+            const references = await Promise.all(
+                (input.references ?? []).map(async ({ blob, name, w, h }) => {
+                    if (
+                        !["image/png", "image/webp"].includes(blob.type) ||
+                        blob.size > 5 * 1024 * 1024 ||
+                        w * h > 16_000_000
+                    )
+                        throw new Error(
+                            "References must be PNG/WebP, at most 5 MB and 16 megapixels each."
+                        );
+                    return { ...(await draft.putAsset(blob, { w, h })), name };
+                })
+            );
             const annotation = Annotation.parse({
                 id,
                 projectId: draft.projectId,
@@ -187,6 +200,8 @@ export function createPipeline(config: PipelineConfig): Pipeline {
                 severity: draft.severity,
                 intent: draft.intent,
                 screenshots,
+                references: references.length ? references : undefined,
+                review: input.review,
                 steps,
                 context,
                 status: "open",
@@ -196,7 +211,9 @@ export function createPipeline(config: PipelineConfig): Pipeline {
 
             const record = withElements({ annotation, assets }, input.elements);
             const results = await Promise.allSettled(
-                config.sinks.map((sink) => sink.deliver(annotation, assets))
+                (annotation.review?.draft ? [] : config.sinks).map((sink) =>
+                    sink.deliver(annotation, assets)
+                )
             );
             results.forEach((result, i) => {
                 if (result.status === "rejected")

@@ -114,7 +114,8 @@ describe("reading the server's list", () => {
         await sync.refresh();
         expect(store.list()).toHaveLength(1203);
         expect(store.get(note(1203).id)).toBeDefined();
-        const shown = "open,acknowledged,variant_chosen,resolved,revert_requested,reverted";
+        const shown =
+            "open,acknowledged,awaiting_response,variant_chosen,resolved,revert_requested,reverted";
         expect(server.asked.map((u) => decodeURIComponent(new URL(u).search))).toEqual([
             `?limit=500&status=${shown}`,
             `?limit=500&afterSeq=500&status=${shown}`,

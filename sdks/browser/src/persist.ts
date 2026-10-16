@@ -1,5 +1,5 @@
 import type { AnnotationRecord } from "@notato/core";
-import { Annotation } from "@notato/schema";
+import { Annotation, annotationAssets } from "@notato/schema";
 
 /** A note that had not reached the server when it was last seen here, and why the server refused it, if it did. */
 export interface Unsent {
@@ -16,6 +16,8 @@ export interface Persistence {
     save(record: AnnotationRecord, options?: { unsent?: boolean }): Promise<void>;
     /** The server's newer version of a kept annotation (its status, its thread). Nothing happens if it is not kept. */
     update(annotation: Annotation): Promise<void>;
+    /** Atomically commit all held targets before any are delivered. */
+    saveMany?(records: AnnotationRecord[]): Promise<void>;
     /** Forgets an annotation, and its screenshots unless another kept annotation shows the same ones. */
     remove(id: string): Promise<void>;
     clear(): Promise<void>;
@@ -44,36 +46,39 @@ const finished = (tx: IDBTransaction) =>
 
 /** The screenshot ids a stored row points at. Read loosely: a row that no longer parses still holds on to its own. */
 const assetIds = (row: unknown): string[] => {
-    const shots = (row as { screenshots?: Record<"full" | "crop", { id?: unknown } | undefined> })
-        ?.screenshots;
-    return [shots?.full?.id, shots?.crop?.id].filter(
-        (id): id is string => typeof id === "string" && id.length > 0
-    );
+    const a = row as Annotation | undefined;
+    return a
+        ? annotationAssets(a)
+              .map((ref) => ref.id)
+              .filter((id) => typeof id === "string")
+        : [];
 };
 
 /** Returns null where IndexedDB does not exist; callers then run without persistence. */
 export function createIdbPersistence(
-    project: string,
+    project: string | Promise<string>,
     factory: IDBFactory | undefined = globalThis.indexedDB
 ): Persistence | null {
     if (!factory) return null;
-    const name = `notato:${project}`;
     let opened: Promise<IDBDatabase> | undefined;
 
     const db = () => {
         // Version 2 added the outbox. Each store is made only if missing, so a version 1 database keeps its notes.
-        opened ??= new Promise<IDBDatabase>((resolve, reject) => {
-            const open = factory.open(name, 2);
-            open.onupgradeneeded = () => {
-                const stores = open.result.objectStoreNames;
-                if (!stores.contains(ANNOTATIONS))
-                    open.result.createObjectStore(ANNOTATIONS, { keyPath: "id" });
-                if (!stores.contains(ASSETS)) open.result.createObjectStore(ASSETS);
-                if (!stores.contains(OUTBOX)) open.result.createObjectStore(OUTBOX);
-            };
-            open.onsuccess = () => resolve(open.result);
-            open.onerror = () => reject(open.error);
-        });
+        opened ??= Promise.resolve(project).then(
+            (scope) =>
+                new Promise<IDBDatabase>((resolve, reject) => {
+                    const open = factory.open(`notato:${scope}`, 2);
+                    open.onupgradeneeded = () => {
+                        const stores = open.result.objectStoreNames;
+                        if (!stores.contains(ANNOTATIONS))
+                            open.result.createObjectStore(ANNOTATIONS, { keyPath: "id" });
+                        if (!stores.contains(ASSETS)) open.result.createObjectStore(ASSETS);
+                        if (!stores.contains(OUTBOX)) open.result.createObjectStore(OUTBOX);
+                    };
+                    open.onsuccess = () => resolve(open.result);
+                    open.onerror = () => reject(open.error);
+                })
+        );
         return opened;
     };
 
@@ -110,6 +115,16 @@ export function createIdbPersistence(
             await finished(tx);
         },
 
+        async saveMany(records) {
+            const database = await db();
+            const tx = database.transaction([ANNOTATIONS, ASSETS, OUTBOX], "readwrite");
+            for (const record of records) {
+                tx.objectStore(ANNOTATIONS).put(record.annotation);
+                for (const [id, blob] of record.assets) tx.objectStore(ASSETS).put(blob, id);
+                tx.objectStore(OUTBOX).put({}, record.annotation.id);
+            }
+            await finished(tx);
+        },
         async update(annotation) {
             const database = await db();
             const tx = database.transaction(ANNOTATIONS, "readwrite");

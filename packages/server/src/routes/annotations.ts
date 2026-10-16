@@ -1,5 +1,13 @@
 import { DETAILS, parseDetail, renderAnnotation, renderAnnotations } from "@notato/core";
-import { Annotation, Author, SafeId, Severity, Status, Variants } from "@notato/schema";
+import {
+    Annotation,
+    Author,
+    annotationAssets,
+    SafeId,
+    Severity,
+    Status,
+    Variants,
+} from "@notato/schema";
 import { z } from "zod";
 import { canAccessProject, type Principal, samePrincipal } from "../auth.ts";
 import { type LocalBackend, RequestError, TEXT_MAX } from "../backend.ts";
@@ -193,11 +201,7 @@ async function ingest(
                 : {}),
         };
         if (captureOnly) {
-            for (const ref of [
-                checked.data.screenshots?.full,
-                checked.data.screenshots?.crop,
-                checked.data.screenshots?.thumbnail,
-            ])
+            for (const ref of annotationAssets(checked.data))
                 if (ref && !files.has(ref.id))
                     throw new RequestError("capture tokens must supply screenshot bytes");
         }
@@ -213,6 +217,7 @@ async function ingest(
                     ...submitted,
                     bundleId: null,
                     status: "open",
+                    awaitingResponse: undefined,
                     thread: [],
                     links: undefined,
                     variants: undefined,

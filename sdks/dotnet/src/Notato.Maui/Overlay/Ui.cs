@@ -1,3 +1,4 @@
+using Notato.Maui.Model;
 using Microsoft.Maui.Controls;
 using Microsoft.Maui.Controls.Shapes;
 using Microsoft.Maui.Graphics;
@@ -245,5 +246,5 @@ internal static partial class Ui
     }
 
     /// <summary>A schema value as words: <c>revert_requested</c> reads "revert requested".</summary>
-    public static string Humanize(string value) => value.Replace('_', ' ');
+    public static string Humanize(string value) => value == Statuses.AwaitingResponse ? "Needs your answer" : value.Replace('_', ' ');
 }

@@ -1,4 +1,10 @@
-import { type Annotation, type AssetRef, Bundle, SCHEMA_VERSION } from "@notato/schema";
+import {
+    type Annotation,
+    type AssetRef,
+    annotationAssets,
+    Bundle,
+    SCHEMA_VERSION,
+} from "@notato/schema";
 import {
     strFromU8,
     strToU8,
@@ -69,7 +75,14 @@ function withPaths(bundle: Bundle): Bundle {
         ...bundle,
         annotations: bundle.annotations.map((a, i) => {
             const n = pad(i + 1);
-            if (!a.screenshots) return a;
+            if (!a.screenshots)
+                return {
+                    ...a,
+                    references: a.references?.map((r, j) => ({
+                        ...r,
+                        path: `shots/${n}-reference-${j + 1}.${extension(r)}`,
+                    })),
+                };
             const full = {
                 ...a.screenshots.full,
                 path: `shots/${n}-full.${extension(a.screenshots.full)}`,
@@ -88,6 +101,10 @@ function withPaths(bundle: Bundle): Bundle {
                 : undefined;
             return {
                 ...a,
+                references: a.references?.map((r, j) => ({
+                    ...r,
+                    path: `shots/${n}-reference-${j + 1}.${extension(r)}`,
+                })),
                 screenshots: {
                     full,
                     ...(crop ? { crop } : {}),
@@ -109,7 +126,7 @@ export async function writeBundle(
         [BUNDLE_JSON]: strToU8(JSON.stringify(placed, null, 2)),
     };
     for (const a of placed.annotations) {
-        for (const ref of [a.screenshots?.full, a.screenshots?.crop, a.screenshots?.thumbnail]) {
+        for (const ref of annotationAssets(a)) {
             if (!ref?.path) continue;
             const bytes = await getAsset(ref);
             if (!bytes) throw new BundleError(`missing screenshot bytes for ${ref.id}`);
@@ -132,9 +149,7 @@ export function streamBundle(
 ): ReadableStream<Uint8Array> {
     const placed = withPaths(bundle);
     const refs = placed.annotations.flatMap((a) =>
-        [a.screenshots?.full, a.screenshots?.crop, a.screenshots?.thumbnail].filter(
-            (r): r is AssetRef & { path: string } => !!r?.path
-        )
+        annotationAssets(a).filter((r): r is AssetRef & { path: string } => !!r?.path)
     );
     let zip: Zip;
     let next = 0;
@@ -293,7 +308,7 @@ export function readBundle(zip: Uint8Array): ReadBundle {
     for (const [name, bytes] of Object.entries(entries))
         if (name !== BUNDLE_JSON) files.set(name, bytes);
     for (const a of parsed.data.annotations) {
-        for (const ref of [a.screenshots?.full, a.screenshots?.crop, a.screenshots?.thumbnail]) {
+        for (const ref of annotationAssets(a)) {
             if (ref && (!ref.path || !files.has(ref.path))) {
                 throw new BundleError(
                     `annotation ${a.id} points at a screenshot that is not in the bundle (${ref.path ?? "no path"})`
@@ -310,11 +325,7 @@ export function assetsFor(
     files: Map<string, Uint8Array>
 ): Map<string, Uint8Array> {
     const out = new Map<string, Uint8Array>();
-    for (const ref of [
-        annotation.screenshots?.full,
-        annotation.screenshots?.crop,
-        annotation.screenshots?.thumbnail,
-    ]) {
+    for (const ref of annotationAssets(annotation)) {
         const bytes = ref?.path ? files.get(ref.path) : undefined;
         if (ref && bytes) out.set(ref.id, bytes);
     }
@@ -349,6 +360,9 @@ export function renderFeedbackMarkdown(bundle: Bundle): string {
         // Someone may hand this file to an agent as it is: say plainly which notes are not for it.
         if (a.peopleOnly)
             lines.push("_People only: kept between people, not for an agent to act on._", "");
+        if (a.review) lines.push(`Review ${a.review.id}:`, quote(a.review.instruction), "");
+        for (const ref of a.references ?? [])
+            if (ref.path) lines.push(`![Design reference](${ref.path})`);
         if (a.screenshots?.full.path)
             lines.push(`![Full screenshot, target outlined](${a.screenshots.full.path})`);
         if (a.screenshots?.crop?.path)

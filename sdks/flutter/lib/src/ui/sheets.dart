@@ -330,7 +330,7 @@ class NotesSheet extends StatelessWidget {
                 title: '${record.annotation['comment'] ?? ''}',
                 titleLines: 2,
                 detail: [
-                  record.status.replaceAll('_', ' '),
+                  statusLabel(record.status),
                   if (record.peopleOnly) PeopleOnlyCopy.title,
                   ?ago(record.createdAt),
                 ].join(' · '),

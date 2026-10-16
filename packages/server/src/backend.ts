@@ -12,6 +12,7 @@ import {
 import {
     Annotation,
     type Author,
+    annotationAssets,
     ExternalLink,
     type Severity,
     type Status,
@@ -111,6 +112,22 @@ export interface Backend {
         args: RelayArgs,
         timeoutMs: number
     ): Promise<RelayResult>;
+}
+
+/** Inspect headers before decoding/storing any explicit reference, including bundle preflight. */
+async function referenceDimensions(bytes: Uint8Array) {
+    if (bytes.byteLength > 5 * 1024 * 1024)
+        throw new RequestError("Reference images must be at most 5 MB each.", 413);
+    try {
+        const meta = await new Bun.Image(bytes).metadata();
+        if (meta.width <= 0 || meta.height <= 0 || meta.width * meta.height > 16_000_000)
+            throw new Error("invalid dimensions");
+        return meta;
+    } catch {
+        throw new RequestError(
+            "Reference images must be valid PNG/WebP images of at most 16 megapixels."
+        );
+    }
 }
 
 /** Raised for input the caller can fix; the HTTP layer turns it into a 4xx. */
@@ -383,6 +400,8 @@ export class LocalBackend implements Backend {
             );
         }
 
+        if (annotation.review?.draft)
+            throw new RequestError("Send the review before uploading its notes.");
         const tooLarge = oversized(annotation);
         if (tooLarge) throw new RequestError(`annotation too large: ${tooLarge}`, 413);
 
@@ -413,11 +432,19 @@ export class LocalBackend implements Backend {
             const { id } = await this.blobs.put(bytes);
             return { ...ref, id, mime };
         };
-        let assetBytes = 0;
+        const references = await Promise.all(
+            (annotation.references ?? []).map(async (ref) => {
+                const image = await bytesOf(ref);
+                const meta = await referenceDimensions(image.bytes);
+                return { ...image, ref: { ...ref, w: meta.width, h: meta.height } };
+            })
+        );
+        const referenceBytes = references.reduce((n, r) => n + r.bytes.byteLength, 0);
+        let assetBytes = referenceBytes;
         if (!annotation.screenshots || !this.config().screenshots) {
             // Screenshots are off: whatever a client sent is dropped here, so none is ever stored, whatever the page did.
             annotation = { ...annotation, screenshots: undefined };
-            await this.hooks.beforeIngest?.(annotation, 0);
+            await this.hooks.beforeIngest?.(annotation, referenceBytes);
         } else {
             const full = await bytesOf(annotation.screenshots.full);
             let crop = annotation.screenshots.crop
@@ -459,6 +486,7 @@ export class LocalBackend implements Backend {
             }
             // Checked before anything is written, so a refused note leaves no screenshot behind.
             assetBytes =
+                referenceBytes +
                 full.bytes.byteLength +
                 (crop?.bytes.byteLength ?? 0) +
                 (thumbnail?.bytes.byteLength ?? 0);
@@ -476,6 +504,17 @@ export class LocalBackend implements Backend {
             };
         }
 
+        if (references.length)
+            annotation = {
+                ...annotation,
+                references: await Promise.all(
+                    references.map(async (image) => ({
+                        ...(await store(image)),
+                        name: image.ref.name,
+                    }))
+                ),
+            };
+
         if (!options.preserveLifecycle) {
             annotation = {
                 ...annotation,
@@ -483,6 +522,7 @@ export class LocalBackend implements Backend {
                 links: undefined,
                 variants: undefined,
                 status: "open",
+                awaitingResponse: undefined,
                 thread: sentPeopleOnly(annotation),
                 bundleId: options.bundleId ?? null,
             };
@@ -596,7 +636,7 @@ export class LocalBackend implements Backend {
     protected async forgetScreenshots(gone: Annotation[]) {
         const ids = new Set<string>();
         for (const a of gone) {
-            for (const ref of Object.values(a.screenshots ?? {})) if (ref) ids.add(ref.id);
+            for (const ref of annotationAssets(a)) ids.add(ref.id);
         }
         for (const id of ids) {
             if ((await this.store.projectsWithAsset(id)).length === 0) await this.blobs.delete(id);
@@ -630,6 +670,21 @@ export class LocalBackend implements Backend {
                 );
             }
             const next = { ...a };
+            if (status === "awaiting_response") {
+                if (author.kind !== "agent")
+                    throw new RequestError("only an agent can request an answer", 403);
+                if (!change.note?.trim()) throw new RequestError("a question is required");
+                if (FINISHED.has(a.status))
+                    throw new RequestError("reopen this note before asking a question", 409);
+                next.awaitingResponse = {
+                    resumeStatus:
+                        a.status === "awaiting_response"
+                            ? (a.awaitingResponse?.resumeStatus ?? "acknowledged")
+                            : a.status === "variant_chosen" || a.status === "revert_requested"
+                              ? a.status
+                              : "acknowledged",
+                };
+            } else if (status) next.awaitingResponse = undefined;
             if (change.peopleOnly !== undefined && change.peopleOnly !== Boolean(a.peopleOnly)) {
                 if (author.kind !== "human")
                     throw new RequestError(
@@ -808,6 +863,15 @@ export class LocalBackend implements Backend {
                     );
                 return {
                     ...a,
+                    ...(a.status === "awaiting_response" &&
+                    author.kind === "human" &&
+                    !options.aside &&
+                    !a.peopleOnly
+                        ? {
+                              status: a.awaitingResponse?.resumeStatus ?? "acknowledged",
+                              awaitingResponse: undefined,
+                          }
+                        : {}),
                     thread: [
                         ...a.thread,
                         {
@@ -921,17 +985,22 @@ export class LocalBackend implements Backend {
                     `annotation ${String((a as { id?: unknown }).id)}: ${issue?.path.join(".") || "(root)"}: ${issue?.message}`
                 );
             }
+            if (parsed.data.review?.draft)
+                throw new RequestError("Send the review before uploading its notes.");
+            const bundledAssets = assetsFor(a, files);
+            for (const ref of parsed.data.references ?? []) {
+                const bytes = bundledAssets.get(ref.id);
+                if (!bytes)
+                    throw new RequestError(`missing reference image bytes for asset "${ref.id}"`);
+                await referenceDimensions(bytes);
+            }
             if (parsed.data.projectId !== bundle.projectId)
                 throw new RequestError(
                     `annotation ${parsed.data.id} is for project "${parsed.data.projectId}", not the bundle's "${bundle.projectId}"`
                 );
             if (options.captureScope) {
                 const assets = assetsFor(a, files);
-                for (const ref of [
-                    a.screenshots?.full,
-                    a.screenshots?.crop,
-                    a.screenshots?.thumbnail,
-                ])
+                for (const ref of annotationAssets(a))
                     if (ref && !assets.has(ref.id))
                         throw new RequestError("capture tokens must supply screenshot bytes");
             }

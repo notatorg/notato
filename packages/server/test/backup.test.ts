@@ -195,3 +195,31 @@ it("refuses to declare a backup successful if a referenced screenshot is missing
     expect(() => backupLocal({ dir, file, key })).toThrow();
     expect(existsSync(file)).toBe(false);
 });
+
+it("restores reference-only evidence with the encrypted backup", async () => {
+    const root = tempDir(defer),
+        dir = join(root, "data");
+    mkdirSync(dir);
+    const store = new SqliteStore(join(dir, "notato.db"));
+    const blobs = new FileBlobStore(join(dir, "assets"));
+    const { PNG } = await import("./helpers.ts");
+    const { id } = await blobs.put(PNG);
+    await store.createProject({ id: "test", name: "Test", createdAt: new Date().toISOString() });
+    const note = annotationFixture({
+        projectId: "test",
+        screenshots: undefined,
+        references: [{ id, mime: "image/png", w: 1, h: 1, name: "Design" }],
+    });
+    await store.insertAnnotation(note);
+    const key = join(root, "key"),
+        file = join(root, "backup.nbk");
+    generateBackupKey(key);
+    backupLocal({ dir, file, key });
+    const restoredDir = join(root, "restored");
+    restoreLocal({ file, key, dir: restoredDir });
+    const restored = new SqliteStore(join(restoredDir, "notato.db"));
+    defer(() => restored.close());
+    defer(() => store.close());
+    expect((await restored.getAnnotation(note.id))?.annotation.references).toEqual(note.references);
+    expect((await new FileBlobStore(join(restoredDir, "assets")).get(id))?.bytes).toEqual(PNG);
+});

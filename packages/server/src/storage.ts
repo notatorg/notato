@@ -6,6 +6,7 @@ export interface AnnotationFilter {
     projectId?: string | string[];
     status?: Status | Status[];
     route?: string;
+    reviewId?: string;
     severity?: Severity;
     /** What the person wants done: fix, change, question, approve. */
     intent?: Intent | Intent[];

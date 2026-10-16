@@ -363,6 +363,79 @@
           ],
           "additionalProperties": false
         },
+        "review": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_-]{1,128}$"
+            },
+            "instruction": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 8000
+            },
+            "total": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 50
+            },
+            "draft": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "id",
+            "instruction"
+          ],
+          "additionalProperties": false
+        },
+        "references": {
+          "maxItems": 3,
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9_-]{1,128}$"
+              },
+              "mime": {
+                "type": "string",
+                "enum": [
+                  "image/png",
+                  "image/webp"
+                ]
+              },
+              "w": {
+                "type": "integer",
+                "exclusiveMinimum": 0,
+                "maximum": 9007199254740991
+              },
+              "h": {
+                "type": "integer",
+                "exclusiveMinimum": 0,
+                "maximum": 9007199254740991
+              },
+              "path": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 120
+              }
+            },
+            "required": [
+              "id",
+              "mime",
+              "w",
+              "h",
+              "name"
+            ],
+            "additionalProperties": false
+          }
+        },
         "screenshots": {
           "type": "object",
           "properties": {
@@ -517,12 +590,30 @@
           "enum": [
             "open",
             "acknowledged",
+            "awaiting_response",
             "variant_chosen",
             "resolved",
             "revert_requested",
             "reverted",
             "dismissed"
           ]
+        },
+        "awaitingResponse": {
+          "type": "object",
+          "properties": {
+            "resumeStatus": {
+              "type": "string",
+              "enum": [
+                "acknowledged",
+                "variant_chosen",
+                "revert_requested"
+              ]
+            }
+          },
+          "required": [
+            "resumeStatus"
+          ],
+          "additionalProperties": false
         },
         "thread": {
           "type": "array",
@@ -1306,6 +1397,79 @@
                 ],
                 "additionalProperties": false
               },
+              "review": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9_-]{1,128}$"
+                  },
+                  "instruction": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 8000
+                  },
+                  "total": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 50
+                  },
+                  "draft": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "id",
+                  "instruction"
+                ],
+                "additionalProperties": false
+              },
+              "references": {
+                "maxItems": 3,
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "pattern": "^[A-Za-z0-9_-]{1,128}$"
+                    },
+                    "mime": {
+                      "type": "string",
+                      "enum": [
+                        "image/png",
+                        "image/webp"
+                      ]
+                    },
+                    "w": {
+                      "type": "integer",
+                      "exclusiveMinimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "h": {
+                      "type": "integer",
+                      "exclusiveMinimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "path": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 120
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "mime",
+                    "w",
+                    "h",
+                    "name"
+                  ],
+                  "additionalProperties": false
+                }
+              },
               "screenshots": {
                 "type": "object",
                 "properties": {
@@ -1460,12 +1624,30 @@
                 "enum": [
                   "open",
                   "acknowledged",
+                  "awaiting_response",
                   "variant_chosen",
                   "resolved",
                   "revert_requested",
                   "reverted",
                   "dismissed"
                 ]
+              },
+              "awaitingResponse": {
+                "type": "object",
+                "properties": {
+                  "resumeStatus": {
+                    "type": "string",
+                    "enum": [
+                      "acknowledged",
+                      "variant_chosen",
+                      "revert_requested"
+                    ]
+                  }
+                },
+                "required": [
+                  "resumeStatus"
+                ],
+                "additionalProperties": false
               },
               "thread": {
                 "type": "array",

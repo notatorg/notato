@@ -71,7 +71,7 @@ internal object SheetCopy {
 
     /** A note in the Notes list: "open · People only · 2h ago". */
     fun noteRow(status: String, peopleOnly: Boolean, ago: String?) =
-        listOfNotNull(status.replace('_', ' '), PEOPLE_ONLY.takeIf { peopleOnly }, ago).joinToString(" · ")
+        listOfNotNull(dev.notato.android.model.Status.label(status), PEOPLE_ONLY.takeIf { peopleOnly }, ago).joinToString(" · ")
 
     /** A note's card shows the last of its thread; the rest are on the board. */
     const val THREAD_SHOWN = 4

@@ -19,7 +19,12 @@ import {
 const SCHEMA_VERSION = 7;
 
 /** The statuses a project's `open` count includes: work still waiting for someone. */
-const WAITING = new Set<Status>(["open", "variant_chosen", "revert_requested"]);
+const WAITING = new Set<Status>([
+    "open",
+    "awaiting_response",
+    "variant_chosen",
+    "revert_requested",
+]);
 
 interface Row {
     seq: number;
@@ -172,6 +177,9 @@ export class SqliteStore implements Store, AuthStore {
         this.db.run(
             "CREATE INDEX IF NOT EXISTS idx_annotations_project_activity ON annotations (project_id, last_activity_at)"
         );
+        this.db.run(
+            "CREATE INDEX IF NOT EXISTS idx_annotations_review ON annotations (project_id, json_extract(json, '$.review.id'))"
+        );
         // Which notes show a screenshot: asked on every asset request, so it stays indexed.
         this.db.run(
             "CREATE INDEX IF NOT EXISTS idx_annotations_full_shot ON annotations (json_extract(json, '$.screenshots.full.id'))"
@@ -272,6 +280,10 @@ export class SqliteStore implements Store, AuthStore {
                 projects.length ? `project_id IN (${projects.map(() => "?").join(", ")})` : "0"
             );
             params.push(...projects);
+        }
+        if (filter.reviewId !== undefined) {
+            where.push("json_extract(json, '$.review.id') = ?");
+            params.push(filter.reviewId);
         }
         if (filter.status !== undefined) {
             const statuses = Array.isArray(filter.status) ? filter.status : [filter.status];
@@ -457,7 +469,7 @@ export class SqliteStore implements Store, AuthStore {
             this.db
                 .query(
                     `SELECT DISTINCT project_id AS id FROM annotations
-         WHERE json_extract(json, '$.screenshots.full.id') = ?1 OR json_extract(json, '$.screenshots.crop.id') = ?1 OR json_extract(json, '$.screenshots.thumbnail.id') = ?1`
+         WHERE json_extract(json, '$.screenshots.full.id') = ?1 OR json_extract(json, '$.screenshots.crop.id') = ?1 OR json_extract(json, '$.screenshots.thumbnail.id') = ?1 OR EXISTS (SELECT 1 FROM json_each(annotations.json, '$.references') r WHERE json_extract(r.value, '$.id') = ?1)`
                 )
                 .all(assetId) as Array<{ id: string }>
         ).map((r) => r.id);

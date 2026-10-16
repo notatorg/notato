@@ -28,6 +28,8 @@ export const statusRoutes: Routes = async ({ req, url, path, method, principal }
         if (project !== undefined) assertAccess(principal, project);
         return json({
             screenshots: backend.config().screenshots,
+            references: true,
+            reviews: true,
             derivedScreenshots: backend.derivedScreenshots,
             captureOnly: principal.kind === "token" && principal.permission === "capture",
             agent: backend.agents.stateFor(project ?? accessibleProjects(principal)),

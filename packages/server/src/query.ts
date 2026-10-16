@@ -23,6 +23,8 @@ export function filterFromQuery(
         if (parsed.some((p) => !p.success)) throw new RequestError(`invalid status "${status}"`);
         filter.status = parsed.map((p) => (p as { data: z.infer<typeof Status> }).data);
     }
+    const review = q.get("review");
+    if (review) filter.reviewId = review.slice(0, 128);
     const route = q.get("route");
     if (route) filter.route = route;
     const severity = q.get("severity");
@@ -76,6 +78,7 @@ export function filterToQuery(filter: AnnotationFilter): URLSearchParams {
         for (const p of [filter.projectId].flat()) q.append("project", p);
     if (filter.status !== undefined)
         q.set("status", (Array.isArray(filter.status) ? filter.status : [filter.status]).join(","));
+    if (filter.reviewId !== undefined) q.set("review", filter.reviewId);
     if (filter.route !== undefined) q.set("route", filter.route);
     if (filter.severity !== undefined) q.set("severity", filter.severity);
     if (filter.intent !== undefined)

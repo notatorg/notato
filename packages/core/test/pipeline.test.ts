@@ -194,3 +194,18 @@ describe("a note's elements", () => {
         expect(kept?.assets).toBe(record.assets);
     });
 });
+
+it("holds grouped review targets off sinks and keeps explicit reference bytes with the draft", async () => {
+    const deliver = vi.fn(async () => {});
+    const pipeline = base({ capture: [], sinks: [{ id: "test", deliver }] });
+    const result = await pipeline.create({
+        ...input,
+        review: { id: "r", instruction: "Same fix", draft: true },
+        references: [{ blob: png(), name: "Design", w: 1, h: 1 }],
+    });
+    expect(deliver).not.toHaveBeenCalled();
+    expect(result.annotation.references?.[0]?.name).toBe("Design");
+    expect(result.assets.get(result.annotation.references?.[0]?.id ?? "")?.type).toBe("image/png");
+    await pipeline.create({ ...input, review: { id: "r", instruction: "Same fix", total: 1 } });
+    expect(deliver).toHaveBeenCalledOnce();
+});

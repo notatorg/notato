@@ -26,7 +26,7 @@ import {
     SheetScroll,
     SheetTile,
 } from "./parts.tsx";
-import { ago, type Palette, statusColor, usePalette } from "./theme.ts";
+import { ago, type Palette, statusColor, statusLabel, usePalette } from "./theme.ts";
 
 /** What the bottom sheet shows: the menu, or what it opens. */
 export type Sheet =
@@ -315,7 +315,7 @@ export function NotesSheet(props: {
                     title={a.comment}
                     titleLines={2}
                     detail={[
-                        a.status.replace(/_/g, " "),
+                        statusLabel(a.status),
                         a.peopleOnly ? PEOPLE_ONLY.title : undefined,
                         ago(a.createdAt),
                     ]

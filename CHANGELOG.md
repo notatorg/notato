@@ -4,6 +4,11 @@ Every Notato package is released together, at one version: the `notato` command 
 
 ## 0.3.0
 
+- **Grouped reviews.** The browser, React and Angular toolbar can hold up to 50 related annotations across pages, with one shared instruction, and send the review when ready. Drafts survive reloads, stay out of normal exports, and are scoped to the destination and credential. The board links related targets; `notato_get_review` lets the agent read the whole review before fixing it.
+- **Design references.** Attach up to three images to a browser annotation. Client-side WebP encoding, metadata removal and resizing bound transfer; server file/pixel limits, private asset access, storage accounting, exports, deletion and encrypted backups cover the attachments too. Agents load references explicitly through `notato_get`; watches stay small.
+- **Hide completed feedback.** Hide a completed SDK pin/card privately in this browser, with a restore action in Settings. The note stays in the dashboard, and unfinished work becomes visible again.
+- **Agent questions.** `notato_ask_question` pauses a task as “Needs your answer”. A public human reply resumes the previous task, including variant or revert work; asides and private replies never resume an agent.
+
 - **Consistent send-only capture.** Capture-only app tokens can upload test bundles as new human feedback, without restoring history or reading existing notes. Durable receipts bind retries to the credential, project and submitted content: an identical retry gets an acknowledgement, and a real `409` keeps the local note and screenshot rather than assuming delivery. All SDKs require explicit screenshot permission from a configured server; local-only capture is unchanged. See [capture behaviour](docs/capture-contract.md).
 
 - **Smaller screenshots.** Browser and mobile SDKs prefer WebP at quality 85 after masking, keeping PNG whenever it is smaller or compression is unavailable. Dimensions stay the same. Local queues, uploads and bundle paths carry the actual media type and still read existing PNG captures. Swift uses libwebp, MAUI uses SkiaSharp, Flutter uses flutter_image_compress, and React Native includes an optional native encoder (rebuild the app to enable it; Expo Go and older binaries keep PNG).

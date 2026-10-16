@@ -702,3 +702,84 @@ describe("hosted capture-only access", () => {
         expect(controller.list()).toHaveLength(1);
     });
 });
+
+describe("grouped reviews", () => {
+    beforeEach(() => Object.assign(globalThis, { indexedDB: new IDBFactory() }));
+    const button = (label: string) =>
+        [...ui().querySelectorAll<HTMLButtonElement>("button")].find(
+            (b) => b.textContent?.includes(label) || b.title.includes(label)
+        );
+    async function reviewDialog() {
+        button("grouped review")?.click();
+        // Active reviews have their own title.
+        if (!ui().querySelector(".review-dialog")) button("finish and send")?.click();
+        await until(() => Boolean(ui().querySelector(".review-dialog")), "review dialog");
+    }
+    function saveTarget(comment: string) {
+        const el = document.querySelector("#pay") as HTMLElement;
+        for (const type of ["pointerdown", "mousedown", "pointerup", "mouseup", "click"])
+            el.dispatchEvent(
+                new MouseEvent(type, { bubbles: true, cancelable: true, composed: true, button: 0 })
+            );
+        const input = ui().querySelector(".popover textarea") as HTMLTextAreaElement;
+        input.value = comment;
+        button("Add to review")?.click();
+    }
+    it("holds notes across a reload, sends every target with one instruction, and keeps drafts out of exports", async () => {
+        const server = fakeServer();
+        const transport = {
+            ...server.transport,
+            fetch: async (url: string, init?: RequestInit) =>
+                new URL(url).pathname === "/config"
+                    ? Response.json({ screenshots: false, reviews: true, references: true })
+                    : server.transport.fetch(url, init),
+        };
+        const props = { server: SERVER, transport, token: "same-user" };
+        let notato = mount(props);
+        await reviewDialog();
+        (ui().querySelector(".review-dialog textarea") as HTMLTextAreaElement).value =
+            "Use consistent button spacing";
+        button("Start review")?.click();
+        await until(() => !ui().querySelector(".review-dialog"));
+        saveTarget("Checkout");
+        await until(() => notato.list().length === 1, "first target");
+        expect(server.posts).toEqual([]);
+        const draftId = notato.list()[0]?.review?.id;
+        expect(notato.list()[0]?.review?.draft).toBe(true);
+        await expect(notato.package()).rejects.toThrow("nothing to package");
+        await settle();
+        await settle();
+        notato = reload(props);
+        await until(() => notato.list().length === 1, "draft recovery");
+        notato.setAnnotateMode(true);
+        saveTarget("Profile");
+        await until(() => notato.list().length === 2, "second target");
+        await reviewDialog();
+        button("Send review (2)")?.click();
+        await until(() => server.posts.length === 2, "delivery");
+        expect(notato.list().map((a) => a.review)).toEqual(
+            [0, 1].map(() => ({
+                id: draftId,
+                instruction: "Use consistent button spacing",
+                total: 2,
+            }))
+        );
+        expect(notato.list().map((a) => a.comment)).toEqual(["Checkout", "Profile"]);
+    });
+    it("keeps drafts isolated when a different credential uses the same project", async () => {
+        let notato = mount({ token: "first" });
+        await reviewDialog();
+        (ui().querySelector(".review-dialog textarea") as HTMLTextAreaElement).value =
+            "Private review";
+        button("Start review")?.click();
+        await until(() => !ui().querySelector(".review-dialog"));
+        saveTarget("Do not show to another user");
+        await until(() => notato.list().length === 1);
+        await settle();
+        await settle();
+        notato = reload({ token: "second" });
+        await settle();
+        await settle();
+        expect(notato.list()).toEqual([]);
+    });
+});
