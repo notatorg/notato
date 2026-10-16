@@ -45,7 +45,7 @@ internal sealed class PinCard : ContentView
         HorizontalStackLayout badges = Ui.Plain(new HorizontalStackLayout { Spacing = 5, Children = { Ui.Badge(Ui.Humanize(a.Status), a.Status) } });
         if (PeopleOnlyToggle.IsOn(a))
         {
-            Border kept = Ui.Badge(PeopleOnlyToggle.Label, Ui.PeopleOnlyBadge);
+            Border kept = Ui.Badge("Hidden from agent", Ui.PeopleOnlyBadge);
             kept.AutomationId = "NotatoPeopleOnlyBadge";
             badges.Children.Add(kept);
         }
@@ -133,7 +133,11 @@ internal sealed class PinCard : ContentView
                 peopleOnly.IsEnabled = true;
             }
         };
-        rows.Children.Add(peopleOnlyRow);
+        VerticalStackLayout options = Ui.Plain(new VerticalStackLayout { Spacing = 10 });
+        options.Children.Add(peopleOnlyRow);
+        options.IsVisible = false;
+        options.AutomationId = "NotatoCardOptions";
+        SheetBody body = new(rows);
 
         foreach (Reply reply in a.Thread.TakeLast(ThreadShown))
         {
@@ -167,7 +171,26 @@ internal sealed class PinCard : ContentView
 
         // ---- the buttons: what can be done with it now -------------------------------------------------------------
         // A note sent with a capture-only token gets none: replying, reverting and deleting are the board's.
+        VerticalStackLayout deleteConfirmation = Ui.Plain(new VerticalStackLayout { Spacing = 8, IsVisible = false });
+        deleteConfirmation.Children.Add(Ui.Text("Delete this note permanently?", 13, Ui.CardText));
+        deleteConfirmation.Children.Add(Ui.ButtonRow([
+            Ui.SheetButton("Cancel", () => deleteConfirmation.IsVisible = false),
+            Ui.SheetButton("Delete note", () => _ = Run(() => controller.DeleteAsync(a.Id), "Note deleted"), Ui.SheetButtonKind.Danger),
+        ]));
         List<Border> actions = [];
+        if (!sentOnly)
+        {
+            Border more = Ui.SheetButton("More options", () =>
+            {
+                options.IsVisible = !options.IsVisible;
+                if (options.IsVisible)
+                {
+                    _ = body.ScrollToAsync(options, ScrollToPosition.End, false);
+                }
+            });
+            more.AutomationId = "NotatoMoreOptions";
+            actions.Add(more);
+        }
         if (controller.HasServer && !record.Pending && !sentOnly)
         {
             Entry reply = Fields.Text(null, a.Status == Statuses.Resolved ? "Reply, or say what was wrong" : "Reply");
@@ -178,21 +201,25 @@ internal sealed class PinCard : ContentView
             replyMentions.SetMentions(controller.AvailableMentions);
             rows.Children.Add(replyMentions);
             (Grid asideRow, Switch aside) = Ui.SwitchRow(PeopleOnlyToggle.AsideLabel, PeopleOnlyToggle.AsideHint, false, "NotatoAside");
-            rows.Children.Add(asideRow);
+            options.Children.Add(asideRow);
+            Label replyPrivacy = Ui.Text("Next reply hidden from agent", 12, Ui.CardMuted);
+            replyPrivacy.IsVisible = false;
+            rows.Children.Add(replyPrivacy);
+            aside.Toggled += (_, e) => replyPrivacy.IsVisible = e.Value;
 
-            if (a.Status == Statuses.Resolved)
+            if (a.Status == Statuses.Resolved && a.Intent is not ("question" or "approve"))
             {
-                actions.Add(Ui.SheetButton("Ask the agent to revert", () => _ = Run(() => controller.RequestRevertAsync(a.Id, reply.Text), "Asked the agent to undo that change")));
+                options.Children.Add(Ui.SheetButton("Revert this change…", () => _ = Run(() => controller.RequestRevertAsync(a.Id, reply.Text), "Asked the agent to undo that change")));
             }
 
             if (a.Status == Statuses.RevertRequested)
             {
-                actions.Add(Ui.SheetButton("Cancel request", () => _ = Run(() => controller.CancelRevertAsync(a.Id), "Revert request taken back")));
+                options.Children.Add(Ui.SheetButton("Cancel revert request", () => _ = Run(() => controller.CancelRevertAsync(a.Id), "Revert request taken back")));
             }
 
             if (a.Status is Statuses.Open or Statuses.Acknowledged && record.Mine)
             {
-                actions.Add(Ui.SheetButton("Delete", () => _ = Run(() => controller.DeleteAsync(a.Id), "Note deleted"), Ui.SheetButtonKind.Danger));
+                options.Children.Add(Ui.SheetButton("Delete", () => deleteConfirmation.IsVisible = true, Ui.SheetButtonKind.Danger));
             }
 
             Border send = Ui.SheetButton("Reply", () => _ = Run(async () =>
@@ -211,10 +238,12 @@ internal sealed class PinCard : ContentView
         }
         else if (!sentOnly)
         {
-            actions.Add(Ui.SheetButton("Delete", () => _ = Run(() => controller.DeleteAsync(a.Id), "Note deleted"), Ui.SheetButtonKind.Danger));
+            options.Children.Add(Ui.SheetButton("Delete", () => deleteConfirmation.IsVisible = true, Ui.SheetButtonKind.Danger));
         }
 
-        Content = Ui.Sheet(Ui.Plain(new VerticalStackLayout { Spacing = 14, Children = { header, new SheetBody(rows), Ui.ButtonRow([.. actions]), status } }), close);
+        options.Children.Add(deleteConfirmation);
+        rows.Children.Add(options);
+        Content = Ui.Sheet(Ui.Plain(new VerticalStackLayout { Spacing = 14, Children = { header, body, Ui.ButtonRow([.. actions]), status } }), close);
     }
 
     /// <summary>
@@ -228,7 +257,7 @@ internal sealed class PinCard : ContentView
         FormattedString text = new();
         if (aside)
         {
-            text.Spans.Add(new Span { Text = PeopleOnlyToggle.AsideLabel + " · ", FontSize = 11, FontAttributes = FontAttributes.Bold, TextColor = Ui.CardMuted });
+            text.Spans.Add(new Span { Text = "Hidden from agent · ", FontSize = 11, FontAttributes = FontAttributes.Bold, TextColor = Ui.CardMuted });
         }
 
         text.Spans.Add(new Span { Text = who + ": ", FontAttributes = FontAttributes.Bold, TextColor = Ui.CardText });

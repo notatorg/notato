@@ -316,7 +316,7 @@ export function NotesSheet(props: {
                     titleLines={2}
                     detail={[
                         statusLabel(a.status),
-                        a.peopleOnly ? PEOPLE_ONLY.title : undefined,
+                        a.peopleOnly ? "Hidden from agent" : undefined,
                         ago(a.createdAt),
                     ]
                         .filter(Boolean)
@@ -521,12 +521,10 @@ function ThreadEntry({ reply }: { reply: Annotation["thread"][number] }) {
                 styles.entry,
                 aside ? { borderWidth: 1, borderColor: p.line } : { backgroundColor: p.soft },
             ]}
-            accessibilityLabel={
-                aside ? `Aside, kept from the agent. ${name}: ${reply.body}` : undefined
-            }
+            accessibilityLabel={aside ? `Hidden from agent. ${name}: ${reply.body}` : undefined}
         >
             {aside ? (
-                <Text style={[styles.asideLabel, { color: p.muted }]}>{PEOPLE_ONLY.aside}</Text>
+                <Text style={[styles.asideLabel, { color: p.muted }]}>{"Hidden from agent"}</Text>
             ) : null}
             <Text style={[styles.entryText, { color: aside ? p.muted : p.text }]}>
                 <Text style={styles.bold}>{name}: </Text>
@@ -562,6 +560,8 @@ export function NoteCard(props: {
     const p = usePalette();
     const [reply, setReply] = useState("");
     const [aside, setAside] = useState(false);
+    const [optionsOpen, setOptionsOpen] = useState(false);
+    const [deleteArmed, setDeleteArmed] = useState(false);
     const [problem, setProblem] = useState<string>();
     const [busy, setBusy] = useState(false);
     /** The People only switch's new value while the change is on its way. */
@@ -606,7 +606,7 @@ export function NoteCard(props: {
                 await notato.reply(a.id, text, asAside);
                 setAside(false);
             },
-            asAside ? "Aside sent" : "Reply sent"
+            asAside ? "Reply hidden from agent" : "Reply sent"
         );
     };
 
@@ -617,12 +617,11 @@ export function NoteCard(props: {
         .filter(Boolean)
         .join(" · ");
     const target = describeTarget(a.target.identity[0]);
-    const canRevert = live && a.status === "resolved";
+    const canRevert =
+        live && a.status === "resolved" && a.intent !== "question" && a.intent !== "approve";
     const canCancelRevert = live && a.status === "revert_requested";
     // A note on the server is the person's to delete while it is open and theirs; one on the device always is.
     const canDelete = !sentOnly && (!live || (record.mine && a.status === "open"));
-    // Reply and another action: one above the other, so each has room for its words.
-    const stacked = live && (canRevert || canCancelRevert || canDelete);
 
     return (
         <>
@@ -673,14 +672,6 @@ export function NoteCard(props: {
                             Sent. Its replies and status are on the Notato board.
                         </Text>
                     ) : null}
-                    <FlagToggle
-                        title={PEOPLE_ONLY.title}
-                        hint={PEOPLE_ONLY.hint}
-                        value={asked ?? a.peopleOnly === true}
-                        disabled={asked !== undefined || sentOnly}
-                        onChange={setPeopleOnly}
-                        testID="NotatoNotePeopleOnly"
-                    />
                     {a.thread.slice(-4).map((r) => (
                         <ThreadEntry key={r.id} reply={r} />
                     ))}
@@ -704,40 +695,83 @@ export function NoteCard(props: {
                         style={styles.replyField}
                         testID="NotatoReply"
                     />
-                    <FlagToggle
-                        title={PEOPLE_ONLY.aside}
-                        hint={PEOPLE_ONLY.asideHint}
-                        value={aside}
-                        onChange={setAside}
-                        testID="NotatoAside"
-                    />
+                    {aside ? (
+                        <Text
+                            style={[styles.small, { color: p.muted }]}
+                            accessibilityLiveRegion="polite"
+                        >
+                            Next reply hidden from agent
+                        </Text>
+                    ) : null}
                 </View>
             ) : null}
-            <View style={stacked ? styles.stackedButtons : styles.buttons}>
-                {canRevert ? (
+            {!sentOnly && optionsOpen ? (
+                <SheetScroll>
+                    <View style={styles.card}>
+                        <FlagToggle
+                            title={PEOPLE_ONLY.title}
+                            hint={PEOPLE_ONLY.hint}
+                            value={asked ?? a.peopleOnly === true}
+                            disabled={asked !== undefined || sentOnly}
+                            onChange={setPeopleOnly}
+                            testID="NotatoNotePeopleOnly"
+                        />
+                        {live ? (
+                            <FlagToggle
+                                title={PEOPLE_ONLY.aside}
+                                hint={PEOPLE_ONLY.asideHint}
+                                value={aside}
+                                onChange={setAside}
+                                testID="NotatoAside"
+                            />
+                        ) : null}
+                        {canRevert ? (
+                            <SheetButton
+                                title="Revert this change…"
+                                onPress={() =>
+                                    run(
+                                        () => notato.requestRevert(a.id, reply),
+                                        "Asked the agent to undo that change"
+                                    )
+                                }
+                            />
+                        ) : null}
+                        {canCancelRevert ? (
+                            <SheetButton
+                                title="Cancel revert request"
+                                onPress={() =>
+                                    run(
+                                        () => notato.cancelRevert(a.id),
+                                        "Revert request taken back"
+                                    )
+                                }
+                            />
+                        ) : null}
+                        {canDelete ? (
+                            <SheetButton
+                                title={deleteArmed ? "Confirm delete" : "Delete"}
+                                kind="danger"
+                                onPress={() => {
+                                    if (!deleteArmed) {
+                                        setDeleteArmed(true);
+                                        return;
+                                    }
+                                    run(() => notato.delete(a.id), "Note deleted");
+                                }}
+                            />
+                        ) : null}
+                    </View>
+                </SheetScroll>
+            ) : null}
+            <View style={styles.buttons}>
+                {!sentOnly ? (
                     <SheetButton
-                        title="Ask the agent to revert"
-                        onPress={() =>
-                            run(
-                                () => notato.requestRevert(a.id, reply),
-                                "Asked the agent to undo that change"
-                            )
-                        }
-                    />
-                ) : null}
-                {canCancelRevert ? (
-                    <SheetButton
-                        title="Cancel request"
-                        onPress={() =>
-                            run(() => notato.cancelRevert(a.id), "Revert request taken back")
-                        }
-                    />
-                ) : null}
-                {canDelete ? (
-                    <SheetButton
-                        title="Delete"
-                        kind="danger"
-                        onPress={() => run(() => notato.delete(a.id), "Note deleted")}
+                        title={optionsOpen ? "Close options" : "More options"}
+                        testID="NotatoMoreOptions"
+                        onPress={() => {
+                            setOptionsOpen(!optionsOpen);
+                            setDeleteArmed(false);
+                        }}
                     />
                 ) : null}
                 {live ? (

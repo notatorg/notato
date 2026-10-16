@@ -40,12 +40,12 @@ internal fun Ui.badge(text: String, color: Int): TextView = text(dev.notato.andr
  * A note that is People only, as the web toolbar draws it: no fill, a hairline, small muted capitals. It is not a
  * status, so it has no colour.
  */
-internal fun Ui.peopleOnlyBadge(): View = text(PEOPLE_ONLY, 10.5f, cardMuted, bold = true, maxLines = 1).apply {
+internal fun Ui.peopleOnlyBadge(): View = text("Hidden from agent", 10.5f, cardMuted, bold = true, maxLines = 1).apply {
     isAllCaps = true
     letterSpacing = 0.04f
     background = rounded(Color.TRANSPARENT, 9, strokeColor = cardLine)
     setPadding(dp(7), dp(2), dp(7), dp(2))
-    contentDescription = PEOPLE_ONLY
+    contentDescription = "Hidden from agent"
 }
 
 /** A choice that is on or off: a title, a line saying what it does, and a switch. A tap anywhere on the row flips it. */

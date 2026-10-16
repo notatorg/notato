@@ -234,7 +234,7 @@ public class PeopleOnlyTests
         });
         Switch peopleOnly = Find<Switch>(card, "NotatoPeopleOnly");
         Assert.False(peopleOnly.IsToggled);
-        Assert.Contains("People only", Words(card));
+        Assert.Contains("Hide from agent", Words(card));
         Assert.Contains("Keep this between people: the agent won't see it.", Words(card));
 
         Find<Editor>(card, "NotatoComment").Text = "  Just checking with design first. ";
@@ -271,16 +271,56 @@ public class PeopleOnlyTests
         Border badge = Find<Border>(card, "NotatoPeopleOnlyBadge");
         // Drawn as the web toolbar draws it: muted capitals on no fill, read out as the words.
         Label caps = (Label)badge.Content!;
-        Assert.Equal("PEOPLE ONLY", caps.Text);
-        Assert.Equal("People only", SemanticProperties.GetDescription(caps));
+        Assert.Equal("HIDDEN FROM AGENT", caps.Text);
+        Assert.Equal("Hidden from agent", SemanticProperties.GetDescription(caps));
         Assert.Equal(Colors.Transparent, badge.BackgroundColor);
         Assert.True(Find<Switch>(card, "NotatoPeopleOnly").IsToggled);
         Switch aside = Find<Switch>(card, "NotatoAside");
         Assert.False(aside.IsToggled);
         List<string> words = Words(card);
-        Assert.Contains("Aside", words);
+        Assert.Contains("Hide reply from agent", words);
         Assert.Contains("Just for people: the agent won't see this reply.", words);
         Assert.DoesNotContain(words, w => w.StartsWith('@'));
+    }
+
+    private static void Tap(View view)
+    {
+        TapGestureRecognizer tap = view.GestureRecognizers.OfType<TapGestureRecognizer>().Single();
+        typeof(TapGestureRecognizer).GetMethod("SendTapped", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
+            .Invoke(tap, [view, null]);
+    }
+
+    [Fact]
+    public void More_options_preserves_the_reply_and_makes_its_visibility_clear_before_sending()
+    {
+        NotatoController controller = Controller(NotatoMode.Dev, "http://127.0.0.1:9");
+        PinCard card = new(controller, new OverlaySession(null!, null!), new NoteRecord(Fixtures.Annotation()), 1, () => { });
+        Entry reply = Find<Entry>(card, "NotatoReply");
+        reply.Text = "Keep this draft";
+        VerticalStackLayout options = Find<VerticalStackLayout>(card, "NotatoCardOptions");
+        Assert.False(options.IsVisible);
+        Tap(Find<Border>(card, "NotatoMoreOptions"));
+        Assert.True(options.IsVisible);
+        Find<Switch>(card, "NotatoAside").IsToggled = true;
+        Assert.True(All(card).OfType<Label>().Single(l => l.Text == "Next reply hidden from agent").IsVisible);
+        Tap(Find<Border>(card, "NotatoMoreOptions"));
+        Assert.False(options.IsVisible);
+        Assert.Equal("Keep this draft", reply.Text);
+    }
+
+    [Theory]
+    [InlineData("resolved", "fix", true)]
+    [InlineData("resolved", "change", true)]
+    [InlineData("resolved", "question", false)]
+    [InlineData("resolved", "approve", false)]
+    [InlineData("dismissed", "fix", false)]
+    [InlineData("open", "fix", false)]
+    public void Only_a_resolved_change_offers_revert(string status, string intent, bool canRevert)
+    {
+        NotatoController controller = Controller(NotatoMode.Dev, "http://127.0.0.1:9");
+        Annotation note = Fixtures.Annotation() with { Status = status, Intent = intent };
+        PinCard card = new(controller, new OverlaySession(null!, null!), new NoteRecord(note), 1, () => { });
+        Assert.Equal(canRevert, Words(card).Contains("Revert this change…"));
     }
 
     [Fact]
@@ -322,7 +362,7 @@ public class PeopleOnlyTests
         static string Said(Reply reply) => string.Concat(((Label)PinCard.ReplyView(reply).Content!).FormattedText.Spans.Select(s => s.Text));
 
         Assert.Equal("Claude: Looking at the contrast now.", Said(thread[0]));
-        Assert.Equal("Aside · Dom: Sam, ignore the agent for a sec.", Said(thread[1]));
+        Assert.Equal("Hidden from agent · Dom: Sam, ignore the agent for a sec.", Said(thread[1]));
         // The automatic entries read like any other entry.
         Assert.Equal("Sam: Shared this with the agent.", Said(thread[2]));
         Assert.Equal("Dom: Made this people only: the agent won't see it.", Said(thread[3]));

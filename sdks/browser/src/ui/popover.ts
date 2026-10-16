@@ -279,7 +279,7 @@ export function createPopover(layer: HTMLElement, frames: Frames = createFrames(
                     },
                 },
                 icon(ICONS.lock),
-                "People only"
+                "Hide from agent"
             );
             hintEl = h("p", { class: "hint" });
             showHint(init.hint);

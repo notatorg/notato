@@ -59,9 +59,9 @@ String routeName(String? route) {
 
 /// The words every Notato SDK uses for keeping things from the agent.
 abstract final class PeopleOnlyCopy {
-  static const title = 'People only';
+  static const title = 'Hide from agent';
   static const hint = "Keep this between people: the agent won't see it.";
-  static const aside = 'Aside';
+  static const aside = 'Hide reply from agent';
   static const asideHint = "Just for people: the agent won't see this reply.";
   static const on = "Made this people only: the agent won't see it.";
   static const off = 'Shared this with the agent.';

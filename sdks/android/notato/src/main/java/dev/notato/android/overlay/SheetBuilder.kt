@@ -120,11 +120,13 @@ internal class SheetBuilder(private val controller: Controller, private val sess
         val status = inset(ui.text(null, 12.5f, Ui.DANGER)).apply { visibility = View.GONE }
         var replyField: EditText? = null
         var asideSwitch: Switch? = null
+        var notePrivacySwitch: Switch? = null
+        val replyPrivacy = ui.text("Next reply hidden from agent", 12f, ui.cardMuted).apply { visibility = if (aside) View.VISIBLE else View.GONE }
         // A capture-only token sends notes and nothing else: what the server has is read, answered and changed on the board.
         val sentOnly = controller.hasServer && !record.pending && sync.captureOnly
         // People only, for the note and its thread: through the server for a note it has, here for one still waiting.
         if (record.pending || (controller.hasServer && !sentOnly)) {
-            val (row, switch) = ui.toggleRow(PEOPLE_ONLY, PEOPLE_ONLY_HINT, a.peopleOnly == true)
+            val (_, switch) = ui.toggleRow(PEOPLE_ONLY, PEOPLE_ONLY_HINT, a.peopleOnly == true)
             var undoing = false
             switch.setOnCheckedChangeListener { view, on ->
                 if (undoing) return@setOnCheckedChangeListener
@@ -151,7 +153,7 @@ internal class SheetBuilder(private val controller: Controller, private val sess
                     }
                 }
             }
-            rows += row
+            notePrivacySwitch = switch
         }
         for (reply in a.thread.takeLast(SheetCopy.THREAD_SHOWN)) {
             val who = reply.author.name ?: if (reply.author.kind == "agent") "Agent" else "You"
@@ -161,11 +163,11 @@ internal class SheetBuilder(private val controller: Controller, private val sess
             }
             rows += if (reply.aside == true) {
                 // An aside is muted and outlined rather than filled, and says so: it was kept from the agent.
-                val label = ui.row(4, ui.icon(Icon.USERS, ui.cardMuted, 11), ui.text(ASIDE, 11f, ui.cardMuted, maxLines = 1, weight = 700))
+                val label = ui.row(4, ui.icon(Icon.USERS, ui.cardMuted, 11), ui.text("Hidden from agent", 11f, ui.cardMuted, maxLines = 1, weight = 700))
                 ui.column(3, label, ui.text(text, 13f, ui.cardMuted)).apply {
                     background = ui.rounded(Color.TRANSPARENT, 12, ui.cardLine)
                     setPadding(ui.dp(11), ui.dp(6), ui.dp(11), ui.dp(7))
-                    contentDescription = "$ASIDE. $text"
+                    contentDescription = "Hidden from agent. $text"
                 }
             } else {
                 ui.text(text, 13f).apply {
@@ -176,25 +178,27 @@ internal class SheetBuilder(private val controller: Controller, private val sess
         }
         SheetCopy.earlier(a.thread.size)?.let { rows += ui.text(it, 12f, ui.cardMuted) }
         val buttons = mutableListOf<View>()
+        val choices = mutableListOf<Pair<String, () -> Unit>>()
         if (sentOnly) {
             // No reply, revert or delete: the server would refuse each. Close is the header's ×.
             rows += ui.text(SENT_ONLY, 12.5f, ui.cardMuted)
         } else if (controller.hasServer && !record.pending) {
             val reply = ui.field(if (a.status == Status.RESOLVED) "Reply, or say what was wrong" else "Reply").apply { setText(draft) }
             // An aside: this one reply is for the people on the thread. Off again for the next reply.
-            val (asideRow, asideToggle) = ui.toggleRow(ASIDE, ASIDE_HINT, aside)
+            val (_, asideToggle) = ui.toggleRow(ASIDE, ASIDE_HINT, aside)
             replyField = reply
             asideSwitch = asideToggle
             rows += reply
-            rows += asideRow
-            if (a.status == Status.RESOLVED) {
-                buttons += ui.sheetButton("Ask the agent to revert") { run(status, { sync.requestRevert(a.id, reply.text.toString()) }, "Asked the agent to undo that change") }
+            rows += replyPrivacy
+            asideToggle.setOnCheckedChangeListener { _, on -> replyPrivacy.visibility = if (on) View.VISIBLE else View.GONE }
+            if (a.status == Status.RESOLVED && a.intent != "question" && a.intent != "approve") {
+                choices += "Revert this change…" to { run(status, { sync.requestRevert(a.id, reply.text.toString()) }, "Asked the agent to undo that change") }
             }
             if (a.status == Status.REVERT_REQUESTED) {
-                buttons += ui.sheetButton("Cancel request") { run(status, { sync.cancelRevert(a.id) }, "Revert request taken back") }
+                choices += "Cancel revert request" to { run(status, { sync.cancelRevert(a.id) }, "Revert request taken back") }
             }
             if (record.mine && a.status == Status.OPEN) {
-                buttons += ui.sheetButton("Delete", Ui.ButtonKind.DANGER) { run(status, { sync.delete(a.id) }, "Note deleted") }
+                choices += "Delete" to { android.app.AlertDialog.Builder(ui.context).setTitle("Delete this note?").setMessage("This permanently deletes the note.").setNegativeButton("Cancel", null).setPositiveButton("Delete") { _, _ -> run(status, { sync.delete(a.id) }, "Note deleted") }.show() }
             }
             buttons += ui.sheetButton("Reply", Ui.ButtonKind.PRIMARY) {
                 val text = reply.text.toString().trim()
@@ -206,12 +210,37 @@ internal class SheetBuilder(private val controller: Controller, private val sess
                     run(status, {
                         sync.reply(a.id, text, aside = isAside)
                         asideToggle.isChecked = false
-                    }, if (isAside) "Aside sent" else "Reply sent")
+                    }, if (isAside) "Reply hidden from agent" else "Reply sent")
                 }
             }
         } else {
             // Close is the header's ×.
-            buttons += ui.sheetButton("Delete", Ui.ButtonKind.DANGER) { run(status, { sync.delete(a.id) }, "Note deleted") }
+            choices += "Delete" to { android.app.AlertDialog.Builder(ui.context).setTitle("Delete this note?").setMessage("This permanently deletes the note.").setNegativeButton("Cancel", null).setPositiveButton("Delete") { _, _ -> run(status, { sync.delete(a.id) }, "Note deleted") }.show() }
+        }
+        if (!sentOnly) {
+            lateinit var more: View
+            more = ui.sheetButton("More options") {
+                val popup = android.widget.PopupMenu(ui.context, more)
+                notePrivacySwitch?.let { toggle ->
+                    popup.menu.add(PEOPLE_ONLY).apply {
+                        isCheckable = true
+                        isChecked = toggle.isChecked
+                        isEnabled = toggle.isEnabled
+                        setOnMenuItemClickListener { toggle.isChecked = !toggle.isChecked; true }
+                    }
+                }
+                asideSwitch?.let { toggle ->
+                    popup.menu.add(ASIDE).apply {
+                        isCheckable = true
+                        isChecked = toggle.isChecked
+                        setOnMenuItemClickListener { toggle.isChecked = !toggle.isChecked; true }
+                    }
+                }
+                choices.forEach { (label, action) -> popup.menu.add(label).setOnMenuItemClickListener { action(); true } }
+                popup.show()
+            }
+            more.contentDescription = "More options"
+            buttons.add(0, more)
         }
         val body = ui.column(12, *rows.toTypedArray()).apply { setPadding(ui.dp(4), 0, ui.dp(4), 0) }
         return SheetParts(top = listOf(head), body = body, bottom = listOf(ButtonRow(ui, buttons), status), gap = 14)

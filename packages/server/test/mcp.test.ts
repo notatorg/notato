@@ -353,6 +353,19 @@ describe("asking for a resolved change to be undone", () => {
         expect((await backend.get(open.annotation.id))?.annotation.status).toBe("open");
     });
 
+    it("refuses reverting a resolved question or approval without changing its thread", async () => {
+        const { backend } = await setup();
+        for (const intent of ["question", "approve"] as const) {
+            const { annotation } = await add(backend, { intent });
+            await backend.setStatus(annotation.id, "resolved", "Answered", HUMAN);
+            const before = await backend.get(annotation.id);
+            await expect(
+                backend.setStatus(annotation.id, "revert_requested", "undo", HUMAN)
+            ).rejects.toMatchObject({ status: 409 });
+            expect(await backend.get(annotation.id)).toEqual(before);
+        }
+    });
+
     it("a request reaches notato_watch with the instruction, the thread and the screenshots", async () => {
         const { backend, call, id } = await resolvedChange({
             comment: "banner covers the pay button",

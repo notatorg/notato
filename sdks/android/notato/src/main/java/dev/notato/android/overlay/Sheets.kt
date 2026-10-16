@@ -71,7 +71,7 @@ internal object SheetCopy {
 
     /** A note in the Notes list: "open · People only · 2h ago". */
     fun noteRow(status: String, peopleOnly: Boolean, ago: String?) =
-        listOfNotNull(dev.notato.android.model.Status.label(status), PEOPLE_ONLY.takeIf { peopleOnly }, ago).joinToString(" · ")
+        listOfNotNull(dev.notato.android.model.Status.label(status), "Hidden from agent".takeIf { peopleOnly }, ago).joinToString(" · ")
 
     /** A note's card shows the last of its thread; the rest are on the board. */
     const val THREAD_SHOWN = 4
@@ -112,9 +112,9 @@ internal fun <T> notesListing(notes: List<T>, hasPin: (T) -> Boolean): NotesList
 }
 
 // People only and asides: the same words in every SDK.
-internal const val PEOPLE_ONLY = "People only"
+internal const val PEOPLE_ONLY = "Hide from agent"
 internal const val PEOPLE_ONLY_HINT = "Keep this between people: the agent won't see it."
-internal const val ASIDE = "Aside"
+internal const val ASIDE = "Hide reply from agent"
 internal const val ASIDE_HINT = "Just for people: the agent won't see this reply."
 
 /** A note's card with no server to send it to (test mode): where the note is, and how it leaves. */

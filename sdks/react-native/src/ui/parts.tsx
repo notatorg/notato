@@ -498,7 +498,7 @@ export function PeopleOnlyBadge({ palette }: { palette: Palette }) {
             style={[styles.badge, styles.outlined, { borderColor: palette.line }]}
             testID="NotatoPeopleOnlyBadge"
         >
-            <Text style={[styles.peopleOnly, { color: palette.muted }]}>PEOPLE ONLY</Text>
+            <Text style={[styles.peopleOnly, { color: palette.muted }]}>HIDDEN FROM AGENT</Text>
         </View>
     );
 }

@@ -288,7 +288,7 @@ describe("reading, updating and deleting", () => {
         const early = await patch({ status: "revert_requested", note: "undo" });
         expect(early.status).toBe(409);
         expect(((await early.json()) as { error: string }).error).toContain(
-            "only a resolved annotation"
+            "only a resolved change"
         );
 
         await patch({

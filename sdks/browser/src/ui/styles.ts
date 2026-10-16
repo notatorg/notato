@@ -157,6 +157,17 @@ button, input, textarea { font: inherit; }
 .card .revert .foot.start .link { background: var(--p-bg); box-shadow: inset 0 0 0 1px var(--p-line); color: var(--p-text); }
 .card-foot { display: flex; align-items: center; gap: 4px; padding-top: 8px; border-top: 1px solid var(--p-line); }
 .card-foot .hint { font-size: 12px; color: var(--p-mute); }
+.card-options { width: 100%; }
+.card-options summary { width: fit-content; padding: 6px 8px; border-radius: 7px; color: var(--p-mute); font-size: 12px; font-weight: 650; cursor: pointer; list-style: none; }
+.card-options summary::-webkit-details-marker { display: none; }
+.card-options summary:hover { background: var(--p-soft); color: var(--p-text); }
+.card-options summary:focus-visible { outline: 2px solid var(--acc); outline-offset: 1px; }
+.card-option-list { display: grid; gap: 5px; margin-top: 7px; padding: 8px; border: 1px solid var(--p-line); border-radius: 9px; background: var(--p-field); }
+.card-option-list .chip, .card-option-list .link { justify-content: flex-start; text-align: left; width: 100%; padding: 8px 9px; border-radius: 6px; font-size: 12px; }
+.card-option-list .chip { box-shadow: none; }
+.card-option-list .chip::before { content: "○"; }
+.card-option-list .chip[aria-pressed="true"]::before { content: "✓"; }
+.reply-privacy { margin: 0; color: var(--p-mute); font-size: 11px; }
 .card .link {
   padding: 6px 8px; border: 0; border-radius: 8px; background: transparent; color: var(--p-mute);
   font-size: 12.5px; font-weight: 600; cursor: pointer; white-space: nowrap;

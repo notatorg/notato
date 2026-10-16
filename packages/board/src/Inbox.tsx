@@ -391,7 +391,7 @@ const Row = memo(function Row({
                             className="sev people"
                             title="Between people: the agent doesn't see it"
                         >
-                            People only
+                            Hidden from agent
                         </span>
                     ) : null}
                     {a.author.kind === "agent" ? (

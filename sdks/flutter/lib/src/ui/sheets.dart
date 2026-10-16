@@ -331,7 +331,7 @@ class NotesSheet extends StatelessWidget {
                 titleLines: 2,
                 detail: [
                   statusLabel(record.status),
-                  if (record.peopleOnly) PeopleOnlyCopy.title,
+                  if (record.peopleOnly) 'Hidden from agent',
                   ?ago(record.createdAt),
                 ].join(' · '),
                 opens: true,
@@ -547,7 +547,7 @@ class _ThreadEntry extends StatelessWidget {
     }
     final aside = reply['aside'] == true;
     return Semantics(
-      label: aside ? 'Aside, kept from the agent' : null,
+      label: aside ? 'Hidden from agent' : null,
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
         decoration: BoxDecoration(
@@ -560,7 +560,7 @@ class _ThreadEntry extends StatelessWidget {
           children: [
             if (aside)
               Text(
-                PeopleOnlyCopy.aside,
+                'Hidden from agent',
                 style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: p.muted),
               ),
             Text.rich(
@@ -612,6 +612,8 @@ class NoteCard extends StatefulWidget {
 class _NoteCardState extends State<NoteCard> {
   final _reply = TextEditingController();
   var _aside = false;
+  var _optionsOpen = false;
+  var _deleteArmed = false;
   String? _problem;
   var _busy = false;
   bool? _asked;
@@ -683,27 +685,19 @@ class _NoteCardState extends State<NoteCard> {
     final thread = ((a['thread'] as List?) ?? const []).whereType<Map>().map((m) => m.cast<String, Object?>()).toList();
     final intent = a['intent'] as String?;
     final severity = a['severity'] as String?;
+    final canRevert = live && status == 'resolved' && intent != 'question' && intent != 'approve';
+    final canDelete = !sentOnly && (!live || (record.mine && status == 'open'));
     final actions = <Widget>[
-      if (live) ...[
-        if (status == 'resolved')
-          SheetButton(
-            'Ask the agent to revert',
-            onPressed: () => _run(
-              () => runtime.requestRevert(record.id, reason: _reply.text),
-              'Asked the agent to undo that change',
-            ),
-          ),
-        if (status == 'revert_requested')
-          SheetButton(
-            'Cancel request',
-            onPressed: () => _run(() => runtime.cancelRevert(record.id), 'Revert request taken back'),
-          ),
-        if (record.mine && status == 'open')
-          SheetButton(
-            'Delete',
-            kind: ButtonKind.danger,
-            onPressed: () => _run(() => runtime.delete(record.id), 'Note deleted'),
-          ),
+      if (!sentOnly)
+        SheetButton(
+          _optionsOpen ? 'Close options' : 'More options',
+          key: const ValueKey('NotatoMoreOptions'),
+          onPressed: () => setState(() {
+            _optionsOpen = !_optionsOpen;
+            _deleteArmed = false;
+          }),
+        ),
+      if (live)
         SheetButton(
           'Reply',
           key: const ValueKey('NotatoSendReply'),
@@ -719,15 +713,9 @@ class _NoteCardState extends State<NoteCard> {
               _run(() async {
                 await runtime.reply(record.id, text, aside: aside);
                 if (mounted) setState(() => _aside = false);
-              }, aside ? 'Aside sent' : 'Reply sent'),
+              }, aside ? 'Reply hidden from agent' : 'Reply sent'),
             );
           },
-        ),
-      ] else if (!sentOnly)
-        SheetButton(
-          'Delete',
-          kind: ButtonKind.danger,
-          onPressed: () => _run(() => runtime.delete(record.id), 'Note deleted'),
         ),
     ];
     return Column(
@@ -786,13 +774,6 @@ class _NoteCardState extends State<NoteCard> {
                   Text(_sentOnly, style: TextStyle(fontSize: 12.5, color: p.muted)),
                 ],
                 const SizedBox(height: 12),
-                FlagToggle(
-                  key: const ValueKey('NotatoNotePeopleOnly'),
-                  title: PeopleOnlyCopy.title,
-                  hint: PeopleOnlyCopy.hint,
-                  value: _asked ?? record.peopleOnly,
-                  onChanged: _asked == null && !sentOnly ? _setPeopleOnly : null,
-                ),
                 for (final reply in thread.length > 4 ? thread.sublist(thread.length - 4) : thread) ...[
                   const SizedBox(height: 8),
                   _ThreadEntry(reply),
@@ -817,31 +798,71 @@ class _NoteCardState extends State<NoteCard> {
             decoration: fieldDecoration(context, status == 'resolved' ? 'Reply, or say what was wrong' : 'Reply'),
           ),
           const SizedBox(height: 8),
-          FlagToggle(
-            key: const ValueKey('NotatoAside'),
-            title: PeopleOnlyCopy.aside,
-            hint: PeopleOnlyCopy.asideHint,
-            value: _aside,
-            onChanged: (v) => setState(() => _aside = v),
-          ),
+          if (_aside) Text('Next reply hidden from agent', style: TextStyle(fontSize: 12, color: p.muted)),
         ],
-        const SizedBox(height: 12),
-        if (actions.length > 1)
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              for (final (i, button) in actions.indexed) ...[if (i > 0) const SizedBox(height: 8), button],
-            ],
-          )
-        else
-          Row(
-            children: [
-              for (final (i, button) in actions.indexed) ...[
-                if (i > 0) const SizedBox(width: 10),
-                Expanded(child: button),
-              ],
-            ],
+        if (_optionsOpen && !sentOnly)
+          Flexible(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxHeight: 240),
+              child: SingleChildScrollView(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    FlagToggle(
+                      key: const ValueKey('NotatoNotePeopleOnly'),
+                      title: PeopleOnlyCopy.title,
+                      hint: PeopleOnlyCopy.hint,
+                      value: _asked ?? record.peopleOnly,
+                      onChanged: _asked == null && !sentOnly ? _setPeopleOnly : null,
+                    ),
+                    if (live) ...[
+                      FlagToggle(
+                        key: const ValueKey('NotatoAside'),
+                        title: PeopleOnlyCopy.aside,
+                        hint: PeopleOnlyCopy.asideHint,
+                        value: _aside,
+                        onChanged: (v) => setState(() => _aside = v),
+                      ),
+                    ],
+                    if (canRevert)
+                      SheetButton(
+                        'Revert this change…',
+                        onPressed: () => _run(
+                          () => runtime.requestRevert(record.id, reason: _reply.text),
+                          'Asked the agent to undo that change',
+                        ),
+                      ),
+                    if (live && status == 'revert_requested')
+                      SheetButton(
+                        'Cancel revert request',
+                        onPressed: () => _run(() => runtime.cancelRevert(record.id), 'Revert request taken back'),
+                      ),
+                    if (canDelete)
+                      SheetButton(
+                        _deleteArmed ? 'Confirm delete' : 'Delete',
+                        kind: ButtonKind.danger,
+                        onPressed: () {
+                          if (!_deleteArmed) {
+                            setState(() => _deleteArmed = true);
+                            return;
+                          }
+                          unawaited(_run(() => runtime.delete(record.id), 'Note deleted'));
+                        },
+                      ),
+                  ],
+                ),
+              ),
+            ),
           ),
+        const SizedBox(height: 12),
+        Row(
+          children: [
+            for (final (i, button) in actions.indexed) ...[
+              if (i > 0) const SizedBox(width: 10),
+              Expanded(child: button),
+            ],
+          ],
+        ),
         if (_problem != null) ...[
           const SizedBox(height: 8),
           Padding(

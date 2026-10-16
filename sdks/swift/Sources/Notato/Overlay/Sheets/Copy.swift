@@ -1,8 +1,8 @@
 /// The words every Notato SDK uses for keeping things from the agent.
 enum PeopleOnlyCopy {
-    static let title = "People only"
+    static let title = "Hide from agent"
     static let hint = "Keep this between people: the agent won't see it."
-    static let aside = "Aside"
+    static let aside = "Hide reply from agent"
     static let asideHint = "Just for people: the agent won't see this reply."
 }
 

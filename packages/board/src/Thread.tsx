@@ -59,7 +59,7 @@ function Message({ reply: r }: { reply: Reply }) {
                     <strong>{authorName(r.author)}</strong>{" "}
                     {r.aside ? (
                         <span className="aside-tag" title={ASIDE_HINT}>
-                            Aside
+                            Hidden from agent
                         </span>
                     ) : null}{" "}
                     <When iso={r.createdAt}>{ago(r.createdAt)}</When>

@@ -1,4 +1,9 @@
-import { type Detail as DetailLevel, pinNumber, renderAnnotation } from "@notato/core";
+import {
+    canRequestRevert,
+    type Detail as DetailLevel,
+    pinNumber,
+    renderAnnotation,
+} from "@notato/core";
 import type { Annotation, Severity, Status } from "@notato/schema";
 import { type KeyboardEvent, useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
@@ -266,10 +271,11 @@ function LoadedDetail({ annotation: a, project, detail, hidden, onChange, onDele
             case "resolved":
                 return (
                     <>
-                        {to("revert_requested", "Ask the agent to revert", {
-                            fallback: "Please revert this change.",
-                            look: "ghost",
-                        })}
+                        {canRequestRevert(a) &&
+                            to("revert_requested", "Ask the agent to revert", {
+                                fallback: "Please revert this change.",
+                                look: "ghost",
+                            })}
                         {to("open", "Reopen")}
                     </>
                 );
@@ -320,7 +326,7 @@ function LoadedDetail({ annotation: a, project, detail, hidden, onChange, onDele
                     type="button"
                     className={a.peopleOnly ? "tag people on" : "tag people"}
                     aria-pressed={Boolean(a.peopleOnly)}
-                    aria-label="People only"
+                    aria-label="Hide from agent"
                     disabled={busy}
                     title={
                         a.peopleOnly
@@ -329,7 +335,7 @@ function LoadedDetail({ annotation: a, project, detail, hidden, onChange, onDele
                     }
                     onClick={() => run(() => setPeopleOnly(a.id, !a.peopleOnly), undefined, false)}
                 >
-                    People only
+                    Hide from agent
                 </button>
                 <select
                     className={a.severity ? `sev-select set sev-${a.severity}` : "sev-select"}
@@ -446,7 +452,7 @@ function LoadedDetail({ annotation: a, project, detail, hidden, onChange, onDele
                         ref={field}
                         placeholder={
                             aside
-                                ? `Aside to the people here, as ${name || "Anonymous"}…`
+                                ? `Reply hidden from agent, as ${name || "Anonymous"}…`
                                 : `Reply as ${name || "Anonymous"}… press Enter to send`
                         }
                         value={text}
@@ -463,7 +469,7 @@ function LoadedDetail({ annotation: a, project, detail, hidden, onChange, onDele
                         title={ASIDE_HINT}
                         onClick={() => setAside(!aside)}
                     >
-                        Aside
+                        Hide reply from agent
                     </button>
                     <button
                         type="button"

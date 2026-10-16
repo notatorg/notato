@@ -212,7 +212,7 @@ internal sealed partial class NotatoOverlay
         foreach ((int number, NoteRecord record) in list.Take(10))
         {
             Annotation a = record.Annotation;
-            string about = string.Join(" · ", new[] { Ui.Humanize(a.Status), PeopleOnlyToggle.IsOn(a) ? PeopleOnlyToggle.Label : null, Ui.Ago(a.CreatedAt) }
+            string about = string.Join(" · ", new[] { Ui.Humanize(a.Status), PeopleOnlyToggle.IsOn(a) ? "Hidden from agent" : null, Ui.Ago(a.CreatedAt) }
                 .Where(s => !string.IsNullOrEmpty(s)));
             string id = a.Id;
             Border row = Ui.SheetRow(Ui.PinTile(number, a.Status, record.Pending), a.Comment, about, () => _controller.OpenPin(_session, id, back: OpenList),

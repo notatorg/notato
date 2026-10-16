@@ -224,6 +224,7 @@ export function createPins(options: PinsOptions): Pins {
             tabindex: "-1",
             "aria-label": view.pin.getAttribute("aria-label") ?? "Note",
         });
+        card.addEventListener("toggle", schedule, true);
         card.addEventListener("mouseenter", () => setHover(view, true));
         card.addEventListener("mouseleave", () => setHover(view, false));
         card.addEventListener("focusin", () => setFocus(view, true));
@@ -242,10 +243,12 @@ export function createPins(options: PinsOptions): Pins {
         const pin = view.at
             ? { left: view.at.left - 12, right: view.at.left + 12, top: view.at.top - 12 }
             : view.pin.getBoundingClientRect();
-        const left =
-            pin.right + 10 + CARD_WIDTH < window.innerWidth
+        const viewportWidth = document.documentElement.clientWidth || window.innerWidth;
+        const desiredLeft =
+            pin.right + 10 + CARD_WIDTH < viewportWidth
                 ? pin.right + 10
                 : Math.max(8, pin.left - 10 - CARD_WIDTH);
+        const left = Math.max(8, Math.min(desiredLeft, viewportWidth - CARD_WIDTH - 8));
         // Measured with the pins when it was open already; just opened or redrawn, it has to be measured now.
         const height = view.cardHeight ?? card.offsetHeight;
         card.style.left = `${left}px`;

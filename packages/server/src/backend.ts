@@ -3,6 +3,7 @@ import {
     awaitsAgent,
     BundleError,
     buildBundle,
+    canRequestRevert,
     PEOPLE_ONLY_TEXT,
     peopleOnlyRecord,
     readBundle,
@@ -665,10 +666,10 @@ export class LocalBackend implements Backend {
         }
         return this.mutate(id, (a) => {
             // Checked against the stored annotation inside the update, so nothing can change it in between.
-            if (status === "revert_requested" && a.status !== "resolved") {
+            if (status === "revert_requested" && !canRequestRevert(a)) {
                 // Only a change that was made can be undone; asking about anything else is a mistake worth saying so.
                 throw new RequestError(
-                    `only a resolved annotation can have its revert requested (this one is ${a.status})`,
+                    `only a resolved change can have its revert requested (this one is ${a.status}${a.intent ? `, ${a.intent}` : ""})`,
                     409
                 );
             }
