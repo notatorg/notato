@@ -1,3 +1,4 @@
+import { Status } from "@notato/schema";
 import {
     AGENT_HEADER,
     AGENT_NAME_HEADER,
@@ -373,6 +374,7 @@ export function createApp(options: AppOptions): AppHandler {
                                 screenshots: backend.config().screenshots,
                                 references: true,
                                 reviews: true,
+                                annotationStatuses: Status.options,
                                 derivedScreenshots: backend.derivedScreenshots,
                                 mentions: [],
                                 agent: { connected: false, watching: false, sessions: 0 },

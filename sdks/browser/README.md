@@ -19,6 +19,7 @@ if (import.meta.env.DEV) createController({ project: "checkout-web", server: "ht
 
 - On a page with many notes, pins are drawn for the newest 150 on that page, as in the native SDKs. The toolbar's count, the copied Markdown and the board have every note.
 - With a shared server that takes tokens (`notato serve`, or a server built on it), use version 0.3.0 or later: 0.2.0 predates authenticated event streams and project-scoped capability requests. Give the SDK an **app/tester** token; **agent** tokens are for MCP. Version 0.3 also works with a 0.2 server.
+- Status filters are negotiated through `/config`. Older servers are read without a status filter, so a new SDK does not send them unknown states such as `awaiting_response`.
 - Notato's styles are constructed stylesheets, which a strict Content-Security-Policy (`style-src` without `'unsafe-inline'`) allows. A browser too old for those (Safari before 16.4) gets `<style>` elements instead: pass the nonce your policy allows as `nonce` and they carry it. The script tag from a Notato server passes its own nonce on.
 
 React apps use [`@notato/react`](https://www.npmjs.com/package/@notato/react), the same toolbar as a component, and Angular apps [`@notato/angular`](https://www.npmjs.com/package/@notato/angular). A page you cannot change takes it from the server instead: a script tag, a bookmark or the browser extension.

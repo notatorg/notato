@@ -1,4 +1,4 @@
-import { sampleAnnotation } from "@notato/schema";
+import { Status, sampleAnnotation } from "@notato/schema";
 import { z } from "zod";
 import { accessibleProjects, canAccessProject, isAdmin, type Principal } from "../auth.ts";
 import { webhookHost } from "../settings.ts";
@@ -30,6 +30,7 @@ export const statusRoutes: Routes = async ({ req, url, path, method, principal }
             screenshots: backend.config().screenshots,
             references: true,
             reviews: true,
+            annotationStatuses: Status.options,
             derivedScreenshots: backend.derivedScreenshots,
             captureOnly: principal.kind === "token" && principal.permission === "capture",
             agent: backend.agents.stateFor(project ?? accessibleProjects(principal)),

@@ -14,6 +14,20 @@ afterEach(() => {
 });
 
 describe("createPolicy", () => {
+    it("negotiates status filters and forgets them for servers that do not advertise them", async () => {
+        vi.stubGlobal(
+            "fetch",
+            answer({ annotationStatuses: ["open", "awaiting_response", "future_status", 42] })
+        );
+        const policy = createPolicy({ baseUrl: "http://localhost:4799" });
+        expect(policy.annotationStatusesNow()).toBeUndefined();
+        await policy.refresh();
+        expect(policy.annotationStatusesNow()).toEqual(["open", "awaiting_response"]);
+        vi.stubGlobal("fetch", answer({ screenshots: true }));
+        await policy.refresh();
+        expect(policy.annotationStatusesNow()).toBeUndefined();
+    });
+
     it("uses derived crops only after explicit capability confirmation", async () => {
         const fetchMock = answer({ screenshots: true, derivedScreenshots: true });
         vi.stubGlobal("fetch", fetchMock);

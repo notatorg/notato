@@ -4,6 +4,8 @@ Every Notato package is released together, at one version: the `notato` command 
 
 ## 0.3.0
 
+- Negotiate annotation status filters with the server before listing notes, avoiding rejected requests when a new SDK connects to an older server.
+
 - **Grouped reviews.** The browser, React and Angular toolbar can hold up to 50 related annotations across pages, with one shared instruction, and send the review when ready. Drafts survive reloads, stay out of normal exports, and are scoped to the destination and credential. The board links related targets; `notato_get_review` lets the agent read the whole review before fixing it.
 - **Design references.** Attach up to three images to a browser annotation. Client-side WebP encoding, metadata removal and resizing bound transfer; server file/pixel limits, private asset access, storage accounting, exports, deletion and encrypted backups cover the attachments too. Agents load references explicitly through `notato_get`; watches stay small.
 - **Hide completed feedback.** Hide a completed SDK pin/card privately in this browser, with a restore action in Settings. The note stays in the dashboard, and unfinished work becomes visible again.

@@ -182,6 +182,7 @@ export function createController(props: NotatoProps): NotatoController {
               token: props.token,
               store,
               canRead: () => !policy.captureOnlyNow(),
+              annotationStatuses: () => policy.annotationStatusesNow(),
               onState: (state) => {
                   connection = state;
                   describeConnection();

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { Status } from "@notato/schema";
 import { runDev } from "../src/index.ts";
 import { cleanupAfterEach, tempDir } from "./helpers.ts";
 import { adminCookie, bearer, issue, startServe } from "./serve-helpers.ts";
@@ -30,6 +31,19 @@ async function server() {
 }
 
 describe("/status and /config", () => {
+    it("advertises list statuses that its annotations endpoint accepts", async () => {
+        const { s, alpha } = await server();
+        const config = await (
+            await s.call("/config?project=alpha", { headers: bearer(alpha) })
+        ).json();
+        expect(config.annotationStatuses).toEqual(Status.options);
+        const query = new URLSearchParams({ status: config.annotationStatuses.join(",") });
+        expect(
+            (await s.call(`/projects/alpha/annotations?${query}`, { headers: bearer(alpha) }))
+                .status
+        ).toBe(200);
+    });
+
     it("show a project token only its own project's agent, and nothing of how the server is set up", async () => {
         const { s, alpha } = await server();
         const status = (await (

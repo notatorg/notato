@@ -1,3 +1,4 @@
+import { Status } from "@notato/schema";
 import { authHeaders } from "./auth.ts";
 import { net } from "./net.ts";
 
@@ -10,6 +11,8 @@ export interface Policy {
     derivedScreenshotsNow(): boolean;
     referencesNow(): boolean;
     reviewsNow(): boolean;
+    /** Supported list filters; older servers advertise none, so their lists must be read without a status filter. */
+    annotationStatusesNow(): readonly Status[] | undefined;
     /** Asks the server now. Never throws. */
     refresh(): Promise<void>;
 }
@@ -32,6 +35,7 @@ export function createPolicy(options: {
     let derived = false;
     let references = !options.baseUrl;
     let reviews = !options.baseUrl;
+    let annotationStatuses: Status[] | undefined;
     let askedAt = 0;
     let pending: Promise<void> | undefined;
 
@@ -53,7 +57,13 @@ export function createPolicy(options: {
                         screenshots?: unknown;
                         captureOnly?: unknown;
                         derivedScreenshots?: unknown;
+                        annotationStatuses?: unknown;
                     };
+                    annotationStatuses = Array.isArray(body.annotationStatuses)
+                        ? body.annotationStatuses.filter(
+                              (s): s is Status => Status.safeParse(s).success
+                          )
+                        : undefined;
                     references = body.references === true;
                     reviews = body.reviews === true;
                     allowed = body.screenshots === true;
@@ -78,6 +88,7 @@ export function createPolicy(options: {
         derivedScreenshotsNow: () => derived,
         referencesNow: () => references,
         reviewsNow: () => reviews,
+        annotationStatusesNow: () => annotationStatuses,
         async screenshots() {
             if (Date.now() - askedAt > FRESH_MS) {
                 // A slow server must not hold up the annotation: stop waiting and go with what is known.
