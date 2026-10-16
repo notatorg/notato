@@ -359,7 +359,9 @@ await step("notato config webhook, in the compiled binary", async () => {
     );
     const listed = await run(["config", "webhook"], {}, dir);
     assert(
-        listed.stdout.includes("team  https://hooks.example.com/in"),
+        listed.code === 0 &&
+            listed.stdout.includes("team  https://hooks.example.com/••••") &&
+            !listed.stdout.includes("https://hooks.example.com/in"),
         `webhook list was:\n${listed.stdout}`
     );
     const removed = await run(["config", "webhook", "remove", "team"], {}, dir);
