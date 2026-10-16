@@ -59,7 +59,7 @@ Notato sends a token only from a debug build unless you set `allowTokenInRelease
 npx notato token create shop --purpose app --capture-only --expires 30
 ```
 
-A capture-only token can send notes and nothing else: one read out of the app cannot read, change or delete anyone's feedback. Notato asks the server what the token may do before it connects, then sends notes (and those kept on the device) without following the project; replies, status and revert are on the board, and a note's card says so. A test-mode package is shared from the device but not uploaded, which such a token may not do.
+A capture-only token can send notes and nothing else: one read out of the app cannot read, change or delete anyone's feedback. Notato asks the server what the token may do before it connects, then sends notes (and those kept on the device) without following the project; replies, status and revert are on the board, and a note's card says so. A test-mode package uploads its captured notes to the configured server too; it grants no access to existing feedback.
 
 ## Options
 
@@ -192,3 +192,5 @@ cd example && flutter run --dart-define=NOTATO_SERVER=http://localhost:4799 --da
 ```
 
 The contract tests run the server's own Zod schema over the JSON this package writes (`scripts/validate.ts`), and are skipped when `bun` is not installed. The toolbar's icons are white PNGs tinted where they are drawn, made by `swift scripts/icons/render.swift` at the repository's root.
+
+Capture-only uploads and retries follow the [shared capture contract](../../docs/capture-contract.md). With a server configured, screenshots require an explicit `screenshots: true` policy; unknown or unavailable initial policy means text-only capture. Local-only capture continues without a policy request.

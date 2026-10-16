@@ -963,18 +963,6 @@ export class NotatoController {
             return { kind: "sent" };
         } catch (e) {
             const error = e instanceof NotatoError ? e : new NotatoError(messageOf(e));
-            if (error.status === 409 && this.captureOnly && generation === this.generation) {
-                // A capture-only token is told only that the server has this id: the answer to an earlier send was
-                // lost on its way. It is there.
-                this.dropAssets(record.annotation);
-                this.store.update(id, (r) =>
-                    r.pending ? { annotation: r.annotation, pending: false, mine: r.mine } : r
-                );
-                this.sentState();
-                this.persist();
-                this.emit();
-                return { kind: "sent" };
-            }
             if (error.refusesNote) {
                 this.store.update(id, (r) => ({ ...r, failed: error.message }));
                 console.warn(`[notato] The server refused a note: ${error.message}`);
@@ -1444,7 +1432,7 @@ export class NotatoController {
      * Packages this device's notes as a bundle zip (`feedback.md`, `annotations.json`, `shots/`), the format
      * `notato_import_bundle` reads, and uploads it when a server is set. Returns the zip, and where it was written
      * when there is storage to write it to. With a server set, its screenshots are in it only when the server says it
-     * takes them; a capture-only token cannot upload it.
+     * takes them. Capture-only tokens may submit these notes as a batch.
      */
     async packageNotes(options: { upload?: boolean } = {}): Promise<{
         zip: Uint8Array;
@@ -1477,7 +1465,7 @@ export class NotatoController {
         );
         const uri = this.storage.writeShare(name, zip);
         let uploaded = false;
-        if (options.upload !== false && this.server && !this.captureOnly) {
+        if (options.upload !== false && this.server) {
             await this.transport.uploadBundle(this.connectionTo(c, this.server), zip);
             uploaded = true;
         }

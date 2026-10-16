@@ -59,7 +59,7 @@ Notato never sends a token from a release build unless you set `allowTokenInRele
 npx notato token create shop --purpose app --capture-only --expires 30
 ```
 
-A capture-only token can send notes and nothing else: one read out of the app cannot read, change or delete anyone's feedback. Notato asks the server what the token may do before it connects, then sends notes (and those kept on the device) without following the project; replies, status and revert are on the board, and a note's card says so. A test-mode package is shared from the device but not uploaded, which such a token may not do.
+A capture-only token can send notes and nothing else: one read out of the app cannot read, change or delete anyone's feedback. Notato asks the server what the token may do before it connects, then sends notes (and those kept on the device) without following the project; replies, status and revert are on the board, and a note's card says so. A test-mode package uploads its captured notes to the configured server too; it grants no access to existing feedback.
 
 ## Props
 
@@ -185,3 +185,5 @@ EXPO_PUBLIC_NOTATO_SERVER=http://localhost:4799 EXPO_PUBLIC_NOTATO_MODE=test npx
 The example is an Expo app outside the repository's Bun workspace (its own `npm install`), so Expo stays out of every other install. Its `metro.config.js` runs the SDK from `../src` and makes the SDK's imports of React, React Native and the Expo modules use the app's own copies.
 
 The toolbar's icons are white PNGs tinted where they are drawn, made from the Android SDK's path data by `swift scripts/icons/render.swift` (macOS 14 or later), which writes them into this SDK and the Flutter one.
+
+Capture-only uploads and retries follow the [shared capture contract](../../docs/capture-contract.md). With a server configured, screenshots require an explicit `screenshots: true` policy; unknown or unavailable initial policy means text-only capture. Local-only capture continues without a policy request.

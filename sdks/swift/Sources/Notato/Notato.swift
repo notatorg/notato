@@ -373,12 +373,6 @@ public final class Notato {
                 return .skipped
             }
             return .sent
-        } catch let error as NotatoServerError where error.status == 409 && captureOnly {
-            // A capture-only token is told only that the server has a note with this id, not given its copy: this one,
-            // sent before, whose answer never came back.
-            Self.landed(record, as: record.annotation)
-            await store?.remove(record.id)
-            return .sent
         } catch let error as NotatoServerError where error.refusesNote {
             record.error = error.message
             await store?.refuse(record.id, because: error.message)
@@ -572,7 +566,6 @@ public final class Notato {
         case .offline: return connectionDetail ?? "Cannot reach \(host ?? "the server")"
         case .refused: return connectionDetail ?? "\(host ?? "The server") refused this app"
         case .local:
-            if mode == .test, captureOnly { return "Notes stay on this device until packaged; this app's token cannot upload a package" }
             if mode == .test { return host.map { "Notes stay on this device; a package is uploaded to \($0)" } ?? "Notes stay on this device until packaged" }
             return connectionDetail ?? "No server"
         case .disabled: return problem ?? "Off"
@@ -582,8 +575,8 @@ public final class Notato {
     // ---- test mode: a bundle zip -----------------------------------------------------------------------------------
 
     /// Packages this device's notes as a bundle zip (`feedback.md`, `annotations.json`, `shots/`), the format
-    /// `notato_import_bundle` reads, and uploads it when `upload` is true and a server is set (not with a capture-only
-    /// token, which may only send notes). Returns the zip's file URL. Throws `NotatoServerError` when the upload fails;
+    /// `notato_import_bundle` reads, and uploads it when `upload` is true and a server is set, including capture-only
+    /// tokens. Returns the zip's file URL. Throws `NotatoServerError` when the upload fails;
     /// the zip is written all the same. With a server set, its screenshots are left out unless the server says it takes
     /// them.
     public func packageNotes(upload: Bool = true) async throws -> URL {
@@ -614,14 +607,13 @@ public final class Notato {
         return url
     }
 
-    /// Uploads a package to the server, when one is set that takes packages from this app: a capture-only token may only
-    /// send notes, and the server would refuse it. Returns whether it was uploaded.
+    /// Uploads captured notes as a package, including with a capture-only token. Returns whether it was uploaded.
     @discardableResult
     func uploadPackage(_ url: URL) async throws -> Bool {
         guard let configuration, let server else { return false }
         await refreshPolicy()
-        if captureOnly { return false }
-        try await client(for: server).uploadBundle(project: configuration.project, file: url)
+        let client = self.client.flatMap { $0.base == server ? $0 : nil } ?? client(for: server)
+        try await client.uploadBundle(project: configuration.project, file: url)
         return true
     }
 }

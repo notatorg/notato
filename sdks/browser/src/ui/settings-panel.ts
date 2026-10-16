@@ -260,7 +260,7 @@ export function createSettingsPanel(options: SettingsPanelOptions): SettingsPane
                 toggle("Screenshots", "Take a screenshot with each note.", "screenshots", () =>
                     options.serverScreenshots()
                         ? undefined
-                        : "The server has screenshots turned off."
+                        : "Screenshots are unavailable until the server allows them."
                 ).row,
                 mine.row
             ),

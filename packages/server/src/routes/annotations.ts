@@ -3,6 +3,7 @@ import { Annotation, Author, SafeId, Severity, Status, Variants } from "@notato/
 import { z } from "zod";
 import { canAccessProject, type Principal, samePrincipal } from "../auth.ts";
 import { type LocalBackend, RequestError, TEXT_MAX } from "../backend.ts";
+import { captureReceipt, captureScope } from "../capture-receipt.ts";
 import { filterFromQuery } from "../query.ts";
 import { type AnnotationFilter, type StoredAnnotation, tokenPurpose } from "../storage.ts";
 import {
@@ -161,6 +162,16 @@ async function ingest(
             };
     }
     const captureOnly = principal.kind === "token" && principal.permission === "capture";
+    const checkedCapture = captureOnly ? Annotation.safeParse(parsed) : undefined;
+    if (checkedCapture && !checkedCapture.success) throw new RequestError("invalid annotation");
+    const receipt =
+        checkedCapture?.success && principal.kind === "token"
+            ? await captureReceipt(
+                  checkedCapture.data,
+                  files,
+                  await captureScope(principal.tokenId, projectId, principal.scope)
+              )
+            : undefined;
     if (principal.kind === "token" && tokenPurpose(principal) === "app") {
         // A page cannot say it is an agent, and a capture-only page cannot say much else about itself.
         const checked = Annotation.safeParse(parsed);
@@ -182,9 +193,6 @@ async function ingest(
                 : {}),
         };
         if (captureOnly) {
-            // Retrying an existing id must never disclose another person's stored feedback.
-            if (await app.backend.get(checked.data.id))
-                throw new RequestError("annotation id already exists", 409);
             for (const ref of [
                 checked.data.screenshots?.full,
                 checked.data.screenshots?.crop,
@@ -194,11 +202,26 @@ async function ingest(
                     throw new RequestError("capture tokens must supply screenshot bytes");
         }
     }
-    const { stored, created } = await app.backend.ingest(parsed, files, { projectId });
-    if (captureOnly)
-        return created
-            ? json({ seq: 0, annotation: stored.annotation }, 201)
-            : json({ error: "annotation id already exists" }, 409);
+    const { stored, created } = await app.backend.ingest(parsed, files, { projectId, receipt });
+    if (captureOnly) {
+        // Echo the submission, never the saved report: a retry cannot disclose later replies or edits.
+        const submitted = Annotation.parse(parsed);
+        return json(
+            {
+                seq: 0,
+                annotation: {
+                    ...submitted,
+                    bundleId: null,
+                    status: "open",
+                    thread: [],
+                    links: undefined,
+                    variants: undefined,
+                },
+                accepted: true,
+            },
+            created ? 201 : 200
+        );
+    }
     return json(stored, created ? 201 : 200);
 }
 

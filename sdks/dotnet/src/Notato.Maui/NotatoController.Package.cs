@@ -22,8 +22,8 @@ internal sealed partial class NotatoController
         return path;
     }
 
-    /// <summary>Whether a package goes to the server too: there is one, and the app's token may do more than send notes.</summary>
-    private bool Uploads => Server is not null && !CaptureOnly;
+    /// <summary>Whether a package goes to the configured server, including with a capture-only token.</summary>
+    private bool Uploads => Server is not null;
 
     /// <summary>The menu's Package and share: packaged, uploaded when there is a server, then the share sheet.</summary>
     internal async Task PackageFromMenuAsync(OverlaySession session)

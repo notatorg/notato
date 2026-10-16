@@ -98,13 +98,13 @@ describe("token purposes", () => {
         expect(kept?.author.kind).toBe("human");
         expect(kept?.context).toMatchObject({ notatoCaptureSource: "unverified app feedback" });
 
-        // Sending the same id again says no, and says nothing about what is stored.
+        // An identical retry acknowledges this submission without reading back the stored report.
         const again = await s.call("/projects/p/annotations", {
             method: "POST",
             headers: bearer(token.token),
             body: multipart(note, filesFor()),
         });
-        expect(again.status).toBe(409);
+        expect(again.status).toBe(200);
         expect(
             (await s
                 .call("/config?project=p", { headers: bearer(token.token) })

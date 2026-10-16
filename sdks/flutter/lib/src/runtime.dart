@@ -704,16 +704,6 @@ class NotatoRuntime extends ChangeNotifier implements NotatoController {
       notifyListeners();
       return const Sent();
     } on NotatoException catch (error) {
-      if (error.status == 409 && captureOnly && generation == _generation) {
-        // A capture-only token is told only that the server has this id: the answer to an earlier send was lost on its
-        // way. It is there.
-        _dropAssets(record.annotation);
-        _notes.update(id, (r) => r.pending ? NoteRecord(r.annotation, mine: r.mine) : r);
-        _sentState(null);
-        _persist();
-        notifyListeners();
-        return const Sent();
-      }
       if (error.refusesNote) {
         _notes.update(id, (r) => r.copyWith(failed: error.message));
         debugPrint('[notato] The server refused a note: ${error.message}');
@@ -1255,7 +1245,7 @@ class NotatoRuntime extends ChangeNotifier implements NotatoController {
 
   /// A package, and whether its screenshots are in it: with a server set, only when the server says it takes them. They
   /// may have been taken while it did, but a package is shared by hand, so it follows what the server says now. A
-  /// capture-only token cannot upload it.
+  /// capture-only token can upload these notes as a batch.
   Future<({List<int> zip, String name, String? path, bool uploaded, bool screenshots})> _package({
     required bool upload,
   }) async {
@@ -1282,7 +1272,7 @@ class NotatoRuntime extends ChangeNotifier implements NotatoController {
     }
     var uploaded = false;
     final s = server;
-    if (upload && s != null && !captureOnly) {
+    if (upload && s != null) {
       await _clientFor(s).uploadBundle(written.zip);
       uploaded = true;
     }

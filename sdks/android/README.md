@@ -101,7 +101,7 @@ In code (`NotatoConfig`), or as `<meta-data android:name="notato.<key>">` in the
 | `startAnnotating()`, `stopAnnotating()`  | The next tap selects what is under it                                                                                                                                                                         |
 | `select(view)`, `select("#save")`        | Select an element as if it had been tapped, and open the note for it                                                                                                                                          |
 | `annotate("#save", comment, options)`    | Make a note with no UI (a suspend function), as a person or (with `agentName`) an agent. `peopleOnly = true` keeps a person's note from the agent                                                             |
-| `packageNotes(upload)`                   | Test mode: the device's notes as a bundle zip, uploaded unless the token is capture-only. Without their screenshots when the server has them off                                                              |
+| `packageNotes(upload)`                   | Test mode: the device's notes as a bundle zip, uploaded to the configured server, including with capture-only tokens. Without their screenshots when the server has them off                                                              |
 | `mask(view, true / false / null)`        | Mark a view private (covered in screenshots, none of its text recorded), not private (a field recorded even with `maskInputs`), or back to the default. See [What is never recorded](#what-is-never-recorded) |
 | `recordRequest(entry)`                   | Add an HTTP request to the `network` context of later notes, from any thread. Its address is kept without the query string or a `user:password@`, which routinely carry credentials                           |
 
@@ -161,7 +161,7 @@ What a note's selector looks like, and what an agent passes to `notato_annotate`
 ## Modes
 
 - **dev**: notes go live to `notato dev`, pins turn amber when the agent acknowledges them and green when it resolves them, and replies arrive in the pin's card. On a resolved pin, **Ask the agent to revert** asks for the change to be undone. A note made while the server is down is kept on the device and sent when it comes back.
-- **test**: notes stay on the device (they survive a restart). **Package and share** in the toolbar's menu makes the bundle zip `notato_import_bundle` reads, opens the share sheet, and uploads it when a server is set (unless its token is capture-only: see [Tokens](#tokens)).
+- **test**: notes stay on the device (they survive a restart). **Package and share** in the toolbar's menu makes the bundle zip `notato_import_bundle` reads, opens the share sheet, and uploads it when a server is set.
 - **agent**: like dev, and the app also takes `notato_annotate` requests: `notato_annotate { target: "#add_to_basket", comment: "…" }` is relayed to the app, which finds the element, takes the screenshot and files the note as the agent.
 
 ## Tokens
@@ -172,7 +172,7 @@ On your own machine, `notato dev` needs no token. For a shared `notato serve`, t
 npx notato token create shop-android --purpose app --capture-only --expires 30
 ```
 
-A capture-only token sends new notes and nothing else: someone who extracts it cannot read, change or delete the project's notes and screenshots. With one, Notato sends each note (and the ones queued while offline) as it is made, and does not follow the project live: the menu says it is sending, a sent note's card says to read and answer it on the board, and replies, revert and delete are on the board. A test-mode package with one is shared by hand rather than uploaded. Keep capture-and-feedback tokens for builds that stay with the team.
+A capture-only token sends new notes and nothing else: someone who extracts it cannot read, change or delete the project's notes and screenshots. With one, Notato sends each note (and the ones queued while offline) as it is made, and does not follow the project live: the menu says it is sending, a sent note's card says to read and answer it on the board, and replies, revert and delete are on the board. A test-mode package uploads its captured notes when a server is configured too. Keep capture-and-feedback tokens for builds that stay with the team.
 
 ## People only and asides
 
@@ -215,3 +215,5 @@ adb reverse tcp:4747 tcp:4747
 ```
 
 The contract tests run the server's own Zod schema over the JSON this library writes (`scripts/validate.ts`), and are skipped when `bun` is not installed.
+
+Capture-only uploads and retries follow the [shared capture contract](../../docs/capture-contract.md). With a server configured, screenshots require an explicit `screenshots: true` policy; unknown or unavailable initial policy means text-only capture. Local-only capture continues without a policy request.

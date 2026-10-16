@@ -309,7 +309,7 @@ extension ClientTests {
         #expect(waiting.pending && waiting.error == nil, "still queued, not refused")
     }
 
-    @Test @MainActor func aCaptureOnlyTokenIsAnswered409ForANoteItSentBefore() async throws {
+    @Test @MainActor func aCaptureOnlyTokenKeepsAConflictWithoutAssumingDelivery() async throws {
         let notato = Fixture.notato()
         let resent = NoteRecord(Fixture.note(7), pending: true, mine: true)
         notato.insert([resent])
@@ -317,8 +317,8 @@ extension ClientTests {
             request.url?.path == "/config" ? (200, Data("{\"captureOnly\":true}".utf8)) : (409, Data("{\"error\":\"annotation id already exists\"}".utf8))
         }
         try await notato.readPolicy(notato.client!)
-        #expect(await notato.send(resent) == .sent)
-        #expect(!resent.pending && resent.error == nil)
+        #expect(await notato.send(resent) == .refused("annotation id already exists"))
+        #expect(resent.pending && resent.error != nil)
 
         // With any other token the server sends its copy back for an id it has: a 409 is a refusal.
         let other = NoteRecord(Fixture.note(8), pending: true, mine: true)
@@ -345,11 +345,11 @@ extension ClientTests {
         defer { try? FileManager.default.removeItem(at: on) }
         #expect(try Data(contentsOf: on).range(of: Data("shots/01-full.png".utf8)) != nil)
 
-        // A capture-only token may only send notes: the package is not uploaded to be refused.
+        // A capture-only token may send the captured notes as a package too.
         answer.now = (200, "{\"screenshots\":true,\"captureOnly\":true}")
         tester.policyAsked = nil
-        #expect(try await tester.uploadPackage(on) == false)
-        #expect(!Self.seen().contains { $0.hasPrefix("POST") }, "\(Self.seen())")
+        #expect(try await tester.uploadPackage(on) == true)
+        #expect(Self.seen().contains { $0.hasPrefix("POST") }, "\(Self.seen())")
     }
 }
 

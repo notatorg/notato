@@ -70,7 +70,7 @@ void main() {
     await unmount(tester);
   });
 
-  testWidgets('a capture-only token tries the notes that could not go again, and takes a 409 as sent', (tester) async {
+  testWidgets('a capture-only token retries offline notes but keeps a conflicting capture', (tester) async {
     final server = FakeServer()
       ..captureOnly = true
       ..notesOffline = true;
@@ -87,14 +87,14 @@ void main() {
     expect(notato.pendingCount, 0);
     expect(notato.connection, NotatoConnection.connected);
 
-    // The answer to an earlier send was lost: the server says it has the id, and it is there.
+    // A generic conflict is not an acknowledgement of this submission.
     server
       ..failWith = 409
       ..failMessage = 'annotation id already exists';
     await drive(tester, notato.annotate('#add-to-basket', 'Landed before', screenshot: false));
     await settle(tester);
-    expect(notato.pendingCount, 0);
-    expect(notato.notes.last.failed, isNull);
+    expect(notato.pendingCount, 1);
+    expect(notato.notes.last.failed, contains("already exists"));
     await unmount(tester);
   });
 

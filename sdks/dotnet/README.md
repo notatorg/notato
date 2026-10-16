@@ -202,7 +202,7 @@ A build you hand out (TestFlight, an internal track, a device farm) holds whatev
 npx notato token create checkout-app --purpose app --capture-only --expires 30
 ```
 
-Notato asks the server what the token may do before it connects. With a capture-only token it sends notes (and those kept on the device) without following the project, the notes' cards point to the board for replies, status and revert, and a test-mode package is shared but not uploaded, which such a token may not do.
+Notato asks the server what the token may do before it connects. With a capture-only token it sends notes (and those kept on the device) without following the project, the notes' cards point to the board for replies, status and revert, and a test-mode package uploads its captured notes when a server is configured.
 
 ## Known limits
 
@@ -236,3 +236,5 @@ The code, in `src/Notato.Maui`:
 The sample is a small Shell shop with a modal checkout and a **Feedback** tab that drives `INotato`. Point it at another server with an environment variable (`Notato__Server=http://localhost:4790`; on the simulator, `SIMCTL_CHILD_Notato__Server` with `xcrun simctl launch`). Build it with `-p:NotatoSampleDevFlow=true` to include the MAUI DevFlow agent, for driving it from a terminal.
 
 `src/Notato.Maui/build/Notato.Maui.targets` ships in the package (`buildTransitive`) and records each assembly's project path from the repository root, in Debug builds only (the repository's absolute path names your machine and user: `<NotatoSourceInfo>true</NotatoSourceInfo>` records it in other configurations too, `false` in none); a project reference imports it by hand, as the sample does.
+
+Capture-only uploads and retries follow the [shared capture contract](../../docs/capture-contract.md). With a server configured, screenshots require an explicit `screenshots: true` policy; unknown or unavailable initial policy means text-only capture. Local-only capture continues without a policy request.

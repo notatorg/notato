@@ -797,8 +797,8 @@ internal class Controller(
             return
         }
         var problem: String? = null
-        // A capture-only token cannot upload a package: the zip is shared by hand, as with no server.
-        val uploadTo = server?.takeIf { !sync.captureOnly }
+        // A package submits new notes under the same permissions as individual captures.
+        val uploadTo = server
         uploadTo?.let { url ->
             try {
                 NotatoClient(url, config.tokenFor(url)).uploadBundle(config.project, file)
@@ -831,7 +831,7 @@ internal class Controller(
             NotatoConnection.OFFLINE -> sync.connectionDetail ?: "Cannot reach ${host ?: "the server"}"
             NotatoConnection.REFUSED -> sync.connectionDetail ?: "${host ?: "The server"} refused this app"
             NotatoConnection.LOCAL -> if (mode == NotatoMode.TEST) {
-                host?.takeIf { !sync.captureOnly }?.let { "Notes stay on this device; a package is uploaded to $it" } ?: "Notes stay on this device until packaged"
+                host?.let { "Notes stay on this device; a package is uploaded to $it" } ?: "Notes stay on this device until packaged"
             } else {
                 sync.connectionDetail ?: "No server"
             }

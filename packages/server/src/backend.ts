@@ -22,6 +22,7 @@ import { ulid } from "ulid";
 import { AgentPresence } from "./agents.ts";
 import { UnknownProjectError } from "./auth.ts";
 import { sha256Hex } from "./blob-store.ts";
+import { captureReceipt } from "./capture-receipt.ts";
 import { type ConfigSource, defaultConfig } from "./config.ts";
 import { EventBus, type EventType } from "./events.ts";
 import { ImageViews } from "./image-views.ts";
@@ -31,6 +32,7 @@ import {
     type AnnotationFilter,
     type BlobStore,
     type BundleRecord,
+    type CaptureReceipt,
     type HandedEntry,
     inProjects,
     PROJECT_ID,
@@ -198,6 +200,15 @@ export interface ImportOptions {
      * as reading back an export needs.
      */
     asPerson?: { name?: string };
+    /** Send-only imports acknowledge only notes previously accepted from this credential with the same content. */
+    captureScope?: string;
+}
+
+interface IngestOptions {
+    projectId?: string;
+    preserveLifecycle?: boolean;
+    bundleId?: string | null;
+    receipt?: CaptureReceipt;
 }
 
 /** The most bundle records a listing holds: the newest. */
@@ -348,7 +359,7 @@ export class LocalBackend implements Backend {
     ingest(
         raw: unknown,
         files: ReadonlyMap<string, Uint8Array>,
-        options: { projectId?: string; preserveLifecycle?: boolean; bundleId?: string | null } = {}
+        options: IngestOptions = {}
     ): Promise<{ stored: StoredAnnotation; created: boolean }> {
         return this.serialAssets(() => this.ingestUnlocked(raw, files, options));
     }
@@ -356,7 +367,7 @@ export class LocalBackend implements Backend {
     private async ingestUnlocked(
         raw: unknown,
         files: ReadonlyMap<string, Uint8Array>,
-        options: { projectId?: string; preserveLifecycle?: boolean; bundleId?: string | null }
+        options: IngestOptions
     ): Promise<{ stored: StoredAnnotation; created: boolean }> {
         const parsed = Annotation.safeParse(raw);
         if (!parsed.success) {
@@ -376,7 +387,11 @@ export class LocalBackend implements Backend {
         if (tooLarge) throw new RequestError(`annotation too large: ${tooLarge}`, 413);
 
         const existing = await this.store.getAnnotation(annotation.id);
-        if (existing) return { stored: this.sameProject(existing, annotation), created: false };
+        if (existing)
+            return {
+                stored: await this.acceptExisting(existing, annotation, options.receipt),
+                created: false,
+            };
         await this.ensureProject(annotation.projectId);
 
         type Ref = NonNullable<Annotation["screenshots"]>["full"];
@@ -477,12 +492,15 @@ export class LocalBackend implements Backend {
 
         let stored: StoredAnnotation;
         try {
-            stored = await this.store.insertAnnotation(annotation, assetBytes);
+            stored = await this.store.insertAnnotation(annotation, assetBytes, options.receipt);
         } catch (error) {
             // The same note sent twice at once: the other request stored it first.
             const raced = await this.store.getAnnotation(annotation.id);
             if (!raced) throw error;
-            return { stored: this.sameProject(raced, annotation), created: false };
+            return {
+                stored: await this.acceptExisting(raced, annotation, options.receipt),
+                created: false,
+            };
         }
         this.emit("created", stored);
         return { stored, created: true };
@@ -496,6 +514,24 @@ export class LocalBackend implements Backend {
                 409
             );
         return existing;
+    }
+
+    private async acceptExisting(
+        existing: StoredAnnotation,
+        sent: Annotation,
+        receipt?: CaptureReceipt
+    ): Promise<StoredAnnotation> {
+        if (receipt) {
+            const accepted = await this.store.getCaptureReceipt?.(sent.id);
+            if (
+                existing.annotation.projectId !== sent.projectId ||
+                !accepted ||
+                accepted.scope !== receipt.scope ||
+                accepted.fingerprint !== receipt.fingerprint
+            )
+                throw new RequestError("annotation id conflicts with an existing submission", 409);
+        }
+        return this.sameProject(existing, sent);
     }
 
     // ---- projects ----------------------------------------------------------------------------------------
@@ -889,8 +925,29 @@ export class LocalBackend implements Backend {
                 throw new RequestError(
                     `annotation ${parsed.data.id} is for project "${parsed.data.projectId}", not the bundle's "${bundle.projectId}"`
                 );
+            if (options.captureScope) {
+                const assets = assetsFor(a, files);
+                for (const ref of [
+                    a.screenshots?.full,
+                    a.screenshots?.crop,
+                    a.screenshots?.thumbnail,
+                ])
+                    if (ref && !assets.has(ref.id))
+                        throw new RequestError("capture tokens must supply screenshot bytes");
+            }
             const existing = await this.store.getAnnotation(parsed.data.id);
-            if (existing) this.sameProject(existing, parsed.data);
+            if (existing)
+                await this.acceptExisting(
+                    existing,
+                    parsed.data,
+                    options.captureScope
+                        ? await captureReceipt(
+                              parsed.data,
+                              assetsFor(a, files),
+                              options.captureScope
+                          )
+                        : undefined
+                );
             else fresh += 1;
             for (const bytes of assetsFor(a, files).values()) {
                 if (!sniffImageMime(bytes))
@@ -922,12 +979,23 @@ export class LocalBackend implements Backend {
                           kind: "human",
                           ...(asPerson.name ? { name: asPerson.name } : {}),
                       },
+                      ...(options.captureScope
+                          ? {
+                                context: {
+                                    ...a.context,
+                                    notatoCaptureSource: "unverified app feedback",
+                                },
+                            }
+                          : {}),
                   }
                 : a;
             const { created } = await this.ingest(sent, assetsFor(a, files), {
                 projectId: bundle.projectId,
                 preserveLifecycle: !asPerson,
                 bundleId: bundle.id,
+                receipt: options.captureScope
+                    ? await captureReceipt(a, assetsFor(a, files), options.captureScope)
+                    : undefined,
             });
             if (created) imported += 1;
             else skipped += 1;

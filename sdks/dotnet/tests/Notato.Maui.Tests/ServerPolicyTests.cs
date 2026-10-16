@@ -65,7 +65,7 @@ public class ServerPolicyTests
     }
 
     [Fact]
-    public async Task A_capture_only_token_takes_a_409_as_a_note_the_server_already_has()
+    public async Task A_capture_only_token_keeps_a_conflicting_note_instead_of_assuming_delivery()
     {
         NotatoController controller = Fixtures.Controller();
         controller.Records.Add(new NoteRecord(Note(Id)) { Pending = true, Mine = true });
@@ -78,8 +78,8 @@ public class ServerPolicyTests
         await controller.OnSendOnlyAsync(client, CancellationToken.None);
 
         NoteRecord record = controller.Records.Single();
-        Assert.False(record.Pending);
-        Assert.Null(record.Error);
+        Assert.True(record.Pending);
+        Assert.Equal("annotation id already exists", record.Error);
     }
 
     [Fact]

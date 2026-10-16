@@ -107,14 +107,14 @@ describe("a capture-only token", () => {
         expect(server.transport.follow).not.toHaveBeenCalled();
     });
 
-    it("takes a 409 for a note the server already has as sent: an earlier answer was lost", async () => {
+    it("keeps a conflicting capture and marks it refused instead of assuming delivery", async () => {
         const server = captureOnlyServer();
         const { notato } = start({ project: "shop" }, server);
         await settle();
         server.failWith(new NotatoError("annotation id already exists", 409));
         await notato.annotate("Text", "Landed before");
-        expect(notato.getState().pendingCount).toBe(0);
-        expect(notato.getState().notes[0]?.failed).toBeUndefined();
+        expect(notato.getState().pendingCount).toBe(1);
+        expect(notato.getState().notes[0]?.failed).toContain("already exists");
     });
 
     it("is found out when the server could not be asked first and then refuses the stream", async () => {
@@ -133,15 +133,15 @@ describe("a capture-only token", () => {
         expect(stream.stop).toHaveBeenCalled();
     });
 
-    it("does not upload a test-mode package, which it may not", async () => {
+    it("uploads test-mode captures as a batch with a capture-only token", async () => {
         const server = captureOnlyServer();
         const { notato } = start(
             { project: "shop", mode: "test", server: "http://localhost:4799" },
             server
         );
         await notato.annotate("Text", "x");
-        expect((await notato.packageNotes()).uploaded).toBe(false);
-        expect(server.transport.uploadBundle).not.toHaveBeenCalled();
+        expect((await notato.packageNotes()).uploaded).toBe(true);
+        expect(server.transport.uploadBundle).toHaveBeenCalledOnce();
     });
 });
 

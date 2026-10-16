@@ -41,10 +41,10 @@ describe("createPolicy", () => {
         );
     });
 
-    it("allows screenshots until the server says otherwise", async () => {
+    it("takes no screenshot until a configured server explicitly allows it", async () => {
         vi.stubGlobal("fetch", answer({ screenshots: true }));
         const policy = createPolicy({ baseUrl: "http://localhost:4747" });
-        expect(policy.screenshotsNow()).toBe(true);
+        expect(policy.screenshotsNow()).toBe(false);
         expect(await policy.screenshots()).toBe(true);
     });
 
@@ -101,7 +101,21 @@ describe("createPolicy", () => {
         const policy = createPolicy({ baseUrl: "http://localhost:4747" });
         const pending = policy.screenshots();
         await vi.advanceTimersByTimeAsync(2_000);
-        expect(await pending).toBe(true);
+        expect(await pending).toBe(false);
+    });
+
+    it("keeps capture text-only for unreachable or older servers without screenshot policy", async () => {
+        vi.stubGlobal("fetch", answer({}));
+        const policy = createPolicy({ baseUrl: "http://localhost:4799" });
+        expect(await policy.screenshots()).toBe(false);
+        vi.advanceTimersByTime(6_000);
+        vi.stubGlobal(
+            "fetch",
+            vi.fn(async () => {
+                throw new Error("offline");
+            })
+        );
+        expect(await policy.screenshots()).toBe(false);
     });
 
     it("never calls out when there is no server", async () => {

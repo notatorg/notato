@@ -135,31 +135,24 @@ internal class NoteSync(private val controller: Controller, private val storeBas
         } catch (error: CancellationException) {
             throw error
         } catch (error: NotatoServerException) {
-            if (captureOnly && error.status == 409) {
-                // A capture-only token is told only that the id is taken (never what the server has under it): this is
-                // a note sent again after the answer to sending it was lost. The server has it.
-                heardFrom(null)
-                StoredAnnotation(annotation = record.annotation)
-            } else {
-                heardFrom(error)
-                val outcome = outcomeOf(error)
-                return when {
-                    outcome == SendOutcome.REFUSED -> {
-                        record.error = error.message
-                        record.held = null
-                        Log.w(TAG, "The Notato server refused a note: ${error.message}")
-                        controller.publish()
-                        SendResult(outcome, "The server refused it: ${error.message}")
-                    }
-                    error.status != 0 -> {
-                        // The server is there but not taking it now (a project it does not have, a token it does not
-                        // know): what it said goes on the note, which stays queued for the next connect.
-                        record.held = error.message
-                        controller.publish()
-                        SendResult(outcome, "Saved, not sent: ${error.message}")
-                    }
-                    else -> SendResult(outcome, NOT_REACHABLE)
+            heardFrom(error)
+            val outcome = outcomeOf(error)
+            return when {
+                outcome == SendOutcome.REFUSED -> {
+                    record.error = error.message
+                    record.held = null
+                    Log.w(TAG, "The Notato server refused a note: ${error.message}")
+                    controller.publish()
+                    SendResult(outcome, "The server refused it: ${error.message}")
                 }
+                error.status != 0 -> {
+                    // The server is there but not taking it now (a project it does not have, a token it does not
+                    // know): what it said goes on the note, which stays queued for the next connect.
+                    record.held = error.message
+                    controller.publish()
+                    SendResult(outcome, "Saved, not sent: ${error.message}")
+                }
+                else -> SendResult(outcome, NOT_REACHABLE)
             }
         } catch (error: Exception) {
             Log.w(TAG, "Notato could not send a note", error)

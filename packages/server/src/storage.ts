@@ -81,6 +81,12 @@ export interface StoredAnnotation {
     annotation: Annotation;
 }
 
+/** Private ingestion metadata, stored atomically with the note and never exported as feedback. */
+export interface CaptureReceipt {
+    scope: string;
+    fingerprint: string;
+}
+
 export interface BundleRecord {
     id: string;
     projectId: string;
@@ -123,7 +129,13 @@ export interface Store {
      * Stores a new note. `assetBytes` is the size of its screenshots, for a store that keeps account of what each
      * project or customer holds; the built-in ones ignore it.
      */
-    insertAnnotation(annotation: Annotation, assetBytes?: number): Promise<StoredAnnotation>;
+    insertAnnotation(
+        annotation: Annotation,
+        assetBytes?: number,
+        receipt?: CaptureReceipt
+    ): Promise<StoredAnnotation>;
+    /** Optional for third-party stores: without it, capture retries safely remain conflicts. */
+    getCaptureReceipt?(id: string): Promise<CaptureReceipt | null>;
     getAnnotation(id: string): Promise<StoredAnnotation | null>;
     listAnnotations(filter?: AnnotationFilter): Promise<StoredAnnotation[]>;
     /** Applies `mutate` to the stored annotation atomically. Returns null when the id is unknown. */

@@ -381,7 +381,7 @@ export function createApp(options: AppOptions): AppHandler {
                     if (
                         !(
                             method === "POST" &&
-                            /^\/projects\/[^/]+\/(annotations|connection)$/.test(path)
+                            /^\/projects\/[^/]+\/(annotations|connection|bundles)$/.test(path)
                         ) &&
                         path !== "/health"
                     )

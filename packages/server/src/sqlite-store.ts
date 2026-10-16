@@ -5,6 +5,7 @@ import {
     type AuthStore,
     annotationColumns,
     type BundleRecord,
+    type CaptureReceipt,
     type HandedEntry,
     type ProjectRecord,
     type ProjectSummary,
@@ -15,7 +16,7 @@ import {
     type UserRecord,
 } from "./storage.ts";
 
-const SCHEMA_VERSION = 6;
+const SCHEMA_VERSION = 7;
 
 /** The statuses a project's `open` count includes: work still waiting for someone. */
 const WAITING = new Set<Status>(["open", "variant_chosen", "revert_requested"]);
@@ -51,8 +52,8 @@ const SET_DERIVED = DERIVED_NAMES.map((name) => `${name} = ?`).join(", ");
 const placeholders = (n: number) => Array.from({ length: n }, () => "?").join(", ");
 
 const INSERT_ANNOTATION = `INSERT INTO annotations
-    (id, project_id, bundle_id, status, severity, route, author_kind, created_at, json, ${DERIVED_NAMES.join(", ")})
-    VALUES (${placeholders(9 + DERIVED_NAMES.length)})`;
+    (id, project_id, bundle_id, status, severity, route, author_kind, created_at, json, ${DERIVED_NAMES.join(", ")}, capture_scope, capture_fingerprint)
+    VALUES (${placeholders(11 + DERIVED_NAMES.length)})`;
 
 const UPDATE_ANNOTATION = `UPDATE annotations SET status = ?, severity = ?, route = ?, json = ?, ${SET_DERIVED}
     WHERE id = ?`;
@@ -147,6 +148,16 @@ export class SqliteStore implements Store, AuthStore {
         }
         if (current < 5) this.addDerivedColumns();
         if (current < 6) this.addTokenPurposes();
+        if (current < 7) {
+            const have = new Set(
+                (
+                    this.db.query("PRAGMA table_info(annotations)").all() as Array<{ name: string }>
+                ).map((column) => column.name)
+            );
+            for (const column of ["capture_scope", "capture_fingerprint"])
+                if (!have.has(column))
+                    this.db.run(`ALTER TABLE annotations ADD COLUMN ${column} TEXT`);
+        }
         // A project's notes in order, a page at a time: the board, every SDK and every agent page through them.
         this.db.run(
             "CREATE INDEX IF NOT EXISTS idx_annotations_project_seq ON annotations (project_id, seq)"
@@ -210,7 +221,11 @@ export class SqliteStore implements Store, AuthStore {
         return { seq: row.seq, annotation: Annotation.parse(JSON.parse(row.json)) };
     }
 
-    async insertAnnotation(a: Annotation): Promise<StoredAnnotation> {
+    async insertAnnotation(
+        a: Annotation,
+        _assetBytes?: number,
+        receipt?: CaptureReceipt
+    ): Promise<StoredAnnotation> {
         const result = this.db
             .query(INSERT_ANNOTATION)
             .run(
@@ -223,9 +238,20 @@ export class SqliteStore implements Store, AuthStore {
                 a.author.kind,
                 a.createdAt,
                 JSON.stringify(a),
-                ...derivedValues(a)
+                ...derivedValues(a),
+                receipt?.scope ?? null,
+                receipt?.fingerprint ?? null
             );
         return { seq: Number(result.lastInsertRowid), annotation: a };
+    }
+
+    async getCaptureReceipt(id: string): Promise<CaptureReceipt | null> {
+        const row = this.db
+            .query(
+                "SELECT capture_scope AS scope, capture_fingerprint AS fingerprint FROM annotations WHERE id = ?"
+            )
+            .get(id) as CaptureReceipt | null;
+        return row?.scope && row.fingerprint ? row : null;
     }
 
     async getAnnotation(id: string): Promise<StoredAnnotation | null> {

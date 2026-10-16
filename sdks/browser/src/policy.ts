@@ -16,9 +16,8 @@ const FRESH_MS = 5_000;
 const WAIT_MS = 1_500;
 
 /**
- * What the Notato server allows (`notato config`). Allowed until the server says otherwise: an unreachable server
- * cannot be asked, and it enforces its own settings on whatever it is sent anyway, so this only saves taking a
- * screenshot that would be thrown away.
+ * What the Notato server allows (`notato config`). A configured server must explicitly permit screenshots before
+ * any pixels are captured. Local-only capture needs no server permission. A failed refresh keeps the last answer.
  */
 export function createPolicy(options: {
     baseUrl: string | undefined;
@@ -26,7 +25,7 @@ export function createPolicy(options: {
     token?: string;
     onCapabilities?: () => void;
 }): Policy {
-    let allowed = true;
+    let allowed = !options.baseUrl;
     let captureOnly = false;
     let derived = false;
     let askedAt = 0;
@@ -49,7 +48,7 @@ export function createPolicy(options: {
                         captureOnly?: unknown;
                         derivedScreenshots?: unknown;
                     };
-                    if (typeof body.screenshots === "boolean") allowed = body.screenshots;
+                    allowed = body.screenshots === true;
                     captureOnly = body.captureOnly === true;
                     derived = body.derivedScreenshots === true;
                     options.onCapabilities?.();

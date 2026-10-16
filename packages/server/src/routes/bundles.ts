@@ -1,5 +1,6 @@
 import { accessibleProjects, type Principal } from "../auth.ts";
 import { BUNDLE_LIST_MAX, RequestError } from "../backend.ts";
+import { captureScope } from "../capture-receipt.ts";
 import { filterFromQuery } from "../query.ts";
 import { tokenPurpose } from "../storage.ts";
 import {
@@ -48,7 +49,15 @@ async function importBundle(
         (principal.kind === "token" && tokenPurpose(principal) === "app")
             ? { name: principal.kind === "token" ? principal.authorName : undefined }
             : undefined;
-    const result = await app.backend.importBundle(bytes, { projectId: target, asPerson });
+    const scope =
+        principal.kind === "token" && principal.permission === "capture" && target
+            ? await captureScope(principal.tokenId, target, principal.scope)
+            : undefined;
+    const result = await app.backend.importBundle(bytes, {
+        projectId: target,
+        asPerson,
+        captureScope: scope,
+    });
     return json(result, result.imported > 0 ? 201 : 200);
 }
 
