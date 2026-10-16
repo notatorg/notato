@@ -39,7 +39,9 @@ mode and credential. Changing a token does not carry another credential's drafts
 Use **Discard review** to remove only its unsent drafts. **Download review** saves a ZIP backup without sending or discarding it, including if browser storage is full. Normal exports exclude drafts.
 
 The annotation composer also accepts up to **three reference images** (PNG, JPEG or
-WebP). Each input can be at most 16 MB and 16 megapixels. The browser strips metadata,
+WebP). Choose files or paste an image into the composer with **Cmd+V / Ctrl+V**;
+selected and pasted images share the same limit and can be removed before sending.
+Each input can be at most 16 MB and 16 megapixels. The browser strips metadata,
 resizes to at most 2048 pixels on the longest side and encodes WebP; each resulting
 attachment must fit within 5 MB. References use the same private asset access and
 storage accounting as screenshots. They are deliberate uploads, independent of the

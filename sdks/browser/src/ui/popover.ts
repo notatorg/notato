@@ -1,4 +1,5 @@
 import type { Intent, Severity } from "@notato/schema";
+import { validateReferenceFile } from "../reference-image.ts";
 import { capitalize } from "../text.ts";
 import { h } from "./dom.ts";
 import { createFrames, type FrameJob, type Frames } from "./frame.ts";
@@ -105,6 +106,12 @@ export function createPopover(layer: HTMLElement, frames: Frames = createFrames(
     let targetsEl: HTMLElement;
     let saving = false;
     let files: File[] = [];
+    const attachmentsBusy = (busy: boolean) => {
+        for (const control of el?.querySelectorAll<HTMLInputElement | HTMLButtonElement>(
+            ".reference-picker input, .reference-picker button"
+        ) ?? [])
+            control.disabled = busy;
+    };
 
     /** Where it goes, worked out from its height as last laid out. */
     let height = 0;
@@ -147,8 +154,10 @@ export function createPopover(layer: HTMLElement, frames: Frames = createFrames(
         }
         saving = true;
         saveBtn.disabled = true;
+        attachmentsBusy(true);
         status.className = "status";
         status.textContent = "Saving…";
+        const savingPopover = el;
         try {
             await current.onSave({
                 comment,
@@ -158,8 +167,10 @@ export function createPopover(layer: HTMLElement, frames: Frames = createFrames(
                 ...(peopleOnly ? { peopleOnly } : {}),
             });
         } catch (error) {
+            if (el !== savingPopover) return;
             saving = false;
             saveBtn.disabled = false;
+            attachmentsBusy(false);
             status.className = "status error";
             status.textContent = error instanceof Error ? error.message : "Could not save.";
         }
@@ -278,47 +289,59 @@ export function createPopover(layer: HTMLElement, frames: Frames = createFrames(
                 },
             });
             if (init.reviewInstruction) textarea.placeholder = "Optional detail for this target";
-            const fileList = h("div", { class: "reference-files" });
+            const fileList = h("div", { class: "reference-files", "aria-live": "polite" });
             const fileInput = h("input", {
                 type: "file",
                 accept: "image/png,image/jpeg,image/webp",
                 multiple: true,
                 "aria-label": "Attach reference images",
             });
-            fileInput.addEventListener("change", () => {
-                const selected = [...(fileInput.files ?? [])];
-                if (files.length + selected.length > 3) {
-                    status.textContent = "Attach at most three reference images.";
-                    fileInput.value = "";
+            const redraw = () => {
+                fileList.replaceChildren(
+                    ...files.map((f) =>
+                        h(
+                            "div",
+                            {},
+                            f.name,
+                            h(
+                                "button",
+                                {
+                                    class: "btn",
+                                    type: "button",
+                                    "aria-label": `Remove ${f.name}`,
+                                    onclick: () => {
+                                        if (saving) return;
+                                        files = files.filter((item) => item !== f);
+                                        redraw();
+                                    },
+                                },
+                                "Remove"
+                            )
+                        )
+                    )
+                );
+                place();
+            };
+            const attach = (selected: File[]) => {
+                if (!current?.references || saving || !selected.length) return;
+                try {
+                    if (files.length + selected.length > 3)
+                        throw new Error("Attach at most three reference images.");
+                    for (const file of selected) validateReferenceFile(file);
+                } catch (error) {
+                    status.className = "status error";
+                    status.textContent = (error as Error).message;
+                    place();
                     return;
                 }
                 files.push(...selected);
-                fileInput.value = "";
-                const redraw = () =>
-                    fileList.replaceChildren(
-                        ...files.map((f) =>
-                            h(
-                                "div",
-                                {},
-                                f.name,
-                                h(
-                                    "button",
-                                    {
-                                        class: "btn",
-                                        type: "button",
-                                        "aria-label": `Remove ${f.name}`,
-                                        onclick: () => {
-                                            files = files.filter((item) => item !== f);
-                                            redraw();
-                                        },
-                                    },
-                                    "Remove"
-                                )
-                            )
-                        )
-                    );
+                status.className = "status";
+                status.textContent = idle();
                 redraw();
-                place();
+            };
+            fileInput.addEventListener("change", () => {
+                attach([...(fileInput.files ?? [])]);
+                fileInput.value = "";
             });
             status = h("span", { class: "status" }, idle());
             saveBtn = h(
@@ -328,7 +351,30 @@ export function createPopover(layer: HTMLElement, frames: Frames = createFrames(
             );
             el = h(
                 "div",
-                { class: "popover", role: "dialog", "aria-label": "New annotation" },
+                {
+                    class: "popover",
+                    role: "dialog",
+                    "aria-label": "New annotation",
+                    onpaste: (event: ClipboardEvent) => {
+                        const data = event.clipboardData;
+                        if (!current?.references || !data) return;
+                        // Prefer files; some browsers expose images only as items. Do not attach both representations.
+                        const pasted = [...data.files];
+                        const selected = (
+                            pasted.length
+                                ? pasted
+                                : [...data.items]
+                                      .filter((item) => item.kind === "file")
+                                      .map((item) => item.getAsFile())
+                                      .filter((file): file is File => file !== null)
+                        ).filter((file) => file.type.startsWith("image/"));
+                        if (!selected.length) return;
+                        event.stopPropagation();
+                        // Mixed text/image clipboards keep the browser's normal text insertion in the comment.
+                        if (saving || !data.getData("text/plain")) event.preventDefault();
+                        attach(selected);
+                    },
+                },
                 titleEl,
                 targetsEl,
                 hintEl,
@@ -347,7 +393,7 @@ export function createPopover(layer: HTMLElement, frames: Frames = createFrames(
                     h(
                         "p",
                         { class: "hint" },
-                        "Up to 3 images. Optimised before upload; counts towards workspace storage."
+                        `Choose files or paste an image (${isMac() ? "⌘V" : "Ctrl+V"}). Up to 3 images. Optimised before upload; counts towards workspace storage.`
                     )
                 ),
                 h(

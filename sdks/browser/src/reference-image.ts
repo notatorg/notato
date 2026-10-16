@@ -1,12 +1,17 @@
-/** Normalise an explicit attachment on the client: bound memory/transfer, strip metadata, prefer WebP. */
-export async function referenceImage(
-    file: File
-): Promise<{ blob: Blob; name: string; w: number; h: number }> {
+/** The same input bounds apply to selected files and images explicitly pasted into the composer. */
+export function validateReferenceFile(file: File): void {
     if (
         !["image/png", "image/jpeg", "image/webp"].includes(file.type) ||
         file.size > 16 * 1024 * 1024
     )
         throw new Error("Choose a PNG, JPEG or WebP image of at most 16 MB.");
+}
+
+/** Normalise an explicit attachment on the client: bound memory/transfer, strip metadata, prefer WebP. */
+export async function referenceImage(
+    file: File
+): Promise<{ blob: Blob; name: string; w: number; h: number }> {
+    validateReferenceFile(file);
     const image = await createImageBitmap(file);
     try {
         if (image.width * image.height > 16_000_000)

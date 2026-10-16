@@ -4,6 +4,7 @@ Every Notato package is released together, at one version: the `notato` command 
 
 ## 0.3.0
 
+- Paste reference images into the browser, React and Angular annotation composer with Cmd+V / Ctrl+V, using the same limits and optimisation as selected files.
 - Scope the browser SDK's server-status request to its project so hosted project-origin CORS rules permit it.
 - Negotiate annotation status filters with the server before listing notes, avoiding rejected requests when a new SDK connects to an older server.
 
