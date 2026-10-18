@@ -1,6 +1,7 @@
 import type { Annotation } from "@notato/schema";
 import { useCallback, useEffect, useState } from "react";
-import { type Me, request } from "./api.ts";
+import { isAdmin, type Me, request } from "./api.ts";
+import { onLive } from "./live.ts";
 import { projectHref } from "./route.ts";
 import { copyText, Icon, Modal, StatusPill } from "./ui.tsx";
 export interface Checkout {
@@ -59,7 +60,15 @@ export function WorkAssignment({ annotation }: { annotation: Annotation }) {
     );
     useEffect(() => {
         void load().catch(() => {});
-    }, [load]);
+        return onLive(
+            (e) => {
+                if (e.projectId === annotation.projectId) void load().catch(() => {});
+            },
+            () => {
+                void load().catch(() => {});
+            }
+        );
+    }, [load, annotation.projectId]);
     const assign = async () => {
         setBusy(true);
         setError("");
@@ -187,7 +196,15 @@ export function Contexts({
     );
     useEffect(() => {
         void load().catch((e) => setError(e.message));
-    }, [load]);
+        return onLive(
+            (e) => {
+                if (e.projectId === project) void load().catch(() => {});
+            },
+            () => {
+                void load().catch(() => {});
+            }
+        );
+    }, [load, project]);
     const perform = async (fn: () => Promise<unknown>) => {
         setBusy(true);
         setError("");
@@ -303,13 +320,19 @@ export function Contexts({
                                 <code>{c.branch || "Branch not set"}</code>
                             </p>
                             <p className="muted">
-                                {works.filter((w) => w.contextId === c.id).length} assigned reviews
+                                {works.filter((w) => w.contextId === c.id).length} assigned{" "}
+                                {works.filter((w) => w.contextId === c.id).length === 1
+                                    ? "review"
+                                    : "reviews"}
                             </p>
                             <div className="work-actions">
                                 <button
                                     type="button"
                                     className="tonal"
-                                    disabled={busy}
+                                    disabled={
+                                        busy ||
+                                        (!isAdmin(me) && c.owner !== (me.username ?? "local"))
+                                    }
                                     onClick={() =>
                                         void perform(async () =>
                                             setCredentials(
@@ -327,7 +350,10 @@ export function Contexts({
                                 <button
                                     type="button"
                                     className="text-button"
-                                    disabled={busy}
+                                    disabled={
+                                        busy ||
+                                        (!isAdmin(me) && c.owner !== (me.username ?? "local"))
+                                    }
                                     onClick={() => {
                                         if (
                                             window.confirm(

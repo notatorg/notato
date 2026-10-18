@@ -497,7 +497,12 @@ export function createApp(options: AppOptions): AppHandler {
                     )
                         throw new RequestError("Invalid work permit.");
                     return withWorkPermit(
-                        { ...permit, contextId: principal.developmentContextId },
+                        {
+                            ...permit,
+                            contextId: principal.developmentContextId,
+                            credentialId:
+                                principal.kind === "token" ? principal.tokenId : undefined,
+                        },
                         dispatch
                     );
                 }

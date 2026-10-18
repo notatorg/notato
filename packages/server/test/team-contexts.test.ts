@@ -186,6 +186,25 @@ describe("checkout ownership", () => {
         offA();
         offB();
     });
+    it("rechecks a revoked credential inside the write fence", async () => {
+        const s = await setup(),
+            c = s.contexts[0];
+        if (!c) throw new Error("fixture");
+        const n = await s.note("revoked-write", c.id),
+            auth = new Authenticator(s.store);
+        const credential = await auth.issueToken("shop", "Agent", {
+            purpose: "agent",
+            developmentContextId: c.id,
+        });
+        const agent = teamBackend(s.backend, s.store, c.id, async () => {}, credential.record.id);
+        await agent.claimWork!(n.id, "claim");
+        await auth.revokeToken(credential.record.id);
+        await expect(agent.setStatus(n.id, "resolved")).rejects.toThrow("revoked");
+        await expect(agent.recordResolution!(n.id, "feature/cart", "a".repeat(40))).rejects.toThrow(
+            "revoked"
+        );
+        expect((await s.backend.get(n.id))?.annotation.status).toBe("open");
+    });
     it("requires the reviewed PR commit before an agent can claim work", async () => {
         const s = await setup(),
             c = s.contexts[0];

@@ -125,15 +125,21 @@ export function createMcpHttp(options: McpHttpOptions): {
         const inner = projectBackendFor(principal, req);
         const store = (options.backend as Backend & { store?: Store }).store;
         return store
-            ? teamBackend(inner, store, principal.developmentContextId, async () => {
-                  const current = await options.auth.identify(req, new URL(req.url));
-                  if (
-                      !current ||
-                      !samePrincipal(principal, current) ||
-                      current.developmentContextId !== principal.developmentContextId
-                  )
-                      throw new RequestError("Credential access revoked.", 403);
-              })
+            ? teamBackend(
+                  inner,
+                  store,
+                  principal.developmentContextId,
+                  async () => {
+                      const current = await options.auth.identify(req, new URL(req.url));
+                      if (
+                          !current ||
+                          !samePrincipal(principal, current) ||
+                          current.developmentContextId !== principal.developmentContextId
+                      )
+                          throw new RequestError("Credential access revoked.", 403);
+                  },
+                  principal.kind === "token" ? principal.tokenId : undefined
+              )
             : inner;
     };
     return {

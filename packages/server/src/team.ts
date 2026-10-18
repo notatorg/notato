@@ -1,6 +1,5 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import type { Annotation } from "@notato/schema";
-import type { Principal } from "./auth.ts";
 import { type Backend, RequestError } from "./backend.ts";
 import type { Store, StoredAnnotation } from "./storage.ts";
 
@@ -70,6 +69,7 @@ export interface CoordinationStore {
     ): Promise<T>;
 }
 export interface WorkPermit {
+    credentialId?: string;
     contextId: string;
     session: string;
     version: number;
@@ -80,7 +80,7 @@ export const withWorkPermit = <T>(permit: WorkPermit, run: () => T): T => permit
 export const workId = (a: Annotation) => a.workId ?? `work:${a.projectId}:${a.review?.id ?? a.id}`;
 export const LEASE_MS = 5 * 60_000;
 export function assertWorkPermit(
-    a: Annotation,
+    a: Pick<Annotation, "projectId">,
     work: WorkRecord | null,
     context: DevelopmentContext | null,
     permit = currentWorkPermit()
@@ -269,7 +269,8 @@ export function teamBackend(
     inner: Backend,
     store: Store,
     contextId: string | undefined,
-    validate: () => Promise<void>
+    validate: () => Promise<void>,
+    credentialId?: string
 ): Backend {
     const teams = new TeamCoordinator(store);
     const session = crypto.randomUUID();
@@ -309,7 +310,7 @@ export function teamBackend(
                 "Call notato_claim before editing or replying to this review.",
                 409
             );
-        return withWorkPermit({ contextId, session, version: claim.version }, run);
+        return withWorkPermit({ contextId, session, version: claim.version, credentialId }, run);
     };
     return {
         list: async (filter = {}) => {
@@ -419,25 +420,28 @@ export function teamBackend(
             const stored = await allowed(await inner.get(id));
             if (!stored || !contextId) throw new RequestError("Checkout work required.", 403);
             const claim = claims.get(workId(stored.annotation));
-            await teams.records.change<WorkRecord>(
-                workId(stored.annotation),
-                stored.annotation.projectId,
-                "work",
-                (r) => {
-                    if (
-                        !r ||
-                        !claim ||
-                        r.claim?.session !== session ||
-                        r.claim.version !== claim.version ||
-                        r.claim.expiresAt <= Date.now()
-                    )
-                        throw new RequestError("Work ownership expired or changed.", 409);
-                    return {
-                        ...r,
-                        resolution: { branch, commit, at: new Date().toISOString() },
-                        updatedAt: new Date().toISOString(),
-                    };
-                }
+            if (!claim) throw new RequestError("Claim the review first.", 409);
+            await withWorkPermit({ contextId, session, version: claim.version, credentialId }, () =>
+                teams.records.change<WorkRecord>(
+                    workId(stored.annotation),
+                    stored.annotation.projectId,
+                    "work",
+                    (r) => {
+                        if (
+                            !r ||
+                            !claim ||
+                            r.claim?.session !== session ||
+                            r.claim.version !== claim.version ||
+                            r.claim.expiresAt <= Date.now()
+                        )
+                            throw new RequestError("Work ownership expired or changed.", 409);
+                        return {
+                            ...r,
+                            resolution: { branch, commit, at: new Date().toISOString() },
+                            updatedAt: new Date().toISOString(),
+                        };
+                    }
+                )
             );
         },
         getWork: async (id) => {

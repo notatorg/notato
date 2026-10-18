@@ -1,5 +1,6 @@
 import { Database } from "bun:sqlite";
 import { Annotation, type Status } from "@notato/schema";
+import { RequestError } from "./backend.ts";
 import {
     type AnnotationFilter,
     type AuthStore,
@@ -99,6 +100,19 @@ export class SqliteStore implements Store, AuthStore {
                     .get(id) as { json: string; project_id: string; kind: string } | null;
                 if (row && (row.project_id !== project || row.kind !== kind))
                     throw new Error("Coordination scope conflict");
+                this.validatePermitCredential();
+                const permit = currentWorkPermit();
+                if (permit && kind === "work") {
+                    const contextRow = this.db
+                        .query("SELECT json FROM team_records WHERE id=?")
+                        .get(permit.contextId) as { json: string } | null;
+                    assertWorkPermit(
+                        { projectId: project },
+                        row ? JSON.parse(row.json) : null,
+                        contextRow ? JSON.parse(contextRow.json) : null,
+                        permit
+                    );
+                }
                 const next = mutate(row ? JSON.parse(row.json) : null);
                 this.db
                     .query(
@@ -117,6 +131,22 @@ export class SqliteStore implements Store, AuthStore {
         this.migrate();
     }
 
+    private validatePermitCredential() {
+        const permit = currentWorkPermit();
+        if (!permit?.credentialId) return;
+        const token = this.db
+            .query("SELECT revoked_at,expires_at FROM tokens WHERE id=?")
+            .get(permit.credentialId) as {
+            revoked_at: string | null;
+            expires_at: string | null;
+        } | null;
+        if (
+            !token ||
+            token.revoked_at ||
+            (token.expires_at && Date.parse(token.expires_at) <= Date.now())
+        )
+            throw new RequestError("Checkout credential revoked or expired.", 403);
+    }
     private migrate() {
         this.db.run("CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)");
         const row = this.db.query("SELECT value FROM meta WHERE key = 'schema_version'").get() as {
@@ -427,6 +457,7 @@ export class SqliteStore implements Store, AuthStore {
             if (!row) return null;
             const current = Annotation.parse(JSON.parse(row.json));
             const permit = currentWorkPermit();
+            this.validatePermitCredential();
             if (permit) {
                 const read = (key: string) => {
                     const r = this.db

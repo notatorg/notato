@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { RequestError } from "../backend.ts";
-import { TeamCoordinator, type WorkRecord, workId, workView } from "../team.ts";
+import { TeamCoordinator, type WorkRecord, withWorkPermit, workId, workView } from "../team.ts";
 import { canReadFeedback, json, notFound, type Routes, readJson } from "./common.ts";
 export const claimRoutes: Routes = async ({ req, method, principal, match }, app) => {
     const target = match(/^\/annotations\/([^/]+)\/(claim|work)$/);
@@ -56,29 +56,38 @@ export const claimRoutes: Routes = async ({ req, method, principal, match }, app
                 .strict()
         );
         return json(
-            await teams.records.change<WorkRecord>(
-                workId(stored.annotation),
-                stored.annotation.projectId,
-                "work",
-                (r) => {
-                    if (
-                        !r ||
-                        r.contextId !== principal.developmentContextId ||
-                        r.claim?.session !== body.session ||
-                        r.claim.version !== body.version ||
-                        r.claim.expiresAt <= Date.now()
+            await withWorkPermit(
+                {
+                    contextId: principal.developmentContextId,
+                    session: body.session,
+                    version: body.version,
+                    credentialId: principal.tokenId,
+                },
+                () =>
+                    teams.records.change<WorkRecord>(
+                        workId(stored.annotation),
+                        stored.annotation.projectId,
+                        "work",
+                        (r) => {
+                            if (
+                                !r ||
+                                r.contextId !== principal.developmentContextId ||
+                                r.claim?.session !== body.session ||
+                                r.claim.version !== body.version ||
+                                r.claim.expiresAt <= Date.now()
+                            )
+                                throw new RequestError("Work ownership expired or changed.", 409);
+                            return {
+                                ...r,
+                                resolution: {
+                                    branch: body.branch,
+                                    commit: body.commit,
+                                    at: new Date().toISOString(),
+                                },
+                                updatedAt: new Date().toISOString(),
+                            };
+                        }
                     )
-                        throw new RequestError("Work ownership expired or changed.", 409);
-                    return {
-                        ...r,
-                        resolution: {
-                            branch: body.branch,
-                            commit: body.commit,
-                            at: new Date().toISOString(),
-                        },
-                        updatedAt: new Date().toISOString(),
-                    };
-                }
             )
         );
     }
