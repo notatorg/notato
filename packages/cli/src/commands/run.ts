@@ -1,4 +1,4 @@
-import { type ChildProcess, spawn } from "node:child_process";
+import { type ChildProcess, spawn, spawnSync } from "node:child_process";
 import { join, resolve } from "node:path";
 import { type DevRuntime, runDev } from "@notato/server";
 import {
@@ -34,7 +34,12 @@ export async function runApp(
             const kill = (signal: NodeJS.Signals) => {
                 try {
                     if (process.platform !== "win32") process.kill(-previous.pid!, signal);
-                    else previous.kill(signal);
+                    else
+                        spawnSync("taskkill", ["/PID", String(previous.pid), "/T", "/F"], {
+                            stdio: "ignore",
+                            windowsHide: true,
+                            timeout: 2000,
+                        });
                 } catch {}
             };
             kill("SIGTERM");
