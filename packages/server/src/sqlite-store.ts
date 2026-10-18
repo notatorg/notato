@@ -114,6 +114,14 @@ export class SqliteStore implements Store, AuthStore {
                     );
                 }
                 const next = mutate(row ? JSON.parse(row.json) : null);
+                if (kind === "work" && "contextId" in next && next.contextId) {
+                    const c = this.db
+                        .query("SELECT json FROM team_records WHERE id=?")
+                        .get(next.contextId) as { json: string } | null;
+                    const context = c ? (JSON.parse(c.json) as DevelopmentContext) : null;
+                    if (!context || context.archived || context.projectId !== project)
+                        throw new RequestError("Checkout connection revoked.", 403);
+                }
                 this.db
                     .query(
                         "INSERT INTO team_records VALUES (?,?,?,?) ON CONFLICT(id) DO UPDATE SET json=excluded.json"

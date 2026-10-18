@@ -170,7 +170,13 @@ export class TeamCoordinator {
             );
         });
     }
-    async assign(a: Annotation, contextId: string | null, actor: string, recover = false) {
+    async assign(
+        a: Annotation,
+        contextId: string | null,
+        actor: string,
+        recover = false,
+        expectedVersion?: number
+    ) {
         if (
             a.review?.total &&
             (await this.store.listAnnotations({ projectId: a.projectId, reviewId: a.review.id }))
@@ -181,6 +187,11 @@ export class TeamCoordinator {
         if (contextId && (!context || context.archived || context.projectId !== a.projectId))
             throw new RequestError("Select an active checkout in this project.", 400);
         return this.records.change<WorkRecord>(workId(a), a.projectId, "work", (current) => {
+            if (expectedVersion !== undefined && (current?.version ?? 0) !== expectedVersion)
+                throw new RequestError(
+                    "Review ownership changed. Reload before assigning it.",
+                    409
+                );
             if (current?.claim && !recover)
                 throw new RequestError(
                     "An agent may still be editing this review. Confirm recovery before reassigning.",

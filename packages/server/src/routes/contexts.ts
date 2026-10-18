@@ -147,7 +147,8 @@ export const contextRoutes: Routes = async ({ req, path, method, principal, matc
                 stored.annotation,
                 body.contextId,
                 principal.username,
-                body.recover
+                body.recover,
+                current?.version ?? 0
             );
             app.backend.bus.publish({
                 type: "updated",

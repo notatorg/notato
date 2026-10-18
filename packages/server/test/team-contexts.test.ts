@@ -187,6 +187,18 @@ describe("checkout ownership", () => {
         offA();
         offB();
     });
+    it("refuses assignment based on stale ownership", async () => {
+        const s = await setup(),
+            a = s.contexts[0],
+            b = s.contexts[1];
+        if (!a || !b) throw new Error("fixture");
+        const n = await s.note("assignment-race", a.id);
+        await s.teams.assign(n, b.id, "manager");
+        await expect(s.teams.assign(n, a.id, "old-request", false, 0)).rejects.toThrow(
+            "ownership changed"
+        );
+        expect((await s.teams.work(workId(n)))?.contextId).toBe(b.id);
+    });
     it("keeps shared publication separate from checkout ownership", async () => {
         const s = await setup(),
             c = s.contexts[0];
