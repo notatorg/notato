@@ -83,6 +83,8 @@ export interface ExtensionHttp
         | "boardCsp"
         | "projectRules"
         | "tokenRules"
+        | "teamCanManage"
+        | "teamTokenOptions"
         | "aboutCaller"
     > {
     routes?: ExtraRoutes;
