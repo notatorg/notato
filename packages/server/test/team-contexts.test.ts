@@ -105,6 +105,7 @@ describe("checkout ownership", () => {
         const one = teamBackend(s.backend, s.store, a!.id, async () => {}),
             two = teamBackend(s.backend, s.store, a!.id, async () => {});
         await expect(one.claimWork!(n.id, "claim")).rejects.toThrow("every review target");
+        await expect(s.teams.assign(n, b!.id, "manager")).rejects.toThrow("every review target");
         await s.note("target-2", a!.id, n.review);
         const races = await Promise.allSettled([
             one.claimWork!(n.id, "claim"),
@@ -185,6 +186,16 @@ describe("checkout ownership", () => {
         expect(bCalls).toBe(0);
         offA();
         offB();
+    });
+    it("keeps shared publication separate from checkout ownership", async () => {
+        const s = await setup(),
+            c = s.contexts[0];
+        if (!c) throw new Error("fixture");
+        const privateNote = await s.note("personal-origin", c.id);
+        expect((await s.teams.work(workId(privateNote)))?.shared).toBe(false);
+        await s.teams.assign(privateNote, null, "person");
+        await s.teams.assign(privateNote, c.id, "person");
+        expect((await s.teams.work(workId(privateNote)))?.shared).toBe(true);
     });
     it("rechecks a revoked credential inside the write fence", async () => {
         const s = await setup(),

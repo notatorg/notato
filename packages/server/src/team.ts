@@ -21,6 +21,8 @@ export interface WorkRecord {
     id: string;
     projectId: string;
     contextId: string | null;
+    /** Sharing is independent of which checkout owns execution. */
+    shared?: boolean;
     version: number;
     createdAt: string;
     updatedAt: string;
@@ -160,6 +162,7 @@ export class TeamCoordinator {
                     id,
                     projectId: a.projectId,
                     contextId: contextId ?? null,
+                    shared: !contextId,
                     version: 0,
                     createdAt: new Date().toISOString(),
                     updatedAt: new Date().toISOString(),
@@ -168,6 +171,12 @@ export class TeamCoordinator {
         });
     }
     async assign(a: Annotation, contextId: string | null, actor: string, recover = false) {
+        if (
+            a.review?.total &&
+            (await this.store.listAnnotations({ projectId: a.projectId, reviewId: a.review.id }))
+                .length < a.review.total
+        )
+            throw new RequestError("Wait for every review target before assigning it.", 409);
         const context = contextId ? await this.context(contextId) : null;
         if (contextId && (!context || context.archived || context.projectId !== a.projectId))
             throw new RequestError("Select an active checkout in this project.", 400);
@@ -184,6 +193,7 @@ export class TeamCoordinator {
                     createdAt: new Date().toISOString(),
                 }),
                 contextId,
+                shared: contextId === null ? true : (current?.shared ?? !current?.contextId),
                 version: (current?.version ?? 0) + 1,
                 assignedBy: actor,
                 claim: undefined,
