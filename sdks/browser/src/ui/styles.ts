@@ -1,5 +1,9 @@
 export const STYLES = /* css */ `
 .tb-destination { font: 600 11px/1.2 system-ui; color: inherit; padding: 0 5px; max-width: 65px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+@media (max-width: 480px) {
+  .tb-destination { position: absolute; right: 0; bottom: calc(100% + 6px); max-width: 150px; padding: 5px 8px; border-radius: 999px; background: var(--b-bg); color: var(--b-fg); border: 1px solid var(--b-line); }
+  .toolbar.top-left .tb-destination, .toolbar.top-right .tb-destination { top: calc(100% + 6px); bottom: auto; }
+}
 .review-instruction { padding: 10px; background: color-mix(in oklab, var(--notato-accent, #1f8a78) 10%, transparent); border-radius: 8px; white-space: pre-wrap; overflow-wrap: anywhere; }
 .review-targets { max-height: 200px; overflow: auto; padding-left: 20px; }
 .review-targets li { padding: 4px 0; overflow-wrap: anywhere; }
