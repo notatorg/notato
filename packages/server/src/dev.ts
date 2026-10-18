@@ -4,7 +4,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import type { Author, Status } from "@notato/schema";
 import { parseProjects } from "./agents.ts";
-import { LOCAL_PRINCIPAL } from "./auth.ts";
+import { Authenticator, LOCAL_PRINCIPAL } from "./auth.ts";
 import {
     type AssetBytes,
     type Backend,
@@ -29,6 +29,7 @@ import { isConnectionError, RemoteBackend } from "./remote-backend.ts";
 import { ShareLinks } from "./share.ts";
 import { SqliteStore } from "./sqlite-store.ts";
 import type { AnnotationFilter, HandedEntry } from "./storage.ts";
+import { teamBackend } from "./team.ts";
 import {
     createTunnelGate,
     fromOutside,
@@ -176,7 +177,12 @@ export function startPrimary(options: PrimaryOptions): PrimaryServer | null {
         backend,
         version: options.version,
         // Everyone who reaches `/mcp` in dev mode is the person at this machine, as on the rest of the dev server.
-        auth: { identify: async () => LOCAL_PRINCIPAL },
+        auth: {
+            identify: async (req, url) =>
+                req.headers.has("authorization")
+                    ? new Authenticator(store).identify(req, url)
+                    : LOCAL_PRINCIPAL,
+        },
         guard: localAgentsOnly,
         refuse: () => mcpRefusal(backend.config()),
         allowImportPaths: true,
@@ -349,7 +355,12 @@ export async function runDev(options: DevOptions): Promise<DevRuntime> {
         primary = server;
         actualPort = server.port;
         role = "primary";
-        switchable.current = server.backend;
+        switchable.current = teamBackend(
+            server.backend,
+            server.backend.store,
+            undefined,
+            async () => {}
+        );
         if (monitor) clearInterval(monitor);
         monitor = undefined;
         if (stdioOpen) releaseAgent = server.backend.agents.hold(agentId, agentLabel, projects);

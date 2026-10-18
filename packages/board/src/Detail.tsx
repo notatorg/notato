@@ -15,6 +15,7 @@ import {
     setSeverity,
     setStatus,
 } from "./api.ts";
+import { WorkAssignment } from "./Contexts.tsx";
 import {
     authorName,
     capitalise,
@@ -407,6 +408,7 @@ function LoadedDetail({ annotation: a, project, detail, hidden, onChange, onDele
                     </p>
                 </div>
                 {a.target.selectedText ? <blockquote>“{a.target.selectedText}”</blockquote> : null}
+                <WorkAssignment annotation={a} />
                 <Review annotation={a} />
                 <Screenshots annotation={a} />
                 <References annotation={a} />

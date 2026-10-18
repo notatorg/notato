@@ -538,7 +538,7 @@ describe("database migration", () => {
                     value: string;
                 }
             ).value
-        ).toBe("7");
+        ).toBe("8");
         raw.close();
     });
 });

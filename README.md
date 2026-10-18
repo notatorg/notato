@@ -160,6 +160,12 @@ Behind it: a `variants` record on the annotation (the group and the names, each 
 
 Agents cannot read or change a People only note, including direct reads by id, screenshots, references and exports. App tokens and signed-in people retain access. Turning People only off explicitly shares the note and its thread with agents again.
 
+## Team feedback and checkout queues
+
+A project can contain a separate feedback queue for each developer or worktree. Open **Team and checkouts** to
+connect an app and agent to the same checkout, assign shared reviews and recover abandoned work. Agents reserve
+each review before editing and record the branch/commit where it was fixed. See the [team feedback guide](docs/team-feedback.md).
+
 ## The board: every project in one place
 
 The server serves a board at its own address (`http://localhost:4747` in dev mode). One server can hold many projects (each app's `project` setting is the project its notes file under), and the board is built around that.

@@ -15,8 +15,16 @@ import {
     type TokenRecord,
     type UserRecord,
 } from "./storage.ts";
+import {
+    assertWorkPermit,
+    type CoordinationStore,
+    currentWorkPermit,
+    type DevelopmentContext,
+    type WorkRecord,
+    workId,
+} from "./team.ts";
 
-const SCHEMA_VERSION = 7;
+const SCHEMA_VERSION = 8;
 
 /** The statuses a project's `open` count includes: work still waiting for someone. */
 const WAITING = new Set<Status>([
@@ -69,6 +77,37 @@ const UPDATE_ANNOTATION = `UPDATE annotations SET status = ?, severity = ?, rout
  */
 export class SqliteStore implements Store, AuthStore {
     private db: Database;
+    readonly coordination: CoordinationStore = {
+        get: async (id) => {
+            const row = this.db.query("SELECT json FROM team_records WHERE id=?").get(id) as {
+                json: string;
+            } | null;
+            return row ? JSON.parse(row.json) : null;
+        },
+        list: async (project, kind) =>
+            (
+                this.db
+                    .query(
+                        "SELECT json FROM team_records WHERE project_id=? AND kind=? ORDER BY id"
+                    )
+                    .all(project, kind) as Array<{ json: string }>
+            ).map((r) => JSON.parse(r.json)),
+        change: async (id, project, kind, mutate) =>
+            this.db.transaction(() => {
+                const row = this.db
+                    .query("SELECT json,project_id,kind FROM team_records WHERE id=?")
+                    .get(id) as { json: string; project_id: string; kind: string } | null;
+                if (row && (row.project_id !== project || row.kind !== kind))
+                    throw new Error("Coordination scope conflict");
+                const next = mutate(row ? JSON.parse(row.json) : null);
+                this.db
+                    .query(
+                        "INSERT INTO team_records VALUES (?,?,?,?) ON CONFLICT(id) DO UPDATE SET json=excluded.json"
+                    )
+                    .run(id, project, kind, JSON.stringify(next));
+                return next;
+            })(),
+    };
 
     constructor(path: string) {
         this.db = new Database(path, { create: true });
@@ -163,6 +202,19 @@ export class SqliteStore implements Store, AuthStore {
                 if (!have.has(column))
                     this.db.run(`ALTER TABLE annotations ADD COLUMN ${column} TEXT`);
         }
+        this.db.run(
+            "CREATE TABLE IF NOT EXISTS team_records (id TEXT PRIMARY KEY, project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE, kind TEXT NOT NULL, json TEXT NOT NULL)"
+        );
+        this.db.run(
+            "CREATE INDEX IF NOT EXISTS idx_team_records_project ON team_records(project_id,kind)"
+        );
+        const tokenColumns = new Set(
+            (this.db.query("PRAGMA table_info(tokens)").all() as Array<{ name: string }>).map(
+                (c) => c.name
+            )
+        );
+        for (const name of ["development_context_id", "capture_work_id"])
+            if (!tokenColumns.has(name)) this.db.run(`ALTER TABLE tokens ADD COLUMN ${name} TEXT`);
         // A project's notes in order, a page at a time: the board, every SDK and every agent page through them.
         this.db.run(
             "CREATE INDEX IF NOT EXISTS idx_annotations_project_seq ON annotations (project_id, seq)"
@@ -281,6 +333,28 @@ export class SqliteStore implements Store, AuthStore {
             );
             params.push(...projects);
         }
+        const workKey =
+            "COALESCE(json_extract(annotations.json, '$.workId'), 'work:' || annotations.project_id || ':' || COALESCE(json_extract(annotations.json, '$.review.id'), annotations.id))";
+        if (filter.workId) {
+            where.push(`${workKey} = ?`);
+            params.push(filter.workId);
+        }
+        if (filter.workContext) {
+            where.push(
+                `EXISTS (SELECT 1 FROM team_records t WHERE t.id=${workKey} AND t.kind='work' AND json_extract(t.json,'$.contextId')=?)`
+            );
+            params.push(filter.workContext);
+        }
+        if (filter.workSession) {
+            where.push(
+                `EXISTS (SELECT 1 FROM team_records t WHERE t.id=${workKey} AND (json_extract(t.json,'$.claim.session') IS NULL OR json_extract(t.json,'$.claim.session')=?))`
+            );
+            params.push(filter.workSession);
+        }
+        if (filter.legacyOnly)
+            where.push(
+                `NOT EXISTS (SELECT 1 FROM team_records c WHERE c.project_id=annotations.project_id AND c.kind='context') AND NOT EXISTS (SELECT 1 FROM team_records t WHERE t.id=${workKey} AND t.kind='work')`
+            );
         if (filter.reviewId !== undefined) {
             where.push("json_extract(json, '$.review.id') = ?");
             params.push(filter.reviewId);
@@ -351,7 +425,22 @@ export class SqliteStore implements Store, AuthStore {
                 .query("SELECT seq, json FROM annotations WHERE id = ?")
                 .get(id) as Row | null;
             if (!row) return null;
-            const next = Annotation.parse(mutate(Annotation.parse(JSON.parse(row.json))));
+            const current = Annotation.parse(JSON.parse(row.json));
+            const permit = currentWorkPermit();
+            if (permit) {
+                const read = (key: string) => {
+                    const r = this.db
+                        .query("SELECT json FROM team_records WHERE id=?")
+                        .get(key) as { json: string } | null;
+                    return r ? JSON.parse(r.json) : null;
+                };
+                assertWorkPermit(
+                    current,
+                    read(workId(current)) as WorkRecord | null,
+                    read(permit.contextId) as DevelopmentContext | null
+                );
+            }
+            const next = Annotation.parse(mutate(current));
             this.db
                 .query(UPDATE_ANNOTATION)
                 .run(
@@ -592,13 +681,17 @@ export class SqliteStore implements Store, AuthStore {
             ...(row.purpose ? { purpose: row.purpose as "app" | "agent" } : {}),
             ...(row.expires_at ? { expiresAt: row.expires_at } : {}),
             ...(row.created_by ? { createdBy: row.created_by } : {}),
+            ...(row.development_context_id
+                ? { developmentContextId: row.development_context_id }
+                : {}),
+            ...(row.capture_work_id ? { captureWorkId: row.capture_work_id } : {}),
         };
     }
 
     async createToken(token: TokenRecord): Promise<void> {
         this.db
             .query(
-                "INSERT INTO tokens (id, project_id, name, token_hash, created_at, permission, purpose, expires_at, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
+                "INSERT INTO tokens (id, project_id, name, token_hash, created_at, permission, purpose, expires_at, created_by, development_context_id, capture_work_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
             )
             .run(
                 token.id,
@@ -609,7 +702,9 @@ export class SqliteStore implements Store, AuthStore {
                 token.permission ?? null,
                 token.purpose ?? null,
                 token.expiresAt ?? null,
-                token.createdBy ?? null
+                token.createdBy ?? null,
+                token.developmentContextId ?? null,
+                token.captureWorkId ?? null
             );
     }
 

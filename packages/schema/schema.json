@@ -13,6 +13,10 @@
         "projectId": {
           "type": "string"
         },
+        "workId": {
+          "type": "string",
+          "maxLength": 400
+        },
         "bundleId": {
           "type": [
             "string",
@@ -1046,6 +1050,10 @@
               },
               "projectId": {
                 "type": "string"
+              },
+              "workId": {
+                "type": "string",
+                "maxLength": 400
               },
               "bundleId": {
                 "type": [

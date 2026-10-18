@@ -71,6 +71,13 @@ export interface AssetBytes {
  * which is how a second `notato dev` attaches to the first.
  */
 export interface Backend {
+    claimWork?(
+        id: string,
+        action: "claim" | "heartbeat" | "release",
+        checkoutHead?: string
+    ): Promise<import("./team.ts").WorkRecord>;
+    recordResolution?(id: string, branch: string, commit: string): Promise<void>;
+    getWork?(id: string): Promise<import("./team.ts").WorkRecord | null>;
     list(filter?: AnnotationFilter): Promise<StoredAnnotation[]>;
     get(id: string): Promise<StoredAnnotation | null>;
     /** Records follow-ups as delivered to an agent, so another session (or a restart) is not handed them again. */
@@ -916,7 +923,8 @@ export class LocalBackend implements Backend {
         // Someone waiting for annotations is an agent watching (notato_watch, here or attached).
         const waited = watching
             ? this.agents.waitStarted(
-                  filter.projectId === undefined ? undefined : [filter.projectId].flat()
+                  filter.projectId === undefined ? undefined : [filter.projectId].flat(),
+                  filter.workContext
               )
             : () => {};
         return new Promise((resolve) => {
@@ -1047,6 +1055,7 @@ export class LocalBackend implements Backend {
             const sent: Annotation = asPerson
                 ? {
                       ...a,
+                      workId: undefined,
                       author: {
                           ...a.author,
                           kind: "human",
@@ -1062,6 +1071,12 @@ export class LocalBackend implements Backend {
                           : {}),
                   }
                 : a;
+            if (asPerson && this.store.coordination) {
+                const { TeamCoordinator } = await import("./team.ts");
+                const teams = new TeamCoordinator(this.store);
+                if ((await teams.records.list(sent.projectId, "context")).length)
+                    await teams.route(sent);
+            }
             const { created } = await this.ingest(sent, assetsFor(a, files), {
                 projectId: bundle.projectId,
                 preserveLifecycle: !asPerson,

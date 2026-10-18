@@ -32,7 +32,13 @@ export const relayRoutes: Routes = async ({ req, path, method, principal, match 
         // it out means its own.
         const project = onlyProject(principal, projectId);
         try {
-            return json(await backend.requestAnnotation(project, args, timeoutMs));
+            return json(
+                await backend.requestAnnotation(
+                    project,
+                    { ...args, developmentContextId: principal.developmentContextId },
+                    timeoutMs
+                )
+            );
         } catch (error) {
             if (error instanceof RelayError) throw new RequestError(error.message, error.status);
             throw error;
@@ -44,6 +50,8 @@ export const relayRoutes: Routes = async ({ req, path, method, principal, match 
         const requestId = result[0] ?? "";
         const owner = backend.relay.projectOf(requestId);
         if (owner) assertAccess(principal, owner);
+        if (backend.relay.contextOf(requestId) !== principal.developmentContextId)
+            throw new RequestError("Relay belongs to another checkout.", 403);
         const outcome = await readJson(req, RelayResultBody);
         return backend.relay.complete(requestId, outcome)
             ? json({ ok: true })

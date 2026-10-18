@@ -92,6 +92,7 @@ export function cleanAgentName(raw: string | null | undefined): string | undefin
 
 /** Who is there: a name once its client has said, and the projects it is kept to (undefined: every project). */
 interface Presence {
+    contextId?: string;
     name?: string;
     projects?: string[];
 }
@@ -119,11 +120,11 @@ const sameState = (a: AgentState, b: AgentState) =>
 export class AgentPresence {
     private seen = new Map<string, Presence & { at: number }>();
     private held = new Map<string, Presence>();
-    private waits = new Map<number, string[] | undefined>();
+    private waits = new Map<number, { projects?: string[]; contextId?: string }>();
     private nextWait = 0;
     private listeners = new Map<
         (state: AgentState) => void,
-        { projectId?: string; last: AgentState }
+        { projectId?: string; contextId?: string | null; last: AgentState }
     >();
     private sweep: ReturnType<typeof setInterval>;
     /** Whether agents may connect at all (the `mcp` setting). While not, none counts as there, and pages say so. */
@@ -144,14 +145,14 @@ export class AgentPresence {
     }
 
     /** The agents that work on this project. */
-    stateFor(projectId: string | string[] | undefined): AgentState {
-        return this.compute(projectId);
+    stateFor(projectId: string | string[] | undefined, contextId?: string | null): AgentState {
+        return this.compute(projectId, contextId);
     }
 
     /** An attached agent was heard from, with its name once it knows it, and the projects it is kept to. */
-    touch(id: string, name?: string, projects?: string[]) {
+    touch(id: string, name?: string, projects?: string[], contextId?: string) {
         const before = this.seen.get(id);
-        const next = { at: this.now(), name: name ?? before?.name, projects };
+        const next = { at: this.now(), name: name ?? before?.name, projects, contextId };
         this.seen.set(id, next);
         if (
             !before ||
@@ -162,8 +163,8 @@ export class AgentPresence {
     }
 
     /** An agent whose MCP is open in this process, until the returned function is called. */
-    hold(id: string, name?: string, projects?: string[]): () => void {
-        this.held.set(id, { name, projects });
+    hold(id: string, name?: string, projects?: string[], contextId?: string): () => void {
+        this.held.set(id, { name, projects, contextId });
         this.changed();
         return () => {
             this.held.delete(id);
@@ -183,9 +184,9 @@ export class AgentPresence {
      * A `notato_watch` (or another long wait for annotations) has started, for these projects (undefined: any); call
      * the result when it ends.
      */
-    waitStarted(projects?: string[]): () => void {
+    waitStarted(projects?: string[], contextId?: string): () => void {
         const id = this.nextWait++;
-        this.waits.set(id, projects);
+        this.waits.set(id, { projects, contextId });
         this.changed();
         let done = false;
         return () => {
@@ -198,8 +199,16 @@ export class AgentPresence {
     }
 
     /** Called with the state for `projectId` (every agent when absent or `*`) each time it changes. */
-    subscribe(listener: (state: AgentState) => void, projectId?: string): () => void {
-        this.listeners.set(listener, { projectId, last: this.compute(projectId) });
+    subscribe(
+        listener: (state: AgentState) => void,
+        projectId?: string,
+        contextId?: string | null
+    ): () => void {
+        this.listeners.set(listener, {
+            projectId,
+            contextId,
+            last: this.compute(projectId, contextId),
+        });
         return () => this.listeners.delete(listener);
     }
 
@@ -213,14 +222,20 @@ export class AgentPresence {
         this.listeners.clear();
     }
 
-    private compute(projectId?: string | string[]): AgentState {
+    private compute(projectId?: string | string[], contextId?: string | null): AgentState {
         const cutoff = this.now() - this.ttlMs;
         for (const [id, entry] of this.seen) if (entry.at < cutoff) this.seen.delete(id);
         if (!this.allowed()) return { connected: false, sessions: 0, watching: false, names: [] };
-        const here = [...this.seen.values(), ...this.held.values()].filter((e) =>
-            servesProject(e.projects, projectId)
+        const here = [...this.seen.values(), ...this.held.values()].filter(
+            (e) =>
+                servesProject(e.projects, projectId) &&
+                (contextId === undefined || (e.contextId ?? null) === contextId)
         );
-        const watching = [...this.waits.values()].some((p) => servesProject(p, projectId));
+        const watching = [...this.waits.values()].some(
+            (p) =>
+                servesProject(p.projects, projectId) &&
+                (contextId === undefined || (p.contextId ?? null) === contextId)
+        );
         const names = [...new Set(here.map((e) => e.name))]
             .filter((n): n is string => Boolean(n))
             .sort();
@@ -235,7 +250,7 @@ export class AgentPresence {
 
     private changed() {
         for (const [listener, entry] of [...this.listeners]) {
-            const next = this.compute(entry.projectId);
+            const next = this.compute(entry.projectId, entry.contextId);
             if (sameState(next, entry.last)) continue;
             entry.last = next;
             try {

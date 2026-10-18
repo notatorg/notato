@@ -10,6 +10,7 @@ import { Icon, type IconName, Modal, ProjectMark } from "./ui.tsx";
 const VIEWS: Array<{ tab: Tab; label: string; icon: IconName; admin?: boolean }> = [
     { tab: "inbox", label: "Inbox", icon: "inbox" },
     { tab: "activity", label: "Activity", icon: "activity" },
+    { tab: "team", label: "Team and checkouts", icon: "sliders" },
     { tab: "overview", label: "Overview", icon: "chart" },
     { tab: "settings", label: "Project settings", icon: "sliders", admin: true },
 ];

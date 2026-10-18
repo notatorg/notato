@@ -9,14 +9,21 @@ import {
     Variants,
 } from "@notato/schema";
 import { z } from "zod";
-import { canAccessProject, type Principal, samePrincipal } from "../auth.ts";
+import { Authenticator, canAccessProject, type Principal, samePrincipal } from "../auth.ts";
 import { type LocalBackend, RequestError, TEXT_MAX } from "../backend.ts";
 import { captureReceipt, captureScope } from "../capture-receipt.ts";
 import { filterFromQuery } from "../query.ts";
-import { type AnnotationFilter, type StoredAnnotation, tokenPurpose } from "../storage.ts";
+import {
+    type AnnotationFilter,
+    type AuthStore,
+    type StoredAnnotation,
+    tokenPurpose,
+} from "../storage.ts";
+import { currentWorkPermit, TeamCoordinator } from "../team.ts";
 import {
     type AppContext,
     assertAccess,
+    canReadFeedback,
     forReader,
     isAgentToken,
     json,
@@ -208,6 +215,22 @@ async function ingest(
                     throw new RequestError("capture tokens must supply screenshot bytes");
         }
     }
+    const checked = Annotation.safeParse(parsed);
+    if (checked.success) {
+        parsed = { ...checked.data, workId: principal.captureWorkId };
+        if (
+            principal.developmentContextId ||
+            principal.captureWorkId ||
+            (app.backend.store.coordination &&
+                (await new TeamCoordinator(app.backend.store).records.list(projectId, "context"))
+                    .length > 0)
+        )
+            await new TeamCoordinator(app.backend.store).route(
+                Annotation.parse(parsed),
+                principal.developmentContextId,
+                principal.captureWorkId
+            );
+    }
     const { stored, created } = await app.backend.ingest(parsed, files, { projectId, receipt });
     if (captureOnly) {
         // Echo the submission, never the saved report: a retry cannot disclose later replies or edits.
@@ -256,7 +279,26 @@ export const annotationRoutes: Routes = async (route, app) => {
     const annotation = async (id: string | undefined) => {
         const existing = await backend.get(id ?? "");
         if (existing) assertAccess(principal, existing.annotation.projectId);
-        return existing?.annotation.peopleOnly && isAgentToken(principal) ? null : existing;
+        if (!existing || !(await canReadFeedback(principal, existing.annotation, backend)))
+            return null;
+        if (
+            method !== "GET" &&
+            isAgentToken(principal) &&
+            principal.developmentContextId &&
+            !currentWorkPermit()
+        )
+            throw new RequestError(
+                "Claim the review and include its work permit before changing feedback.",
+                409
+            );
+        if (
+            method === "DELETE" &&
+            isAgentToken(principal) &&
+            principal.developmentContextId &&
+            !existing.annotation.context.notatoDiagnostic
+        )
+            throw new RequestError("Only people can delete feedback.", 403);
+        return existing;
     };
 
     const inProject = match(/^\/projects\/([^/]+)\/annotations$/);
@@ -327,9 +369,14 @@ export const annotationRoutes: Routes = async (route, app) => {
             principal.kind === "admin" ||
             (principal.kind === "token" && tokenPurpose(principal) === "agent");
         const ready = await backend.waitForNew(filter, timeout, req.signal, { watching });
-        if (app.auth) {
+        const currentAuth =
+            app.auth ??
+            (principal.kind === "token"
+                ? new Authenticator(backend.store as typeof backend.store & AuthStore)
+                : undefined);
+        if (currentAuth) {
             // A wait can outlast a token or a membership: ask again before saying there is something to read.
-            const current = await app.auth.identify(req, url);
+            const current = await currentAuth.identify(req, url);
             if (!current || !samePrincipal(principal, current))
                 throw new RequestError("authentication required", 401);
             return json({
@@ -451,6 +498,11 @@ export const annotationRoutes: Routes = async (route, app) => {
 
 /** `GET /assets/:id`: a screenshot, for whoever may read a note that shows it, and for nobody once no note does. */
 async function screenshot(id: string, principal: Principal, app: AppContext): Promise<Response> {
+    if (principal.developmentContextId || isAgentToken(principal)) {
+        const items = await app.backend.list(forReader(principal));
+        if (!items.some(({ annotation }) => annotationAssets(annotation).some((r) => r?.id === id)))
+            return notFound();
+    }
     const owners = await app.backend.projectsWithAsset(id, forReader(principal));
     if (!owners.some((p) => canAccessProject(principal, p))) return notFound();
     const asset = await app.backend.asset(id);

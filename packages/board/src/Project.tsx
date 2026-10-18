@@ -13,6 +13,7 @@ import {
     uploadBundle,
 } from "./api.ts";
 import { ConnectPage } from "./Connect.tsx";
+import { Contexts } from "./Contexts.tsx";
 import { useBoardExtension } from "./extension.tsx";
 import { Inbox } from "./Inbox.tsx";
 import { lastSeen, markSeen, onLive } from "./live.ts";
@@ -275,6 +276,7 @@ export function Project(props: Props) {
                 </NotFound>
             );
         }
+        if (tab === "team") return <Contexts project={project} me={me} annotations={all ?? []} />;
         if (tab === "connect" && admin)
             return <ConnectPage me={me} project={project} name={name} menu={menu} />;
         if (tab === "settings" && admin) {

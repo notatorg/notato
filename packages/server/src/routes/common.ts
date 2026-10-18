@@ -1,3 +1,4 @@
+import type { Annotation } from "@notato/schema";
 import type { z } from "zod";
 import {
     type AuthProvider,
@@ -10,6 +11,7 @@ import { type LocalBackend, RequestError } from "../backend.ts";
 import { sameOrigin } from "../cors.ts";
 import type { AppOptions, RequestInfo } from "../http.ts";
 import { type AnnotationFilter, PROJECT_ID, type TokenRecord, tokenPurpose } from "../storage.ts";
+import { TeamCoordinator, workId } from "../team.ts";
 import { fromOutside } from "../tunnel.ts";
 import type { EventStreams } from "./events.ts";
 
@@ -70,10 +72,53 @@ export const noContent = () => new Response(null, { status: 204 });
 
 /** An agent credential never reads notes that people have kept between themselves. */
 export const isAgentToken = (principal: Principal) =>
-    principal.kind === "token" && tokenPurpose(principal) === "agent";
+    Boolean(
+        principal.agentSession ||
+            (principal.kind === "token" && tokenPurpose(principal) === "agent")
+    );
 
 export const forReader = (principal: Principal, filter: AnnotationFilter = {}): AnnotationFilter =>
-    isAgentToken(principal) ? { ...filter, peopleOnly: false } : filter;
+    principal.developmentContextId
+        ? {
+              ...filter,
+              workContext: principal.developmentContextId,
+              legacyOnly: undefined,
+              ...(isAgentToken(principal) ? { peopleOnly: false as const } : {}),
+          }
+        : isAgentToken(principal)
+          ? { ...filter, workContext: undefined, legacyOnly: true, peopleOnly: false }
+          : filter;
+
+export async function canReadFeedback(
+    principal: Principal,
+    annotation: Annotation,
+    backend: LocalBackend
+) {
+    if (
+        !canAccessProject(principal, annotation.projectId) ||
+        (isAgentToken(principal) && annotation.peopleOnly)
+    )
+        return false;
+    if (principal.developmentContextId) {
+        const c = await new TeamCoordinator(backend.store).context(principal.developmentContextId);
+        if (!c || c.archived || c.projectId !== annotation.projectId) return false;
+    }
+    const work = backend.store.coordination
+        ? await new TeamCoordinator(backend.store).work(workId(annotation))
+        : null;
+    return principal.developmentContextId
+        ? work?.contextId === principal.developmentContextId
+        : isAgentToken(principal)
+          ? !work &&
+            (!backend.store.coordination ||
+                (
+                    await new TeamCoordinator(backend.store).records.list(
+                        annotation.projectId,
+                        "context"
+                    )
+                ).length === 0)
+          : true;
+}
 
 /** Markdown as it is served: text, never cached, and never sniffed into something else. */
 export function markdown(body: string): Response {

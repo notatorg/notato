@@ -215,6 +215,8 @@ export const Annotation = z.object({
     /** ULID */
     id: SafeId,
     projectId: z.string(),
+    /** Server-owned work grouping; capture clients cannot choose it. */
+    workId: z.string().max(400).optional(),
     /** null in dev mode */
     bundleId: z.string().nullable(),
     author: Author,

@@ -13,6 +13,10 @@ export function filterFromQuery(
     { whole = false }: { whole?: boolean } = {}
 ): AnnotationFilter {
     const filter: AnnotationFilter = {};
+    if (q.get("workSession")) filter.workSession = q.get("workSession")!.slice(0, 100);
+    if (q.get("work")) filter.workId = q.get("work")!.slice(0, 400);
+    if (q.get("context")) filter.workContext = q.get("context")!.slice(0, 200);
+    if (q.get("legacy") === "1") filter.legacyOnly = true;
     // Repeated for several (`?project=web&project=admin`): an agent can work on more than one.
     const projects = projectId ? [projectId] : q.getAll("project").filter(Boolean).slice(0, 50);
     if (projects.length) filter.projectId = projects.length === 1 ? projects[0] : projects;
@@ -74,6 +78,10 @@ export function filterFromQuery(
 /** The inverse of `filterFromQuery`, for clients that talk to the HTTP API. */
 export function filterToQuery(filter: AnnotationFilter): URLSearchParams {
     const q = new URLSearchParams();
+    if (filter.workSession) q.set("workSession", filter.workSession);
+    if (filter.workId) q.set("work", filter.workId);
+    if (filter.workContext) q.set("context", filter.workContext);
+    if (filter.legacyOnly) q.set("legacy", "1");
     if (filter.projectId !== undefined)
         for (const p of [filter.projectId].flat()) q.append("project", p);
     if (filter.status !== undefined)

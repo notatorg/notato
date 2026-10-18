@@ -15,6 +15,9 @@ import {
  * only ever compares `scope`.
  */
 export interface PrincipalExtras {
+    agentSession?: boolean;
+    developmentContextId?: string;
+    captureWorkId?: string;
     /**
      * An opaque tenant or context the credential is acting in. An event stream or MCP session is closed when the
      * same person turns up in another scope, so switching one never reuses what the previous one opened.
@@ -98,6 +101,8 @@ export const SESSION_COOKIE = "notato_session";
 const DAY = 24 * 60 * 60 * 1000;
 
 export interface IssueTokenOptions {
+    developmentContextId?: string;
+    captureWorkId?: string;
     purpose?: "app" | "agent";
     permission?: "capture" | "full";
     expiresInDays?: number;
@@ -291,9 +296,23 @@ export class Authenticator implements AuthProvider {
      * it. The built-in: the token as it was issued.
      */
     protected async tokenPrincipal(record: TokenRecord): Promise<Principal | null> {
+        if (record.developmentContextId) {
+            const context = await (
+                this.store as AuthStore & { coordination?: import("./team.ts").CoordinationStore }
+            ).coordination?.get(record.developmentContextId);
+            if (
+                !context ||
+                !("owner" in context) ||
+                context.archived ||
+                context.projectId !== record.projectId
+            )
+                return null;
+        }
         return {
             kind: "token",
             tokenId: record.id,
+            developmentContextId: record.developmentContextId,
+            captureWorkId: record.captureWorkId,
             projectId: record.projectId,
             ...(record.permission ? { permission: record.permission } : {}),
             ...(record.purpose ? { purpose: record.purpose } : {}),
@@ -507,6 +526,8 @@ export class Authenticator implements AuthProvider {
         return this.mintToken({
             projectId,
             name,
+            developmentContextId: options.developmentContextId,
+            captureWorkId: options.captureWorkId,
             permission,
             purpose,
             ...(options.createdBy ? { createdBy: options.createdBy } : {}),

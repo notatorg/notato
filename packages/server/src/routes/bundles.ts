@@ -25,6 +25,11 @@ async function importBundle(
     projectId: string | undefined,
     app: AppContext
 ): Promise<Response> {
+    if (principal.developmentContextId || principal.captureWorkId)
+        throw new RequestError(
+            "Use live capture for checkout and PR reviews; this credential cannot import offline bundles.",
+            403
+        );
     const max = app.limits.bundle;
     if (Number(req.headers.get("content-length") ?? 0) > max)
         throw new RequestError(`bundle exceeds ${max} bytes`, 413);
@@ -65,6 +70,12 @@ async function importBundle(
 /** Feedback bundles: importing a tester's zip, the bundles a project has, and exporting notes as a zip. */
 export const bundleRoutes: Routes = async ({ req, url, path, method, principal, match }, app) => {
     const { backend } = app;
+    if (
+        principal.developmentContextId &&
+        method === "GET" &&
+        !/\/projects\/[^/]+\/export$/.test(path)
+    )
+        throw new RequestError("Use the checkout feedback list or project export.", 403);
 
     const inProject = match(/^\/projects\/([^/]+)\/bundles$/);
     if (inProject) {

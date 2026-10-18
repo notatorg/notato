@@ -2,6 +2,10 @@ import { awaitsAgent, lastWord } from "@notato/core";
 import type { Annotation, Intent, Severity, Status } from "@notato/schema";
 
 export interface AnnotationFilter {
+    workContext?: string;
+    workSession?: string;
+    workId?: string;
+    legacyOnly?: true;
     /** One project, or any of several (an agent that works on more than one); an empty list matches nothing. */
     projectId?: string | string[];
     status?: Status | Status[];
@@ -126,6 +130,7 @@ export interface ProjectSummary {
  * resolves synchronously underneath.
  */
 export interface Store {
+    coordination?: import("./team.ts").CoordinationStore;
     /**
      * Stores a new note. `assetBytes` is the size of its screenshots, for a store that keeps account of what each
      * project or customer holds; the built-in ones ignore it.
@@ -187,6 +192,8 @@ export interface SessionRecord {
 }
 
 export interface TokenRecord {
+    developmentContextId?: string;
+    captureWorkId?: string;
     id: string;
     /** The one project this token may use, or `*` for all of them (agents and MCP). */
     projectId: string;

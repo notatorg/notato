@@ -3,6 +3,7 @@ import { z } from "zod";
 
 /** What an agent asks a page to annotate. The page runs it through `window.__notato.annotate`. */
 export const RelayArgs = z.object({
+    developmentContextId: z.string().max(200).optional(),
     /** CSS selector of the element to annotate. */
     target: z.string().min(1).max(2000),
     comment: z.string().min(1).max(10_000),
@@ -23,11 +24,13 @@ export interface RelayRequest {
 
 interface Registration {
     projectId: string;
+    contextId?: string;
     deliver(request: RelayRequest): void;
 }
 
 interface Pending {
     projectId: string;
+    contextId?: string;
     resolve(result: RelayResult): void;
     timer: ReturnType<typeof setTimeout>;
 }
@@ -52,8 +55,8 @@ export class RelayHub {
     private pending = new Map<string, Pending>();
 
     /** Returns a function that unregisters the page. */
-    register(projectId: string, deliver: Registration["deliver"]): () => void {
-        const registration: Registration = { projectId, deliver };
+    register(projectId: string, deliver: Registration["deliver"], contextId?: string): () => void {
+        const registration: Registration = { projectId, deliver, contextId };
         this.pages.push(registration);
         return () => {
             this.pages = this.pages.filter((p) => p !== registration);
@@ -70,6 +73,10 @@ export class RelayHub {
         return this.pending.get(requestId)?.projectId;
     }
 
+    contextOf(requestId: string) {
+        return this.pending.get(requestId)?.contextId;
+    }
+
     has(projectId: string): boolean {
         return this.pages.some((p) => p.projectId === projectId);
     }
@@ -81,7 +88,13 @@ export class RelayHub {
     ): Promise<RelayResult> {
         let target = projectId;
         if (target === undefined) {
-            const open = this.projects();
+            const open = [
+                ...new Set(
+                    this.pages
+                        .filter((p) => p.contextId === args.developmentContextId)
+                        .map((p) => p.projectId)
+                ),
+            ];
             if (open.length === 0) return Promise.reject(this.noPage());
             if (open.length > 1) {
                 return Promise.reject(
@@ -93,7 +106,9 @@ export class RelayHub {
             }
             target = open[0] as string;
         }
-        const page = [...this.pages].reverse().find((p) => p.projectId === target);
+        const page = [...this.pages]
+            .reverse()
+            .find((p) => p.projectId === target && p.contextId === args.developmentContextId);
         if (!page) return Promise.reject(this.noPage(target));
 
         const requestId = crypto.randomUUID();
@@ -109,6 +124,7 @@ export class RelayHub {
             }, timeoutMs);
             this.pending.set(requestId, {
                 projectId: target as string,
+                contextId: args.developmentContextId,
                 resolve: (r) => resolve(r),
                 timer,
             });

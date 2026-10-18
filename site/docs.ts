@@ -144,6 +144,7 @@ export const PAGES: Page[] = [
             "What you can say, and what the agent gets",
             "Variants: compare versions in the page",
             "Reviewing related feedback",
+            "Team feedback and checkout queues",
             "The board: every project in one place",
             "Copy as Markdown, and export",
             "Screenshot size",

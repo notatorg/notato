@@ -9,6 +9,7 @@ import type { AssetBytes, Backend, ImportResult, VariantOffer } from "./backend.
 import { filterToQuery } from "./query.ts";
 import type { RelayArgs, RelayResult } from "./relay.ts";
 import type { AnnotationFilter, HandedEntry, StoredAnnotation } from "./storage.ts";
+import { currentWorkPermit, type WorkClaim, type WorkRecord, workId } from "./team.ts";
 
 /** How long a health check waits: a server on this machine that takes longer is as good as gone. */
 const HEALTH_TIMEOUT_MS = 1500;
@@ -38,6 +39,54 @@ export function isConnectionError(error: unknown): boolean {
  */
 export class RemoteBackend implements Backend {
     /** Names this agent to the server on every request, so pages know someone is listening (see agents.ts). */
+    private readonly claims = new Map<string, WorkClaim>();
+    private async workHeaders(id: string) {
+        const stored = await this.get(id);
+        const key = stored ? workId(stored.annotation) : "";
+        const claim = this.claims.get(key);
+        return {
+            "Content-Type": "application/json",
+            ...(claim
+                ? {
+                      "x-notato-work-permit": JSON.stringify({
+                          session: this.agentId,
+                          version: claim.version,
+                      }),
+                  }
+                : {}),
+        };
+    }
+    async claimWork(id: string, action: "claim" | "heartbeat" | "release", checkoutHead?: string) {
+        const stored = await this.get(id);
+        const key = stored ? workId(stored.annotation) : "";
+        const result = await this.json<WorkRecord>(`/annotations/${encodeURIComponent(id)}/claim`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                action,
+                checkoutHead,
+                session: this.agentId,
+                version: this.claims.get(key)?.version,
+            }),
+        });
+        if (!result) throw new RemoteError("Review not found", 404);
+        if (result.claim) this.claims.set(result.id, result.claim);
+        else this.claims.delete(result.id);
+        return result;
+    }
+    async recordResolution(id: string, branch: string, commit: string) {
+        const stored = await this.get(id),
+            claim = stored ? this.claims.get(workId(stored.annotation)) : undefined;
+        if (!claim) throw new RemoteError("Claim the review first.", 409);
+        await this.json(`/annotations/${encodeURIComponent(id)}/work`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ session: this.agentId, version: claim.version, branch, commit }),
+        });
+    }
+    getWork(id: string) {
+        return this.json<WorkRecord>(`/annotations/${encodeURIComponent(id)}/work`);
+    }
     private readonly agentId = `agent_${crypto.randomUUID()}`;
     /** The agent this process serves ("Codex"), once its MCP client has said; sent with the heartbeat. */
     agentName: string | undefined;
@@ -52,6 +101,12 @@ export class RemoteBackend implements Backend {
     /** Who is asking: this agent's heartbeat (see agents.ts), and the token when the server needs one. */
     private headers(extra?: HeadersInit): Headers {
         const headers = new Headers(extra);
+        const permit = currentWorkPermit();
+        if (permit)
+            headers.set(
+                "x-notato-work-permit",
+                JSON.stringify({ session: permit.session, version: permit.version })
+            );
         if (this.token) headers.set("Authorization", `Bearer ${this.token}`);
         headers.set(AGENT_HEADER, this.agentId);
         if (this.agentName) headers.set(AGENT_NAME_HEADER, this.agentName);
@@ -152,7 +207,7 @@ export class RemoteBackend implements Backend {
     async setStatus(id: string, status: Status, note?: string, author?: Author) {
         const stored = await this.json<StoredAnnotation>(`/annotations/${encodeURIComponent(id)}`, {
             method: "PATCH",
-            headers: { "Content-Type": "application/json" },
+            headers: await this.workHeaders(id),
             // An empty note is no note: the HTTP API refuses an empty one where the local backend just skips it.
             body: JSON.stringify({ status, note: note || undefined, author }),
         });
@@ -164,7 +219,7 @@ export class RemoteBackend implements Backend {
             `/annotations/${encodeURIComponent(id)}/replies`,
             {
                 method: "POST",
-                headers: { "Content-Type": "application/json" },
+                headers: await this.workHeaders(id),
                 body: JSON.stringify({ body, author }),
             }
         );
@@ -176,7 +231,7 @@ export class RemoteBackend implements Backend {
             `/annotations/${encodeURIComponent(id)}/variants`,
             {
                 method: "PUT",
-                headers: { "Content-Type": "application/json" },
+                headers: await this.workHeaders(id),
                 body: JSON.stringify({ ...offer, note: offer.note || undefined, author }),
             }
         );
@@ -188,7 +243,7 @@ export class RemoteBackend implements Backend {
             `/annotations/${encodeURIComponent(id)}/variants/choose`,
             {
                 method: "POST",
-                headers: { "Content-Type": "application/json" },
+                headers: await this.workHeaders(id),
                 body: JSON.stringify({ name, note: note || undefined, author }),
             }
         );

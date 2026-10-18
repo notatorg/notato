@@ -7,6 +7,7 @@ import {
     decodeAgentProjects,
 } from "./agents.ts";
 import {
+    Authenticator,
     type AuthProvider,
     accessibleProjects,
     canAccessProject,
@@ -28,6 +29,7 @@ import {
 import { accountRoutes } from "./routes/account.ts";
 import { annotationRoutes } from "./routes/annotations.ts";
 import { bundleRoutes } from "./routes/bundles.ts";
+import { claimRoutes } from "./routes/claims.ts";
 import {
     type AppContext,
     json,
@@ -35,6 +37,7 @@ import {
     type RouteRequest,
     type Routes,
 } from "./routes/common.ts";
+import { contextRoutes } from "./routes/contexts.ts";
 import { EventStreams, eventRoutes } from "./routes/events.ts";
 import { notFoundPage, pageRoutes } from "./routes/pages.ts";
 import { projectRoutes } from "./routes/projects.ts";
@@ -42,7 +45,8 @@ import { relayRoutes } from "./routes/relay.ts";
 import { healthRoute, statusRoutes } from "./routes/status.ts";
 import { settingsRoutes } from "./settings.ts";
 import { type ShareLinks, sharedAsset } from "./share.ts";
-import type { ProjectSummary, TokenRecord } from "./storage.ts";
+import type { AuthStore, ProjectSummary, TokenRecord } from "./storage.ts";
+import { type DevelopmentContext, TeamCoordinator, withWorkPermit } from "./team.ts";
 import { outsideRefusal } from "./tunnel.ts";
 
 /** Static files of the web UI. `path` is relative, e.g. `index.html` or `assets/app-3f2a.js`. */
@@ -51,6 +55,11 @@ export interface UiAssets {
 }
 
 export interface AppOptions {
+    teamCanManage?: (principal: Principal) => boolean;
+    teamTokenOptions?: (
+        principal: Principal,
+        context: DevelopmentContext
+    ) => import("./auth.ts").IssueTokenOptions;
     backend: LocalBackend;
     mode: "dev" | "serve";
     version: string;
@@ -264,7 +273,7 @@ async function route(request: RouteRequest<Principal | null>, app: AppContext): 
     }
     const { principal } = request;
     if (!principal) throw new RequestError("authentication required", 401);
-    for (const routes of [...(extra?.private ?? []), ...ROUTES]) {
+    for (const routes of [...(extra?.private ?? []), claimRoutes, contextRoutes, ...ROUTES]) {
         const answered = await routes({ ...request, principal }, app);
         if (answered) return answered;
     }
@@ -277,6 +286,10 @@ async function route(request: RouteRequest<Principal | null>, app: AppContext): 
  */
 export function createApp(options: AppOptions): AppHandler {
     const { backend, auth } = options;
+    const localAuth =
+        !auth && backend.store.coordination
+            ? new Authenticator(backend.store as typeof backend.store & AuthStore)
+            : undefined;
     const extraOrigins = options.corsOrigins ?? parseExtraOrigins(process.env.NOTATO_CORS_ORIGINS);
     const allowedHosts = options.allowedHosts ?? (options.mode === "dev" ? "loopback" : "any");
     // Without logins a page the server trusts can read and write every note, so it trusts only this machine's pages.
@@ -342,6 +355,28 @@ export function createApp(options: AppOptions): AppHandler {
                         })
                     );
                 }
+            }
+            if (
+                !auth &&
+                localAuth &&
+                !(
+                    (req.headers.get("authorization") ?? "").startsWith("Bearer notato_device_") ||
+                    (url.searchParams.get("token") ?? "").startsWith("notato_device_")
+                ) &&
+                (req.headers.has("authorization") ||
+                    req.headers.has("x-notato-token") ||
+                    url.searchParams.has("token"))
+            ) {
+                principal = await localAuth.identify(req, url);
+                if (!principal)
+                    return withCors(json({ error: "Invalid checkout credential." }, 401));
+            }
+            if (principal?.developmentContextId) {
+                const context = await new TeamCoordinator(backend.store).context(
+                    principal.developmentContextId
+                );
+                if (!context || context.archived)
+                    return withCors(json({ error: "Checkout connection revoked." }, 403));
             }
             if (options.authorize) {
                 const projectId = /^\/projects\/([^/]+)/.exec(path)?.[1];
@@ -418,6 +453,8 @@ export function createApp(options: AppOptions): AppHandler {
                 // names itself on every request) and, on a shared server, the agent tokens issued for every project. Its
                 // health check still answers, so an attached process stays attached instead of trying to take over.
                 const agentId = req.headers.get(AGENT_HEADER);
+                if (agentId && principal && principal.kind !== "token")
+                    principal = { ...principal, agentSession: true };
                 const agentToken =
                     principal?.kind === "token" &&
                     (principal.purpose === "agent" || principal.projectId === "*");
@@ -428,21 +465,43 @@ export function createApp(options: AppOptions): AppHandler {
                 // The heartbeat counts only once the request has passed every check, so nobody can make a page believe an
                 // agent is there.
                 if (agentId && principal) {
+                    const agentPrincipal = principal;
                     // The id is the agent's own, but only within its credential: two people's agents never share one, and
                     // an agent only ever claims projects its credential reaches.
                     const claimed = decodeAgentProjects(req.headers.get(AGENT_PROJECTS_HEADER));
                     backend.agents.touch(
                         `${principal.kind === "token" ? principal.tokenId : principal.username}:${agentId.slice(0, 64)}`,
                         cleanAgentName(req.headers.get(AGENT_NAME_HEADER)),
-                        claimed?.filter((id) => canAccessProject(principal, id)) ??
-                            accessibleProjects(principal)
+                        claimed?.filter((id) => canAccessProject(agentPrincipal, id)) ??
+                            accessibleProjects(principal),
+                        principal.developmentContextId
                     );
                 }
                 const match = (pattern: RegExp): string[] | null => {
                     const found = pattern.exec(path);
                     return found ? found.slice(1).map(decodePart) : null;
                 };
-                return route({ req, url, path, method, principal, info, match }, app);
+                const dispatch = () =>
+                    route({ req, url, path, method, principal, info, match }, app);
+                if (principal?.developmentContextId && req.headers.has("x-notato-work-permit")) {
+                    let permit: { session: string; version: number };
+                    try {
+                        permit = JSON.parse(req.headers.get("x-notato-work-permit")!);
+                    } catch {
+                        throw new RequestError("Invalid work permit.");
+                    }
+                    if (
+                        typeof permit.session !== "string" ||
+                        permit.session.length > 100 ||
+                        !Number.isSafeInteger(permit.version)
+                    )
+                        throw new RequestError("Invalid work permit.");
+                    return withWorkPermit(
+                        { ...permit, contextId: principal.developmentContextId },
+                        dispatch
+                    );
+                }
+                return dispatch();
             };
             return withCors(
                 options.around

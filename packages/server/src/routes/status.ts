@@ -33,7 +33,10 @@ export const statusRoutes: Routes = async ({ req, url, path, method, principal }
             annotationStatuses: Status.options,
             derivedScreenshots: backend.derivedScreenshots,
             captureOnly: principal.kind === "token" && principal.permission === "capture",
-            agent: backend.agents.stateFor(project ?? accessibleProjects(principal)),
+            agent: backend.agents.stateFor(
+                project ?? accessibleProjects(principal),
+                principal.kind === "token" ? (principal.developmentContextId ?? null) : undefined
+            ),
             // The server's `@` plugins, which are the same for every project (the event stream sends them too).
             mentions: backend.mentions.list(),
         });
@@ -56,7 +59,10 @@ export const statusRoutes: Routes = async ({ req, url, path, method, principal }
             uptimeSec: Math.round((Date.now() - app.startedAt) / 1000),
             ...(operator ? { watchers: backend.bus.size } : {}),
             pages: app.streams.countFor(principal),
-            agents: backend.agents.stateFor(accessibleProjects(principal)),
+            agents: backend.agents.stateFor(
+                accessibleProjects(principal),
+                principal.kind === "token" ? (principal.developmentContextId ?? null) : undefined
+            ),
             mentions: backend.mentions.list(),
             agentProjects: backend.relay.projects().filter((p) => canAccessProject(principal, p)),
             projects: projects.filter((p) => canAccessProject(principal, p.id)),

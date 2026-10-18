@@ -1,8 +1,21 @@
 import { annotationSummary } from "@notato/core";
-import { accessibleProjects, canAccessProject, type Principal, samePrincipal } from "../auth.ts";
+import {
+    Authenticator,
+    accessibleProjects,
+    canAccessProject,
+    type Principal,
+    samePrincipal,
+} from "../auth.ts";
 import type { LocalBackend } from "../backend.ts";
 import type { NotatoEvent } from "../events.ts";
-import { assertAccess, isAgentToken, projectIdFrom, type Routes } from "./common.ts";
+import type { AuthStore } from "../storage.ts";
+import {
+    assertAccess,
+    canReadFeedback,
+    isAgentToken,
+    projectIdFrom,
+    type Routes,
+} from "./common.ts";
 
 const encoder = new TextEncoder();
 const frame = (event: string, data: unknown) =>
@@ -102,27 +115,47 @@ export class EventStreams {
                     this.connections.set(connection, { projectId, principal });
                     send("hello", {
                         projectId,
-                        agent: backend.agents.stateFor(projectId),
+                        agent: backend.agents.stateFor(
+                            projectId,
+                            principal?.kind === "token"
+                                ? (principal.developmentContextId ?? null)
+                                : undefined
+                        ),
                         mentions: backend.mentions.list(),
                     });
                     // Whether an agent is listening, and what @ can call (the mention plugins), as they change.
                     const unwatchAgents = backend.agents.subscribe(
                         (state) => send("agent", state),
-                        projectId
+                        projectId,
+                        principal?.kind === "token"
+                            ? (principal.developmentContextId ?? null)
+                            : undefined
                     );
                     const unwatchMentions = backend.mentions.subscribe((mentions) =>
                         send("mentions", mentions)
                     );
+                    const contextId = principal?.developmentContextId;
                     const unregister =
                         agent && projectId !== "*"
-                            ? backend.relay.register(projectId, (request) =>
-                                  send("annotate-request", request)
+                            ? backend.relay.register(
+                                  projectId,
+                                  (request) => send("annotate-request", request),
+                                  contextId
                               )
                             : () => {};
                     // With a way to ask whether the credential still stands, each change is checked before it is sent,
                     // in order: a revoked token or a removed member never receives another note.
                     let turn: Promise<void> = Promise.resolve();
-                    const sendChange = (e: NotatoEvent) => {
+                    const sendChange = async (e: NotatoEvent) => {
+                        if (
+                            principal &&
+                            !(await canReadFeedback(
+                                principal,
+                                { ...e.annotation, peopleOnly: false },
+                                backend
+                            ))
+                        )
+                            return;
                         if (principal && isAgentToken(principal) && e.annotation.peopleOnly) {
                             // Remove a previously public note from an agent's cache without sending its private contents.
                             enqueue(
@@ -133,12 +166,13 @@ export class EventStreams {
                     const unsubscribe = backend.bus.subscribe((e) => {
                         const wanted =
                             (projectId === "*" || e.projectId === projectId) && allow(e.projectId);
-                        if (!stillAllowed) return wanted ? sendChange(e) : undefined;
+
                         // Any change is a moment to ask, wanted or not: a credential that was revoked, or moved to
                         // another workspace, hears nothing more, and is let go at the next change anywhere.
                         turn = turn.then(async () => {
-                            if (!(await stillAllowed().catch(() => false))) cleanup();
-                            else if (wanted) sendChange(e);
+                            if (stillAllowed && !(await stillAllowed().catch(() => false)))
+                                cleanup();
+                            else if (wanted) await sendChange(e);
                         });
                     });
                     const ping = setInterval(() => {
@@ -189,7 +223,11 @@ export const eventRoutes: Routes = async ({ method, principal, url, req, match }
     if (!events || method !== "GET") return null;
     const projectId = events[0] === "*" ? "*" : projectIdFrom(events[0]);
     assertAccess(principal, projectId);
-    const { auth } = app;
+    const auth =
+        app.auth ??
+        (principal.kind === "token"
+            ? new Authenticator(app.backend.store as typeof app.backend.store & AuthStore)
+            : undefined);
     return app.streams.stream(
         req,
         projectId,

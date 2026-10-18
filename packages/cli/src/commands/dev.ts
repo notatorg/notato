@@ -1,5 +1,12 @@
 import { parseArgs } from "node:util";
-import { DEFAULT_PORT, parseProjects, runDev } from "@notato/server";
+import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import {
+    createMcpServer,
+    DEFAULT_PORT,
+    parseProjects,
+    RemoteBackend,
+    runDev,
+} from "@notato/server";
 import { parsePort, wantsTunnel } from "../options.ts";
 import { stopOnSignals } from "../process.ts";
 
@@ -19,6 +26,8 @@ Several repositories can share one server. Give each repository's agent its own 
 handed only their notes and never works on another app's (\`npx notato init\` writes it for you).
 
 Options:
+      --server <url>    Connect this local agent to an existing server over HTTPS; no local fallback
+      --token <token>   Agent credential (prefer $NOTATO_AGENT_TOKEN)
   -p, --port <n>        Port to bind (default ${DEFAULT_PORT}, or $NOTATO_PORT)
   -d, --dir <path>      Data directory (default ./.notato, or $NOTATO_DIR)
   -c, --config <path>   Settings file (default ./notato.config.json, or $NOTATO_CONFIG); see \`notato config\`
@@ -41,6 +50,8 @@ export async function runDevCommand(argv: string[], version: string): Promise<nu
     const { values } = parseArgs({
         args: argv,
         options: {
+            server: { type: "string" },
+            token: { type: "string" },
             port: { type: "string", short: "p" },
             dir: { type: "string", short: "d" },
             config: { type: "string", short: "c" },
@@ -56,6 +67,41 @@ export async function runDevCommand(argv: string[], version: string): Promise<nu
         return 0;
     }
     const projects = parseProjects(values.project);
+    if (values.server) {
+        const url = new URL(values.server);
+        if (
+            url.username ||
+            url.password ||
+            url.search ||
+            url.hash ||
+            (url.protocol !== "https:" &&
+                !(
+                    url.protocol === "http:" &&
+                    ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname)
+                ))
+        )
+            throw new Error("Use an HTTPS server origin (HTTP is allowed on loopback). ");
+        if (values.standalone || values.tunnel || values["no-mcp"])
+            throw new Error("Remote agent mode cannot start a local server or tunnel.");
+        const backend = new RemoteBackend(
+            url.href.replace(/\/$/, ""),
+            values.token ?? process.env.NOTATO_AGENT_TOKEN
+        );
+        backend.agentProjects = projects;
+        const mcp = createMcpServer({
+            backend,
+            version,
+            projects,
+            allowImportPaths: false,
+            onClient: (name) => {
+                backend.agentName = name;
+            },
+        });
+        await mcp.connect(new StdioServerTransport());
+        stopOnSignals(() => mcp.close());
+        return 0;
+    }
+
     if (projects && values.standalone) {
         throw new Error(
             "--project keeps one agent's MCP to some projects, and --standalone has none: point each agent at /mcp?project=<id> instead"

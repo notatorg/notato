@@ -1,0 +1,141 @@
+.team-page {
+    gap: 28px;
+}
+.team-page h1 {
+    max-width: 700px;
+}
+.eyebrow {
+    font-size: 11px !important;
+    letter-spacing: 0.13em;
+    font-weight: 700;
+    color: var(--accent) !important;
+}
+.team-intro {
+    display: grid;
+    grid-template-columns: 1.2fr 1fr;
+    gap: 32px;
+    padding: 26px;
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    background: var(--panel);
+}
+.team-intro h2 {
+    margin: 12px 0;
+}
+.team-intro p {
+    line-height: 1.65;
+    font-size: 13px;
+    max-width: 480px;
+}
+.team-intro form {
+    display: grid;
+    gap: 14px;
+}
+.team-intro label {
+    display: grid;
+    gap: 7px;
+    font-size: 12px;
+}
+.checkout-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(245px, 1fr));
+    gap: 14px;
+}
+.checkout-card {
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 20px;
+    display: grid;
+    gap: 12px;
+}
+.checkout-card code {
+    font-size: 12px;
+    overflow-wrap: anywhere;
+}
+.checkout-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--accent);
+}
+.work-heading {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    font-size: 12px;
+}
+.work-actions {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    flex-wrap: wrap;
+}
+.work-actions select {
+    flex: 1;
+    min-width: 140px;
+}
+.work-assignment {
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 14px;
+    display: grid;
+    gap: 10px;
+    font-size: 12px;
+}
+.work-assignment label {
+    line-height: 1.6;
+}
+.team-reviews {
+    display: grid;
+    margin-top: 18px;
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    overflow: hidden;
+}
+.team-review {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 20px;
+    padding: 20px;
+    border-bottom: 1px solid var(--line);
+}
+.team-review:last-child {
+    border: 0;
+}
+.team-review h3 {
+    font-size: 14px;
+    margin: 10px 0 7px;
+    line-height: 1.45;
+}
+.team-empty {
+    padding: 40px;
+    text-align: center;
+    color: var(--muted);
+    display: grid;
+    justify-items: center;
+    gap: 10px;
+}
+.team-page pre {
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+@media (max-width: 700px) {
+    .team-intro {
+        grid-template-columns: 1fr;
+        padding: 18px;
+        gap: 20px;
+    }
+    .team-review {
+        align-items: flex-start;
+        flex-direction: column;
+        gap: 12px;
+    }
+    .team-page .sheet-head {
+        align-items: flex-start;
+    }
+    .checkout-grid {
+        grid-template-columns: 1fr;
+    }
+}

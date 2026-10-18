@@ -11,7 +11,9 @@ import {
 import { type Backend, RequestError } from "./backend.ts";
 import { createMcpServer } from "./mcp.ts";
 import { ScopedBackend } from "./scoped-backend.ts";
+import type { Store } from "./storage.ts";
 import { tokenPurpose } from "./storage.ts";
+import { teamBackend } from "./team.ts";
 
 export interface McpHttpOptions {
     /** See `McpOptions.auditTool`. The credential is the one the session was opened with. */
@@ -109,7 +111,7 @@ export function createMcpHttp(options: McpHttpOptions): {
 
     // A credential that reaches only some projects gets tools that see only those, asked again on every call so a
     // revoked token or a removed member stops working inside a session that is already open.
-    const backendFor = (principal: Principal, req: Request): Backend =>
+    const projectBackendFor = (principal: Principal, req: Request): Backend =>
         accessibleProjects(principal) !== undefined
             ? new ScopedBackend(options.backend, async () => {
                   const current = await options.auth.identify(req, new URL(req.url));
@@ -119,6 +121,21 @@ export function createMcpHttp(options: McpHttpOptions): {
               })
             : options.backend;
 
+    const backendFor = (principal: Principal, req: Request): Backend => {
+        const inner = projectBackendFor(principal, req);
+        const store = (options.backend as Backend & { store?: Store }).store;
+        return store
+            ? teamBackend(inner, store, principal.developmentContextId, async () => {
+                  const current = await options.auth.identify(req, new URL(req.url));
+                  if (
+                      !current ||
+                      !samePrincipal(principal, current) ||
+                      current.developmentContextId !== principal.developmentContextId
+                  )
+                      throw new RequestError("Credential access revoked.", 403);
+              })
+            : inner;
+    };
     return {
         async handle(req) {
             const stopped = options.guard?.(req);
@@ -184,7 +201,8 @@ export function createMcpHttp(options: McpHttpOptions): {
                 session.release ??= options.presence?.hold(
                     `mcp:${sessionId}`,
                     session.name,
-                    session.projects
+                    session.projects,
+                    principal.developmentContextId
                 );
                 return session.transport.handleRequest(req);
             }
@@ -219,7 +237,12 @@ export function createMcpHttp(options: McpHttpOptions): {
                         projects,
                         requestedProjects: asked,
                         // An agent with the MCP open is there, watching or not, as one on `notato dev` is.
-                        release: options.presence?.hold(presenceId(), undefined, projects),
+                        release: options.presence?.hold(
+                            presenceId(),
+                            undefined,
+                            projects,
+                            principal.developmentContextId
+                        ),
                     });
                 },
             });

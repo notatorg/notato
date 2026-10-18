@@ -22,6 +22,7 @@ export * from "./scoped-backend.ts";
 export * from "./serve.ts";
 export * from "./sqlite-store.ts";
 export * from "./storage.ts";
+export * from "./team.ts";
 export * from "./tunnel.ts";
 export * from "./ui.ts";
 export * from "./webhooks.ts";
