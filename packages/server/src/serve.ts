@@ -145,6 +145,8 @@ export async function runServe<
         boardCsp: http?.boardCsp,
         projectRules: http?.projectRules,
         tokenRules: http?.tokenRules,
+        teamCanManage: http?.teamCanManage,
+        teamTokenOptions: http?.teamTokenOptions,
         aboutCaller: http?.aboutCaller,
         responseHeaders: http?.responseHeaders,
         maxUploadBytes: http?.maxUploadBytes,
