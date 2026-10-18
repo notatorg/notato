@@ -145,6 +145,7 @@ export const PAGES: Page[] = [
             "Variants: compare versions in the page",
             "Reviewing related feedback",
             "Team feedback and checkout queues",
+            "Checkout connection profiles",
             "The board: every project in one place",
             "Copy as Markdown, and export",
             "Screenshot size",

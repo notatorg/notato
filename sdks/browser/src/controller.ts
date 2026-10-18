@@ -8,6 +8,7 @@ import {
 } from "@notato/core";
 import type { Annotation } from "@notato/schema";
 import { ROOT_ATTR } from "./attributes.ts";
+import { applyEnvironment, notatoEnvironment } from "./env.ts";
 import { describeElement, hoverLabel, pickHint, selectionSummary } from "./labels.ts";
 import { createLocalCopy } from "./local-copy.ts";
 import { addServer, setTransport } from "./net.ts";
@@ -94,6 +95,7 @@ declare global {
  * server they go to. A toolbar already on the page is taken off first, so calling it again (HMR, StrictMode) is safe.
  */
 export function createController(props: NotatoProps): NotatoController {
+    props = applyEnvironment(props, notatoEnvironment());
     window.__notatoDestroy?.();
     setTransport(props.transport);
     setStyleNonce(props.nonce);
@@ -422,6 +424,20 @@ export function createController(props: NotatoProps): NotatoController {
         },
     });
     layer.append(toolbar.el);
+    if (props.connection) {
+        const c = props.connection;
+        toolbar.el.insertBefore(
+            h(
+                "span",
+                {
+                    class: "tb-destination",
+                    title: `${c.name} · ${c.server}${c.context ? ` · ${c.context.name}${c.context.branch ? ` · ${c.context.branch}` : ""}` : ""}`,
+                },
+                c.name
+            ),
+            toolbar.el.firstChild
+        );
+    }
     const toast = createToast(layer);
     /** Hidden until the page is reloaded (or annotate mode is asked for again). */
     let hidden = false;
@@ -604,6 +620,7 @@ export function createController(props: NotatoProps): NotatoController {
                 ? {
                       url: liveServer,
                       project: props.project,
+                      destination: props.connection,
                       connection: () => connection,
                       status: () => actions.status(),
                   }

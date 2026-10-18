@@ -25,6 +25,7 @@ export interface ServerInfo {
 export interface ServerLinks {
     url: string;
     project: string;
+    destination?: import("@notato/core").BrowserConnection;
     connection(): ConnectionState;
     status(): Promise<ServerInfo | null>;
 }
@@ -392,6 +393,13 @@ export function createSettingsPanel(options: SettingsPanelOptions): SettingsPane
                     ` ${word}`
                 ),
                 h("div", { class: "shelp" }, `${server.url} · project ${server.project}`),
+                server.destination
+                    ? h(
+                          "div",
+                          { class: "slabel" },
+                          `Destination: ${server.destination.name}${server.destination.context ? ` · ${server.destination.context.name}${server.destination.context.branch ? ` · ${server.destination.context.branch}` : ""}` : ""}`
+                      )
+                    : null,
                 status
             ),
             agentField,

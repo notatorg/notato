@@ -1,4 +1,4 @@
-import type { CapturePlugin, IdentityPlugin, SinkPlugin } from "@notato/core";
+import type { BrowserConnection, CapturePlugin, IdentityPlugin, SinkPlugin } from "@notato/core";
 import type { AgentStep, Annotation, Intent, Mode, Severity } from "@notato/schema";
 import type { Transport } from "./net.ts";
 import type { ToolbarPosition } from "./ui/toolbar.ts";
@@ -8,6 +8,8 @@ import type { VariantGroupInfo } from "./ui/variants.ts";
 export type NotatoPlugin = IdentityPlugin | CapturePlugin | SinkPlugin;
 
 export interface NotatoProps {
+    /** Display metadata from the selected checkout profile. Credential scope is always enforced by the server. */
+    connection?: Omit<BrowserConnection, "token">;
     /** `dev` annotates live to a local server, `test` exports bundles, `agent` is driven by an AI agent. */
     mode?: Mode;
     /**

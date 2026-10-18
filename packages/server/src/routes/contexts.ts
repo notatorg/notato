@@ -12,6 +12,20 @@ const ContextInput = z
     })
     .strict();
 export const contextRoutes: Routes = async ({ req, path, method, principal, match }, app) => {
+    if (path === "/connection" && method === "GET") {
+        if (principal.kind !== "token" || !principal.developmentContextId)
+            throw new RequestError("Use a checkout-scoped app or agent credential.", 403);
+        const context = await new TeamCoordinator(app.backend.store).context(
+            principal.developmentContextId
+        );
+        if (!context || context.archived || context.projectId !== principal.projectId)
+            throw new RequestError("Checkout connection revoked.", 403);
+        return json({
+            purpose: principal.purpose,
+            project: context.projectId,
+            context: { id: context.id, name: context.name, branch: context.branch },
+        });
+    }
     const list = match(/^\/projects\/([^/]+)\/(contexts|work)$/);
     const single = match(/^\/contexts\/([^/]+)(?:\/(credentials))?$/);
     const note = match(/^\/annotations\/([^/]+)\/work$/);

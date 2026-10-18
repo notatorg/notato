@@ -2,6 +2,7 @@
 import pkg from "../package.json";
 import { backupHealthcheck, runBackupCommand } from "./commands/backup.ts";
 import { runConfigCommand } from "./commands/config.ts";
+import { runConnectionCommand } from "./commands/connection.ts";
 import { runDevCommand } from "./commands/dev.ts";
 import { runDoctorCommand } from "./commands/doctor.ts";
 import { runExportCommand } from "./commands/export.ts";
@@ -9,6 +10,7 @@ import { runHealthcheck } from "./commands/healthcheck.ts";
 import { runInitCommand } from "./commands/init.ts";
 import { runInjectCommand } from "./commands/inject.ts";
 import { runProjectCommand } from "./commands/project.ts";
+import { runAppCommand } from "./commands/run.ts";
 import { runServeCommand } from "./commands/serve.ts";
 import { runStartCommand } from "./commands/start.ts";
 import { runTokenCommand } from "./commands/token.ts";
@@ -27,6 +29,8 @@ Commands:
   init      Set up Notato in this React app and in your coding agents (Claude Code, Codex, Cursor…)
   inject    Put Notato on any page with a bookmark, no install in the app
   config    Show or change settings, such as turning screenshots off
+  connection Select the checkout's Local/Cloud profile for the app and agent
+  run       Launch your app with the selected connection profile
   export    Print annotations as Markdown, at the level of detail you choose
   doctor    Check the whole loop: server, a real annotation end to end, browser, your agents
   dev       Run the local server and speak MCP over stdio (what an agent starts for itself)
@@ -71,6 +75,8 @@ export async function main(argv: string[]): Promise<number> {
         if (command === "init") return await runInitCommand(rest);
         if (command === "inject") return await runInjectCommand(rest);
         if (command === "config") return await runConfigCommand(rest);
+        if (command === "connection") return await runConnectionCommand(rest);
+        if (command === "run") return await runAppCommand(rest);
         if (command === "export") return await runExportCommand(rest);
         if (command === "doctor") return await runDoctorCommand(rest);
         if (command === "dev") return await runDevCommand(rest, version);

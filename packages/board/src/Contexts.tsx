@@ -446,55 +446,105 @@ export function Contexts({
                         onClose={() => setCredentials(null)}
                     >
                         <div className="modal-body">
+                            <h3>One connection for your app and agent</h3>
                             <p>
-                                These keys are shown once. The capture key goes in your app; the
-                                agent key stays in your agent's environment.
-                            </p>
-                            <h3>1. App capture and feedback</h3>
-                            <p>
-                                Set <code>VITE_NOTATO_SERVER</code> to{" "}
-                                <code>{credentials.server}</code> and pass your capture key as the
-                                SDK's <code>token</code> option.
+                                Download this checkout's connection, then import it from your app
+                                repository. The private profile configures both connections
+                                together.
                             </p>
                             <button
                                 type="button"
-                                className="tonal"
-                                onClick={() =>
-                                    void copyText(credentials.capture.token).then(() =>
-                                        setCopied(true)
-                                    )
-                                }
+                                onClick={() => {
+                                    const profile = {
+                                        version: 1,
+                                        name: me.workspace ? "Cloud" : "Shared",
+                                        mode: "remote",
+                                        server: credentials.server,
+                                        project,
+                                        context: {
+                                            id: credentials.context.id,
+                                            name: credentials.context.name,
+                                            branch: credentials.context.branch,
+                                        },
+                                        appToken: credentials.capture.token,
+                                        agentToken: credentials.agent.token,
+                                    };
+                                    const url = URL.createObjectURL(
+                                        new Blob([JSON.stringify(profile, null, 2) + "\n"], {
+                                            type: "application/json",
+                                        })
+                                    );
+                                    const link = document.createElement("a");
+                                    link.href = url;
+                                    link.download = "notato-checkout.json";
+                                    link.click();
+                                    setTimeout(() => URL.revokeObjectURL(url), 1000);
+                                }}
                             >
-                                Copy capture key
+                                <Icon name="download" size={15} />
+                                Download checkout connection
                             </button>
-                            <p className="muted">
-                                The app key can read and reply to this checkout’s feedback. It
-                                cannot connect to MCP or reach another checkout.
-                            </p>
-                            <h3>2. Coding agent</h3>
-                            <p>
-                                Save the agent key as <code>NOTATO_AGENT_TOKEN</code>, then use this
-                                MCP command:
-                            </p>
                             <pre>
-                                <code>{`npx notato dev --server ${credentials.server} --project ${project}`}</code>
+                                <code>{`npx notato connection import ~/Downloads/notato-checkout.json --name cloud\nnpx notato run -- npm run dev`}</code>
                             </pre>
-                            <button
-                                type="button"
-                                className="tonal"
-                                onClick={() =>
-                                    void copyText(credentials.agent.token).then(() =>
-                                        setCopied(true)
-                                    )
-                                }
-                            >
-                                Copy agent key
-                            </button>
-                            {copied ? <p role="status">Copied. Keep keys out of Git.</p> : null}
                             <p className="muted">
-                                Credentials expire in 90 days. Archiving this checkout immediately
-                                stops both connections.
+                                Your existing <code>notato dev</code> MCP entry follows this
+                                checkout. Reconnect it after switching profiles. Use{" "}
+                                <code>npx notato connection use local</code> to return locally. Keep
+                                the download private and remove it after importing.
                             </p>
+                            <details>
+                                <summary>Manual configuration</summary>
+                                <p>
+                                    These keys are shown once. The capture key goes in your app; the
+                                    agent key stays in your agent's environment.
+                                </p>
+                                <h3>1. App capture and feedback</h3>
+                                <p>
+                                    Set <code>VITE_NOTATO_SERVER</code> to{" "}
+                                    <code>{credentials.server}</code> and pass your capture key as
+                                    the SDK's <code>token</code> option.
+                                </p>
+                                <button
+                                    type="button"
+                                    className="tonal"
+                                    onClick={() =>
+                                        void copyText(credentials.capture.token).then(() =>
+                                            setCopied(true)
+                                        )
+                                    }
+                                >
+                                    Copy capture key
+                                </button>
+                                <p className="muted">
+                                    The app key can read and reply to this checkout’s feedback. It
+                                    cannot connect to MCP or reach another checkout.
+                                </p>
+                                <h3>2. Coding agent</h3>
+                                <p>
+                                    Save the agent key as <code>NOTATO_AGENT_TOKEN</code>, then use
+                                    this MCP command:
+                                </p>
+                                <pre>
+                                    <code>{`npx notato dev --server ${credentials.server} --project ${project}`}</code>
+                                </pre>
+                                <button
+                                    type="button"
+                                    className="tonal"
+                                    onClick={() =>
+                                        void copyText(credentials.agent.token).then(() =>
+                                            setCopied(true)
+                                        )
+                                    }
+                                >
+                                    Copy agent key
+                                </button>
+                                {copied ? <p role="status">Copied. Keep keys out of Git.</p> : null}
+                                <p className="muted">
+                                    Credentials expire in 90 days. Archiving this checkout
+                                    immediately stops both connections.
+                                </p>
+                            </details>
                         </div>
                     </Modal>
                 ) : null}

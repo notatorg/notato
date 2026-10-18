@@ -5,7 +5,9 @@ Connecting the first checkout enables team queues for the project: older project
 work. Existing feedback stays visible in the shared inbox; deliberately assign it instead of guessing its owner.
 The ordinary account-free local loop continues to work on projects that have no checkout contexts.
 
-Create a checkout, then **Set up app and agent** to generate two credentials. The app key can capture, read and reply to feedback only in that checkout; it cannot drive MCP. It goes in the SDK's
+Create a checkout, then **Set up app and agent** to generate two credentials. Download/import its
+[checkout connection profile](connection-profiles.md) to configure the app and agent together and switch between
+Local and Cloud. The following manual setup remains available when no profile is selected. The app key can capture, read and reply to feedback only in that checkout; it cannot drive MCP. It goes in the SDK's
 `token` option; its `server` is the same origin as the board. Keep the agent key in `NOTATO_AGENT_TOKEN` and use
 this MCP command locally:
 

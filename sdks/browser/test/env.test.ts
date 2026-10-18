@@ -1,7 +1,64 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { notatoEnvironment, parseSwitch, readEnvironment } from "../src/env.ts";
+import { applyEnvironment, notatoEnvironment, parseSwitch, readEnvironment } from "../src/env.ts";
 
 afterEach(() => vi.unstubAllEnvs());
+
+it("replaces server, project and app key together and clears stale credentials when returning locally", () => {
+    const base = { project: "old", server: "https://old.example", token: "old-secret" };
+    const remote = {
+        name: "Cloud",
+        mode: "remote",
+        server: "https://cloud.example",
+        project: "team",
+        context: { id: "ctx-1", name: "My checkout", branch: "feature/cart" },
+        token: "app-secret",
+    };
+    const env = readEnvironment({
+        VITE_NOTATO_SERVER: "https://wrong.example",
+        VITE_NOTATO_CONNECTION: JSON.stringify(remote),
+    });
+    const props = applyEnvironment(base, env);
+    expect(props.server).toBe(remote.server);
+    expect(props.project).toBe("team");
+    expect(props.token).toBe("app-secret");
+    expect(props.connection?.context?.name).toBe("My checkout");
+    const local = applyEnvironment(
+        props,
+        readEnvironment({
+            VITE_NOTATO_CONNECTION: JSON.stringify({
+                name: "Local",
+                mode: "local",
+                server: "http://127.0.0.1:4893",
+                project: "my-app",
+            }),
+        })
+    );
+    expect(local.token).toBeUndefined();
+    expect(local.project).toBe("my-app");
+    expect(local.connection?.mode).toBe("local");
+});
+it("refuses malformed or credential-contaminated browser profiles without falling back to inline props", () => {
+    for (const raw of [
+        "",
+        "{bad}",
+        JSON.stringify({ mode: "remote", name: "Cloud", server: "https://cloud.example" }),
+        JSON.stringify({
+            mode: "local",
+            name: "Local",
+            server: "http://127.0.0.1:4893",
+            agentToken: "never-in-browser",
+        }),
+    ])
+        expect(() => readEnvironment({ VITE_NOTATO_CONNECTION: raw })).toThrow("Capture stopped");
+});
+it("reads a Next public profile using literal environment names", () => {
+    vi.stubEnv("VITE_NOTATO_CONNECTION", undefined);
+    vi.stubEnv(
+        "NEXT_PUBLIC_NOTATO_CONNECTION",
+        JSON.stringify({ name: "Local", mode: "local", server: "http://127.0.0.1:4895" })
+    );
+    expect(notatoEnvironment().connection?.server).toBe("http://127.0.0.1:4895");
+});
 
 describe("the environment's switch", () => {
     it("is on for true, 1, yes and on, and off for false, 0, no and off, in any case and with spaces", () => {

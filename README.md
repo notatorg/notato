@@ -166,6 +166,14 @@ A project can contain a separate feedback queue for each developer or worktree. 
 connect an app and agent to the same checkout, assign shared reviews and recover abandoned work. Agents reserve
 each review before editing and record the branch/commit where it was fixed. See the [team feedback guide](docs/team-feedback.md).
 
+## Checkout connection profiles
+
+Choose Local or Cloud once for an app and its agent. Download a checkout connection from **Team and checkouts**,
+then run `npx notato connection import ~/Downloads/notato-checkout.json --name cloud` and start the app with
+`npx notato run -- npm run dev`. The existing `notato dev` MCP entry follows the same private profile. Switch with
+`npx notato connection use local` or `cloud`; the app restarts and old MCP sessions disconnect. The toolbar shows
+the active destination. [Connection setup, switching and credential storage](docs/connection-profiles.md).
+
 ## The board: every project in one place
 
 The server serves a board at its own address (`http://localhost:4747` in dev mode). One server can hold many projects (each app's `project` setting is the project its notes file under), and the board is built around that.
