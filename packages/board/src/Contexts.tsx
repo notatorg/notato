@@ -450,7 +450,7 @@ export function Contexts({
                                 These keys are shown once. The capture key goes in your app; the
                                 agent key stays in your agent's environment.
                             </p>
-                            <h3>1. App capture</h3>
+                            <h3>1. App capture and feedback</h3>
                             <p>
                                 Set <code>VITE_NOTATO_SERVER</code> to{" "}
                                 <code>{credentials.server}</code> and pass your capture key as the
@@ -467,6 +467,10 @@ export function Contexts({
                             >
                                 Copy capture key
                             </button>
+                            <p className="muted">
+                                The app key can read and reply to this checkout’s feedback. It
+                                cannot connect to MCP or reach another checkout.
+                            </p>
                             <h3>2. Coding agent</h3>
                             <p>
                                 Save the agent key as <code>NOTATO_AGENT_TOKEN</code>, then use this

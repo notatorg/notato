@@ -209,6 +209,36 @@ describe("checkout ownership", () => {
         await s.teams.assign(privateNote, c.id, "person");
         expect((await s.teams.work(workId(privateNote)))?.shared).toBe(true);
     });
+    it("lets the paired app follow resolved pins and reply within its checkout", async () => {
+        const s = await setup(),
+            c = s.contexts[0];
+        if (!c) throw new Error("fixture");
+        const issued = await s.call(`/contexts/${c.id}/credentials`, "POST", {});
+        expect(issued.status).toBe(201);
+        const pair = (await issued.json()) as {
+            capture: { token: string };
+            agent: { token: string; id: string };
+        };
+        const n = await s.note("live-pin", c.id),
+            agent = teamBackend(s.backend, s.store, c.id, async () => {}, pair.agent.id);
+        await agent.claimWork!(n.id, "claim");
+        await agent.setStatus(n.id, "resolved");
+        const read = await s.call(`/annotations/${n.id}`, "GET", undefined, pair.capture.token);
+        expect(read.status).toBe(200);
+        expect(((await read.json()) as { annotation: Annotation }).annotation.status).toBe(
+            "resolved"
+        );
+        expect(
+            (
+                await s.call(
+                    `/annotations/${n.id}/replies`,
+                    "POST",
+                    { body: "Verified on my app" },
+                    pair.capture.token
+                )
+            ).status
+        ).toBe(201);
+    });
     it("rechecks a revoked credential inside the write fence", async () => {
         const s = await setup(),
             c = s.contexts[0];

@@ -91,7 +91,7 @@ export const contextRoutes: Routes = async ({ req, path, method, principal, matc
             const capture = await auth.issueToken(context.projectId, `${context.name} capture`, {
                 ...options,
                 purpose: "app",
-                permission: "capture",
+                permission: "full",
             });
             try {
                 const agent = await auth.issueToken(context.projectId, `${context.name} agent`, {
