@@ -1,5 +1,4 @@
 import {
-    existsSync,
     lstatSync,
     readFileSync,
     renameSync,
@@ -11,6 +10,15 @@ import {
 import { dirname, join, resolve } from "node:path";
 import { browserConnection, type CheckoutConnection, parseCheckoutConnection } from "@notato/core";
 
+function entryExists(path: string): boolean {
+    try {
+        lstatSync(path);
+        return true;
+    } catch (e) {
+        if ((e as NodeJS.ErrnoException).code === "ENOENT") return false;
+        throw e;
+    }
+}
 export const CONNECTION_FILE = ".notato.connection.json";
 export interface Connections {
     version: 1;
@@ -19,14 +27,14 @@ export interface Connections {
 }
 export function connectionRoot(cwd: string): string {
     for (let d = resolve(cwd); ; d = dirname(d)) {
-        if (existsSync(join(d, CONNECTION_FILE))) return d;
-        if (existsSync(join(d, ".git"))) return d;
+        if (entryExists(join(d, CONNECTION_FILE))) return d;
+        if (entryExists(join(d, ".git"))) return d;
         if (dirname(d) === d) return resolve(cwd);
     }
 }
 export function readConnections(root: string): Connections | null {
     const path = join(root, CONNECTION_FILE);
-    if (!existsSync(path)) return null;
+    if (!entryExists(path)) return null;
     if (!lstatSync(path).isFile() || lstatSync(path).isSymbolicLink())
         throw new Error("Connection profiles must be a regular private file.");
     if (lstatSync(path).size > 131072) throw new Error("Connection file is too large.");
@@ -64,7 +72,7 @@ export function checkName(name: string) {
 }
 export function writeConnections(root: string, c: Connections) {
     const path = join(root, CONNECTION_FILE);
-    if (existsSync(path) && (!lstatSync(path).isFile() || lstatSync(path).isSymbolicLink()))
+    if (entryExists(path) && (!lstatSync(path).isFile() || lstatSync(path).isSymbolicLink()))
         throw new Error("Refusing to replace a linked connection file.");
     const tracked = Bun.spawnSync(["git", "ls-files", "--error-unmatch", "--", CONNECTION_FILE], {
         cwd: root,
@@ -76,9 +84,9 @@ export function writeConnections(root: string, c: Connections) {
             "The connection file is tracked by Git. Remove it from Git before storing credentials."
         );
     const ignore = join(root, ".gitignore");
-    if (existsSync(ignore) && (!lstatSync(ignore).isFile() || lstatSync(ignore).isSymbolicLink()))
+    if (entryExists(ignore) && (!lstatSync(ignore).isFile() || lstatSync(ignore).isSymbolicLink()))
         throw new Error("Refusing to edit a linked .gitignore.");
-    const before = existsSync(ignore) ? readFileSync(ignore, "utf8") : "";
+    const before = entryExists(ignore) ? readFileSync(ignore, "utf8") : "";
     const patterns = `/${CONNECTION_FILE}\n/${CONNECTION_FILE}.*.tmp\n`;
     if (!before.endsWith(patterns))
         writeFileSync(
@@ -90,7 +98,7 @@ export function writeConnections(root: string, c: Connections) {
         writeFileSync(temp, JSON.stringify(c, null, 2) + "\n", { mode: 0o600, flag: "wx" });
         renameSync(temp, path);
     } finally {
-        if (existsSync(temp)) unlinkSync(temp);
+        if (entryExists(temp)) unlinkSync(temp);
     }
 }
 export function selectedConnection(root: string) {
@@ -171,7 +179,7 @@ export function appEnvironment(
 /** Atomic file replacement is watched by pathname. The old session stops, rather than retaining its old authority. */
 export function watchConnection(root: string, changed: () => void): () => void {
     const path = join(root, CONNECTION_FILE);
-    const original = existsSync(path) ? readFileSync(path, "utf8") : null;
+    const original = entryExists(path) ? readFileSync(path, "utf8") : null;
     const check = () => {
         let current: string | null;
         try {

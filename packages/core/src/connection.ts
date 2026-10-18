@@ -66,7 +66,9 @@ export function parseCheckoutConnection(value: unknown): CheckoutConnection {
             !context ||
             !string(context.id, 200) ||
             !string(context.name, 120) ||
-            (context.branch !== undefined && !string(context.branch, 200)) ||
+            (context.branch !== undefined &&
+                context.branch !== "" &&
+                !string(context.branch, 200)) ||
             !string(c.appToken, 4096) ||
             !string(c.agentToken, 4096) ||
             c.appToken === c.agentToken)

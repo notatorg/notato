@@ -102,6 +102,12 @@ it("imports and verifies both credentials, keeps keys private and lists only saf
     expect(await doctor.exited).toBe(0);
     expect(doctorOutput).toContain("Checkout connection");
     expect(doctorOutput).not.toContain(s.profile.agentToken!);
+    writeFileSync(
+        s.download,
+        JSON.stringify({ ...s.profile, context: { ...s.profile.context, branch: "" } })
+    );
+    expect((await runConnection(["import", s.download], s.root)).code).toBe(0);
+    expect(readConnections(s.root)?.profiles.cloud?.context?.branch).toBeUndefined();
     const old = readFileSync(join(s.root, CONNECTION_FILE), "utf8");
     const wrong = await s.auth.issueToken("web", "Wrong", {
         purpose: "agent",
@@ -156,6 +162,10 @@ it("stops at worktree boundaries and refuses tracked or linked credential files"
     Bun.spawnSync(["git", "add", CONNECTION_FILE], { cwd: tracked });
     expect(() => writeConnections(tracked, readConnections(root)!)).toThrow("tracked");
     expect(readFileSync(join(tracked, CONNECTION_FILE), "utf8")).toBe("placeholder");
+    const dangling = tempDir("notato-profile-dangling-");
+    symlinkSync(join(dangling, "missing-target"), join(dangling, ".gitignore"));
+    expect(() => writeConnections(dangling, readConnections(root)!)).toThrow("linked .gitignore");
+    expect(existsSync(join(dangling, "missing-target"))).toBe(false);
     const ignored = tempDir("notato-profile-ignore-");
     Bun.spawnSync(["git", "init"], { cwd: ignored, stdout: "ignore", stderr: "ignore" });
     writeFileSync(join(ignored, ".gitignore"), `/${CONNECTION_FILE}\n!${CONNECTION_FILE}\n`);
