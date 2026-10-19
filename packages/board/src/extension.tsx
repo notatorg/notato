@@ -31,6 +31,15 @@ export interface BoardExtension {
      * (and workspaces to hold them) may prefer a switcher.
      */
     ProjectNav?: ComponentType<ProjectNavProps>;
+    /**
+     * Shown at the top of the Home page, under its title and above the project list: a getting-started guide that fits
+     * who is looking. It decides for itself when to show (and when to step aside).
+     */
+    HomeTop?: ComponentType<{
+        me: Me;
+        projects: ProjectSummary[] | null;
+        onNewProject?: () => void;
+    }>;
     /** Shown at the top of the sidebar, above the open project: a workspace switcher. */
     SidebarTop?: ComponentType<{ me: Me }>;
     /**

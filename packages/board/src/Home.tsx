@@ -1,4 +1,5 @@
 import type { Me, ProjectSummary } from "./api.ts";
+import { useBoardExtension } from "./extension.tsx";
 import { hasUnseen, useSeenVersion } from "./live.ts";
 import { ago, byActivity, DONE, plural, projectName, todoOf } from "./model.ts";
 import { projectHref } from "./route.ts";
@@ -18,6 +19,7 @@ export function Home({
     onNewProject?: () => void;
 }) {
     useSeenVersion();
+    const extension = useBoardExtension();
     const todo = (projects ?? []).reduce((n, p) => n + todoOf(p), 0);
     return (
         <div className="sheet">
@@ -45,6 +47,9 @@ export function Home({
                         </div>
                     ) : null}
                 </header>
+                {extension?.HomeTop ? (
+                    <extension.HomeTop me={me} projects={projects} onNewProject={onNewProject} />
+                ) : null}
                 {error ? (
                     <p className="error">{error}</p>
                 ) : !projects ? (
