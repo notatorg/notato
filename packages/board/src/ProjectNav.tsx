@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { isAdmin } from "./api.ts";
+import { useEffect, useState } from "react";
+import { isAdmin, request } from "./api.ts";
 import type { ProjectNavProps } from "./extension.tsx";
 import { hasUnseen } from "./live.ts";
 import { projectName, todoOf } from "./model.ts";
@@ -9,12 +9,38 @@ import { Icon, type IconName, Modal, ProjectMark } from "./ui.tsx";
 /** A project's pages, under the project's name at the top of the sidebar. */
 const VIEWS: Array<{ tab: Tab; label: string; icon: IconName; admin?: boolean }> = [
     { tab: "inbox", label: "Inbox", icon: "inbox" },
-    { tab: "sessions", label: "Review sessions", icon: "activity" },
+    { tab: "sessions", label: "Review sessions", icon: "chat" },
     { tab: "activity", label: "Activity", icon: "activity" },
-    { tab: "team", label: "Assignments", icon: "users" },
     { tab: "overview", label: "Overview", icon: "chart" },
     { tab: "settings", label: "Project settings", icon: "sliders", admin: true },
+    { tab: "team", label: "Assignments", icon: "users" },
 ];
+
+/**
+ * Assignments are optional, so the link appears once a project has a dev setup (and stays while its page is open);
+ * until then it is reached from Review sessions.
+ */
+function useAssignmentsInUse(project: string | null, tab: string) {
+    const [inUse, setInUse] = useState(false);
+    // biome-ignore lint/correctness/useExhaustiveDependencies: looks again when the page changes, so a new dev setup shows up
+    useEffect(() => {
+        setInUse(false);
+        if (!project) return;
+        let stopped = false;
+        request<{ items: Array<{ archived?: boolean }> }>(
+            `/projects/${encodeURIComponent(project)}/contexts`
+        ).then(
+            (data) => {
+                if (!stopped) setInUse(data.items.some((c) => !c.archived));
+            },
+            () => {}
+        );
+        return () => {
+            stopped = true;
+        };
+    }, [project, tab]);
+    return inUse;
+}
 
 /** Past this many projects, the switcher offers a box to find one. */
 const FIND_FROM = 8;
@@ -28,6 +54,10 @@ export function ProjectNav({ me, route, current, projects, onNewProject }: Proje
     const [switching, setSwitching] = useState(false);
     const manager = isAdmin(me);
     const open = route.page === "project" ? route.project : null;
+    const assignments = useAssignmentsInUse(
+        current ?? null,
+        route.page === "project" ? route.tab : ""
+    );
     const summary = projects?.find((p) => p.id === current);
     const q = query.trim().toLowerCase();
     const shown = (projects ?? []).filter(
@@ -76,7 +106,13 @@ export function ProjectNav({ me, route, current, projects, onNewProject }: Proje
                 ) : null}
             </div>
             {current
-                ? VIEWS.filter((v) => manager || !v.admin).map((v) => {
+                ? VIEWS.filter(
+                      (v) =>
+                          (manager || !v.admin) &&
+                          (v.tab !== "team" ||
+                              assignments ||
+                              (route.page === "project" && route.tab === "team"))
+                  ).map((v) => {
                       const on =
                           open === current && route.page === "project" && route.tab === v.tab;
                       const count = summary

@@ -28,6 +28,8 @@ export function ReviewSessions({
     const [labels, setLabels] = useState<Record<string, { name: string }>>({});
     const [sessions, setSessions] = useState<Session[]>([]);
     const [selected, select] = useState<Session | null>(null);
+    /** The form is for starting a session or editing the open one, not always on screen. */
+    const [composing, setComposing] = useState(false);
     const [notes, setNotes] = useState<Annotation[]>([]);
     const [name, setName] = useState("");
     const [description, setDescription] = useState("");
@@ -120,6 +122,7 @@ export function ReviewSessions({
         }
     };
     const create = () => {
+        setComposing(true);
         select(null);
         setName("");
         setDescription("");
@@ -135,11 +138,11 @@ export function ReviewSessions({
                     <div>
                         <h1>Review sessions</h1>
                         <p>
-                            Group feedback around a focused task or testing pass. Each note keeps
-                            its own visibility.
+                            A review session is a group of shared feedback, such as a testing pass
+                            or a batch of related fixes. Open one to hand it to your coding agent.
                         </p>
                     </div>
-                    <button type="button" onClick={create}>
+                    <button type="button" className="primary" onClick={create}>
                         New session
                     </button>
                 </header>
@@ -188,105 +191,119 @@ export function ReviewSessions({
                             ))}
                         {!sessions.length ? (
                             <p className="muted">
-                                Start a private development review or a shared testing pass. Test
-                                SDK captures create a session automatically.
+                                No sessions yet. A testing run creates one automatically when it
+                                sends shared notes; or start your own to gather related feedback for
+                                your agent.
                             </p>
                         ) : null}
+                        <p className="muted small">
+                            Want one particular developer's agent to take a review?{" "}
+                            <a href={projectHref(project, "team")}>Assignments</a> (optional).
+                        </p>
                     </div>
                 </section>
-                <form
-                    onSubmit={(event) => {
-                        event.preventDefault();
-                        void run(async () => {
-                            const data = await request<{ session: Session }>(
-                                selected ? "/review-sessions/" + selected.id : path,
-                                json(selected ? "PATCH" : "POST", {
-                                    name,
-                                    description,
-                                    visibility,
-                                    branch,
-                                    environment,
-                                })
-                            );
-                            await open(data.session);
-                        });
-                    }}
-                >
-                    <section className="set-section">
-                        <div className="set-label">
-                            <h2>{selected ? selected.name : "New review session"}</h2>
-                            {selected ? (
-                                <p>
-                                    {selected.createdBy === actor
-                                        ? "You"
-                                        : (labels[selected.createdBy]?.name ??
-                                          "Project member")}{" "}
-                                    ·{" "}
-                                    {selected.visibility === "personal"
-                                        ? "Only its creator can see this session."
-                                        : "Visible to project members."}
-                                </p>
-                            ) : null}
-                        </div>
-                        <div className="set-body">
-                            <label className="field">
-                                Name
-                                <input
-                                    required
-                                    maxLength={120}
-                                    value={name}
-                                    onChange={(e) => setName(e.target.value)}
-                                    disabled={Boolean(selected && selected.createdBy !== actor)}
-                                />
-                            </label>
-                            <label className="field">
-                                Focus for the agent
-                                <textarea
-                                    maxLength={4000}
-                                    value={description}
-                                    onChange={(e) => setDescription(e.target.value)}
-                                    disabled={Boolean(selected && selected.createdBy !== actor)}
-                                />
-                            </label>
-                            <label className="field">
-                                Visibility
-                                <select
-                                    value={visibility}
-                                    onChange={(e) =>
-                                        setVisibility(e.target.value as "personal" | "shared")
-                                    }
-                                    disabled={Boolean(selected && selected.createdBy !== actor)}
-                                >
-                                    <option value="personal">Mine</option>
-                                    <option value="shared">Shared with project</option>
-                                </select>
-                            </label>
-                            <label className="field">
-                                Branch
-                                <input
-                                    value={branch}
-                                    onChange={(e) => setBranch(e.target.value)}
-                                    maxLength={200}
-                                    disabled={Boolean(selected && selected.createdBy !== actor)}
-                                />
-                            </label>
-                            <label className="field">
-                                Environment
-                                <input
-                                    value={environment}
-                                    onChange={(e) => setEnvironment(e.target.value)}
-                                    maxLength={200}
-                                    disabled={Boolean(selected && selected.createdBy !== actor)}
-                                />
-                            </label>
-                            {!selected || selected.createdBy === actor ? (
-                                <button type="submit" disabled={busy || !name.trim()}>
-                                    Save session
-                                </button>
-                            ) : null}
-                        </div>
-                    </section>
-                </form>
+                {composing || selected ? (
+                    <form
+                        onSubmit={(event) => {
+                            event.preventDefault();
+                            void run(async () => {
+                                const data = await request<{ session: Session }>(
+                                    selected ? "/review-sessions/" + selected.id : path,
+                                    json(selected ? "PATCH" : "POST", {
+                                        name,
+                                        description,
+                                        visibility,
+                                        branch,
+                                        environment,
+                                    })
+                                );
+                                await open(data.session);
+                            });
+                        }}
+                    >
+                        <section className="set-section">
+                            <div className="set-label">
+                                <h2>{selected ? selected.name : "New review session"}</h2>
+                                {selected ? (
+                                    <p>
+                                        {selected.createdBy === actor
+                                            ? "You"
+                                            : (labels[selected.createdBy]?.name ??
+                                              "Project member")}{" "}
+                                        ·{" "}
+                                        {selected.visibility === "personal"
+                                            ? "Only its creator can see this session."
+                                            : "Visible to project members."}
+                                    </p>
+                                ) : null}
+                            </div>
+                            <div className="set-body">
+                                <label className="field">
+                                    Name
+                                    <input
+                                        required
+                                        maxLength={120}
+                                        value={name}
+                                        onChange={(e) => setName(e.target.value)}
+                                        disabled={Boolean(selected && selected.createdBy !== actor)}
+                                    />
+                                </label>
+                                <label className="field">
+                                    What should the agent focus on? (optional)
+                                    <textarea
+                                        maxLength={4000}
+                                        value={description}
+                                        onChange={(e) => setDescription(e.target.value)}
+                                        disabled={Boolean(selected && selected.createdBy !== actor)}
+                                    />
+                                </label>
+                                <label className="field">
+                                    Visibility
+                                    <select
+                                        value={visibility}
+                                        onChange={(e) =>
+                                            setVisibility(e.target.value as "personal" | "shared")
+                                        }
+                                        disabled={Boolean(selected && selected.createdBy !== actor)}
+                                    >
+                                        <option value="personal">Mine</option>
+                                        <option value="shared">Shared with project</option>
+                                    </select>
+                                </label>
+                                <details className="session-more">
+                                    <summary>More details</summary>
+                                    <label className="field">
+                                        Branch
+                                        <input
+                                            value={branch}
+                                            onChange={(e) => setBranch(e.target.value)}
+                                            maxLength={200}
+                                            disabled={Boolean(
+                                                selected && selected.createdBy !== actor
+                                            )}
+                                        />
+                                    </label>
+                                    <label className="field">
+                                        Environment
+                                        <input
+                                            value={environment}
+                                            onChange={(e) => setEnvironment(e.target.value)}
+                                            maxLength={200}
+                                            disabled={Boolean(
+                                                selected && selected.createdBy !== actor
+                                            )}
+                                        />
+                                    </label>
+                                </details>
+                                {!selected || selected.createdBy === actor ? (
+                                    <button type="submit" disabled={busy || !name.trim()}>
+                                        Save session
+                                    </button>
+                                ) : null}
+                            </div>
+                        </section>
+                    </form>
+                ) : null}
                 {selected ? (
                     <>
                         <section className="set-section">
