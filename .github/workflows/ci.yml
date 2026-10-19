@@ -36,9 +36,6 @@ jobs:
                   bun run build:schema
                   git diff --exit-code packages/schema/schema.json
             - run: bun run test
-            # The docs are cut from the READMEs by heading, and the build fails when a heading they need is gone.
-            - name: The website and docs build
-              run: bun run build:site
 
     # Each platform builds its own binary and runs the smoke test against it: the real artefact, on the real OS.
     binaries:

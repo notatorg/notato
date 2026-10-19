@@ -25,7 +25,7 @@ Flutter, React Native, Angular, Vue: the steps are the same. [`scripts/repo.test
 4. ✓ **One version.** Where the SDK writes its version (a manifest, or a constant it reports as `environment.sdk`) goes in `SDK_STAMPS` in [`scripts/version.ts`](../scripts/version.ts). An npm package needs nothing: its `package.json` is found.
 5. ✓ **CI:** `.github/workflows/sdk-<name>.yml`, run on changes to `sdks/<name>/**` and `packages/schema/**`, with the tests, the contract test and the example's build. An npm package is covered by `ci.yml` already.
 6. **Release:** a job in [`release.yml`](../.github/workflows/release.yml) behind its own `PUBLISH_<REGISTRY>` switch that always builds the package and only uploads it when the switch is on. npm packages are published by the npm job already.
-7. ✓ **Docs:** a page in `site/docs.ts` (`PAGES`, made from the README), and a guide in the board's Connect panel (`packages/board/src/connect.ts`).
+7. ✓ **Docs:** a page in the website's docs list (made from the README, maintained outside this repository: say in your pull request that one is needed), and a guide in the board's Connect panel (`packages/board/src/connect.ts`).
 
 **A web framework** (Angular, Vue, Svelte) is a small npm package that depends on `@notato/browser` and starts `createController` the framework's way, as `sdks/react` does. Reading component names belongs in `@notato/browser`, not in the wrapper: its identity plugins read what a framework's development build leaves on the DOM (React's fibers today; Angular's `ng.getComponent` would sit beside it), so the script tag and the browser extension name components on any page too.
 

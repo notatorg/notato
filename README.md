@@ -518,7 +518,7 @@ One repository, two kinds of folder:
 - **`packages/`** is Notato itself, as Bun workspaces: `schema` (Zod, the wire format and the source of truth), `core` (pipeline, bundles, Markdown), `server` (HTTP, MCP, storage, webhooks), `board` (the board UI, built into the server), `cli`, `vite` (the source-location plugin) and `extension` (the browser extension).
 - **`sdks/`** is what goes into apps, one folder per SDK in whatever language it is written in: `browser` (the toolbar for any page), `react` and `angular` (wrappers around it), `react-native`, `flutter`, `swift`, `android` and `dotnet`. [sdks/README.md](sdks/README.md) lists what a new one needs.
 
-`site/` is the website, and the docs made from these READMEs. Every package has the same version and is released together from one tag: see [RELEASING.md](RELEASING.md).
+The documentation at notato.dev is made from these READMEs. Every package has the same version and is released together from one tag: see [RELEASING.md](RELEASING.md).
 
 ```bash
 bun install

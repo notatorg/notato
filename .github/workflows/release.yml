@@ -14,7 +14,6 @@ name: Release
 #                                                                              this workflow (a Trusted Publishing policy)
 #   PUBLISH_PUB     pub.dev: notato (Flutter)                                  none: pub.dev trusts this repository's tags
 #                                                                              (its admin page, "Automated publishing")
-#   PUBLISH_SITE    the website and docs on GitHub Pages                       (Pages set to "GitHub Actions")
 #   PUBLISH_GITHUB  a GitHub release with the binaries and the extension zip
 #
 # SwiftPM needs nothing: it reads Package.swift at the tag, so the tag is the Swift release. RELEASING.md has the rest.
@@ -259,39 +258,6 @@ jobs:
             - name: Publish
               if: vars.PUBLISH_PUB == 'true'
               run: flutter pub publish --force
-
-    site:
-        name: Website
-        needs: version
-        runs-on: ubuntu-latest
-        env:
-            NOTATO_WAITLIST_ENDPOINT: ${{ vars.NOTATO_WAITLIST_ENDPOINT }}
-        steps:
-            - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
-            - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
-              with:
-                  bun-version: 1.4.3
-            - run: bun install --frozen-lockfile
-            # From the tag, so the docs describe what this release installs, not what main has since.
-            - run: bun run build:site
-            - uses: actions/upload-pages-artifact@56afc609e74202658d3ffba0e8f6dda462b719fa # v3.0.1
-              with:
-                  path: site/dist
-
-    site-deploy:
-        name: Website on GitHub Pages
-        if: vars.PUBLISH_SITE == 'true'
-        needs: site
-        runs-on: ubuntu-latest
-        permissions:
-            pages: write
-            id-token: write
-        environment:
-            name: github-pages
-            url: ${{ steps.deploy.outputs.page_url }}
-        steps:
-            - id: deploy
-              uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e # v4.0.5
 
     github-release:
         name: GitHub release
