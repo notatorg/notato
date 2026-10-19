@@ -164,7 +164,7 @@ Agents cannot read or change a People only note, including direct reads by id, s
 
 ## Team feedback and checkout queues
 
-Start with one project ID shared by everyone: each developer's Dev feedback stays Mine, and testers' Test sessions are Shared. For teams that use worktrees or PR-linked reviews, the **Team** page (where each developer connects a *dev setup*: their own app and agent, technically a checkout or worktree) can optionally assign shared work and record its branch/commit. That execution ownership is separate from feedback visibility and is not required for the ordinary local loop. See the [team feedback guide](docs/team-feedback.md).
+Start with one project ID shared by everyone: each developer's Dev feedback stays Mine, and testers' Test sessions are Shared. For teams that use worktrees or PR-linked reviews, the **Assignments** page (where each developer connects a *dev setup*: their own app and agent, technically a checkout or worktree) can optionally assign shared work and record its branch/commit. That execution ownership is separate from feedback visibility and is not required for the ordinary local loop. See the [team feedback guide](docs/team-feedback.md).
 
 ## The board: every project in one place
 

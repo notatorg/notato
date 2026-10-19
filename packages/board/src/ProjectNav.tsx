@@ -11,7 +11,7 @@ const VIEWS: Array<{ tab: Tab; label: string; icon: IconName; admin?: boolean }>
     { tab: "inbox", label: "Inbox", icon: "inbox" },
     { tab: "sessions", label: "Review sessions", icon: "activity" },
     { tab: "activity", label: "Activity", icon: "activity" },
-    { tab: "team", label: "Team", icon: "users" },
+    { tab: "team", label: "Assignments", icon: "users" },
     { tab: "overview", label: "Overview", icon: "chart" },
     { tab: "settings", label: "Project settings", icon: "sliders", admin: true },
 ];

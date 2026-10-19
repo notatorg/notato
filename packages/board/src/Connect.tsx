@@ -1,6 +1,7 @@
 import { type ReactNode, useEffect, useState } from "react";
 import { createToken, getStatus, type Me } from "./api.ts";
 import { connectGuides, type Guide, type Platform } from "./connect.ts";
+import { useBoardExtension } from "./extension.tsx";
 import { projectHref } from "./route.ts";
 import {
     forgetFreshAgentToken,
@@ -32,7 +33,10 @@ const PLATFORMS: Platform[] = [
  */
 function ConnectApp({ me, project, name }: { me: Me; project: string; name: string }) {
     const [token, setToken] = useState(() => freshToken(project));
-    const [agentToken] = useState(() => freshAgentToken(project));
+    const [agentToken, setAgentToken] = useState(() => freshAgentToken(project));
+    const extension = useBoardExtension();
+    const [agentBusy, setAgentBusy] = useState(false);
+    const [agentError, setAgentError] = useState<string | null>(null);
     const [platform, setPlatform] = useRemembered(KEYS.connect, PLATFORMS, "react");
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState<string | null>(null);
@@ -74,6 +78,28 @@ function ConnectApp({ me, project, name }: { me: Me; project: string; name: stri
             setBusy(false);
         }
     };
+
+    /** One click, like the app's: a token of the person's own, for their coding agent. */
+    const makeAgentToken = async () => {
+        setAgentBusy(true);
+        setAgentError(null);
+        try {
+            const mine = extension?.tokens?.choices?.(me, "agent")?.[0];
+            setAgentToken(
+                (
+                    await createToken(project, `${name} agent`, {
+                        purpose: "agent",
+                        ...(mine?.options ?? {}),
+                    })
+                ).token
+            );
+        } catch (e) {
+            setAgentError(e instanceof Error ? e.message : "Could not create a token.");
+        } finally {
+            setAgentBusy(false);
+        }
+    };
+    const canMakeAgent = needsToken && extension?.tokens?.canCreateAgent?.(me) !== false;
 
     return (
         <div className="connect">
@@ -125,6 +151,34 @@ function ConnectApp({ me, project, name }: { me: Me; project: string; name: stri
                         purpose="agent"
                         connect={false}
                     />
+                </>
+            ) : canMakeAgent ? (
+                <>
+                    <p className="connect-label">Your coding agent</p>
+                    <div className="connect-note need">
+                        <Icon name="key" size={15} className="note-icon" />
+                        <div className="connect-note-body">
+                            <p>
+                                <strong>Coding agents use a token of their own.</strong> Make one
+                                for Claude Code, Codex, Cursor or any MCP client, and this page
+                                shows the command to add. It stays yours: other people's notes are
+                                not readable with it.
+                            </p>
+                            <button
+                                type="button"
+                                className="small primary"
+                                disabled={agentBusy}
+                                onClick={makeAgentToken}
+                            >
+                                Create an agent token
+                            </button>
+                            {agentError ? (
+                                <p className="error small" role="alert">
+                                    {agentError}
+                                </p>
+                            ) : null}
+                        </div>
+                    </div>
                 </>
             ) : null}
 
@@ -232,7 +286,7 @@ export function ConnectPage({
             <div className="sheet-inner connect-page">
                 <header className="sheet-head">
                     <div>
-                        <h1>{empty ? name : "Connect an app"}</h1>
+                        <h1>{empty ? name : "Connect"}</h1>
                         <p>
                             {empty ? (
                                 <>
@@ -241,9 +295,10 @@ export function ConnectPage({
                                 </>
                             ) : (
                                 <>
-                                    Notes from the apps you connect land in{" "}
-                                    <a href={projectHref(project)}>{name}</a>'s inbox as they are
-                                    made. Its id is <code>{project}</code>.
+                                    Connect your app and your coding agent. Notes from the apps you
+                                    connect land in <a href={projectHref(project)}>{name}</a>
+                                    's inbox as they are made, and your agent reads them there. Its
+                                    id is <code>{project}</code>.
                                 </>
                             )}
                         </p>

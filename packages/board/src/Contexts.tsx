@@ -236,78 +236,86 @@ export function Contexts({
             <div className="sheet-inner wide team-page">
                 <header className="sheet-head">
                     <div>
-                        <h1>Team</h1>
+                        <h1>Assignments</h1>
                         <p>
-                            Connect your own dev setup so feedback from your app reaches your agent,
-                            and see who is working on this project's shared feedback.
+                            Optional. Hand a shared review to one developer's agent, so only that
+                            agent works on it, and see who is working on what.
                         </p>
                     </div>
                 </header>
+                <div className="banner" role="note">
+                    <span>
+                        <strong>Most teams do not need this page.</strong> Everyone connects with
+                        their own tokens on the project's Connect page, what you capture while
+                        building stays yours, and Review sessions already group shared feedback. Use
+                        assignments when a particular developer's agent should take a shared review,
+                        such as a pull request.
+                    </span>
+                </div>
                 {error ? (
                     <p className="error" role="alert">
                         {error}
                     </p>
                 ) : null}
-                <section className="team-intro">
-                    <div>
-                        <Icon name="users" />
-                        <h2>Connect your dev setup</h2>
-                        <p>
-                            A dev setup is you, your app and your coding agent on one machine or
-                            branch. Name it and Notato makes two keys: one for your app, one for
-                            your agent.
-                        </p>
-                        <p className="muted">
-                            What you capture while building stays yours. Feedback from testers or
-                            pull requests waits in the shared queue until someone is assigned, and
-                            one agent reserves each review before editing it.
-                        </p>
-                        <p className="muted">
-                            Everyone on the project can still see all of its feedback. Setups only
-                            decide which agent is sent the work.
-                        </p>
-                        <p className="muted">
-                            Working alone? You can skip this page: one app token and one agent token
-                            for the project are all you need.
-                        </p>
-                    </div>
-                    <form
-                        onSubmit={(e) => {
-                            e.preventDefault();
-                            void perform(async () => {
-                                await teamRequest(path(project, "contexts"), "POST", {
-                                    name,
-                                    branch: branch || undefined,
+                <details className="team-setup" open={active.length === 0}>
+                    <summary>
+                        {active.length
+                            ? "Add a dev setup"
+                            : "Add the first dev setup to start assigning"}
+                    </summary>
+                    <section className="team-intro">
+                        <div>
+                            <Icon name="users" />
+                            <h2>Add a dev setup</h2>
+                            <p>
+                                A dev setup is one developer's app and coding agent on one machine
+                                or branch. Name it and Notato makes two keys: one for the app, one
+                                for the agent. Shared reviews can then be assigned to it, and one
+                                agent reserves each review before editing it.
+                            </p>
+                            <p className="muted">
+                                Everyone on the project can still see all of its feedback. Setups
+                                only decide which agent is sent the work.
+                            </p>
+                        </div>
+                        <form
+                            onSubmit={(e) => {
+                                e.preventDefault();
+                                void perform(async () => {
+                                    await teamRequest(path(project, "contexts"), "POST", {
+                                        name,
+                                        branch: branch || undefined,
+                                    });
+                                    setName("");
+                                    setBranch("");
                                 });
-                                setName("");
-                                setBranch("");
-                            });
-                        }}
-                    >
-                        <label>
-                            Name this setup
-                            <input
-                                required
-                                maxLength={120}
-                                placeholder="My laptop"
-                                value={name}
-                                onChange={(e) => setName(e.target.value)}
-                            />
-                        </label>
-                        <label>
-                            Branch or worktree label
-                            <input
-                                maxLength={200}
-                                placeholder="feature/pricing"
-                                value={branch}
-                                onChange={(e) => setBranch(e.target.value)}
-                            />
-                        </label>
-                        <button disabled={busy} type="submit">
-                            Connect this setup
-                        </button>
-                    </form>
-                </section>
+                            }}
+                        >
+                            <label>
+                                Name this setup
+                                <input
+                                    required
+                                    maxLength={120}
+                                    placeholder="My laptop"
+                                    value={name}
+                                    onChange={(e) => setName(e.target.value)}
+                                />
+                            </label>
+                            <label>
+                                Branch or worktree label
+                                <input
+                                    maxLength={200}
+                                    placeholder="feature/pricing"
+                                    value={branch}
+                                    onChange={(e) => setBranch(e.target.value)}
+                                />
+                            </label>
+                            <button disabled={busy} type="submit">
+                                Connect this setup
+                            </button>
+                        </form>
+                    </section>
+                </details>
                 <div className="checkout-grid">
                     {active.map((c) => (
                         <article className="checkout-card" key={c.id}>

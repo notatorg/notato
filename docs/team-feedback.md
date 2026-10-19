@@ -50,7 +50,7 @@ notato_reply_review_session({ id: "review_abc", body: "I’ll fix keyboard navig
 
 Selecting a session explicitly includes its accessible shared feedback and keeps subsequent work within that group. It never gives the agent access to someone else’s personal notes. Calling the ordinary list/watch again without a session returns to Mine unless another scope is explicitly supplied.
 
-In the board, a checkout or worktree connection is called a **dev setup** (the **Team** page). Checkout assignment is optional. It reserves work explicitly assigned to a checkout; merely configuring a checkout no longer disables the ordinary developer loop for the rest of the project. Personal feedback can only be assigned to its creator’s checkout.
+In the board, a checkout or worktree connection is called a **dev setup** (the **Assignments** page). Checkout assignment is optional. It reserves work explicitly assigned to a checkout; merely configuring a checkout no longer disables the ordinary developer loop for the rest of the project. Personal feedback can only be assigned to its creator’s checkout.
 
 ## Project ownership and membership
 

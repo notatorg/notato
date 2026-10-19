@@ -435,7 +435,7 @@ export function teamBackend(
         claimWork: async (id, action, checkoutHead) => {
             if (!contextId)
                 throw new RequestError(
-                    "Connect a dev setup (the board's Team page) to claim assigned work.",
+                    "Connect a dev setup (the board's Assignments page) to claim assigned work.",
                     409
                 );
             const stored = await allowed(await inner.get(id));
