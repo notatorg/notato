@@ -21,7 +21,8 @@ describe("the manifest", () => {
     });
 
     it("asks for as little as it can: scripting and storage, the machine's own servers, and the rest only when a site is turned on", () => {
-        expect(manifest.permissions).toEqual(["scripting", "storage"]);
+        // activeTab lets the popup read the address of the tab it was opened on, before the site is turned on.
+        expect(manifest.permissions).toEqual(["activeTab", "scripting", "storage"]);
         expect(manifest.host_permissions).toEqual([
             "http://localhost/*",
             "http://127.0.0.1/*",
