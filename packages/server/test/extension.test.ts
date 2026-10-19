@@ -5,6 +5,7 @@ import { z } from "zod";
 import {
     Authenticator,
     type AuthProvider,
+    initializeProject,
     json,
     type Principal,
     type ProjectRecord,
@@ -100,6 +101,49 @@ function fakeCloud() {
 }
 
 describe("a server extension", () => {
+    it("passes project member names, account lookup and management rules through to the HTTP app", async () => {
+        const cloud = fakeCloud();
+        const originalHttp = cloud.extension.http;
+        cloud.extension.http = (context) => ({
+            ...originalHttp?.(context),
+            collaborationCanManage: (principal, project) =>
+                principal.kind === "member" && principal.username === "alice" && project === "a1",
+            projectMemberLabels: async (_principal, _project, usernames) =>
+                Object.fromEntries(
+                    usernames.map((username) => [
+                        username,
+                        { name: username === "bob" ? "Bob Example" : "Project owner" },
+                    ])
+                ),
+            resolveProjectMember: async (_principal, _project, input) =>
+                input === "bob@example.com" ? "bob" : undefined,
+        });
+        const s = await startServe(defer, { extension: cloud.extension });
+        await s.rt.backend.createProject("a1");
+        if (!s.rt.store.coordination) throw new Error("Missing project store");
+        await initializeProject(s.rt.store.coordination, "a1", "internal_owner_id");
+        const headers = {
+            "x-user": "alice",
+            "x-notato-board": "1",
+            "content-type": "application/json",
+        };
+        const added = await s.call("/projects/a1/members", {
+            method: "POST",
+            headers,
+            body: JSON.stringify({ username: "bob@example.com" }),
+        });
+        expect(added.status).toBe(200);
+        const members = await s.call("/projects/a1/members", { headers });
+        expect(await members.json()).toMatchObject({
+            canManage: true,
+            access: { members: { internal_owner_id: "owner", bob: "member" } },
+            labels: { internal_owner_id: { name: "Project owner" }, bob: { name: "Bob Example" } },
+        });
+        expect(
+            (await s.call("/projects/a1/members", { headers: { "x-user": "bob" } })).status
+        ).toBe(403);
+    });
+
     it("brings its own store, accounts, routes and limits to the same server", async () => {
         const cloud = fakeCloud();
         const s = await startServe(defer, { extension: cloud.extension });

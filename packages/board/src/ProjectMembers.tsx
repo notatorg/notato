@@ -64,6 +64,7 @@ export function ProjectMembers({ project }: { project: string }) {
                 ))}
                 {manage ? (
                     <form
+                        className="settings-form"
                         onSubmit={(event) => {
                             event.preventDefault();
                             request(path, json("POST", { username }))
@@ -88,6 +89,7 @@ export function ProjectMembers({ project }: { project: string }) {
                 ) : null}
                 {manage && access ? (
                     <form
+                        className="settings-form"
                         onSubmit={(event) => {
                             event.preventDefault();
                             const data = new FormData(event.currentTarget);

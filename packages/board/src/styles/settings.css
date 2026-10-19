@@ -36,6 +36,26 @@
     gap: 20px;
     min-width: 0;
 }
+.settings-form {
+    display: grid;
+    gap: 12px;
+    max-width: 560px;
+    justify-items: start;
+}
+.settings-form .field {
+    width: 100%;
+}
+.settings-form input {
+    width: 100%;
+}
+.project-identifier {
+    display: grid;
+    gap: 10px;
+    margin-top: 10px;
+}
+.project-identifier code {
+    overflow-wrap: anywhere;
+}
 
 .setting-row {
     display: flex;
