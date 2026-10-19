@@ -20,7 +20,7 @@ export const variantInstructions = (chosen: string, others: string[]) =>
 
 /** What an agent is told when someone has written in a thread it already has: the latest word below is theirs. */
 export const FOLLOW_UP_INSTRUCTIONS =
-    "↩ FOLLOW-UP. Someone wrote in this annotation's thread: their latest message is the last one below. Everything people write reaches you, so read it for what it asks. " +
+    "↩ FOLLOW-UP. Someone wrote in this annotation's thread: their latest message is the last one below. This note is within your active feedback scope, so read the message for what it asks. " +
     "If it answers a question you asked or changes what they want, carry on: answer with notato_reply, or change what you did (for variants, adjust the versions and call notato_variants_ready again), and finish with notato_resolve as usual. " +
     "If it asks a question, answer it with notato_reply. A plain acknowledgement (thanks, looks good) needs nothing: no reply, no change. If it is people talking among themselves, take it as context and do not reply.";
 
@@ -73,7 +73,16 @@ export function formatAnnotation(
         detail: options.detail ?? "standard",
         screenshotsAttached: options.screenshotsAttached,
         // Each instruction in a paragraph of its own.
-        notes: instructions?.flatMap((text) => ["", text]),
+        notes: [
+            ...(a.feedbackSession
+                ? [
+                      "",
+                      `Test session: ${a.feedbackSession.name}`,
+                      ...(a.feedbackSession.description ? [a.feedbackSession.description] : []),
+                  ]
+                : []),
+            ...(instructions?.flatMap((text) => ["", text]) ?? []),
+        ],
         // Asides are for the people on the thread.
         forAgent: true,
     });
@@ -97,8 +106,16 @@ export function formatList(items: StoredAnnotation[]): string {
     return items
         .map(({ annotation: a }) => {
             const pin = pinNumber(a);
-            const tags = [a.status, a.intent, a.severity].filter(Boolean).join(", ");
-            return `- ${pin ? `#${pin} ` : ""}${a.id} [${tags}] ${a.route} · ${targetOf(a)} · ${clip(a.comment, 140)}`;
+            const tags = [
+                a.status,
+                a.intent,
+                a.severity,
+                a.visibility === "shared" ? "shared" : undefined,
+            ]
+                .filter(Boolean)
+                .join(", ");
+            const session = a.feedbackSession ? ` · Test session: ${a.feedbackSession.name}` : "";
+            return `- ${pin ? `#${pin} ` : ""}${a.id} [${tags}] ${a.route}${session} · ${targetOf(a)} · ${clip(a.comment, 140)}`;
         })
         .join("\n");
 }

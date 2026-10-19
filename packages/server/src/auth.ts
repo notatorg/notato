@@ -18,6 +18,8 @@ export interface PrincipalExtras {
     agentSession?: boolean;
     developmentContextId?: string;
     captureWorkId?: string;
+    /** Stable server-derived identity for personal feedback ownership. */
+    feedbackActorId?: string;
     /**
      * An opaque tenant or context the credential is acting in. An event stream or MCP session is closed when the
      * same person turns up in another scope, so switching one never reuses what the previous one opened.
@@ -303,14 +305,28 @@ export class Authenticator implements AuthProvider {
             if (
                 !context ||
                 !("owner" in context) ||
+                !("archived" in context) ||
                 context.archived ||
                 context.projectId !== record.projectId
             )
                 return null;
         }
+        const owner = record.createdBy ? await this.store.getUser(record.createdBy) : null;
+        const projectIds =
+            owner?.isAdmin === false
+                ? ((await this.store.accessibleProjectIds?.(owner.username)) ?? [])
+                : undefined;
         return {
             kind: "token",
             tokenId: record.id,
+            ...(projectIds
+                ? {
+                      projectIds: projectIds.filter(
+                          (id) => record.projectId === "*" || id === record.projectId
+                      ),
+                  }
+                : {}),
+            feedbackActorId: record.createdBy ?? `token:${record.id}`,
             developmentContextId: record.developmentContextId,
             captureWorkId: record.captureWorkId,
             projectId: record.projectId,
@@ -353,7 +369,16 @@ export class Authenticator implements AuthProvider {
      * started for, as only the admin signs in.
      */
     protected async sessionPrincipal(session: SessionRecord): Promise<Principal | null> {
-        return { kind: "admin", username: session.username };
+        const user = await this.store.getUser(session.username);
+        if (!user) return null;
+        return user.isAdmin === false
+            ? {
+                  kind: "member",
+                  username: session.username,
+                  feedbackActorId: session.username,
+                  projectIds: (await this.store.accessibleProjectIds?.(session.username)) ?? [],
+              }
+            : { kind: "admin", username: session.username, feedbackActorId: session.username };
     }
 
     /** The id the request's session is stored under (the hash of its cookie), or undefined when it has none. */

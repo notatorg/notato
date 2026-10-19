@@ -2,7 +2,7 @@ import type { Author, Status } from "@notato/schema";
 import type { AssetBytes, Backend, ImportResult, VariantOffer } from "./backend.ts";
 import { RequestError } from "./backend.ts";
 import type { RelayArgs, RelayResult } from "./relay.ts";
-import { type AnnotationFilter, type HandedEntry, inProjects } from "./storage.ts";
+import { type AnnotationFilter, type HandedEntry, inFeedbackScope, inProjects } from "./storage.ts";
 
 /** The projects a view reaches: fixed ones, or a function asked on every call so a change applies at once. */
 export type ProjectScope = string | string[] | (() => Promise<string[]>);
@@ -15,7 +15,8 @@ export type ProjectScope = string | string[] | (() => Promise<string[]>);
 export class ScopedBackend implements Backend {
     constructor(
         private inner: Backend,
-        private scope: ProjectScope
+        private scope: ProjectScope,
+        private feedbackActorId?: string
     ) {}
 
     private projects(): Promise<string[]> {
@@ -26,7 +27,34 @@ export class ScopedBackend implements Backend {
     /** `filter` narrowed to the projects of this view: naming others only empties it. */
     private async narrow(filter: AnnotationFilter): Promise<AnnotationFilter> {
         const projects = await this.projects();
-        return { ...filter, projectId: projects.filter((p) => inProjects(filter.projectId, p)) };
+        return {
+            ...filter,
+            feedbackScope: filter.feedbackScope ?? "all",
+            feedbackActorId: this.feedbackActorId,
+            projectId: projects.filter((p) => inProjects(filter.projectId, p)),
+        };
+    }
+
+    async listReviewSessions(project: string, _actor: string) {
+        return (await this.projects()).includes(project)
+            ? ((await this.inner.listReviewSessions?.(project, this.feedbackActorId ?? "local")) ??
+                  [])
+            : [];
+    }
+    async getReviewSession(id: string, _actor: string) {
+        const result = await this.inner.getReviewSession?.(id, this.feedbackActorId ?? "local");
+        return result && (await this.projects()).includes(result.session.projectId) ? result : null;
+    }
+    async replyReviewSession(id: string, _actor: string, body: string, author: Author) {
+        if (!(await this.getReviewSession(id, _actor))) return null;
+        return (
+            (await this.inner.replyReviewSession?.(
+                id,
+                this.feedbackActorId ?? "local",
+                body,
+                author
+            )) ?? null
+        );
     }
 
     async list(filter: AnnotationFilter = {}) {
@@ -36,7 +64,9 @@ export class ScopedBackend implements Backend {
 
     async get(id: string) {
         const stored = await this.inner.get(id);
-        return stored && (await this.projects()).includes(stored.annotation.projectId)
+        return stored &&
+            (await this.projects()).includes(stored.annotation.projectId) &&
+            inFeedbackScope(stored.annotation, this.feedbackActorId, "all")
             ? stored
             : null;
     }
@@ -49,11 +79,23 @@ export class ScopedBackend implements Backend {
 
     async asset(id: string): Promise<AssetBytes | null> {
         const inner = this.inner as Backend & {
-            projectsWithAsset?(id: string): Promise<string[]>;
+            projectsWithAsset?(
+                id: string,
+                filter?: Pick<AnnotationFilter, "feedbackScope" | "feedbackActorId" | "peopleOnly">
+            ): Promise<string[]>;
         };
         const mine = await this.projects();
         if (inner.projectsWithAsset) {
-            if (!(await inner.projectsWithAsset(id)).some((p) => mine.includes(p))) return null;
+            if (
+                !(
+                    await inner.projectsWithAsset(id, {
+                        feedbackScope: "all",
+                        feedbackActorId: this.feedbackActorId,
+                        peopleOnly: false,
+                    })
+                ).some((p) => mine.includes(p))
+            )
+                return null;
         } else if (
             !(await this.list()).some(({ annotation }) =>
                 Object.values(annotation.screenshots ?? {}).some((ref) => ref?.id === id)

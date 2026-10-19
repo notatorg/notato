@@ -102,6 +102,7 @@ final runtime = NotatoRuntime();
 
 /// Notato's state and everything it does, for the app ([NotatoController]) and for its own overlay.
 class NotatoRuntime extends ChangeNotifier implements NotatoController {
+  String _reviewSessionId = 'review_${ulid()}';
   NotatoConfig? _config;
   NotatoStorage _storage = MemoryStorage();
   Map<String, Object?> _settings = {};
@@ -201,8 +202,8 @@ class NotatoRuntime extends ChangeNotifier implements NotatoController {
   /// The server: one typed into settings, else the configuration's.
   String? get server => _settings['server'] as String? ?? _config?.server;
 
-  /// Whether notes go live to a server (not in test mode, which only uploads packages).
-  bool get hasServer => server != null && mode != NotatoMode.test;
+  /// Whether notes go live to a configured server, including Test review sessions.
+  bool get hasServer => server != null;
 
   /// The name on this person's notes: one typed into settings, else the configuration's.
   String? get authorName => _settings['author'] as String? ?? _config?.author;
@@ -258,6 +259,7 @@ class NotatoRuntime extends ChangeNotifier implements NotatoController {
       notifyListeners();
       return _opening!;
     }
+    _reviewSessionId = 'review_${ulid()}';
     return _opening = _open(config);
   }
 
@@ -531,6 +533,7 @@ class NotatoRuntime extends ChangeNotifier implements NotatoController {
     String? intent,
     String? severity,
     bool peopleOnly = false,
+    String? visibility,
     String? agentName,
     List<Map<String, Object?>>? steps,
     required String id,
@@ -547,6 +550,7 @@ class NotatoRuntime extends ChangeNotifier implements NotatoController {
       id: id,
       project: config.project,
       mode: config.mode.name,
+      sessionId: config.mode == NotatoMode.test ? _reviewSessionId : null,
       appName: config.appName,
       appVersion: config.appVersion,
       route: routeName(host.route()),
@@ -558,6 +562,7 @@ class NotatoRuntime extends ChangeNotifier implements NotatoController {
       intent: intent,
       severity: severity,
       peopleOnly: peopleOnly,
+      visibility: visibility,
       steps: steps,
       pin: pin,
       full: keepFull,
@@ -603,6 +608,7 @@ class NotatoRuntime extends ChangeNotifier implements NotatoController {
     List<Map<String, Object?>>? steps,
     bool screenshot = true,
     bool peopleOnly = false,
+    String? visibility,
   }) async {
     final host = _requireHost();
     if (comment.trim().isEmpty) throw const NotatoException('A note needs a comment.');
@@ -618,6 +624,7 @@ class NotatoRuntime extends ChangeNotifier implements NotatoController {
       intent: intent,
       severity: severity,
       peopleOnly: peopleOnly,
+      visibility: visibility,
       agentName: agentName,
       steps: steps,
       id: id,

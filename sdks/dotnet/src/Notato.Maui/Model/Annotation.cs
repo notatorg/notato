@@ -255,6 +255,9 @@ public sealed record Annotation
     /// and left out (null) when off. Anyone on the thread can turn it on or off; each change is recorded in the thread.
     /// </summary>
     public bool? PeopleOnly { get; init; }
+    public string? Visibility { get; init; }
+    public string? CreatedBy { get; init; }
+    public string? SessionId { get; init; }
 }
 
 internal sealed record Bundle

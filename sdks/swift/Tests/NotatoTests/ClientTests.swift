@@ -264,7 +264,7 @@ extension ClientTests {
 
     @Test @MainActor func testModeAsksTooAndWithNoServerNothingStopsScreenshots() async throws {
         let tester = Notato(configuration: NotatoConfiguration(project: "swift-sample", mode: .test, server: URL(string: "http://stub.test")))
-        #expect(!tester.hasServer && !tester.screenshotsOn, "a server that only takes packages decides too")
+        #expect(tester.hasServer && !tester.screenshotsOn, "a configured Test server receives the live testing session and decides about screenshots too")
         tester.client = Self.server { (200, "{\"screenshots\":true}") }
         await tester.refreshPolicy()
         #expect(tester.screenshotsOn)

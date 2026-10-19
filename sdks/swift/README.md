@@ -38,7 +38,7 @@ struct ShopApp: App {
 }
 ```
 
-Leaving `Notato.start` out of a build (as `#if DEBUG` does here) ships nothing of Notato in it. Run the app: a small dark toolbar appears in the corner. Tap **Annotate**, tap what you want to comment on, write a note, press **Send**. Ask your agent to _"watch Notato and fix what comes in"_. Everything people write reaches the agent, unless they keep it between people (see [People only and asides](#people-only-and-asides)).
+Leaving `Notato.start` out of a build (as `#if DEBUG` does here) ships nothing of Notato in it. Run the app: a small dark toolbar appears in the corner. Tap **Annotate**, tap what you want to comment on, write a note, press **Send**. Ask your agent to _"watch Notato and fix what comes in"_. In Dev mode, your feedback is private to you and your agent. To share a note with the project, change its visibility in the board. See the [feedback visibility guide](../../docs/team-feedback.md) and [People only and asides](#people-only-and-asides).
 
 The app has to be allowed plain `http` to your machine: in Info.plist, `NSAppTransportSecurity` → `NSAllowsLocalNetworking` = `YES`. The simulator shares the Mac's network, so `localhost` works there as it is.
 
@@ -123,7 +123,7 @@ Anyone with a copy of an app can take a token out of it. In a build that leaves 
 npx notato token create shop-ios --capture-only --expires 30
 ```
 
-A capture-only token can send new notes and nothing else: whoever takes it out of the app cannot read, change or delete anyone's notes or screenshots. Notato asks the server what its token may do (`/config`) before it connects, and with a capture-only one it only sends: notes go as they are made (or as soon as the server can be reached), the toolbar's menu says **Send only**, and there are no live updates, replies, revert requests or deletions from the app. A note's card says to read and answer it on the board. In test mode the package is written, shared and uploaded to the configured server as a batch of captured notes. Keep a token without `--capture-only` for builds that stay with you.
+A capture-only token can send new notes and nothing else: whoever takes it out of the app cannot read, change or delete anyone's notes or screenshots. Notato asks the server what its token may do (`/config`) before it connects, and with a capture-only one it only sends: notes go as they are made (or as soon as the server can be reached), the toolbar's menu says **Send only**, and there are no live updates, replies, revert requests or deletions from the app. A note's card says to read and answer it on the board. Test mode sends feedback live when a server is configured and also supports exporting and uploading a package. Keep a token without `--capture-only` for builds that stay with you.
 
 ### Screenshots and the server
 
@@ -206,7 +206,7 @@ What a note's selector looks like, and what an agent passes to `notato_annotate`
 
 ## People only and asides
 
-Everything people write reaches the agent: every note, and every reply on it. Two switches keep something between people:
+Replies reach the agent within its active feedback scope. In Dev mode, the agent starts with the creator's private feedback; Test mode feedback is Shared by default. People only and Aside are additional ways to keep shared feedback between people:
 
 - **People only**, on a note: the note and its whole thread are between people, and the agent never gets them. Switch it on in the note before sending it (_"Keep this between people: the agent won't see it."_), or turn it on or off at any time on the note's card, which shows a **People only** badge while it is on. Each change is recorded in the thread as an automatic entry (_"Made this people only: the agent won't see it."_, _"Shared this with the agent."_); turning it off hands the note to the agent. A note not sent yet (the server is down, or test mode) is changed on the device, with the same entry in its thread, so it is sent or packaged that way.
 - **Aside**, on a reply: that one reply is for the people on the thread and kept from the agent (_"Just for people: the agent won't see this reply."_). Switch it on in the reply box before sending; it is off again for the next reply. An aside is marked in the thread. It is offered on a People only note too: an aside stays kept from the agent if the note is shared with it later.
@@ -214,7 +214,7 @@ Everything people write reaches the agent: every note, and every reply on it. Tw
 ## Modes
 
 - **dev**: notes go live to `notato dev`, pins turn amber when the agent acknowledges them and green when it resolves them, and replies arrive in the pin's card. On a resolved pin, **Ask the agent to revert** asks for the change to be undone. A note made while the server is down is kept on the device and sent when it comes back. So is one the server will not take yet (a project a shared `notato serve` does not have, a token that may not write): the server's reason is shown, and it is sent again on the next connection or launch. A note the server refuses for good (it is malformed or too large) is marked failed with the server's reason and kept on the device to read or delete; the notes after it are still sent. On each connection the notes waiting go first, then the project's notes are read again (without their context and steps, which the overlay never shows). A note not sent yet keeps its screenshots in files on the device, not in memory: in the app's Application Support folder, left out of iCloud and computer backups, and protected so they can be read only while the device is unlocked (a note waiting while it is locked goes once it is unlocked).
-- **test**: notes stay on the device (they survive a restart, and are kept as dev mode keeps a note not sent yet). **Package and share** in the toolbar's menu makes the bundle zip `notato_import_bundle` reads, opens the share sheet, and uploads it when a server is set.
+- **test**: feedback defaults to shared and, when a server is configured, is sent live into a review session. Notes also stay on the device for **Package and share**, which exports the bundle zip `notato_import_bundle` reads and uploads it when requested. Without a server, testing stays offline.
 - **agent**: like dev, and the app also takes `notato_annotate` requests: `notato_annotate { target: "button:text(\"Add to cart\")", comment: "…" }` is relayed to the app, which finds the element, takes the screenshot and files the note as the agent.
 
 ## The toolbar
@@ -271,3 +271,7 @@ The package's sources, in `Sources/Notato`:
 `swift test` runs on the Mac (the overlay is compiled only for UIKit); on the simulator the package's tests also cover marks per window and the device context, and skip the contract checks (no processes there). The contract tests run the server's own Zod schema over the JSON this package writes (`scripts/validate.ts`), and are skipped when `bun` is not installed.
 
 Capture-only uploads and retries follow the [shared capture contract](../../docs/capture-contract.md). With a server configured, screenshots require an explicit `screenshots: true` policy; unknown or unavailable initial policy means text-only capture. Local-only capture continues without a policy request.
+
+### Feedback ownership and review sessions
+
+Dev feedback defaults to personal; Test defaults to shared. The composer’s **Share with project** switch overrides the default for that note. **People only** separately keeps agents out. With a server configured, Test feedback is sent live and grouped into a review session from the start of the run; without one, device storage and zip packaging still work. Use the board’s **Review sessions** to name a run, set its focus and discuss it. Each developer uses their own credentials with the same project ID. See the [team feedback guide](../../docs/team-feedback.md).

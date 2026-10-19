@@ -6,6 +6,7 @@ import { tokenPurpose } from "../storage.ts";
 import {
     type AppContext,
     assertAccess,
+    feedbackActorId,
     forReader,
     json,
     notFound,
@@ -62,6 +63,8 @@ async function importBundle(
     const result = await app.backend.importBundle(bytes, {
         projectId: target,
         asPerson,
+        feedbackActorId: feedbackActorId(principal),
+        allowLocalOnly: app.options.mode === "dev",
         captureScope: scope,
     });
     return json(result, result.imported > 0 ? 201 : 200);
@@ -86,7 +89,18 @@ export const bundleRoutes: Routes = async ({ req, url, path, method, principal, 
             // The newest, as many as asked for up to BUNDLE_LIST_MAX.
             const asked = Number(url.searchParams.get("limit") ?? BUNDLE_LIST_MAX);
             const limit = Number.isFinite(asked) ? asked : BUNDLE_LIST_MAX;
-            return json({ items: await backend.listBundles(projectId, limit) });
+            const bundles = await backend.listBundles(projectId, limit);
+            const visible = await Promise.all(
+                bundles.map(async (bundle) => {
+                    const annotations = await backend.list(
+                        forReader(principal, { projectId, bundleId: bundle.id })
+                    );
+                    return annotations.length
+                        ? { ...bundle, annotationCount: annotations.length }
+                        : null;
+                })
+            );
+            return json({ items: visible.filter((bundle) => bundle !== null) });
         }
     }
     if (path === "/bundles" && method === "POST")
@@ -114,7 +128,8 @@ export const bundleRoutes: Routes = async ({ req, url, path, method, principal, 
                 projectId: record.projectId,
             })
         );
-        return json({ bundle: record, annotations });
+        if (!annotations.length) return notFound();
+        return json({ bundle: { ...record, annotationCount: annotations.length }, annotations });
     }
 
     const exportProject = match(/^\/projects\/([^/]+)\/export$/);

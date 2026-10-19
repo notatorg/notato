@@ -38,6 +38,7 @@ const SHOT_PATH = /^shots\/[A-Za-z0-9._-]{1,120}$/;
 export interface BundleMeta {
     projectId: string;
     author?: { name?: string };
+    session?: { name: string; description?: string };
     appName?: string;
     appVersion?: string;
     /** Defaults to a new ULID. */
@@ -58,9 +59,14 @@ export function buildBundle(
         projectId: meta.projectId,
         createdAt: meta.createdAt ?? new Date().toISOString(),
         author: { name: meta.author?.name },
+        session: meta.session,
         appName: meta.appName,
         appVersion: meta.appVersion,
-        annotations: records.map(({ annotation }) => ({ ...annotation, bundleId: id })),
+        annotations: records.map(({ annotation }) => ({
+            ...annotation,
+            bundleId: id,
+            ...(meta.session ? { feedbackSession: { id, ...meta.session } } : {}),
+        })),
         schemaVersion: SCHEMA_VERSION,
     };
     return { bundle, assets };

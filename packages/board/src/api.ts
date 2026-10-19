@@ -10,6 +10,7 @@ export interface Me {
     authRequired: boolean;
     authenticated: boolean;
     username?: string;
+    isAdmin?: boolean;
     projectId?: string;
     /** Whatever an extension's own `/auth/me` adds. */
     [key: string]: unknown;
@@ -38,7 +39,10 @@ export const isAdmin = (me: Me) =>
     managePolicy ? managePolicy(me) : me.mode === "dev" || Boolean(me.username);
 
 /** Who may see and change the server's own settings: whoever manages it, unless an extension says otherwise. */
-export const isServerAdmin = (me: Me) => (serverAdminPolicy ? serverAdminPolicy(me) : isAdmin(me));
+export const isServerAdmin = (me: Me) =>
+    serverAdminPolicy
+        ? serverAdminPolicy(me)
+        : me.mode === "dev" || (Boolean(me.username) && me.isAdmin !== false);
 
 export interface ProjectSummary {
     id: string;
@@ -60,6 +64,7 @@ export interface BundleRecord {
     projectId: string;
     createdAt: string;
     author: { name?: string };
+    session?: { name: string; description?: string };
     appName?: string;
     appVersion?: string;
     annotationCount: number;
@@ -255,6 +260,10 @@ export const setPeopleOnly = (id: string, on: boolean) =>
         json("PATCH", { peopleOnly: on, author: me() })
     );
 
+/** Personal/shared controls project visibility, independently from whether the agent can see the note. */
+export const setVisibility = (id: string, visibility: "personal" | "shared") =>
+    request<{ annotation: Annotation }>(annotationPath(id), json("PATCH", { visibility }));
+
 /** Picks one of the versions an agent offered, or (with `null`) takes the pick back. */
 export const chooseVariant = (id: string, name: string | null, note?: string) =>
     request<{ annotation: Annotation }>(
@@ -292,6 +301,7 @@ export function filterQuery(filters: Filters): URLSearchParams {
     if (filters.by === NO_NAME) q.set("unnamed", "1");
     else if (filters.by) q.set("by", filters.by);
     if (filters.bundle) q.set("bundle", filters.bundle);
+    if (filters.scope) q.set("scope", filters.scope);
     return q;
 }
 

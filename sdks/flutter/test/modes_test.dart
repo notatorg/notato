@@ -13,7 +13,7 @@ void main() {
     tester,
   ) async {
     final server = FakeServer();
-    await tester.pumpWidget(app(server, mode: NotatoMode.test, serverUrl: 'http://localhost:4799', screenshots: true));
+    await tester.pumpWidget(app(server, mode: NotatoMode.test, screenshots: true));
     await settle(tester);
     expect(notato.connection, NotatoConnection.local);
     final made = await drive(tester, notato.annotate('#add-to-basket', 'Wrong colour', severity: 'major'));
@@ -28,8 +28,8 @@ void main() {
     expect((kept['thread'] as List).single, containsPair('body', "Made this people only: the agent won't see it."));
 
     final package = await drive(tester, notato.packageNotes());
-    expect(package.uploaded, isTrue);
-    expect(server.bundles, hasLength(1));
+    expect(package.uploaded, isFalse);
+    expect(server.bundles, isEmpty);
     final archive = ZipDecoder().decodeBytes(package.zip);
     expect(archive.files.map((f) => f.name), containsAll(['annotations.json', 'feedback.md', 'shots/01-full.png']));
     final bundle = jsonDecode(utf8.decode(archive.findFile('annotations.json')!.content as List<int>));
@@ -39,6 +39,24 @@ void main() {
 
     runtime.clearLocal();
     expect(notato.notes, isEmpty);
+    await unmount(tester);
+  });
+
+  testWidgets('a configured Test run sends shared feedback live in one review session', (tester) async {
+    final server = FakeServer();
+    await tester.pumpWidget(app(server, mode: NotatoMode.test, serverUrl: 'http://localhost:4799'));
+    await settle(tester);
+    final first = await drive(tester, notato.annotate('#add-to-basket', 'First target', screenshot: false));
+    final second = await drive(tester, notato.annotate('#add-to-basket', 'Second target', screenshot: false));
+    await settle(tester);
+    expect(server.sent, hasLength(2));
+    expect(first['visibility'], 'shared');
+    expect(first['sessionId'], startsWith('review_'));
+    expect(second['sessionId'], first['sessionId']);
+    expect(notato.pendingCount, 0);
+    final package = await drive(tester, notato.packageNotes());
+    expect(package.uploaded, isTrue);
+    expect(server.bundles, hasLength(1));
     await unmount(tester);
   });
 

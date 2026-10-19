@@ -25,6 +25,7 @@ import { AgentPresence } from "./agents.ts";
 import { UnknownProjectError } from "./auth.ts";
 import { sha256Hex } from "./blob-store.ts";
 import { captureReceipt } from "./capture-receipt.ts";
+import { canReadSession, ReviewSessions, reviewSessionView } from "./collaboration.ts";
 import { type ConfigSource, defaultConfig } from "./config.ts";
 import { EventBus, type EventType } from "./events.ts";
 import { ImageViews } from "./image-views.ts";
@@ -36,6 +37,7 @@ import {
     type BundleRecord,
     type CaptureReceipt,
     type HandedEntry,
+    inFeedbackScope,
     inProjects,
     PROJECT_ID,
     type ProjectRecord,
@@ -48,8 +50,9 @@ export interface ImportResult {
     bundleId: string;
     projectId: string;
     imported: number;
-    /** Annotations already present (same id), left untouched. Importing twice is safe. */
+    /** Annotations already present (same id). A matching creator may add missing review-session metadata. */
     skipped: number;
+    reviewSessionId?: string;
 }
 
 /** What an agent offers for a person to choose between. */
@@ -71,6 +74,23 @@ export interface AssetBytes {
  * which is how a second `notato dev` attaches to the first.
  */
 export interface Backend {
+    listReviewSessions?(
+        project: string,
+        actor: string
+    ): Promise<import("./collaboration.ts").ReviewSession[]>;
+    getReviewSession?(
+        id: string,
+        actor: string
+    ): Promise<{
+        session: import("./collaboration.ts").ReviewSession;
+        items: StoredAnnotation[];
+    } | null>;
+    replyReviewSession?(
+        id: string,
+        actor: string,
+        body: string,
+        author: Author
+    ): Promise<import("./collaboration.ts").ReviewSession | null>;
     claimWork?(
         id: string,
         action: "claim" | "heartbeat" | "release",
@@ -162,11 +182,14 @@ export interface AnnotationChange {
     note?: string;
     /** People only on or off. Only a person can change it, and each change is recorded in the thread. */
     peopleOnly?: boolean;
+    /** Personal feedback is visible only to its creator; shared feedback is visible to project members. */
+    visibility?: "personal" | "shared";
 }
 
 export function matchesFilter(stored: StoredAnnotation, f: AnnotationFilter): boolean {
     const a = stored.annotation;
     if (!inProjects(f.projectId, a.projectId)) return false;
+    if (f.feedbackScope && !inFeedbackScope(a, f.feedbackActorId, f.feedbackScope)) return false;
     if (
         f.status !== undefined &&
         !(Array.isArray(f.status) ? f.status : [f.status]).includes(a.status)
@@ -180,6 +203,8 @@ export function matchesFilter(stored: StoredAnnotation, f: AnnotationFilter): bo
             a.intent as NonNullable<typeof a.intent>
         )
     )
+        return false;
+    if (f.sessionId && a.sessionId !== f.sessionId && !f.sessionAnnotationIds?.includes(a.id))
         return false;
     if (f.bundleId === null && a.bundleId !== null) return false;
     if (typeof f.bundleId === "string" && a.bundleId !== f.bundleId) return false;
@@ -225,6 +250,9 @@ export interface ImportOptions {
      * as reading back an export needs.
      */
     asPerson?: { name?: string };
+    /** Identity derived from the importing credential; bundle metadata cannot choose its owner. */
+    feedbackActorId?: string;
+    allowLocalOnly?: boolean;
     /** Send-only imports acknowledge only notes previously accepted from this credential with the same content. */
     captureScope?: string;
 }
@@ -234,6 +262,7 @@ interface IngestOptions {
     preserveLifecycle?: boolean;
     bundleId?: string | null;
     receipt?: CaptureReceipt;
+    feedbackActorId?: string;
 }
 
 /** The most bundle records a listing holds: the newest. */
@@ -345,8 +374,15 @@ export class LocalBackend implements Backend {
         return this.relay.request(projectId, args, timeoutMs);
     }
 
-    list(filter?: AnnotationFilter) {
-        return this.store.listAnnotations(filter);
+    private async expandSessionFilter(filter: AnnotationFilter): Promise<AnnotationFilter> {
+        if (!filter.sessionId || !this.store.coordination) return filter;
+        const session = await new ReviewSessions(this.store.coordination).get(filter.sessionId);
+        if (!session || !canReadSession(session, filter.feedbackActorId ?? "local"))
+            return { ...filter, projectId: [], sessionAnnotationIds: [] };
+        return { ...filter, sessionAnnotationIds: session.annotationIds ?? [] };
+    }
+    async list(filter: AnnotationFilter = {}) {
+        return this.store.listAnnotations(await this.expandSessionFilter(filter));
     }
 
     markHanded(entries: HandedEntry[]) {
@@ -401,7 +437,14 @@ export class LocalBackend implements Backend {
                 `invalid annotation: ${issue?.path.join(".") || "(root)"}: ${issue?.message}`
             );
         }
-        let annotation = parsed.data;
+        const { createdBy: _clientCreator, ...clientAnnotation } = parsed.data;
+        let annotation: Annotation = {
+            ...clientAnnotation,
+            createdBy: options.feedbackActorId ?? "local",
+            visibility:
+                clientAnnotation.visibility ??
+                (clientAnnotation.mode === "test" ? "shared" : "personal"),
+        };
         if (options.projectId !== undefined && annotation.projectId !== options.projectId) {
             throw new RequestError(
                 `annotation.projectId "${annotation.projectId}" does not match the URL project "${options.projectId}"`
@@ -420,6 +463,11 @@ export class LocalBackend implements Backend {
                 created: false,
             };
         await this.ensureProject(annotation.projectId);
+        if (this.store.coordination && annotation.sessionId)
+            await new ReviewSessions(this.store.coordination).capture(
+                annotation,
+                options.feedbackActorId ?? "local"
+            );
 
         type Ref = NonNullable<Annotation["screenshots"]>["full"];
         /** A screenshot's bytes, checked: nothing is written until every screenshot of the note is good. */
@@ -716,6 +764,22 @@ export class LocalBackend implements Backend {
                     },
                 ];
             }
+            if (change.visibility !== undefined && change.visibility !== a.visibility) {
+                next.visibility = change.visibility;
+                next.thread = [
+                    ...next.thread,
+                    {
+                        ...this.makeReply(
+                            author,
+                            change.visibility === "shared"
+                                ? "Shared this feedback with the project."
+                                : "Made this feedback personal.",
+                            true
+                        ),
+                        visibility: change.visibility,
+                    },
+                ];
+            }
             if (change.comment !== undefined) next.comment = change.comment;
             if (change.severity === null) next.severity = undefined;
             else if (change.severity) next.severity = change.severity;
@@ -914,12 +978,13 @@ export class LocalBackend implements Backend {
      * `watching: false` is for a caller that may wait for notes but does not speak for an agent (an app's token, a
      * member): pages are not told an agent is watching while it waits.
      */
-    waitForNew(
+    async waitForNew(
         filter: AnnotationFilter,
         timeoutMs: number,
         signal?: AbortSignal,
         { watching = true }: { watching?: boolean } = {}
     ): Promise<boolean> {
+        filter = await this.expandSessionFilter(filter);
         // Someone waiting for annotations is an agent watching (notato_watch, here or attached).
         const waited = watching
             ? this.agents.waitStarted(
@@ -997,6 +1062,11 @@ export class LocalBackend implements Backend {
                     `annotation ${String((a as { id?: unknown }).id)}: ${issue?.path.join(".") || "(root)"}: ${issue?.message}`
                 );
             }
+            if (parsed.data.localOnly && options.allowLocalOnly === false)
+                throw new RequestError(
+                    "Local-only feedback cannot be uploaded to a shared server.",
+                    400
+                );
             if (parsed.data.review?.draft)
                 throw new RequestError("Send the review before uploading its notes.");
             const bundledAssets = assetsFor(a, files);
@@ -1042,6 +1112,7 @@ export class LocalBackend implements Backend {
             projectId: bundle.projectId,
             createdAt: bundle.createdAt,
             author: bundle.author,
+            session: bundle.session,
             appName: bundle.appName,
             appVersion: bundle.appVersion,
             annotationCount: bundle.annotations.length,
@@ -1051,49 +1122,169 @@ export class LocalBackend implements Backend {
         const asPerson = options.asPerson;
         let imported = 0;
         let skipped = 0;
+        let sessionAttached = 0;
+        const sessionNotes: string[] = [];
         for (const a of bundle.annotations) {
-            const sent: Annotation = asPerson
-                ? {
-                      ...a,
-                      workId: undefined,
-                      author: {
-                          ...a.author,
-                          kind: "human",
-                          ...(asPerson.name ? { name: asPerson.name } : {}),
-                      },
-                      ...(options.captureScope
-                          ? {
-                                context: {
-                                    ...a.context,
-                                    notatoCaptureSource: "unverified app feedback",
-                                },
-                            }
-                          : {}),
-                  }
-                : a;
+            const { createdBy: _bundleCreator, ...bundleAnnotation } = a;
+            const sent: Annotation = {
+                ...bundleAnnotation,
+                ...(options.feedbackActorId ? { createdBy: options.feedbackActorId } : {}),
+                visibility: a.visibility ?? (a.mode === "test" ? "shared" : "personal"),
+                ...(asPerson
+                    ? {
+                          workId: undefined,
+                          author: {
+                              ...a.author,
+                              kind: "human" as const,
+                              ...(asPerson.name ? { name: asPerson.name } : {}),
+                          },
+                          ...(options.captureScope
+                              ? {
+                                    context: {
+                                        ...a.context,
+                                        notatoCaptureSource: "unverified app feedback",
+                                    },
+                                }
+                              : {}),
+                      }
+                    : {}),
+            };
             if (asPerson && this.store.coordination) {
                 const { TeamCoordinator } = await import("./team.ts");
                 const teams = new TeamCoordinator(this.store);
                 if ((await teams.records.list(sent.projectId, "context")).length)
                     await teams.route(sent);
             }
-            const { created } = await this.ingest(sent, assetsFor(a, files), {
+            const { stored, created } = await this.ingest(sent, assetsFor(a, files), {
                 projectId: bundle.projectId,
                 preserveLifecycle: !asPerson,
                 bundleId: bundle.id,
+                feedbackActorId: options.feedbackActorId,
                 receipt: options.captureScope
                     ? await captureReceipt(a, assetsFor(a, files), options.captureScope)
                     : undefined,
             });
+            if (
+                stored &&
+                inFeedbackScope(stored.annotation, options.feedbackActorId ?? "local", "all")
+            )
+                sessionNotes.push(stored.annotation.id);
             if (created) imported += 1;
-            else skipped += 1;
+            else {
+                skipped += 1;
+                if (
+                    bundle.session &&
+                    options.feedbackActorId &&
+                    stored &&
+                    (await this.attachBundleSession(
+                        stored,
+                        bundle.id,
+                        bundle.session,
+                        options.feedbackActorId
+                    ))
+                )
+                    sessionAttached += 1;
+            }
         }
         // Recorded only once a note of it is stored: a bundle whose notes are all here already (another bundle's), or
         // one refused part way (a limit reached), leaves no record listing nothing. Two imports of one id into different
         // projects at the same moment both pass the check above, and one of them records it; the other's notes are
         // still never shown in its bundle, which every read keeps to the project of its record.
-        if (imported > 0) await this.store.insertBundle(record);
-        return { bundleId: bundle.id, projectId: bundle.projectId, imported, skipped };
+        if (imported > 0 || sessionAttached > 0) await this.store.insertBundle(record);
+        let reviewSessionId: string | undefined;
+        if (bundle.session && sessionNotes.length && this.store.coordination) {
+            const sessions = new ReviewSessions(this.store.coordination);
+            const actor = options.feedbackActorId ?? "local";
+            const id = "review_bundle_" + bundle.id;
+            let session = await sessions.get(id);
+            if (!session)
+                session = await sessions.create(bundle.projectId, actor, {
+                    id,
+                    ...bundle.session,
+                    visibility: "shared",
+                });
+            if (session.createdBy === actor) {
+                await sessions.group(session.id, actor, sessionNotes);
+                reviewSessionId = session.id;
+            }
+        }
+        return {
+            bundleId: bundle.id,
+            projectId: bundle.projectId,
+            imported,
+            skipped,
+            ...(reviewSessionId ? { reviewSessionId } : {}),
+        };
+    }
+
+    /**
+     * Test mode first sends notes live, then packages them with a named session. Attach that grouping only to notes
+     * owned by the authenticated person, and never move a note out of a different bundle or session.
+     */
+    private async attachBundleSession(
+        stored: StoredAnnotation,
+        bundleId: string,
+        session: { name: string; description?: string },
+        feedbackActorId: string
+    ): Promise<boolean> {
+        let before: Annotation | undefined;
+        let associated = false;
+        let changed = false;
+        const updated = await this.store.updateAnnotation(stored.annotation.id, (current) => {
+            before = current;
+            if (
+                current.createdBy !== feedbackActorId ||
+                (current.bundleId && current.bundleId !== bundleId) ||
+                (current.feedbackSession && current.feedbackSession.id !== bundleId)
+            )
+                return current;
+            associated = true;
+            const next = {
+                ...current,
+                bundleId,
+                feedbackSession: current.feedbackSession ?? { id: bundleId, ...session },
+            };
+            changed =
+                current.bundleId !== next.bundleId ||
+                current.feedbackSession?.id !== next.feedbackSession.id;
+            return next;
+        });
+        if (updated && changed && before) this.emit("updated", updated, before);
+        return Boolean(updated && associated);
+    }
+
+    async listReviewSessions(project: string, actor: string) {
+        return this.store.coordination
+            ? (await new ReviewSessions(this.store.coordination).list(project, actor)).map(
+                  reviewSessionView
+              )
+            : [];
+    }
+
+    async getReviewSession(id: string, actor: string) {
+        if (!this.store.coordination) return null;
+        const session = await new ReviewSessions(this.store.coordination).get(id);
+        if (!session || (session.visibility === "personal" && session.createdBy !== actor))
+            return null;
+        const items = await this.list({
+            projectId: session.projectId,
+            sessionId: id,
+            feedbackScope: "all",
+            feedbackActorId: actor,
+            peopleOnly: false,
+        });
+        return { session: reviewSessionView(session), items };
+    }
+
+    async replyReviewSession(id: string, actor: string, body: string, author: Author) {
+        if (!this.store.coordination) return null;
+        return reviewSessionView(
+            await new ReviewSessions(this.store.coordination).reply(id, actor, body, author)
+        );
+    }
+
+    setReviewSession(id: string, sessionId: string | undefined) {
+        return this.mutate(id, (annotation) => ({ ...annotation, sessionId }));
     }
 
     getBundle(id: string): Promise<BundleRecord | null> {
@@ -1123,7 +1314,7 @@ export class LocalBackend implements Backend {
             const record = await this.store.getBundle(selector.bundleId);
             if (!record) return null;
             // Only its own project's notes: another project may have notes carrying the same bundle id.
-            items = await this.store.listAnnotations({
+            items = await this.list({
                 ...selector.filter,
                 bundleId: record.id,
                 projectId: record.projectId,
@@ -1133,13 +1324,14 @@ export class LocalBackend implements Backend {
                 id: record.id,
                 projectId,
                 author: record.author,
+                session: record.session,
                 appName: record.appName,
                 appVersion: record.appVersion,
                 createdAt: record.createdAt,
             };
         } else {
             projectId = selector.projectId;
-            items = await this.store.listAnnotations({ ...selector.filter, projectId });
+            items = await this.list({ ...selector.filter, projectId });
             meta = { projectId };
         }
         const { bundle } = buildBundle(
@@ -1180,6 +1372,9 @@ export class LocalBackend implements Backend {
                       previous: {
                           status: before.status,
                           offeredAt: before.variants?.offeredAt,
+                          visibility: before.visibility,
+                          createdBy: before.createdBy,
+                          peopleOnly: before.peopleOnly,
                       },
                   }
                 : {}),

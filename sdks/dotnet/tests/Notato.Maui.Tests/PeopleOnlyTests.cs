@@ -221,7 +221,7 @@ public class PeopleOnlyTests
         All(root).OfType<T>().Single(e => e.AutomationId == automationId);
 
     private static ComposerCard Composer(Func<string, string?, string?, bool, Task<string?>>? onSend = null) =>
-        new("Border#PromoBanner", "“Autumn sale”", screenshotsOff: false, () => { }, () => { }, onSend ?? ((_, _, _, _) => Task.FromResult<string?>(null)));
+        new("Border#PromoBanner", "“Autumn sale”", screenshotsOff: false, () => { }, () => { }, (comment, intent, severity, peopleOnly, _) => (onSend ?? ((_, _, _, _) => Task.FromResult<string?>(null)))(comment, intent, severity, peopleOnly));
 
     [Fact]
     public async Task The_composer_offers_people_only_off_by_default_and_sends_the_choice()

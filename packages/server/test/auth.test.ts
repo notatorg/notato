@@ -67,6 +67,46 @@ describe("public and protected routes", () => {
 });
 
 describe("admin login", () => {
+    it("creates restricted members and lets them replace their initial password without retaining old sessions", async () => {
+        const s = await start();
+        const admin = await adminCookie(s);
+        const member = { username: "developer", password: "initial-password-123" };
+        const created = await s.call("/admin/users", {
+            method: "POST",
+            headers: { cookie: admin, "x-notato-board": "1", "content-type": "application/json" },
+            body: JSON.stringify(member),
+        });
+        expect(created.status).toBe(201);
+        const signIn = (password: string) =>
+            s.call("/auth/login", {
+                method: "POST",
+                headers: { "content-type": "application/json" },
+                body: JSON.stringify({ username: member.username, password }),
+            });
+        const signedIn = await signIn(member.password);
+        expect(signedIn.status).toBe(200);
+        const cookie = signedIn.headers.get("set-cookie")!.split(";")[0]!;
+        expect(await (await s.call("/auth/me", { headers: { cookie } })).json()).toMatchObject({
+            isAdmin: false,
+            localAccounts: true,
+        });
+        expect((await s.call("/admin/users", { headers: { cookie } })).status).toBe(403);
+        expect((await (await s.call("/projects", { headers: { cookie } })).json()).items).toEqual(
+            []
+        );
+        const change = (currentPassword: string) =>
+            s.call("/auth/password", {
+                method: "POST",
+                headers: { cookie, "x-notato-board": "1", "content-type": "application/json" },
+                body: JSON.stringify({ currentPassword, password: "replacement-password-123" }),
+            });
+        expect((await change("wrong")).status).toBe(403);
+        expect((await change(member.password)).status).toBe(200);
+        expect((await s.call("/projects", { headers: { cookie } })).status).toBe(401);
+        expect((await signIn(member.password)).status).toBe(401);
+        expect((await signIn("replacement-password-123")).status).toBe(200);
+    });
+
     it("signs in with the right password and sets a hardened session cookie", async () => {
         const s = await start();
         const res = await login(s);

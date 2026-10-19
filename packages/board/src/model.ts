@@ -48,6 +48,8 @@ export interface Filters {
     by: string;
     author: "" | "human" | "agent";
     bundle: string;
+    /** All accessible feedback (default), the current person's private feedback, or project-shared feedback. */
+    scope?: "" | "mine" | "shared";
 }
 
 /**
@@ -64,6 +66,7 @@ export const NO_EXTRA_FILTERS: Omit<Filters, "status"> = {
     by: "",
     author: "",
     bundle: "",
+    scope: "",
 };
 
 /** What the inbox shows when a project opens: what is still to do. */
@@ -77,10 +80,15 @@ export function viewOf(statuses: Status[]): View | null {
 
 /** The filters beyond status that are set, for a "clear" control. */
 export const extraFilterCount = (f: Filters) =>
-    [f.route, f.severity, f.intent, f.by, f.author, f.bundle].filter(Boolean).length;
+    [f.route, f.severity, f.intent, f.by, f.author, f.bundle, f.scope].filter(Boolean).length;
 
-export function matches(a: Annotation, f: Filters): boolean {
+export function matches(a: Annotation, f: Filters, actorId?: string): boolean {
+    const visibility = a.visibility ?? "shared";
     return (
+        (!f.scope ||
+            (f.scope === "mine"
+                ? visibility === "personal" && Boolean(actorId) && a.createdBy === actorId
+                : visibility === "shared")) &&
         (f.status.length === 0 || f.status.includes(a.status)) &&
         (!f.route || a.route === f.route) &&
         (!f.severity || a.severity === f.severity) &&

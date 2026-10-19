@@ -122,7 +122,7 @@ public final class Notato {
         return configuration?.resolvedServer
     }
     /// Whether notes go to a server as they are made. In test mode a server only receives packages.
-    var hasServer: Bool { server != nil && mode != .test }
+    var hasServer: Bool { server != nil }
     var authorName: String? { state.author ?? configuration?.author }
     var screenshotsWanted: Bool { state.screenshots ?? configuration?.screenshots ?? true }
     var screenshotsOn: Bool { screenshotsWanted && serverScreenshots }
@@ -159,7 +159,10 @@ public final class Notato {
         start(configuration)
     }
 
+    @ObservationIgnored var reviewSessionId = "review_" + ULID.make()
+
     private func begin(_ configuration: NotatoConfiguration, environment: [String: String]) {
+        reviewSessionId = "review_" + ULID.make()
         launch = LaunchEnvironment(environment)
         let configuration = launch.applied(to: configuration)
         self.configuration = configuration

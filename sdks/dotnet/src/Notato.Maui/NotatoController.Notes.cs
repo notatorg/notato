@@ -16,10 +16,11 @@ namespace Notato.Maui;
 // note is kept on the device, screenshots and all, before it is sent.
 internal sealed partial class NotatoController
 {
+    private string _reviewSessionId = "review_" + Guid.NewGuid().ToString("N");
     private readonly SemaphoreSlim _creating = new(1, 1);
 
     /// <summary>The composer's Send. Returns what went wrong, fit to show under it, or null.</summary>
-    internal async Task<string?> SubmitAsync(OverlaySession session, string comment, string? intent, string? severity, bool peopleOnly)
+    internal async Task<string?> SubmitAsync(OverlaySession session, string comment, string? intent, string? severity, bool peopleOnly, bool shared)
     {
         if (session.Selection is not { } selection)
         {
@@ -31,7 +32,7 @@ internal sealed partial class NotatoController
             // The note takes the picture (once it is taken: a quick Send waits for it), and disposes it once its
             // screenshots are drawn: sending again after a failure goes without one.
             CapturedScreen? screen = await selection.TakeScreenAsync();
-            NoteRecord record = await CreateAsync(session, selection.Elements, screen, comment, intent, severity, Author.Human(AuthorName), ModeName, null, peopleOnly);
+            NoteRecord record = await CreateAsync(session, selection.Elements, screen, comment, intent, severity, Author.Human(AuthorName), ModeName, null, peopleOnly, shared ? "shared" : "personal");
             ClearSelection(session);
             session.View.ShowSelection(null);
             session.View.CloseSheet();
@@ -108,14 +109,14 @@ internal sealed partial class NotatoController
     /// list once its screenshot is drawn: two made at once (an agent relaying twice) would otherwise share a number.
     /// </summary>
     private async Task<NoteRecord> CreateAsync(OverlaySession session, IReadOnlyList<VisualElement> elements, CapturedScreen? screen, string comment,
-        string? intent, string? severity, Author author, string mode, IReadOnlyList<AgentStep>? steps, bool peopleOnly)
+        string? intent, string? severity, Author author, string mode, IReadOnlyList<AgentStep>? steps, bool peopleOnly, string? visibility = null)
     {
         try
         {
             await _creating.WaitAsync();
             try
             {
-                return await CreateOneAsync(session, elements, screen, comment, intent, severity, author, mode, steps, peopleOnly);
+                return await CreateOneAsync(session, elements, screen, comment, intent, severity, author, mode, steps, peopleOnly, visibility);
             }
             finally
             {
@@ -130,7 +131,7 @@ internal sealed partial class NotatoController
     }
 
     private async Task<NoteRecord> CreateOneAsync(OverlaySession session, IReadOnlyList<VisualElement> elements, CapturedScreen? screen, string comment,
-        string? intent, string? severity, Author author, string mode, IReadOnlyList<AgentStep>? steps, bool peopleOnly)
+        string? intent, string? severity, Author author, string mode, IReadOnlyList<AgentStep>? steps, bool peopleOnly, string? visibility = null)
     {
         NotatoOptions options = Options;
         IElementGeometry geometry = session.Host.Geometry;
@@ -186,6 +187,8 @@ internal sealed partial class NotatoController
             Status = Statuses.Open,
             Thread = [],
             PeopleOnly = PeopleOnlyToggle.Flag(peopleOnly),
+            Visibility = visibility ?? (mode == "test" ? "shared" : "personal"),
+            SessionId = mode == "test" ? _reviewSessionId : null,
         };
 
         // On the device first, screenshots and all: only where they are is kept in memory.

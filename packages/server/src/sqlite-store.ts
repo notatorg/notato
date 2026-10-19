@@ -240,6 +240,12 @@ export class SqliteStore implements Store, AuthStore {
                 if (!have.has(column))
                     this.db.run(`ALTER TABLE annotations ADD COLUMN ${column} TEXT`);
         }
+        if (
+            !(this.db.query("PRAGMA table_info(users)").all() as Array<{ name: string }>).some(
+                (column) => column.name === "is_admin"
+            )
+        )
+            this.db.run("ALTER TABLE users ADD COLUMN is_admin INTEGER NOT NULL DEFAULT 1");
         this.db.run(
             "CREATE TABLE IF NOT EXISTS team_records (id TEXT PRIMARY KEY, project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE, kind TEXT NOT NULL, json TEXT NOT NULL)"
         );
@@ -391,7 +397,7 @@ export class SqliteStore implements Store, AuthStore {
         }
         if (filter.legacyOnly)
             where.push(
-                `NOT EXISTS (SELECT 1 FROM team_records c WHERE c.project_id=annotations.project_id AND c.kind='context') AND NOT EXISTS (SELECT 1 FROM team_records t WHERE t.id=${workKey} AND t.kind='work')`
+                `NOT EXISTS (SELECT 1 FROM team_records t WHERE t.id=${workKey} AND t.kind='work' AND json_extract(t.json,'$.contextId') IS NOT NULL)`
             );
         if (filter.reviewId !== undefined) {
             where.push("json_extract(json, '$.review.id') = ?");
@@ -437,6 +443,27 @@ export class SqliteStore implements Store, AuthStore {
         // The newest reply that is not an aside is the person's to answer (`awaitsAgent`), kept in a column on write.
         if (filter.lastReplyBy === "human") where.push("awaits_agent = 1");
         if (filter.peopleOnly === false) where.push("people_only = 0");
+        if (filter.sessionId) {
+            const ids = filter.sessionAnnotationIds ?? [];
+            where.push(
+                "(json_extract(json, '$.sessionId') = ?" +
+                    (ids.length ? " OR id IN (" + ids.map(() => "?").join(",") + ")" : "") +
+                    ")"
+            );
+            params.push(filter.sessionId, ...ids);
+        }
+        if (filter.feedbackScope === "mine") {
+            where.push("json_extract(json, '$.visibility') = 'personal'");
+            where.push("json_extract(json, '$.createdBy') = ?");
+            params.push(filter.feedbackActorId ?? "");
+        } else if (filter.feedbackScope === "shared") {
+            where.push("COALESCE(json_extract(json, '$.visibility'), 'shared') = 'shared'");
+        } else if (filter.feedbackScope === "all") {
+            where.push(
+                "(COALESCE(json_extract(json, '$.visibility'), 'shared') = 'shared' OR (json_extract(json, '$.visibility') = 'personal' AND json_extract(json, '$.createdBy') = ?))"
+            );
+            params.push(filter.feedbackActorId ?? "");
+        }
         if (filter.diagnostic === false) where.push("diagnostic = 0");
         if (filter.unhanded) where.push("handed_reply_id IS NOT last_word_id");
         if (filter.excludeIds?.length) {
@@ -594,15 +621,33 @@ export class SqliteStore implements Store, AuthStore {
 
     async projectsWithAsset(
         assetId: string,
-        filter: Pick<AnnotationFilter, "peopleOnly"> = {}
+        filter: Pick<AnnotationFilter, "peopleOnly" | "feedbackScope" | "feedbackActorId"> = {}
     ): Promise<string[]> {
+        const clauses: string[] = [];
+        const values: string[] = [];
+        if (filter.peopleOnly === false) clauses.push("people_only = 0");
+        if (filter.feedbackScope === "mine") {
+            clauses.push("json_extract(json, '$.visibility') = 'personal'");
+            clauses.push("json_extract(json, '$.createdBy') = ?");
+            values.push(filter.feedbackActorId ?? "");
+        } else if (filter.feedbackScope === "shared") {
+            clauses.push("COALESCE(json_extract(json, '$.visibility'), 'shared') = 'shared'");
+        } else if (filter.feedbackScope === "all") {
+            clauses.push(
+                "(COALESCE(json_extract(json, '$.visibility'), 'shared') = 'shared' OR (json_extract(json, '$.visibility') = 'personal' AND json_extract(json, '$.createdBy') = ?))"
+            );
+            values.push(filter.feedbackActorId ?? "");
+        }
+        clauses.push(
+            "(json_extract(json, '$.screenshots.full.id') = ? OR json_extract(json, '$.screenshots.crop.id') = ? OR json_extract(json, '$.screenshots.thumbnail.id') = ? OR EXISTS (SELECT 1 FROM json_each(annotations.json, '$.references') r WHERE json_extract(r.value, '$.id') = ?))"
+        );
+        values.push(assetId, assetId, assetId, assetId);
         return (
             this.db
                 .query(
-                    `SELECT DISTINCT project_id AS id FROM annotations
-         WHERE ${filter.peopleOnly === false ? "people_only = 0 AND " : ""}(json_extract(json, '$.screenshots.full.id') = ?1 OR json_extract(json, '$.screenshots.crop.id') = ?1 OR json_extract(json, '$.screenshots.thumbnail.id') = ?1 OR EXISTS (SELECT 1 FROM json_each(annotations.json, '$.references') r WHERE json_extract(r.value, '$.id') = ?1))`
+                    `SELECT DISTINCT project_id AS id FROM annotations WHERE ${clauses.join(" AND ")}`
                 )
-                .all(assetId) as Array<{ id: string }>
+                .all(...values) as Array<{ id: string }>
         ).map((r) => r.id);
     }
 
@@ -645,27 +690,64 @@ export class SqliteStore implements Store, AuthStore {
         return rows.map((r) => JSON.parse(r.json) as BundleRecord);
     }
 
+    async accessibleProjectIds(username: string): Promise<string[]> {
+        const projects = await this.listProjects();
+        const accessible: string[] = [];
+        for (const project of projects) {
+            const record = await this.coordination.get("project-access:" + project.id);
+            if (
+                record &&
+                "recordKind" in record &&
+                record.recordKind === "project" &&
+                (Object.hasOwn(record.members, username) ||
+                    (record.owner.kind === "user" && record.owner.id === username))
+            )
+                accessible.push(project.id);
+        }
+        return accessible;
+    }
+
+    async listUsers() {
+        return (
+            this.db
+                .query("SELECT username, created_at, is_admin FROM users ORDER BY username")
+                .all() as Array<{ username: string; created_at: string; is_admin: number }>
+        ).map((row) => ({
+            username: row.username,
+            createdAt: row.created_at,
+            isAdmin: Boolean(row.is_admin),
+        }));
+    }
+
     // ---- AuthStore -----------------------------------------------------------------------------------
 
     async getUser(username: string): Promise<UserRecord | null> {
         const row = this.db
-            .query("SELECT username, password_hash, created_at FROM users WHERE username = ?")
+            .query(
+                "SELECT username, password_hash, created_at, is_admin FROM users WHERE username = ?"
+            )
             .get(username) as {
             username: string;
             password_hash: string;
             created_at: string;
+            is_admin: number;
         } | null;
         return row
-            ? { username: row.username, passwordHash: row.password_hash, createdAt: row.created_at }
+            ? {
+                  username: row.username,
+                  passwordHash: row.password_hash,
+                  createdAt: row.created_at,
+                  isAdmin: Boolean(row.is_admin),
+              }
             : null;
     }
 
     async upsertUser(user: UserRecord): Promise<void> {
         this.db
             .query(
-                "INSERT INTO users (username, password_hash, created_at) VALUES (?, ?, ?) ON CONFLICT(username) DO UPDATE SET password_hash = excluded.password_hash"
+                "INSERT INTO users (username, password_hash, created_at, is_admin) VALUES (?, ?, ?, ?) ON CONFLICT(username) DO UPDATE SET password_hash = excluded.password_hash, is_admin = excluded.is_admin"
             )
-            .run(user.username, user.passwordHash, user.createdAt);
+            .run(user.username, user.passwordHash, user.createdAt, user.isAdmin === false ? 0 : 1);
     }
 
     async createSession(session: SessionRecord): Promise<void> {

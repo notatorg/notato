@@ -149,6 +149,7 @@ abstract interface class NotatoController implements Listenable {
     List<Map<String, Object?>>? steps,
     bool screenshot = true,
     bool peopleOnly = false,
+    String? visibility,
   });
 
   /// Test mode: packages this device's notes as a bundle zip (`feedback.md`, `annotations.json`, `shots/`), the format

@@ -1,4 +1,5 @@
 import { join } from "node:path";
+import { env } from "node:process";
 import { parseArgs } from "node:util";
 import {
     Authenticator,
@@ -78,16 +79,22 @@ export async function runProjectCommand(
     const auth = new Authenticator(store);
     try {
         if (action === "create") {
+            const identity = await tokenIdentity(store);
             const created = await backend.createProject(project, values.name);
             if (!created)
                 throw new Error(
                     `a project with id "${project}" already exists in ${dir} (another token for it: notato token create ${project})`
                 );
             // An app on a shared server cannot send without a token, so the first one comes with the project.
-            const { token, record } = await auth.issueToken(project, `${created.name} app`);
+            const { token, record } = await auth.issueToken(project, `${created.name} app`, {
+                createdBy: identity,
+            });
             const agent = values["no-agent"]
                 ? undefined
-                : await auth.issueToken(project, `${created.name} agent`, { purpose: "agent" });
+                : await auth.issueToken(project, `${created.name} agent`, {
+                      purpose: "agent",
+                      createdBy: identity,
+                  });
             const server = (values.server ?? localServer()).replace(/\/$/, "");
             if (values.json) {
                 console.log(
@@ -186,4 +193,11 @@ export async function runProjectCommand(
     } finally {
         store.close();
     }
+}
+
+/** The matching app and agent tokens need one server-derived identity for Mine feedback to reach its agent. */
+async function tokenIdentity(store: SqliteStore): Promise<string> {
+    const configured = env.NOTATO_ADMIN_USER?.trim();
+    if (configured) return configured;
+    return (await store.getUser("admin")) ? "admin" : "local";
 }

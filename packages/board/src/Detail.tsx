@@ -14,6 +14,7 @@ import {
     setPeopleOnly,
     setSeverity,
     setStatus,
+    setVisibility,
 } from "./api.ts";
 import { WorkAssignment } from "./Contexts.tsx";
 import {
@@ -36,6 +37,8 @@ import { copyText, FLASH_MS, Icon, StatusPill, When } from "./ui.tsx";
 
 interface Props {
     annotation: Annotation;
+    actorId: string;
+    canManage: boolean;
     loadDetails?: boolean;
     project: string;
     /** How much to write when this is copied as Markdown. */
@@ -123,7 +126,15 @@ export function Detail(props: Props) {
     return <LoadedDetail {...props} annotation={annotation} />;
 }
 
-function LoadedDetail({ annotation: a, project, detail, hidden, onChange, onDeleted }: Props) {
+function LoadedDetail({
+    annotation: a,
+    project,
+    detail,
+    hidden,
+    onChange,
+    onDeleted,
+    canManage,
+}: Props) {
     const [text, setText] = useState("");
     /** The next reply goes as an aside: for the people on the thread, not the agent. */
     const [aside, setAside] = useState(false);
@@ -322,6 +333,38 @@ function LoadedDetail({ annotation: a, project, detail, hidden, onChange, onDele
                     <span className="tag" title={INTENT_MEANING[a.intent]}>
                         {capitalise(a.intent)}
                     </span>
+                ) : null}
+                <span
+                    className="tag"
+                    title={
+                        a.visibility === "shared" || !a.visibility
+                            ? "Visible to project members"
+                            : "Only visible to its creator"
+                    }
+                >
+                    {a.visibility === "shared" || !a.visibility ? "Shared" : "Mine"}
+                </span>
+                {canManage ? (
+                    <button
+                        type="button"
+                        className="tag"
+                        disabled={busy}
+                        title="Change whether project members can see this feedback."
+                        onClick={() =>
+                            run(() =>
+                                setVisibility(
+                                    a.id,
+                                    a.visibility === "shared" || !a.visibility
+                                        ? "personal"
+                                        : "shared"
+                                )
+                            )
+                        }
+                    >
+                        {a.visibility === "shared" || !a.visibility
+                            ? "Make personal"
+                            : "Share with project"}
+                    </button>
                 ) : null}
                 <button
                     type="button"

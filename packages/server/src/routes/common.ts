@@ -77,27 +77,49 @@ export const isAgentToken = (principal: Principal) =>
             (principal.kind === "token" && tokenPurpose(principal) === "agent")
     );
 
-export const forReader = (principal: Principal, filter: AnnotationFilter = {}): AnnotationFilter =>
-    principal.developmentContextId
+export const feedbackActorId = (principal: Principal) =>
+    principal.feedbackActorId ??
+    (principal.kind === "token" ? `token:${principal.tokenId}` : principal.username);
+
+export const forReader = (
+    principal: Principal,
+    filter: AnnotationFilter = {}
+): AnnotationFilter => {
+    const feedbackScope = filter.feedbackScope ?? (isAgentToken(principal) ? "mine" : "all");
+    const feedback = { feedbackScope, feedbackActorId: feedbackActorId(principal) } as const;
+    return principal.developmentContextId
         ? {
               ...filter,
+              ...feedback,
               workContext: principal.developmentContextId,
               legacyOnly: undefined,
               ...(isAgentToken(principal) ? { peopleOnly: false as const } : {}),
           }
         : isAgentToken(principal)
-          ? { ...filter, workContext: undefined, legacyOnly: true, peopleOnly: false }
-          : filter;
+          ? { ...filter, ...feedback, workContext: undefined, legacyOnly: true, peopleOnly: false }
+          : { ...filter, ...feedback };
+};
 
 export async function canReadFeedback(
     principal: Principal,
     annotation: Annotation,
-    backend: LocalBackend
+    backend: LocalBackend,
+    requestedScope?: AnnotationFilter["feedbackScope"]
 ) {
     if (
         !canAccessProject(principal, annotation.projectId) ||
-        (isAgentToken(principal) && annotation.peopleOnly)
+        (isAgentToken(principal) && annotation.peopleOnly) ||
+        (annotation.visibility === "personal" &&
+            annotation.createdBy !== feedbackActorId(principal))
     )
+        return false;
+    const scope = requestedScope ?? (isAgentToken(principal) ? "mine" : "all");
+    const visibility = annotation.visibility ?? "shared";
+    const actor = feedbackActorId(principal);
+    if (scope === "mine" && (visibility !== "personal" || annotation.createdBy !== actor))
+        return false;
+    if (scope === "shared" && visibility !== "shared") return false;
+    if (scope === "all" && visibility === "personal" && annotation.createdBy !== actor)
         return false;
     if (principal.developmentContextId) {
         const c = await new TeamCoordinator(backend.store).context(principal.developmentContextId);
@@ -109,14 +131,7 @@ export async function canReadFeedback(
     return principal.developmentContextId
         ? work?.contextId === principal.developmentContextId
         : isAgentToken(principal)
-          ? !work &&
-            (!backend.store.coordination ||
-                (
-                    await new TeamCoordinator(backend.store).records.list(
-                        annotation.projectId,
-                        "context"
-                    )
-                ).length === 0)
+          ? !work?.contextId
           : true;
 }
 

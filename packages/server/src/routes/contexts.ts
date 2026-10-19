@@ -3,7 +3,16 @@ import { Authenticator, type IssueTokenOptions } from "../auth.ts";
 import { RequestError } from "../backend.ts";
 import type { AuthStore, Store } from "../storage.ts";
 import { type DevelopmentContext, TeamCoordinator, type WorkRecord, workId } from "../team.ts";
-import { assertAccess, assertBoard, json, notFound, type Routes, readJson } from "./common.ts";
+import {
+    assertAccess,
+    assertBoard,
+    canReadFeedback,
+    forReader,
+    json,
+    notFound,
+    type Routes,
+    readJson,
+} from "./common.ts";
 
 const ContextInput = z
     .object({
@@ -12,20 +21,6 @@ const ContextInput = z
     })
     .strict();
 export const contextRoutes: Routes = async ({ req, path, method, principal, match }, app) => {
-    if (path === "/connection" && method === "GET") {
-        if (principal.kind !== "token" || !principal.developmentContextId)
-            throw new RequestError("Use a checkout-scoped app or agent credential.", 403);
-        const context = await new TeamCoordinator(app.backend.store).context(
-            principal.developmentContextId
-        );
-        if (!context || context.archived || context.projectId !== principal.projectId)
-            throw new RequestError("Checkout connection revoked.", 403);
-        return json({
-            purpose: principal.purpose,
-            project: context.projectId,
-            context: { id: context.id, name: context.name, branch: context.branch },
-        });
-    }
     const list = match(/^\/projects\/([^/]+)\/(contexts|work)$/);
     const single = match(/^\/contexts\/([^/]+)(?:\/(credentials))?$/);
     const note = match(/^\/annotations\/([^/]+)\/work$/);
@@ -41,13 +36,18 @@ export const contextRoutes: Routes = async ({ req, path, method, principal, matc
         const project = list[0]!;
         assertAccess(principal, project);
         if (!(await app.backend.store.getProject(project))) return notFound();
-        if (method === "GET")
-            return json({
-                items: await teams.records.list(
-                    project,
-                    list[1] === "contexts" ? "context" : "work"
-                ),
-            });
+        if (method === "GET") {
+            const items = await teams.records.list(
+                project,
+                list[1] === "contexts" ? "context" : "work"
+            );
+            if (list[1] === "contexts") return json({ items });
+            // Work records can contain PR titles, URLs, branches and claims. Keep records for private feedback
+            // out of the team queue unless the signed-in person created that feedback.
+            const visible = await app.backend.list(forReader(principal, { projectId: project }));
+            const visibleWork = new Set(visible.map(({ annotation }) => workId(annotation)));
+            return json({ items: items.filter((item) => visibleWork.has(item.id)) });
+        }
         if (method === "POST" && list[1] === "contexts") {
             const body = await readJson(req, ContextInput);
             return json(
@@ -98,7 +98,7 @@ export const contextRoutes: Routes = async ({ req, path, method, principal, matc
             const options: IssueTokenOptions = {
                 expiresInDays: 90,
                 developmentContextId: context.id,
-                createdBy: principal.username,
+                createdBy: context.owner,
                 ...app.options.teamTokenOptions?.(principal, context),
             };
             const auth = app.auth ?? new Authenticator(app.backend.store as Store & AuthStore);
@@ -131,7 +131,8 @@ export const contextRoutes: Routes = async ({ req, path, method, principal, matc
     }
     if (note) {
         const stored = await app.backend.get(note[0]!);
-        if (!stored) return notFound();
+        if (!stored || !(await canReadFeedback(principal, stored.annotation, app.backend)))
+            return notFound();
         assertAccess(principal, stored.annotation.projectId);
         if (method === "GET") return json(await teams.work(workId(stored.annotation)));
         if (method === "PUT") {
@@ -146,6 +147,15 @@ export const contextRoutes: Routes = async ({ req, path, method, principal, matc
             );
             const current = await teams.work(workId(stored.annotation));
             const target = body.contextId ? await teams.context(body.contextId) : null;
+            if (
+                stored.annotation.visibility === "personal" &&
+                target &&
+                target.owner !== stored.annotation.createdBy
+            )
+                throw new RequestError(
+                    "Personal feedback can only be assigned to its creator's checkout. Share it first to assign it to a teammate.",
+                    403
+                );
             const source = current?.contextId ? await teams.context(current.contextId) : null;
             // Team members may take shared work for their own checkout or release their own work. Managers can assign across the team.
             if (

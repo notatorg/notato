@@ -10,6 +10,7 @@ import {
     ingest,
     makeApp,
     multipart,
+    toolText,
 } from "./helpers.ts";
 
 const defer = cleanupAfterEach();
@@ -51,6 +52,58 @@ async function post(port: number, over: Parameters<typeof annotationFixture>[0] 
 }
 
 describe("runDev", () => {
+    it("hands review sessions to agents in both the primary and an attached local process", async () => {
+        const first = await start(0);
+        await first.local!.createProject("shop");
+        const response = await fetch(
+            `http://127.0.0.1:${first.port}/projects/shop/review-sessions`,
+            {
+                method: "POST",
+                headers: { "content-type": "application/json" },
+                body: JSON.stringify({
+                    name: "Keyboard review",
+                    description: "Fix focus order",
+                    visibility: "shared",
+                }),
+            }
+        );
+        expect(response.status).toBe(201);
+        const { session } = await response.json();
+        await post(first.port, {
+            projectId: "shop",
+            visibility: "shared",
+            sessionId: session.id,
+            comment: "Focus the payment field",
+        });
+        const second = await start(first.port);
+        for (const runtime of [first, second]) {
+            const mcp = await connectMcp(runtime.mcp, defer);
+            expect(
+                toolText(
+                    await mcp.call("notato_list_review_sessions", {
+                        projectId: "shop",
+                        scope: "shared",
+                    })
+                )
+            ).toContain("Keyboard review");
+            expect(
+                toolText(await mcp.call("notato_get_review_session", { id: session.id }))
+            ).toContain("Focus the payment field");
+            expect(
+                (
+                    await mcp.call("notato_reply_review_session", {
+                        id: session.id,
+                        body: "Starting this review",
+                    })
+                ).isError
+            ).not.toBe(true);
+        }
+        const saved = await (
+            await fetch(`http://127.0.0.1:${first.port}/review-sessions/${session.id}`)
+        ).json();
+        expect(saved.session.thread).toHaveLength(2);
+    });
+
     it("starts the HTTP server on loopback with its own database", async () => {
         const dev = await start(0);
         expect(dev.role).toBe("primary");

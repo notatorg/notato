@@ -47,8 +47,9 @@ export const accountRoutes: Routes<Principal | null> = async (
             mode: options.mode,
             authRequired: Boolean(auth),
             authenticated: Boolean(principal),
+            localAccounts: Boolean(auth?.store.listUsers),
             ...(principal?.kind === "admin" || principal?.kind === "member"
-                ? { username: principal.username }
+                ? { username: principal.username, isAdmin: principal.kind === "admin" }
                 : {}),
             ...(principal?.kind === "token" ? { projectId: principal.projectId } : {}),
             ...(await options.aboutCaller?.(principal, req)),
@@ -82,15 +83,40 @@ export const accountRoutes: Routes<Principal | null> = async (
         });
     }
 
+    if (path === "/auth/password" && method === "POST" && auth.store.listUsers) {
+        if (principal?.kind !== "admin" && principal?.kind !== "member")
+            throw new RequestError("Sign-in required.", 401);
+        assertBoard(req, "password changes");
+        const { currentPassword, password } = await readJson(
+            req,
+            z.object({
+                currentPassword: z.string().min(1).max(200),
+                password: z.string().min(12).max(200),
+            })
+        );
+        const user = await auth.store.getUser(principal.username);
+        if (!user || !(await Bun.password.verify(currentPassword, user.passwordHash)))
+            throw new RequestError("Current password is incorrect.", 403);
+        await auth.store.upsertUser({ ...user, passwordHash: await Bun.password.hash(password) });
+        await auth.store.deleteSessionsFor(user.username);
+        return json({ ok: true }, 200, {
+            "Set-Cookie": await auth.logout(req, isSecure(req, options.trustProxy)),
+        });
+    }
+
     // `/admin/tokens` is the older name, and always an admin's; the board asks for `/tokens`, which `tokenRules` may
     // open to others.
     const rules = options.tokenRules;
     const assertManager = () =>
         path.startsWith("/admin/") || !rules?.assertManager
-            ? assertAdmin(principal)
+            ? principal?.kind === "member" && !path.startsWith("/admin/")
+                ? undefined
+                : assertAdmin(principal)
             : rules.assertManager(principal);
     const visible = (who: Principal, token: TokenRecord) =>
-        rules?.visible ? rules.visible(who, token) : isAdmin(who);
+        rules?.visible
+            ? rules.visible(who, token)
+            : isAdmin(who) || (who.kind === "member" && token.createdBy === who.username);
     if (path === "/admin/tokens" || path === "/tokens") {
         assertManager();
         if (!principal) return null;
@@ -131,10 +157,15 @@ async function issueAsked(
     auth: AuthProvider
 ): Promise<IssuedToken> {
     const { projectId, name, ...options } = await readJson(req, TokenBody);
+    if (principal.kind === "member" && !principal.projectIds.includes(projectId))
+        throw new RequestError("Project access denied.", 403);
     return auth
         .issueToken(projectId, name, {
             ...options,
-            createdBy: principal.kind === "admin" ? principal.username : undefined,
+            createdBy:
+                principal.kind === "admin" || principal.kind === "member"
+                    ? principal.username
+                    : undefined,
         })
         .catch((error) => {
             if (error instanceof UnknownProjectError) throw error;

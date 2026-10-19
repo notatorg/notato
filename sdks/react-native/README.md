@@ -149,14 +149,14 @@ What a note's selector looks like, and what an agent passes to `notato_annotate`
 ## Modes
 
 - **dev**: notes go live to `notato dev`, pins turn amber when the agent acknowledges them and green when it resolves them, and replies arrive in the pin's card. On a resolved pin, **Ask the agent to revert** asks for the change to be undone. A note made while the server is down is kept on the device and sent when it comes back; one the server refuses for good (too large, say) is marked failed and kept, and the notes after it still go.
-- **test**: notes stay on the device (with `storage`, they survive a restart). **Package and share** in the toolbar's menu makes the bundle zip `notato_import_bundle` reads, uploads it when a server is set, and opens the share sheet.
+- **test**: feedback defaults to shared and, when a server is configured, is sent live into a review session. Notes also stay on the device for **Package and share**, which exports the bundle zip `notato_import_bundle` reads and uploads it when requested. Without a server, testing stays offline.
 - **agent**: like dev, and the app also takes `notato_annotate` requests: `notato_annotate { target: "#add-to-basket:nth(3)", comment: "…" }` is relayed to the app, which finds the view, takes the screenshot and files the note as the agent. Requests are taken one at a time. The agent hears the note is filed only once the server has it; one kept on the device (the server could not be reached, or would not take it) is reported as not filed, with the reason.
 
 ## People only and asides
 
-Everything people write reaches the agent: new notes and every reply. Two switches keep something between people instead:
+Replies reach the agent within its active feedback scope. Dev feedback is private to its creator by default; Test feedback is Shared. Change a note's visibility in the board to share it with the project. People only and Aside are additional ways to keep feedback between people:
 
-- **People only**, for a whole note: the composer's switch (_"Keep this between people: the agent won't see it."_), and the same switch on the note's card, at any time, for anyone on the thread. Each change is recorded in the thread. A note still on the device (test mode, or not sent yet) is changed on the device, with the same entry, so a package carries the history.
+- **People only**, for a whole note: the composer's switch (_"Keep this between people: the agent won't see it."_), and the same switch on the note's card, at any time, for anyone on the thread. Each change is recorded in the thread. A note not yet sent to the server is changed on the device, with the same entry, so a package carries the history.
 - **Aside**, for one reply: under the reply field (_"Just for people: the agent won't see this reply."_). Asides show in the thread outlined and labelled **Aside**.
 
 ## Known limits
@@ -187,3 +187,7 @@ The example is an Expo app outside the repository's Bun workspace (its own `npm 
 The toolbar's icons are white PNGs tinted where they are drawn, made from the Android SDK's path data by `swift scripts/icons/render.swift` (macOS 14 or later), which writes them into this SDK and the Flutter one.
 
 Capture-only uploads and retries follow the [shared capture contract](../../docs/capture-contract.md). With a server configured, screenshots require an explicit `screenshots: true` policy; unknown or unavailable initial policy means text-only capture. Local-only capture continues without a policy request.
+
+### Feedback ownership and review sessions
+
+Dev feedback defaults to personal; Test defaults to shared. The composer’s **Share with project** switch overrides the default for that note. **People only** separately keeps agents out. With a server configured, Test feedback is sent live and grouped into a review session from the start of the run; without one, device storage and zip packaging still work. Use the board’s **Review sessions** to name a run, set its focus and discuss it. Each developer uses their own credentials with the same project ID. See the [team feedback guide](../../docs/team-feedback.md).

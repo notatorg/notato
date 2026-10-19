@@ -8,9 +8,16 @@ export interface AnnotationFilter {
     legacyOnly?: true;
     /** One project, or any of several (an agent that works on more than one); an empty list matches nothing. */
     projectId?: string | string[];
+    /** Filter to a deliberate feedback scope. `all` still includes only this actor's personal feedback. */
+    feedbackScope?: "mine" | "shared" | "all";
+    /** Server-derived identity used to constrain personal feedback. */
+    feedbackActorId?: string;
     status?: Status | Status[];
     route?: string;
     reviewId?: string;
+    sessionId?: string;
+    /** Resolved from an authorized session by the server; never accepted from query parameters. */
+    sessionAnnotationIds?: string[];
     severity?: Severity;
     /** What the person wants done: fix, change, question, approve. */
     intent?: Intent | Intent[];
@@ -44,6 +51,22 @@ export interface AnnotationFilter {
     /** Leave bulky diagnostics and agent steps in the database for an SDK's summary list. */
     summary?: true;
     limit?: number;
+}
+
+/** Missing visibility is legacy shared data; personal feedback is visible only to its server-derived creator. */
+export function inFeedbackScope(
+    annotation: Annotation,
+    actorId: string | undefined,
+    scope: NonNullable<AnnotationFilter["feedbackScope"]>
+): boolean {
+    const visibility = annotation.visibility ?? "shared";
+    if (scope === "mine")
+        return visibility === "personal" && Boolean(actorId) && annotation.createdBy === actorId;
+    if (scope === "shared") return visibility === "shared";
+    return (
+        visibility === "shared" ||
+        (visibility === "personal" && Boolean(actorId) && annotation.createdBy === actorId)
+    );
 }
 
 /** Whether a project is one a filter's `projectId` asks for (anything, when it asks for none). */
@@ -98,6 +121,7 @@ export interface BundleRecord {
     /** When the tester packaged it. */
     createdAt: string;
     author: { name?: string };
+    session?: { name: string; description?: string };
     appName?: string;
     appVersion?: string;
     annotationCount: number;
@@ -113,6 +137,8 @@ export interface ProjectRecord {
 }
 
 export interface ProjectSummary {
+    readAt?: string;
+    unread?: number;
     id: string;
     name: string;
     createdAt: string;
@@ -163,7 +189,7 @@ export interface Store {
     /** Projects with a note showing this asset. With peopleOnly:false, only public-to-agent notes may grant access. */
     projectsWithAsset(
         assetId: string,
-        filter?: Pick<AnnotationFilter, "peopleOnly">
+        filter?: Pick<AnnotationFilter, "peopleOnly" | "feedbackScope" | "feedbackActorId">
     ): Promise<string[]>;
     /** Returns false when a bundle with that id was already recorded. */
     insertBundle(bundle: BundleRecord): Promise<boolean>;
@@ -177,6 +203,8 @@ export interface Store {
 }
 
 export interface UserRecord {
+    /** Missing on legacy users, who retain administrator access. */
+    isAdmin?: boolean;
     username: string;
     /** An argon2id hash; the password itself is never stored. */
     passwordHash: string;
@@ -232,6 +260,8 @@ export function assertTokenPurpose(
 
 /** Accounts, sessions and API tokens for serve mode. Kept apart from `Store` so each can move independently. */
 export interface AuthStore {
+    listUsers?(): Promise<Array<Omit<UserRecord, "passwordHash">>>;
+    accessibleProjectIds?(username: string): Promise<string[]>;
     getUser(username: string): Promise<UserRecord | null>;
     upsertUser(user: UserRecord): Promise<void>;
     createSession(session: SessionRecord): Promise<void>;

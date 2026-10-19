@@ -1,4 +1,4 @@
-import type { Intent, Severity } from "@notato/schema";
+import type { FeedbackVisibility, Intent, Severity } from "@notato/schema";
 import { referenceThumbnail, validateReferenceFile } from "../reference-image.ts";
 import { capitalize } from "../text.ts";
 import { h, ICONS, icon } from "./dom.ts";
@@ -21,6 +21,7 @@ export interface PopoverInit {
      */
     variants?: boolean;
     references?: boolean;
+    defaultVisibility?: FeedbackVisibility;
     reviewInstruction?: string;
     onSave(value: {
         comment: string;
@@ -29,6 +30,7 @@ export interface PopoverInit {
         intent?: Intent;
         /** Kept between people: the agent never gets it. */
         peopleOnly?: boolean;
+        visibility: FeedbackVisibility;
     }): Promise<void>;
     onCancel(): void;
 }
@@ -95,6 +97,7 @@ export function createPopover(layer: HTMLElement, frames: Frames = createFrames(
     let severity: Severity | undefined;
     let intent: Intent | undefined;
     let peopleOnly = false;
+    let visibility: FeedbackVisibility = "personal";
     let textarea: HTMLTextAreaElement;
     let saveBtn: HTMLButtonElement;
     let status: HTMLElement;
@@ -170,6 +173,7 @@ export function createPopover(layer: HTMLElement, frames: Frames = createFrames(
                 severity,
                 intent,
                 ...(peopleOnly ? { peopleOnly } : {}),
+                visibility,
             });
         } catch (error) {
             if (el !== savingPopover) return;
@@ -203,6 +207,7 @@ export function createPopover(layer: HTMLElement, frames: Frames = createFrames(
         severity = undefined;
         intent = undefined;
         peopleOnly = false;
+        visibility = "personal";
         files = [];
         saving = false;
     };
@@ -215,6 +220,7 @@ export function createPopover(layer: HTMLElement, frames: Frames = createFrames(
             close();
             if (leaving) settle(leaving);
             current = init;
+            visibility = init.defaultVisibility ?? "personal";
             const intentChips = INTENTS.filter((i) => i !== "variants" || init.variants).map((i) =>
                 h(
                     "button",
@@ -261,7 +267,34 @@ export function createPopover(layer: HTMLElement, frames: Frames = createFrames(
                     capitalize(s)
                 )
             );
-            const visibilityDetail = h("p", {}, "Agents can see this note.");
+            const visibilityDetail = h(
+                "p",
+                {},
+                visibility === "shared"
+                    ? "Everyone with access to this project can see this feedback."
+                    : "Only you and your agent can see this feedback."
+            );
+            const shareChip = h(
+                "button",
+                {
+                    class: "chip people",
+                    type: "button",
+                    "aria-pressed": String(visibility === "shared"),
+                    title: "Choose whether this feedback belongs only to you or is shared with the project.",
+                    onclick: (ev: Event) => {
+                        visibility = visibility === "personal" ? "shared" : "personal";
+                        shareChip.setAttribute("aria-pressed", String(visibility === "shared"));
+                        visibilityDetail.textContent =
+                            visibility === "shared"
+                                ? "Everyone with access to this project can see this feedback."
+                                : "Only you and your agent can see this feedback.";
+                        shareChip.textContent =
+                            visibility === "shared" ? "Keep it personal" : "Share with project";
+                        ev.stopPropagation();
+                    },
+                },
+                visibility === "shared" ? "Keep it personal" : "Share with project"
+            );
             const peopleChip = h(
                 "button",
                 {
@@ -561,7 +594,7 @@ export function createPopover(layer: HTMLElement, frames: Frames = createFrames(
                                   h("span", { class: "composer-label" }, "Visibility"),
                                   visibilityDetail
                               ),
-                              peopleChip
+                              h("div", { class: "visibility-actions" }, shareChip, peopleChip)
                           )
                 ),
                 h(

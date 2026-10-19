@@ -208,6 +208,9 @@ public data class Annotation(
      * left out (null) when off. Anyone on the thread can turn it on or off; each change is recorded in the thread.
      */
     val peopleOnly: Boolean? = null,
+    val visibility: String? = null,
+    val createdBy: String? = null,
+    val sessionId: String? = null,
 )
 
 /** A tester's notes packaged together (the zip's `annotations.json`). */

@@ -255,6 +255,9 @@ public struct Annotation: Codable, Sendable, Equatable, Identifiable {
     /// People only: the note and its whole thread are between people, and never reach the agent. Written only when
     /// on (`isPeopleOnly` keeps it so).
     public var peopleOnly: Bool?
+    public var visibility: String? = nil
+    public var createdBy: String? = nil
+    public var sessionId: String? = nil
 }
 
 extension Annotation {

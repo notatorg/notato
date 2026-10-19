@@ -233,6 +233,12 @@ class SwitchableBackend implements Backend {
     }
 
     list = (filter?: AnnotationFilter) => this.call((b) => b.list(filter));
+    listReviewSessions = (project: string, actor: string) =>
+        this.call((b) => b.listReviewSessions?.(project, actor) ?? Promise.resolve([]));
+    getReviewSession = (id: string, actor: string) =>
+        this.call((b) => b.getReviewSession?.(id, actor) ?? Promise.resolve(null));
+    replyReviewSession = (id: string, actor: string, body: string, author: Author) =>
+        this.call((b) => b.replyReviewSession?.(id, actor, body, author) ?? Promise.resolve(null));
     get = (id: string) => this.call((b) => b.get(id));
     markHanded = (entries: HandedEntry[]) => this.call((b) => b.markHanded(entries));
     asset = (id: string): Promise<AssetBytes | null> => this.call((b) => b.asset(id));

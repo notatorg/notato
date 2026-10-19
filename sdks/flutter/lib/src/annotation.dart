@@ -113,6 +113,8 @@ Map<String, Object?> buildAnnotation({
   String? intent,
   String? severity,
   bool peopleOnly = false,
+  String? visibility,
+  String? sessionId,
   List<Map<String, Object?>>? steps,
   required int pin,
   Shot? full,
@@ -126,6 +128,8 @@ Map<String, Object?> buildAnnotation({
   return {
     'id': id ?? ulid(),
     'projectId': project,
+    'visibility': visibility ?? (mode == 'test' ? 'shared' : 'personal'),
+    'sessionId': ?sessionId,
     'bundleId': null,
     'author': agentName != null ? {'kind': 'agent', 'name': agentName} : {'kind': 'human', 'name': ?author},
     'mode': mode,

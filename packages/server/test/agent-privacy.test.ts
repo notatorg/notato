@@ -45,8 +45,8 @@ it("refuses direct MCP reads of private text, screenshots and references, until 
 
 it("keeps private notes and their assets out of every agent-token read, export and event path", async () => {
     const s = await startServe(defer);
-    const app = bearer(await issue(s, "p", "human", { purpose: "app" }));
-    const agent = bearer(await issue(s, "p", "agent", { purpose: "agent" }));
+    const app = bearer(await issue(s, "p", "human", { purpose: "app", createdBy: "local" }));
+    const agent = bearer(await issue(s, "p", "agent", { purpose: "agent", createdBy: "local" }));
     const bundleId = "privacy-bundle";
     const hidden = annotationFixture({
         projectId: "p",
@@ -68,7 +68,8 @@ it("keeps private notes and their assets out of every agent-token read, export a
         { projectId: "p", id: bundleId }
     );
     await s.rt.backend.importBundle(
-        await writeBundle(bundle, async (ref) => (ref.id === reference.id ? PNG : PNG_B))
+        await writeBundle(bundle, async (ref) => (ref.id === reference.id ? PNG : PNG_B)),
+        { feedbackActorId: "admin" }
     );
     for (const path of [
         "/annotations",

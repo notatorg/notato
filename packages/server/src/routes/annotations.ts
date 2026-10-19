@@ -12,6 +12,7 @@ import { z } from "zod";
 import { Authenticator, canAccessProject, type Principal, samePrincipal } from "../auth.ts";
 import { type LocalBackend, RequestError, TEXT_MAX } from "../backend.ts";
 import { captureReceipt, captureScope } from "../capture-receipt.ts";
+import { canReadSession, ReviewSessions } from "../collaboration.ts";
 import { filterFromQuery } from "../query.ts";
 import {
     type AnnotationFilter,
@@ -24,6 +25,7 @@ import {
     type AppContext,
     assertAccess,
     canReadFeedback,
+    feedbackActorId,
     forReader,
     isAgentToken,
     json,
@@ -47,6 +49,7 @@ const PatchBody = z
         note: Text.optional(),
         /** People only on or off: only a person can change it, and the change is recorded in the thread. */
         peopleOnly: z.boolean().optional(),
+        visibility: z.enum(["personal", "shared"]).optional(),
         author: Author.optional(),
     })
     .strict();
@@ -217,7 +220,20 @@ async function ingest(
     }
     const checked = Annotation.safeParse(parsed);
     if (checked.success) {
-        parsed = { ...checked.data, workId: principal.captureWorkId };
+        const { createdBy: _untrustedCreator, ...clientAnnotation } = checked.data;
+        if (clientAnnotation.localOnly && app.options.mode !== "dev")
+            throw new RequestError(
+                "Local-only feedback must stay on your local development server.",
+                400
+            );
+        parsed = {
+            ...clientAnnotation,
+            workId: principal.captureWorkId,
+            createdBy: feedbackActorId(principal),
+            visibility:
+                clientAnnotation.visibility ??
+                (clientAnnotation.mode === "test" ? "shared" : "personal"),
+        };
         if (
             principal.developmentContextId ||
             principal.captureWorkId ||
@@ -231,7 +247,11 @@ async function ingest(
                 principal.captureWorkId
             );
     }
-    const { stored, created } = await app.backend.ingest(parsed, files, { projectId, receipt });
+    const { stored, created } = await app.backend.ingest(parsed, files, {
+        projectId,
+        receipt,
+        feedbackActorId: feedbackActorId(principal),
+    });
     if (captureOnly) {
         // Echo the submission, never the saved report: a retry cannot disclose later replies or edits.
         const submitted = Annotation.parse(parsed);
@@ -263,6 +283,13 @@ export const annotationRoutes: Routes = async (route, app) => {
     const { req, url, path, method, principal, match } = route;
     const { backend } = app;
     const query = url.searchParams;
+    if (query.get("sessionId") && backend.store.coordination) {
+        const session = await new ReviewSessions(backend.store.coordination).get(
+            query.get("sessionId")!
+        );
+        if (!session || !canReadSession(session, feedbackActorId(principal))) return notFound();
+        assertAccess(principal, session.projectId);
+    }
     /** An app's token vouches for a person, never for an agent: whatever a page says, its replies are human. */
     const author = (supplied?: Author): Author | undefined =>
         principal.kind === "member"
@@ -279,7 +306,15 @@ export const annotationRoutes: Routes = async (route, app) => {
     const annotation = async (id: string | undefined) => {
         const existing = await backend.get(id ?? "");
         if (existing) assertAccess(principal, existing.annotation.projectId);
-        if (!existing || !(await canReadFeedback(principal, existing.annotation, backend)))
+        if (
+            !existing ||
+            !(await canReadFeedback(
+                principal,
+                existing.annotation,
+                backend,
+                filterFromQuery(query).feedbackScope
+            ))
+        )
             return null;
         if (
             method !== "GET" &&
@@ -403,6 +438,16 @@ export const annotationRoutes: Routes = async (route, app) => {
             if (!existing) return notFound();
             if (change.peopleOnly !== undefined && isAgentToken(principal))
                 throw new RequestError("only people can change note visibility", 403);
+            if (
+                change.visibility !== undefined &&
+                existing.annotation.createdBy !== feedbackActorId(principal)
+            )
+                throw new RequestError(
+                    "only the person who created this feedback can change its visibility",
+                    403
+                );
+            if (change.visibility !== undefined && isAgentToken(principal))
+                throw new RequestError("only a person can change feedback visibility", 403);
             // One update: a refused status change must not leave the severity or comment changed behind it.
             const updated = await backend.update(
                 id,
@@ -412,6 +457,7 @@ export const annotationRoutes: Routes = async (route, app) => {
                     comment: change.comment,
                     note: change.status ? change.note : undefined,
                     peopleOnly: change.peopleOnly,
+                    visibility: change.visibility,
                 },
                 author(change.author)
             );
@@ -491,19 +537,25 @@ export const annotationRoutes: Routes = async (route, app) => {
     }
 
     const asset = match(/^\/assets\/([^/]+)$/);
-    if (asset && method === "GET") return screenshot(asset[0] ?? "", principal, app);
+    if (asset && method === "GET")
+        return screenshot(asset[0] ?? "", principal, app, filterFromQuery(query).feedbackScope);
 
     return null;
 };
 
 /** `GET /assets/:id`: a screenshot, for whoever may read a note that shows it, and for nobody once no note does. */
-async function screenshot(id: string, principal: Principal, app: AppContext): Promise<Response> {
+async function screenshot(
+    id: string,
+    principal: Principal,
+    app: AppContext,
+    feedbackScope?: AnnotationFilter["feedbackScope"]
+): Promise<Response> {
     if (principal.developmentContextId || isAgentToken(principal)) {
-        const items = await app.backend.list(forReader(principal));
+        const items = await app.backend.list(forReader(principal, { feedbackScope }));
         if (!items.some(({ annotation }) => annotationAssets(annotation).some((r) => r?.id === id)))
             return notFound();
     }
-    const owners = await app.backend.projectsWithAsset(id, forReader(principal));
+    const owners = await app.backend.projectsWithAsset(id, forReader(principal, { feedbackScope }));
     if (!owners.some((p) => canAccessProject(principal, p))) return notFound();
     const asset = await app.backend.asset(id);
     if (!asset) return notFound();

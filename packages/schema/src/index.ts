@@ -4,6 +4,8 @@ import { z } from "zod";
 export const SCHEMA_VERSION = 1 as const;
 
 export const Mode = z.enum(["dev", "test", "agent"]);
+/** Who can read feedback inside a project. Missing visibility on older records means shared. */
+export const FeedbackVisibility = z.enum(["personal", "shared"]);
 export const Severity = z.enum(["blocker", "major", "minor", "nit"]);
 /**
  * What the person wants done. `fix`: something is broken. `change`: it works but should be different. `question`:
@@ -125,6 +127,8 @@ export const Reply = z.object({
      * Carried here, rather than read from the text, so the server can tell what happened.
      */
     peopleOnly: z.boolean().optional(),
+    /** Automatic audit entry for an explicit feedback visibility change. */
+    visibility: z.enum(["personal", "shared"]).optional(),
 });
 
 /**
@@ -217,6 +221,22 @@ export const Annotation = z.object({
     projectId: z.string(),
     /** Server-owned work grouping; capture clients cannot choose it. */
     workId: z.string().max(400).optional(),
+    /** Personal feedback belongs to its server-authenticated creator; shared feedback is visible to project members. */
+    visibility: FeedbackVisibility.optional(),
+    /** A persistent review session; its content has its own access checks. */
+    sessionId: SafeId.optional(),
+    /** Kept on a loopback development server and never accepted by a shared/cloud server. */
+    localOnly: z.literal(true).optional(),
+    /** Set by the server from the authenticated principal, never trusted from a capture client. */
+    createdBy: z.string().max(200).optional(),
+    /** The test-mode bundle this note belongs to, including the tester's session focus. */
+    feedbackSession: z
+        .object({
+            id: SafeId,
+            name: z.string().trim().min(1).max(120),
+            description: z.string().trim().max(4000).optional(),
+        })
+        .optional(),
     /** null in dev mode */
     bundleId: z.string().nullable(),
     author: Author,
@@ -291,6 +311,13 @@ export const Bundle = z.object({
     /** ISO 8601: when the tester packaged it. Any precision, but not a fraction of a second that never ends. */
     createdAt: z.iso.datetime({ offset: true }).max(64),
     author: z.object({ name: z.string().max(BUNDLE_NAME_MAX).optional() }),
+    /** Test bundles are review sessions: this is a human-readable title and agent focus, not an auth session. */
+    session: z
+        .object({
+            name: z.string().trim().min(1).max(120),
+            description: z.string().trim().max(4000).optional(),
+        })
+        .optional(),
     appName: z.string().max(BUNDLE_NAME_MAX).optional(),
     appVersion: z.string().max(BUNDLE_NAME_MAX).optional(),
     annotations: z.array(Annotation),
@@ -298,6 +325,7 @@ export const Bundle = z.object({
 });
 
 export type Mode = z.infer<typeof Mode>;
+export type FeedbackVisibility = z.infer<typeof FeedbackVisibility>;
 export type Severity = z.infer<typeof Severity>;
 export type Intent = z.infer<typeof Intent>;
 export type VariantOption = z.infer<typeof VariantOption>;

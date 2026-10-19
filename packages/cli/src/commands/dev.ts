@@ -1,4 +1,3 @@
-import { resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import {
@@ -8,12 +7,6 @@ import {
     RemoteBackend,
     runDev,
 } from "@notato/server";
-import {
-    connectionRoot,
-    selectedConnection,
-    verifyConnection,
-    watchConnection,
-} from "../connection.ts";
 import { parsePort, wantsTunnel } from "../options.ts";
 import { stopOnSignals } from "../process.ts";
 
@@ -35,7 +28,6 @@ handed only their notes and never works on another app's (\`npx notato init\` wr
 Options:
       --server <url>    Connect this local agent to an existing server over HTTPS; no local fallback
       --token <token>   Agent credential (prefer $NOTATO_AGENT_TOKEN)
-      --connection-root <path>  Read this checkout's private connection profile (default current checkout)
   -p, --port <n>        Port to bind (default ${DEFAULT_PORT}, or $NOTATO_PORT)
   -d, --dir <path>      Data directory (default ./.notato, or $NOTATO_DIR)
   -c, --config <path>   Settings file (default ./notato.config.json, or $NOTATO_CONFIG); see \`notato config\`
@@ -60,7 +52,6 @@ export async function runDevCommand(argv: string[], version: string): Promise<nu
         options: {
             server: { type: "string" },
             token: { type: "string" },
-            "connection-root": { type: "string" },
             port: { type: "string", short: "p" },
             dir: { type: "string", short: "d" },
             config: { type: "string", short: "c" },
@@ -75,54 +66,7 @@ export async function runDevCommand(argv: string[], version: string): Promise<nu
         console.error(HELP);
         return 0;
     }
-    const root = connectionRoot(resolve(values["connection-root"] ?? process.cwd()));
-    const profile = selectedConnection(root);
-    if (
-        profile &&
-        (values.server ||
-            values.token ||
-            values.tunnel ||
-            values.standalone ||
-            values["no-mcp"] ||
-            values.dir ||
-            values.config)
-    )
-        throw new Error(
-            "This checkout has a connection profile. Use notato dev without manual server, credential or local-runtime overrides; select the destination with notato connection use."
-        );
-    if (
-        profile &&
-        values.port &&
-        Number(values.port) !== Number(new URL(profile.server).port || 80)
-    )
-        throw new Error(
-            "The port differs from the checkout profile. Update the local connection profile."
-        );
-    if (profile) {
-        await verifyConnection(profile);
-        if (JSON.stringify(selectedConnection(root)) !== JSON.stringify(profile))
-            throw new Error("Connection changed during verification. Restart the MCP connection.");
-        console.error(
-            `[notato] ${profile.name} · ${profile.server}${profile.context ? ` · ${profile.context.name}` : ""}`
-        );
-        if (profile.mode === "remote") {
-            values.server = profile.server;
-            values.token = profile.agentToken;
-        }
-    }
-    const projects = profile?.project ? [profile.project] : parseProjects(values.project);
-    const followProfile = (close: () => Promise<void>) => {
-        let stopping = false;
-        const off = watchConnection(root, () => {
-            if (stopping) return;
-            stopping = true;
-            off();
-            console.error(
-                "[notato] Checkout connection changed. Stop previous edits and reconnect Notato MCP before continuing."
-            );
-            void close().finally(() => process.exit(0));
-        });
-    };
+    const projects = parseProjects(values.project);
     if (values.server) {
         const url = new URL(values.server);
         if (
@@ -154,7 +98,6 @@ export async function runDevCommand(argv: string[], version: string): Promise<nu
             },
         });
         await mcp.connect(new StdioServerTransport());
-        followProfile(() => mcp.close());
         stopOnSignals(() => mcp.close());
         return 0;
     }
@@ -164,7 +107,7 @@ export async function runDevCommand(argv: string[], version: string): Promise<nu
             "--project keeps one agent's MCP to some projects, and --standalone has none: point each agent at /mcp?project=<id> instead"
         );
     }
-    const port = profile ? Number(new URL(profile.server).port || 80) : parsePort(values.port);
+    const port = parsePort(values.port);
     const standalone = values.standalone === true;
     if (values["no-mcp"] && !standalone) {
         throw new Error(
@@ -173,15 +116,14 @@ export async function runDevCommand(argv: string[], version: string): Promise<nu
     }
     const dev = await runDev({
         port,
-        dir: values.dir ?? (profile ? resolve(root, ".notato") : undefined),
-        configFile: values.config ?? (profile ? resolve(root, "notato.config.json") : undefined),
+        dir: values.dir,
+        configFile: values.config,
         version,
-        tunnel: profile ? false : wantsTunnel(values.tunnel),
+        tunnel: wantsTunnel(values.tunnel),
         stdio: !standalone,
         mcp: values["no-mcp"] ? false : undefined,
         projects,
     });
-    followProfile(() => dev.close());
     if (standalone) {
         if (dev.role !== "primary") {
             await dev.close();

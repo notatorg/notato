@@ -1,5 +1,5 @@
 import type { NotatoController, NotatoProps } from "@notato/browser";
-import { applyEnvironment, type NotatoEnvironment, notatoEnvironment } from "@notato/browser/env";
+import { type NotatoEnvironment, notatoEnvironment } from "@notato/browser/env";
 import { useEffect, useRef } from "react";
 
 /**
@@ -52,7 +52,7 @@ export function wantsToolbar(props: NotatoProps, env: NotatoEnvironment): boolea
 
 /** The props the toolbar starts with: the server the environment names, where it names one, over `server`. */
 export function startProps(props: NotatoProps, env: NotatoEnvironment): NotatoProps {
-    return applyEnvironment(props, env);
+    return env.server ? { ...props, server: env.server } : props;
 }
 
 /**

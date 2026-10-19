@@ -53,6 +53,8 @@ export interface NoteInput {
     intent?: Intent;
     severity?: Severity;
     peopleOnly?: boolean;
+    visibility?: "personal" | "shared";
+    sessionId?: string;
     steps?: AgentStep[];
     /** The number on the pin, also drawn on the screenshot. */
     pin: number;
@@ -121,6 +123,8 @@ export function buildAnnotation(input: NoteInput): Annotation {
         bundleId: null,
         author,
         mode: input.mode ?? "dev",
+        visibility: input.visibility ?? (input.mode === "test" ? "shared" : "personal"),
+        sessionId: input.sessionId,
         createdAt: (input.now ?? new Date()).toISOString(),
         url: appUrl(input.appName, input.route),
         route: input.route,

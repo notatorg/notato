@@ -9,13 +9,19 @@ export interface PackageDialogInit {
     /** The server the bundle is also sent to, if one is configured. */
     destination: string | null;
     name: string;
+    session?: boolean;
     /**
      * Whether to offer to remove the notes from this browser once they are downloaded. Not where they live on a server,
      * which would only send them back.
      */
     clearable?: boolean;
     /** Resolves with a message to show on success; rejects with the reason to show on failure. */
-    onSubmit(value: { name: string; clear: boolean }): Promise<string>;
+    onSubmit(value: {
+        name: string;
+        clear: boolean;
+        sessionName?: string;
+        description?: string;
+    }): Promise<string>;
     onCancel(): void;
 }
 
@@ -71,6 +77,19 @@ export function createPackageDialog(layer: HTMLElement): PackageDialog {
                 "aria-label": "Your name",
             });
             const clear = h("input", { type: "checkbox", id: "notato-clear" });
+            const sessionName = h("input", {
+                type: "text",
+                value: "Test session",
+                placeholder: "e.g. Checkout test, build 42",
+                "aria-label": "Test session name",
+                maxlength: "120",
+            });
+            const description = h("textarea", {
+                placeholder: "What should the agent focus on?",
+                "aria-label": "Test session focus",
+                rows: 3,
+                maxlength: "4000",
+            });
             const status = h("span", { class: "status" });
             const cancel = h(
                 "button",
@@ -89,6 +108,12 @@ export function createPackageDialog(layer: HTMLElement): PackageDialog {
                     status.textContent = await init.onSubmit({
                         name: name.value.trim(),
                         clear: clear.checked,
+                        ...(init.session
+                            ? {
+                                  sessionName: sessionName.value.trim(),
+                                  description: description.value.trim(),
+                              }
+                            : {}),
                     });
                     cancel.textContent = "Close";
                     closeTimer = setTimeout(() => init.onCancel(), 2200);
@@ -117,6 +142,19 @@ export function createPackageDialog(layer: HTMLElement): PackageDialog {
                     `${plural(init.count, "annotation")} on ${plural(init.routes, "page")}. A .zip with the screenshots and a feedback.md will download${init.destination ? ` and be sent to ${init.destination}` : ""}.`
                 ),
                 h("label", { class: "field" }, "Your name", name),
+                init.session
+                    ? h(
+                          "div",
+                          { class: "session-fields" },
+                          h("label", { class: "field" }, "Test session", sessionName),
+                          h(
+                              "label",
+                              { class: "field" },
+                              "Focus for the agent (optional)",
+                              description
+                          )
+                      )
+                    : null,
                 init.clearable === false
                     ? null
                     : h(

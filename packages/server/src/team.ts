@@ -59,14 +59,19 @@ export const workView = (work: WorkRecord): WorkRecord => ({
     ...work,
     ...(work.claim ? { claim: { ...work.claim, session: "reserved" } } : {}),
 });
-export type TeamRecord = DevelopmentContext | WorkRecord;
+export type TeamRecord =
+    | DevelopmentContext
+    | WorkRecord
+    | import("./collaboration.ts").ProjectAccess
+    | import("./collaboration.ts").ReviewSession;
+export type RecordKind = "context" | "work" | "project" | "review-session";
 export interface CoordinationStore {
     get(id: string): Promise<TeamRecord | null>;
-    list(project: string, kind: "context" | "work"): Promise<TeamRecord[]>;
+    list(project: string, kind: RecordKind): Promise<TeamRecord[]>;
     change<T extends TeamRecord>(
         id: string,
         project: string,
-        kind: "context" | "work",
+        kind: RecordKind,
         mutate: (current: T | null) => T
     ): Promise<T>;
 }
@@ -116,7 +121,7 @@ export class TeamCoordinator {
     }
     async context(id: string) {
         const record = await this.records.get(id);
-        return record && "owner" in record ? record : null;
+        return record && "owner" in record && "archived" in record ? record : null;
     }
     async work(id: string) {
         const record = await this.records.get(id);
@@ -310,16 +315,7 @@ export function teamBackend(
             throw new RequestError("Checkout connection revoked.", 403);
         if (!stored || stored.annotation.peopleOnly) return null;
         const work = store.coordination ? await teams.work(workId(stored.annotation)) : null;
-        return (
-            contextId
-                ? work?.contextId === contextId
-                : !work &&
-                  (!store.coordination ||
-                      (await teams.records.list(stored.annotation.projectId, "context")).length ===
-                          0)
-        )
-            ? stored
-            : null;
+        return (contextId ? work?.contextId === contextId : !work?.contextId) ? stored : null;
     };
     const mutation = async <T>(id: string, run: () => Promise<T>) => {
         const stored = await allowed(await inner.get(id));
@@ -334,6 +330,22 @@ export function teamBackend(
         return withWorkPermit({ contextId, session, version: claim.version, credentialId }, run);
     };
     return {
+        listReviewSessions: async (project, actor) => {
+            await valid();
+            return (await inner.listReviewSessions?.(project, actor)) ?? [];
+        },
+        getReviewSession: async (id, actor) => {
+            await valid();
+            const result = await inner.getReviewSession?.(id, actor);
+            if (!result) return null;
+            const items: StoredAnnotation[] = [];
+            for (const item of result.items) if (await allowed(item)) items.push(item);
+            return { ...result, items };
+        },
+        replyReviewSession: async (id, actor, body, author) => {
+            await valid();
+            return (await inner.replyReviewSession?.(id, actor, body, author)) ?? null;
+        },
         list: async (filter = {}) => {
             await valid();
             return inner.list({

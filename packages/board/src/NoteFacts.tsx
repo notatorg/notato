@@ -118,6 +118,17 @@ export function MoreFacts({ annotation: a }: { annotation: Annotation }) {
                             </dd>
                         </>
                     ) : null}
+                    {a.feedbackSession ? (
+                        <>
+                            <dt>Test session</dt>
+                            <dd>
+                                <strong>{a.feedbackSession.name}</strong>
+                                {a.feedbackSession.description ? (
+                                    <p>{a.feedbackSession.description}</p>
+                                ) : null}
+                            </dd>
+                        </>
+                    ) : null}
                     {target?.testId ? (
                         <>
                             <dt>Test id</dt>

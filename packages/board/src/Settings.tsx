@@ -13,6 +13,7 @@ import {
     setSetting,
     type WebhookView,
 } from "./api.ts";
+import { LocalPassword, LocalUsers } from "./LocalUsers.tsx";
 import { capitalise, duration, plural } from "./model.ts";
 import { KEYS, setBoardName, useBoardName, useRemembered } from "./storage.ts";
 import { TestDialog } from "./TestPanel.tsx";
@@ -121,6 +122,7 @@ export function Settings({
                             <p>Preferences for this browser.</p>
                         </div>
                     </header>
+                    <LocalPassword />
                     <BrowserPreferences accountName={accountName} />
                     <AccountSection name={accountName} onSignOut={onSignOut} />
                 </div>
@@ -146,6 +148,8 @@ export function Settings({
         <div className="sheet">
             <div className="sheet-inner settings">
                 {head}
+                <LocalPassword />
+                <LocalUsers />
 
                 {view.error ? (
                     <div className="banner bad" role="alert">

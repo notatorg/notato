@@ -19,6 +19,8 @@ import type {
 export interface PipelineConfig {
     mode: Mode;
     projectId: string;
+    sessionId?: string;
+    localOnly?: boolean;
     appName?: string;
     appVersion?: string;
     /**
@@ -50,6 +52,8 @@ const CAPTURE_FIELDS = ["screenshots", "steps", "route"] as const;
 export function createPipeline(config: PipelineConfig): Pipeline {
     const warn = config.onWarn ?? (() => {});
     let counter = 0;
+    const testSession =
+        config.mode === "test" ? (config.sessionId ?? "review_" + ulid()) : config.sessionId;
 
     const resolveIdentity = (el: Element): ElementIdentity => {
         const merged: Partial<ElementIdentity> = {};
@@ -101,6 +105,7 @@ export function createPipeline(config: PipelineConfig): Pipeline {
                 id,
                 number,
                 projectId: config.projectId,
+                visibility: input.visibility ?? (mode === "test" ? "shared" : "personal"),
                 mode,
                 author:
                     input.author ??
@@ -181,6 +186,9 @@ export function createPipeline(config: PipelineConfig): Pipeline {
             const annotation = Annotation.parse({
                 id,
                 projectId: draft.projectId,
+                visibility: draft.visibility,
+                sessionId: input.sessionId ?? testSession,
+                ...((input.localOnly ?? config.localOnly) ? { localOnly: true } : {}),
                 bundleId: null,
                 author: draft.author,
                 mode,

@@ -35,6 +35,7 @@ async function setup() {
         (
             await auth.issueToken("shop", purpose, {
                 developmentContextId: contextId,
+                createdBy: "local",
                 purpose,
                 permission: purpose === "app" ? "capture" : "full",
             })
@@ -221,6 +222,8 @@ describe("checkout ownership", () => {
         };
         const n = await s.note("live-pin", c.id),
             agent = teamBackend(s.backend, s.store, c.id, async () => {}, pair.agent.id);
+        // Paired credentials belong to the checkout owner, as a real capture would.
+        await s.store.updateAnnotation(n.id, (current) => ({ ...current, createdBy: c.owner }));
         await agent.claimWork!(n.id, "claim");
         await agent.setStatus(n.id, "resolved");
         const read = await s.call(`/annotations/${n.id}`, "GET", undefined, pair.capture.token);

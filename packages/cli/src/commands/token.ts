@@ -70,11 +70,13 @@ export async function runTokenCommand(argv: string[]): Promise<number> {
             )
                 throw new Error("--purpose is app or agent");
             const days = values.expires === undefined ? undefined : Number(values.expires);
+            const identity = await tokenIdentity(store);
             const { token, record } = await auth
                 .issueToken(arg, name, {
                     purpose: values.purpose,
                     permission: values["capture-only"] ? "capture" : undefined,
                     expiresInDays: days,
+                    createdBy: identity,
                 })
                 .catch((error) => {
                     if (!(error instanceof UnknownProjectError)) throw error;
@@ -99,6 +101,7 @@ export async function runTokenCommand(argv: string[]): Promise<number> {
                         tokenPurpose(t) + (t.permission === "capture" ? " (capture only)" : ""),
                         JSON.stringify(t.name),
                         t.createdAt,
+                        t.createdBy ? `as ${JSON.stringify(t.createdBy)}` : "",
                         t.lastUsedAt ? `used ${t.lastUsedAt}` : "never used",
                         t.expiresAt ? `expires ${t.expiresAt}` : "",
                         t.revokedAt ? "REVOKED" : "",
@@ -117,4 +120,11 @@ export async function runTokenCommand(argv: string[]): Promise<number> {
     } finally {
         store.close();
     }
+}
+
+/** App and agent credentials for one person must share a server-set creator identity. */
+async function tokenIdentity(store: SqliteStore): Promise<string> {
+    const configured = process.env.NOTATO_ADMIN_USER?.trim();
+    if (configured) return configured;
+    return (await store.getUser("admin")) ? "admin" : "local";
 }

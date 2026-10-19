@@ -133,7 +133,7 @@ internal sealed partial class NotatoOverlay
         ComposerCard card = new(selection.Title, selection.Subtitle, screenshotsOff,
             onParent: () => _controller.SelectParent(_session),
             onCancel: CloseSheet,
-            onSend: (comment, intent, severity, peopleOnly) => _controller.SubmitAsync(_session, comment, intent, severity, peopleOnly));
+            onSend: (comment, intent, severity, peopleOnly, shared) => _controller.SubmitAsync(_session, comment, intent, severity, peopleOnly, shared), sharedByDefault: _controller.Mode == NotatoMode.Test);
         card.SetMentions(_controller.AvailableMentions);
         ShowSheet(card, dim: false);
     }

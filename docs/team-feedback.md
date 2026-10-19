@@ -1,44 +1,81 @@
-# Checkout contexts and review ownership
+# Personal feedback, teams and review sessions
 
-A project is one app or repository. Give each developer/worktree its own checkout in **Team and checkouts**.
-Connecting the first checkout enables team queues for the project: older project-wide agents stop receiving its
-work. Existing feedback stays visible in the shared inbox; deliberately assign it instead of guessing its owner.
-The ordinary account-free local loop continues to work on projects that have no checkout contexts.
+One project represents the app or repository. Everyone uses its project ID and SDK configuration, with their own App and Agent credentials kept in their local environment. There are no connection profiles or checkout-specific launch commands.
 
-Create a checkout, then **Set up app and agent** to generate two credentials. Download/import its
-[checkout connection profile](connection-profiles.md) to configure the app and agent together and switch between
-Local and Cloud. The following manual setup remains available when no profile is selected. The app key can capture, read and reply to feedback only in that checkout; it cannot drive MCP. It goes in the SDK's
-`token` option; its `server` is the same origin as the board. Keep the agent key in `NOTATO_AGENT_TOKEN` and use
-this MCP command locally:
+## Dev and Test
 
-```sh
-npx notato dev --server https://your-notato-server.example --project your-project
+**Dev defaults to personal feedback.** It syncs to the configured server, where only its authenticated creator can read it. The creator’s agent starts in Mine. Choose **Share with project** in the composer or board when a teammate should take part. Adding members, moving a project to a team and sharing a session never change an annotation’s visibility automatically.
+
+**Test defaults to shared feedback.** With a server configured, notes arrive live in a persistent review session from the start of the testing run. Without a server, Test keeps notes on the device and can export a zip. Importing that zip preserves grouping. A tester can name the session, set the focus, branch and environment, discuss the group, and close the session when the pass is finished. A closed session refuses new captures; start a new run or reopen it.
+
+All SDK composers offer **Share with project**. Its initial state follows Dev/Test. **People only** remains a separate switch: agents cannot read the annotation or conversation while it is on, even if the annotation is shared.
+
+| Persona | Workflow |
+| --- | --- |
+| Solo developer | Use the local server with no account, or Cloud with personal credentials. Capture in Dev; the agent’s Mine queue contains only that person’s personal feedback. |
+| Developer in a team | Use the same project ID as colleagues, authenticate independently, and share particular notes when ready. Personal exploration stays private. |
+| Tester | Use Test for a shared testing pass. The live session groups its feedback immediately; name it and describe the focus in Review sessions. Offline packaging remains available. |
+| Developer picking up QA results | Open a shared session or make a manual review group, then use Copy agent handoff. The agent reads that session’s focus, conversation and accessible notes. |
+| Team lead collecting related work | Add accessible feedback from several testing runs to a review session. This creates links; original testing sessions and note ownership stay intact. |
+
+## Visibility and groups
+
+The board offers **All accessible**, **Mine** and **Shared**. Mine means personal annotations belonging to the current authenticated creator. Shared means feedback visible to project members. All accessible combines those two; it never includes another person’s private feedback.
+
+Review sessions have independent personal/shared visibility and their own conversations. A private session can contain a shared annotation. Someone who can read that annotation still cannot read the private session, its description, conversation or other annotations. Sharing a session exposes its own description and conversation, and only annotations the viewer is separately allowed to read. Raw membership lists never disclose the IDs of inaccessible personal notes.
+
+Use **Review sessions** to create a manual group, add existing accessible feedback, and describe the task. Feedback can appear in its original testing run and in additional manual groups. Each annotation retains its own status and thread. The existing grouped-review composer is also useful when several selected targets should receive one consistent UI change.
+
+Withdrawing a shared note removes it from teammates’ live boards. Sharing an older personal note deliberately wakes the shared agent queue even if the agent already passed that note’s original sequence number. Visibility changes are recorded in the note’s thread.
+
+## Agent handoff
+
+Ordinary agent access starts in Mine. Identity comes from authentication, not a user ID supplied by an MCP caller. Every direct read, mutation, screenshot, export and event applies the same privacy rules.
+
+```ts
+notato_list_open({ projectId: "proj_checkout" }); // Mine
+notato_list_open({ projectId: "proj_checkout", scope: "shared" });
+notato_list_open({ projectId: "proj_checkout", scope: "all" });
 ```
 
-This connects the local agent to the selected server without starting a second server or silently falling back
-when it is unavailable. Loopback HTTP is supported for local contexts. Local servers must remain running while
-an agent connects remotely to them. The same public capture/MCP contracts are available to managed deployments.
-Secrets belong in ignored environment files or an agent's secret environment, never in Git. Keys expire after
-90 days by default and count toward a deployment's existing key allowance.
+For a review handoff, use **Copy agent handoff**, or select a specific session:
 
-Capture is bound to the context in its credential. A client-supplied reviewer name, branch, URL or work ID cannot
-select another queue. Human board access stays at the project/workspace boundary: checkout queues do not hide
-feedback from teammates. An unassigned shared review reaches no checkout agent until a person assigns it. Related
-review targets move together; one developer may have several worktrees and therefore several checkout connections.
+```ts
+notato_list_review_sessions({ projectId: "proj_checkout", scope: "shared" });
+notato_get_review_session({ id: "review_abc" });
+notato_list_open({ sessionId: "review_abc" });
+notato_watch({ sessionId: "review_abc" });
+notato_reply_review_session({ id: "review_abc", body: "I’ll fix keyboard navigation first." });
+```
 
-Agents call `notato_claim` before editing/acknowledging/replying. A persisted atomic claim reserves the entire review.
-They renew it with `notato_heartbeat` at least every two minutes, and stop editing before `notato_release`. Only one
-session can hold a review. Five-minute lease expiry requires explicit human recovery because the old agent may
-still be editing files. Assignment/recovery changes the claim version; late status updates and replies fail even
-if an agent still has the old note cached. Record the actual branch and full commit with `notato_record_resolution`.
-That records a fix on that branch; it does not assert verification or merge.
+Selecting a session explicitly includes its accessible shared feedback and keeps subsequent work within that group. It never gives the agent access to someone else’s personal notes. Calling the ordinary list/watch again without a session returns to Mine unless another scope is explicitly supplied.
 
-Board members can take shared work for their own checkout and release their own assignments. Deployment managers
-can reassign across developers. Archiving a checkout stops its credentials and existing agent sessions; create a
-new checkout to reconnect. Offline bundle imports are refused for context-bound capture keys; use live capture
-for a checkout review. Unscoped tester bundles remain shared and can be assigned on the board.
+Checkout assignment is optional. It reserves work explicitly assigned to a checkout; merely configuring a checkout no longer disables the ordinary developer loop for the rest of the project. Personal feedback can only be assigned to its creator’s checkout.
 
-SQLite schema 8 adds private context/work records and token bindings. Existing feedback is retained. Keep a
-pre-upgrade backup with the matching binary before upgrading a self-managed service. Older builds reject the newer
-schema; rollback requires that saved database. Contexts are not extra projects. Coordination handles Notato work
-ownership; ordinary Git review and merging still handle conflicts between source changes.
+## Project ownership and membership
+
+New projects belong to their creator. Add existing collaborators in **Project settings → Project members**, or use Cloud’s email-bound project invitation links. A project invitation grants that project’s shared feedback, rather than unrelated workspace projects. Verified invitees sign in themselves and accept the link; the application does not automatically send invitation emails.
+
+Project owners/admins manage project members. Workspace owners/admins can manage projects in their workspace, while annotation privacy still applies to them. Project ownership can be handed to another current project member without recreating the project.
+
+To move from an individual workspace to a team, choose **Move to a workspace you manage** in Cloud project settings. The project ID, feedback creators, visibility, sessions and conversations are retained. The destination must have capacity, and the caller must manage both the source project and destination workspace. Old App/Agent credentials are revoked; plugin actions are archived and automatic workflows stop, so credentials for the old workspace cannot keep exporting feedback. Running or uncertain plugin operations must be reconciled before moving. Reconnect the project from the destination workspace.
+
+Existing projects without explicit membership records retain their previous workspace-wide access. A project-scoped invitation does not grant an invitee access to those legacy workspace projects. Removing a collaborator revokes their project access; their personal notes remain personal. Workspace offboarding also revokes personal credentials and sessions and removes project memberships. Any project they individually owned in that team is retained under the workspace’s ownership, without sharing their personal feedback.
+
+## Self-hosted teams and local-only feedback
+
+The account-free loopback server remains a single-person local workflow. A self-hosted shared server supports independent accounts: its administrator creates member accounts in **Settings → Server accounts**, then adds each person to the relevant projects. Members log in normally, create their own App/Agent credentials, and can change their own password. Password changes revoke existing browser sessions.
+
+For feedback that must stay on this computer, choose **Keep feedback local to this computer** in the browser toolbar’s settings. The toolbar switches to the loopback development server, drops Cloud credentials, disables external delivery sinks and marks new notes local-only. The local MCP server reads that feedback. Choosing the configured server again affects future capture; earlier local-only feedback stays on the local server. The choice lasts for the browser tab’s session.
+
+Applications can also set `localOnly: true` and an optional loopback `localServer` in the browser/React/Angular SDK. A shared or Cloud server refuses local-only annotations and bundles, including manually uploaded exports. Native apps can continue using a local development server or device-only offline storage; their composers now expose the same personal/shared choice.
+
+## Compatibility and integrations
+
+Deploy the updated server alongside these SDKs before relying on personal visibility. Older servers do not enforce this privacy model. Older annotations without visibility remain Shared because their creator cannot be established reliably. Older project/service credentials intentionally act as a shared identity and should not be used for per-developer privacy. New project-creation credentials belong to the creator; teammates issue personal credentials from their own account.
+
+Project-level webhooks and automatic Cloud workflows receive Shared feedback only. A creator can explicitly send their own private note to a plugin using a manual action. Turning a note back to personal prevents pending automatic deliveries from disclosing it; previously completed external deliveries cannot be recalled.
+
+## Developing both repositories
+
+Shared code belongs in the public repository first. Until that commit is published and the hosted submodule can be advanced, run `bun scripts/verify-local-core.ts` from the hosted repository. It copies the current public and hosted sources into a disposable validation checkout, reuses installed dependencies, and runs typechecking and Cloud tests without changing the pinned `core/` checkout. `--types-only` and `--test=cloud/server/test/project-collaboration.test.ts` support focused checks.

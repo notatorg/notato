@@ -13,6 +13,7 @@ import {
     SqliteStore,
 } from "../src/index.ts";
 import {
+    annotationFixture,
     cleanupAfterEach,
     connectMcp,
     makeApp,
@@ -427,7 +428,17 @@ describe("a bundle's id and record", () => {
 
     it("lists the newest bundles, as many as asked for and never more than 500", async () => {
         ctx = makeApp();
-        for (let n = 0; n < 501; n++)
+        await ctx.backend.createProject("checkout-web");
+        for (let n = 0; n < 501; n++) {
+            await ctx.backend.ingest(
+                annotationFixture({
+                    projectId: "checkout-web",
+                    mode: "test",
+                    screenshots: undefined,
+                }),
+                new Map(),
+                { bundleId: `B${String(n).padStart(3, "0")}` }
+            );
             await ctx.store.insertBundle({
                 id: `B${String(n).padStart(3, "0")}`,
                 projectId: "checkout-web",
@@ -436,6 +447,7 @@ describe("a bundle's id and record", () => {
                 annotationCount: 1,
                 importedAt: new Date(Date.UTC(2026, 9, 5, 0, 0, n)).toISOString(),
             });
+        }
         const list = async (query = "") =>
             (
                 (await (await ctx.call(`/projects/checkout-web/bundles${query}`)).json()) as {
@@ -563,7 +575,7 @@ describe("notato_import_bundle", () => {
         expect(result.content[0]?.text).toContain("2 new annotations");
         expect(result.content[0]?.text).toContain(bundle.id);
 
-        const listed = await t.call("notato_list_open", { bundleId: bundle.id });
+        const listed = await t.call("notato_list_open", { bundleId: bundle.id, scope: "shared" });
         expect(listed.content[0]?.text).toContain("tester note 1");
         expect(listed.content[0]?.text).toContain("tester note 2");
         const again = await t.call("notato_import_bundle", { path: file });

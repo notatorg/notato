@@ -97,11 +97,21 @@ export class WatchSession {
     /** By note id, the id of the latest word the agent was handed. */
     private readonly handedFollowUps = new Map<string, string>();
 
-    constructor(private readonly backend: Backend) {}
+    constructor(
+        private readonly backend: Backend,
+        private readonly feedbackFilter: () => Pick<
+            AnnotationFilter,
+            "feedbackScope" | "feedbackActorId" | "sessionId"
+        > = () => ({})
+    ) {}
+
+    private scoped(filter: AnnotationFilter): AnnotationFilter {
+        return { ...filter, ...this.feedbackFilter() };
+    }
 
     /** Open notes this session has not been handed. */
     newNotes(projects: Projects): AnnotationFilter {
-        return {
+        return this.scoped({
             projectId: projects,
             status: "open",
             afterSeq: this.cursor,
@@ -109,17 +119,19 @@ export class WatchSession {
             peopleOnly: false,
             // `notato doctor` checks the server with a note it deletes at once: it is nobody's work to wake for.
             diagnostic: false,
-        };
+        });
     }
 
     /** Requested reverts this session has not been told about yet, or that the person has written to again. */
     async pendingReverts(projects: Projects): Promise<StoredAnnotation[]> {
         // Every one: a cap would fill with requests already handed over and hide newer ones.
-        const requested = await this.backend.list({
-            projectId: projects,
-            status: "revert_requested",
-            peopleOnly: false,
-        });
+        const requested = await this.backend.list(
+            this.scoped({
+                projectId: projects,
+                status: "revert_requested",
+                peopleOnly: false,
+            })
+        );
         forgetGone(this.handedReverts, projects, requested);
         return requested.filter(
             (r) => this.handedReverts.get(r.annotation.id)?.key !== revertKey(r)
@@ -128,11 +140,13 @@ export class WatchSession {
 
     /** Picks the person has made that this session has not been told about yet (or has made again). */
     async pendingChoices(projects: Projects): Promise<StoredAnnotation[]> {
-        const chosen = await this.backend.list({
-            projectId: projects,
-            status: "variant_chosen",
-            peopleOnly: false,
-        });
+        const chosen = await this.backend.list(
+            this.scoped({
+                projectId: projects,
+                status: "variant_chosen",
+                peopleOnly: false,
+            })
+        );
         forgetGone(this.handedChoices, projects, chosen);
         return chosen.filter(
             (c) => this.handedChoices.get(c.annotation.id)?.key !== choiceKey(c) && !superseded(c)
@@ -148,13 +162,15 @@ export class WatchSession {
     async pendingFollowUps(projects: Projects): Promise<StoredAnnotation[]> {
         // Only what ends with something the person wrote, however old the note: no cap that newer ones fall past.
         // Not what an agent was handed already, in this session or any before it: a follow-up is delivered once.
-        const items = await this.backend.list({
-            projectId: projects,
-            status: FOLLOW_UP_STATUSES,
-            lastReplyBy: "human",
-            peopleOnly: false,
-            unhanded: true,
-        });
+        const items = await this.backend.list(
+            this.scoped({
+                projectId: projects,
+                status: FOLLOW_UP_STATUSES,
+                lastReplyBy: "human",
+                peopleOnly: false,
+                unhanded: true,
+            })
+        );
         return items.filter(
             (s) =>
                 // A pick recorded without a note is something the person did, not something they said.
@@ -176,7 +192,9 @@ export class WatchSession {
     /** How much is waiting, new notes included: only whether it grows matters, so it stops counting past `MAX_NEW`. */
     async waiting(projects: Projects): Promise<number> {
         const { undo, picks, followUps } = await this.pending(projects);
-        const fresh = await this.backend.list({ ...this.newNotes(projects), limit: MAX_NEW + 1 });
+        const fresh = await this.backend.list(
+            this.scoped({ ...this.newNotes(projects), limit: MAX_NEW + 1 })
+        );
         return fresh.length + undo.length + picks.length + followUps.length;
     }
 
@@ -189,24 +207,24 @@ export class WatchSession {
         signal.addEventListener("abort", stop);
         try {
             const waits = [
-                this.backend.waitForNew(this.newNotes(projects), sliceMs, done.signal),
+                this.backend.waitForNew(this.scoped(this.newNotes(projects)), sliceMs, done.signal),
                 this.backend.waitForNew(
-                    {
+                    this.scoped({
                         projectId: projects,
                         status: "revert_requested",
                         peopleOnly: false,
                         excludeIds: [...this.handedReverts.keys()],
-                    },
+                    }),
                     sliceMs,
                     done.signal
                 ),
                 this.backend.waitForNew(
-                    {
+                    this.scoped({
                         projectId: projects,
                         status: "variant_chosen",
                         peopleOnly: false,
                         excludeIds: [...this.handedChoices.keys()],
-                    },
+                    }),
                     sliceMs,
                     done.signal
                 ),
@@ -234,7 +252,9 @@ export class WatchSession {
 
     /** Collects what is waiting and records it as handed over, here and on the server. */
     async take(projects: Projects): Promise<Batch> {
-        const fresh = await this.backend.list({ ...this.newNotes(projects), limit: MAX_NEW });
+        const fresh = await this.backend.list(
+            this.scoped({ ...this.newNotes(projects), limit: MAX_NEW })
+        );
         const { undo, picks, followUps } = await this.pending(projects);
         // A follow-up is not also a new note or a pick: those are delivered with their threads.
         const delivered = new Set([...fresh, ...picks].map((s) => s.annotation.id));

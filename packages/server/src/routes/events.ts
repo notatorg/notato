@@ -8,6 +8,7 @@ import {
 } from "../auth.ts";
 import type { LocalBackend } from "../backend.ts";
 import type { NotatoEvent } from "../events.ts";
+import { filterFromQuery } from "../query.ts";
 import type { AuthStore } from "../storage.ts";
 import {
     assertAccess,
@@ -91,7 +92,8 @@ export class EventStreams {
         allow: (projectId: string) => boolean = () => true,
         stillAllowed?: () => Promise<boolean>,
         principal?: Principal,
-        summary = false
+        summary = false,
+        feedbackScope?: "mine" | "shared" | "all"
     ): Response {
         const { backend } = this;
         let cleanup = () => {};
@@ -152,10 +154,33 @@ export class EventStreams {
                             !(await canReadFeedback(
                                 principal,
                                 { ...e.annotation, peopleOnly: false },
-                                backend
+                                backend,
+                                feedbackScope
                             ))
-                        )
+                        ) {
+                            if (
+                                e.previous &&
+                                (await canReadFeedback(
+                                    principal!,
+                                    {
+                                        ...e.annotation,
+                                        visibility: e.previous.visibility,
+                                        createdBy: e.previous.createdBy,
+                                        peopleOnly: e.previous.peopleOnly,
+                                    },
+                                    backend,
+                                    feedbackScope
+                                ))
+                            )
+                                enqueue(
+                                    frame("deleted", {
+                                        id: e.id,
+                                        projectId: e.projectId,
+                                        seq: e.seq,
+                                    })
+                                );
                             return;
+                        }
                         if (principal && isAgentToken(principal) && e.annotation.peopleOnly) {
                             // Remove a previously public note from an agent's cache without sending its private contents.
                             enqueue(
@@ -244,6 +269,7 @@ export const eventRoutes: Routes = async ({ method, principal, url, req, match }
               }
             : undefined,
         principal,
-        url.searchParams.get("fields") === "summary"
+        url.searchParams.get("fields") === "summary",
+        filterFromQuery(url.searchParams).feedbackScope
     );
 };

@@ -57,7 +57,7 @@ struct MenuSheet: View {
         }
     }
 
-    /// The server's state, when the app keeps a connection to one (not in test mode, which only uploads packages).
+    /// The configured server's state, including live Test review sessions.
     private var pill: (label: String, color: Color)? {
         guard notato.hasServer else { return nil }
         switch notato.connection {

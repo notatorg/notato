@@ -183,6 +183,7 @@ describe("a server extension", () => {
             filesFor(),
             {
                 projectId: "a1",
+                feedbackActorId: "alice",
             }
         );
         await s.rt.backend.ingest(
@@ -190,6 +191,7 @@ describe("a server extension", () => {
             filesFor(),
             {
                 projectId: "b1",
+                feedbackActorId: "bob",
             }
         );
         const client = new Client({ name: "t", version: "1" });
@@ -216,10 +218,10 @@ describe("a server extension", () => {
         await s.rt.backend.ingest(
             annotationFixture({ projectId: "b1", comment: "bob's note" }),
             filesFor(),
-            { projectId: "b1" }
+            { projectId: "b1", feedbackActorId: "bob" }
         );
         const mine = annotationFixture({ projectId: "a2", comment: "alice's note" });
-        await s.rt.backend.ingest(mine, filesFor(), { projectId: "a2" });
+        await s.rt.backend.ingest(mine, filesFor(), { projectId: "a2", feedbackActorId: "alice" });
         // Only the note in a project alice reaches comes down her stream, even though she asked for every project.
         const seen = (await next("created")) as { annotation: { comment: string } };
         expect(seen.annotation.comment).toBe("alice's note");
@@ -342,7 +344,7 @@ describe("a server extension", () => {
             token: { record: { expiresAt?: string; purpose: string } };
             agentToken: { record: { createdBy?: string; purpose: string } };
         };
-        expect(body.project).toMatchObject({ id: "made-red", name: "Shop" });
+        expect(body.project).toMatchObject({ id: "made-red", name: "SHOP" });
         expect(made.at(-1)).toMatchObject({ id: "made-red", owner: "alice" });
         expect(body.token.record.expiresAt).toBeString();
         expect(body.agentToken.record).toMatchObject({ createdBy: "rules", purpose: "agent" });

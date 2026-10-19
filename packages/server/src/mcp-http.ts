@@ -111,14 +111,22 @@ export function createMcpHttp(options: McpHttpOptions): {
 
     // A credential that reaches only some projects gets tools that see only those, asked again on every call so a
     // revoked token or a removed member stops working inside a session that is already open.
+    const actorId = (principal: Principal) =>
+        principal.feedbackActorId ??
+        (principal.kind === "token" ? `token:${principal.tokenId}` : principal.username);
+
     const projectBackendFor = (principal: Principal, req: Request): Backend =>
         accessibleProjects(principal) !== undefined
-            ? new ScopedBackend(options.backend, async () => {
-                  const current = await options.auth.identify(req, new URL(req.url));
-                  if (!current || !samePrincipal(principal, current))
-                      throw new RequestError("credential access revoked", 403);
-                  return accessibleProjects(current) ?? [];
-              })
+            ? new ScopedBackend(
+                  options.backend,
+                  async () => {
+                      const current = await options.auth.identify(req, new URL(req.url));
+                      if (!current || !samePrincipal(principal, current))
+                          throw new RequestError("credential access revoked", 403);
+                      return accessibleProjects(current) ?? [];
+                  },
+                  actorId(principal)
+              )
             : options.backend;
 
     const backendFor = (principal: Principal, req: Request): Backend => {
@@ -256,6 +264,7 @@ export function createMcpHttp(options: McpHttpOptions): {
             const server = createMcpServer({
                 ...(audit ? { auditTool: (name: string) => audit(principal, name) } : {}),
                 backend: backendFor(principal, req),
+                feedbackActorId: actorId(principal),
                 version: options.version,
                 allowImportPaths: options.allowImportPaths ?? false,
                 maxWaitSeconds: options.maxWaitSeconds ?? MAX_WAIT_SECONDS,

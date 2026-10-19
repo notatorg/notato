@@ -114,12 +114,12 @@ struct OverlayRoot: View {
     private func sheetContent(_ sheet: OverlayModel.Sheet) -> some View {
         switch sheet {
         case .composer:
-            ComposerCard(selection: model.selection, screenshotsOff: !notato.screenshotsOn,
+            ComposerCard(selection: model.selection, screenshotsOff: !notato.screenshotsOn, sharedByDefault: notato.mode == .test,
                          parent: { if let s = session.value { hooks.selectParent(in: s) } },
                          cancel: close,
-                         send: { comment, intent, severity, peopleOnly in
+                         send: { comment, intent, severity, peopleOnly, shared in
                              guard let s = session.value else { return "The window went away." }
-                             return await hooks.submit(comment: comment, intent: intent, severity: severity, peopleOnly: peopleOnly, in: s)
+                             return await hooks.submit(comment: comment, intent: intent, severity: severity, peopleOnly: peopleOnly, shared: shared, in: s)
                          })
         case let .pin(id, fromList):
             if let session = session.value, let record = notato.record(id) {

@@ -116,6 +116,7 @@ describe("saving", () => {
         save();
         expect(onSave).toHaveBeenCalledOnce();
         expect(saved()).toEqual({
+            visibility: "personal",
             comment: "The button is cut off",
             severity: "major",
             intent: "fix",
@@ -205,7 +206,11 @@ describe("updating an open popover", () => {
         expect(layer.querySelectorAll(".targets li")).toHaveLength(2);
         expect(pressedIntents()).toEqual(["change"]);
         save();
-        expect(saved()).toMatchObject({ comment: "Wider, please", intent: "change" });
+        expect(saved()).toMatchObject({
+            comment: "Wider, please",
+            visibility: "personal",
+            intent: "change",
+        });
     });
 
     it("shows a hint it is given, and takes the line away when there is none", () => {

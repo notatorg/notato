@@ -30,6 +30,7 @@ import { accountRoutes } from "./routes/account.ts";
 import { annotationRoutes } from "./routes/annotations.ts";
 import { bundleRoutes } from "./routes/bundles.ts";
 import { claimRoutes } from "./routes/claims.ts";
+import { collaborationRoutes } from "./routes/collaboration.ts";
 import {
     type AppContext,
     json,
@@ -55,6 +56,20 @@ export interface UiAssets {
 }
 
 export interface AppOptions {
+    projectMemberLabels?: (
+        principal: Principal,
+        projectId: string,
+        usernames: string[]
+    ) => Promise<Record<string, { name: string; email?: string }>>;
+    collaborationCanManage?: (
+        principal: Principal,
+        projectId: string
+    ) => Promise<boolean> | boolean;
+    resolveProjectMember?: (
+        principal: Principal,
+        projectId: string,
+        identifier: string
+    ) => Promise<string | undefined>;
     teamCanManage?: (principal: Principal) => boolean;
     teamTokenOptions?: (
         principal: Principal,
@@ -137,7 +152,7 @@ export interface AppOptions {
  */
 export interface ProjectRules {
     /** Throws a `RequestError` unless the credential may create, rename and delete projects. The server's own: an admin. */
-    assertManager?(principal: Principal): void;
+    assertManager?(principal: Principal, projectId?: string): void | Promise<void>;
     /**
      * The projects `GET /projects` lists for this credential, with their counts and whatever the store keeps about each
      * for whoever asks. The server shows only the ones the credential reaches whatever this returns. The server's
@@ -229,6 +244,7 @@ const PUBLIC_ROUTES: Array<Routes<Principal | null>> = [healthRoute, accountRout
 
 /** Everything else, tried in order once the request is known to be from someone. */
 const ROUTES: Routes[] = [
+    collaborationRoutes,
     settingsRoutes,
     statusRoutes,
     projectRoutes,
@@ -479,7 +495,9 @@ export function createApp(options: AppOptions): AppHandler {
                 }
                 const match = (pattern: RegExp): string[] | null => {
                     const found = pattern.exec(path);
-                    return found ? found.slice(1).map(decodePart) : null;
+                    return found
+                        ? found.slice(1).map((part) => (part === undefined ? "" : decodePart(part)))
+                        : null;
                 };
                 const dispatch = () =>
                     route({ req, url, path, method, principal, info, match }, app);

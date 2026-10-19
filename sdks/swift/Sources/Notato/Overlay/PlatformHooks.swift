@@ -583,7 +583,7 @@ final class PlatformHooks {
 
     // ---- making notes ------------------------------------------------------------------------------------------
 
-    func submit(comment: String, intent: String?, severity: String?, peopleOnly: Bool, in session: OverlaySession) async -> String? {
+    func submit(comment: String, intent: String?, severity: String?, peopleOnly: Bool, shared: Bool, in session: OverlaySession) async -> String? {
         guard let selection = session.selection else { return "Select something first." }
         // The composer closes now; the note's pin shows as soon as it is made, before its pictures are drawn.
         session.selection = nil
@@ -591,7 +591,7 @@ final class PlatformHooks {
         session.model.sheet = nil
         notato.stopAnnotating()
         let record = await create(selection, comment: comment, intent: intent, severity: severity, author: .human(notato.authorName),
-                                  mode: notato.mode.rawValue, steps: nil, peopleOnly: peopleOnly, in: session)
+                                  mode: notato.mode.rawValue, steps: nil, peopleOnly: peopleOnly, visibility: shared ? "shared" : "personal", in: session)
         let outcome = await notato.send(record)
         toast(outcome.problem ?? (notato.hasServer ? "Sent" : "Saved on this device. Package it from the menu."), in: session)
         return nil
@@ -600,7 +600,7 @@ final class PlatformHooks {
     /// Makes a note of the selection. It is in the list (and its pin on screen) at once; its log is read and its
     /// pictures drawn off the main actor meanwhile, and it is kept on the device (and can be sent) once they are in.
     func create(_ selection: SelectionState, comment: String, intent: String?, severity: String?, author: Author, mode: String,
-                steps: [AgentStep]?, peopleOnly: Bool = false, in session: OverlaySession) async -> NoteRecord {
+                steps: [AgentStep]?, peopleOnly: Bool = false, visibility: String? = nil, in session: OverlaySession) async -> NoteRecord {
         let configuration = notato.configuration!
         let limit = configuration.logLimit, since = notato.started
         let logs = configuration.captureLogs ? Task.detached { LogRecorder.recent(limit: limit, since: since) } : nil
@@ -641,7 +641,7 @@ final class PlatformHooks {
                            rect: PageRect(x: round2(union.minX), y: round2(union.minY), w: round2(union.width), h: round2(union.height))),
             comment: comment.trimmingCharacters(in: .whitespacesAndNewlines), severity: severity, intent: intent, variants: nil,
             screenshots: nil, steps: steps, context: context, status: Status.open, thread: [],
-            peopleOnly: peopleOnly ? true : nil)
+            peopleOnly: peopleOnly ? true : nil, visibility: visibility ?? (mode == "test" ? "shared" : "personal"), sessionId: mode == "test" ? notato.reviewSessionId : nil)
         let record = NoteRecord(annotation, pending: true, mine: true)
         record.markId = selection.markId
         // Not sent (by a connection coming back, say) before its pictures and its log are in.

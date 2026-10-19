@@ -145,6 +145,42 @@ afterEach(() => {
     vi.restoreAllMocks();
 });
 
+describe("local-only feedback", () => {
+    it("uses loopback without Cloud credentials or external delivery plugins", async () => {
+        const server = fakeServer();
+        const deliver = vi.fn(async () => {});
+        const notato = mount({
+            mode: "dev",
+            server: "https://cloud.example.test",
+            token: "synthetic-cloud-credential",
+            localOnly: true,
+            localServer: SERVER,
+            transport: server.transport,
+            plugins: [{ id: "external-delivery", deliver }],
+        });
+        const annotation = await notato.annotate({
+            target: "#pay",
+            comment: "Stay on this computer",
+        });
+        await until(() => server.posts.length === 1);
+        expect(server.notes.get(annotation.id)?.localOnly).toBe(true);
+        expect(deliver).not.toHaveBeenCalled();
+        for (const [url, init] of server.transport.fetch.mock.calls) {
+            expect(new URL(url).origin).toBe(SERVER);
+            expect(new Headers(init?.headers).get("authorization")).toBeNull();
+        }
+    });
+
+    it("refuses external and credential-bearing destinations before capturing anything", () => {
+        for (const localServer of [
+            "https://cloud.example.test",
+            "http://user:password@localhost:4801",
+            "file:///tmp/feedback",
+        ])
+            expect(() => mount({ localOnly: true, localServer })).toThrow("loopback server");
+    });
+});
+
 describe("pin numbers", () => {
     it("are not handed out twice when an agent asks for two notes at once", async () => {
         // In view, so nothing waits for a scroll and the three really are made at the same time.

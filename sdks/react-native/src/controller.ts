@@ -101,6 +101,7 @@ export interface AnnotateOptions {
     screenshot?: boolean;
     /** People only: the note and its thread stay between people. A person's note only. */
     peopleOnly?: boolean;
+    visibility?: "personal" | "shared";
 }
 
 /** What a note says, as the composer or `annotate` hands it over. */
@@ -208,6 +209,7 @@ const screenshotIds = (annotation: Annotation) =>
  * rest through the methods it alone calls (`configure`, `attachHost`, `createNote` and the like).
  */
 export class NotatoController {
+    private reviewSessionId = "review_" + ulid();
     private config?: Resolved;
     private provider?: StorageProvider;
     private storage: NotatoStorage = memoryStorage();
@@ -345,9 +347,9 @@ export class NotatoController {
         return this.settings.server ?? this.config?.server;
     }
 
-    /** Whether notes go live to a server (not in test mode, which only uploads packages). */
+    /** Whether notes go live to a configured server, including Test review sessions. */
     get hasServer(): boolean {
-        return !!this.server && this.mode !== "test";
+        return !!this.server;
     }
 
     /**
@@ -445,6 +447,7 @@ export class NotatoController {
             return;
         }
         this.stop();
+        this.reviewSessionId = "review_" + ulid();
         this.provider = config.storage;
         this.problem = configProblem(next);
         if (this.problem) {
@@ -848,6 +851,8 @@ export class NotatoController {
             intent: draft.intent,
             severity: draft.severity,
             peopleOnly: draft.peopleOnly,
+            visibility: draft.visibility,
+            sessionId: c.mode === "test" ? this.reviewSessionId : undefined,
             steps: draft.steps,
             pin: shots.pin,
             screenshots: full ? { full, crop } : undefined,

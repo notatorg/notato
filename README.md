@@ -18,6 +18,8 @@ Every piece of feedback is an **annotation**: an element, a note and screenshots
 | **test**  | A tester                    | A zip bundle, or posted to a shared server                 |
 | **agent** | An AI agent driving the app | Same as test, plus the steps the agent took                |
 
+**Feedback is private by default in Dev mode.** Your notes sync to the server but only you and your agent can see them. Share a note with the project when you want a teammate or shared agent to pick it up. Test mode starts Shared and groups live feedback into review sessions, with a focus and conversation for the agent. Offline packaging remains available. In the board, **All accessible** means your own notes plus project-shared feedback, never every teammate's private notes. The [team feedback guide](docs/team-feedback.md) explains the scope and grouping model.
+
 ## Run it
 
 ```bash
@@ -151,7 +153,7 @@ A driver (an agent with a browser tool) can check its work: `window.__notato.var
 
 Behind it: a `variants` record on the annotation (the group and the names, each with a one-line summary, the pick and when), the status `variant_chosen` while the pick waits for the agent, the MCP tool `notato_variants_ready`, and `POST /annotations/:id/variants/choose`. A pick arrives through `notato_watch` marked VARIANT CHOSEN; the board lists the versions with a **Pick** on each, and webhooks send `annotation.variants_ready` and `annotation.variant_chosen`.
 
-**Everything you write reaches the agent.** `notato_watch` delivers every reply in an annotation's thread, marked FOLLOW-UP: an answer to a question the agent asked, a note on one you reopened, a request about versions, more to do on something it already resolved. A reply does not reopen a finished note: the agent reopens it if there is work in it, and leaves it alone for a "thanks".
+**Replies reach the agent within its feedback scope.** `notato_watch` delivers replies on notes the agent can read, marked FOLLOW-UP: an answer to a question the agent asked, a note on one you reopened, a request about versions, or more to do on something it already resolved. A reply does not reopen a finished note: the agent reopens it if there is work in it, and leaves it alone for a "thanks". Agents start in Mine; select Shared or All only when you mean to hand them team feedback.
 
 **Keeping something from the agent.** Two switches, both for people, and both kept by the server, so nothing depends on how a message is worded:
 
@@ -162,17 +164,7 @@ Agents cannot read or change a People only note, including direct reads by id, s
 
 ## Team feedback and checkout queues
 
-A project can contain a separate feedback queue for each developer or worktree. Open **Team and checkouts** to
-connect an app and agent to the same checkout, assign shared reviews and recover abandoned work. Agents reserve
-each review before editing and record the branch/commit where it was fixed. See the [team feedback guide](docs/team-feedback.md).
-
-## Checkout connection profiles
-
-Choose Local or Cloud once for an app and its agent. Download a checkout connection from **Team and checkouts**,
-then run `npx notato connection import ~/Downloads/notato-checkout.json --name cloud` and start the app with
-`npx notato run -- npm run dev`. The existing `notato dev` MCP entry follows the same private profile. Switch with
-`npx notato connection use local` or `cloud`; the app restarts and old MCP sessions disconnect. The toolbar shows
-the active destination. [Connection setup, switching and credential storage](docs/connection-profiles.md).
+Start with one project ID shared by everyone: each developer's Dev feedback stays Mine, and testers' Test sessions are Shared. For teams that use worktrees or PR-linked reviews, **Team and checkouts** can optionally assign shared work and record its branch/commit. That execution ownership is separate from feedback visibility and is not required for the ordinary local loop. See the [team feedback guide](docs/team-feedback.md).
 
 ## The board: every project in one place
 

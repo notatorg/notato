@@ -8,10 +8,9 @@ import {
 } from "@notato/core";
 import type { Annotation } from "@notato/schema";
 import { ROOT_ATTR } from "./attributes.ts";
-import { applyEnvironment, notatoEnvironment } from "./env.ts";
 import { describeElement, hoverLabel, pickHint, selectionSummary } from "./labels.ts";
 import { createLocalCopy } from "./local-copy.ts";
-import { addServer, setTransport } from "./net.ts";
+import { addServer, net, setTransport } from "./net.ts";
 import { type PackagedZip, packageNotes, toBase64 } from "./package.ts";
 import { watchPage } from "./page-watch.ts";
 import { createIdbPersistence } from "./persist.ts";
@@ -75,7 +74,11 @@ export interface NotatoController {
     /** Every note the page has. */
     list(): Annotation[];
     /** Builds the bundle zip; with `send`, also hands it to the sinks (download, upload). */
-    package(options?: { send?: boolean; name?: string }): Promise<PackagedZip>;
+    package(options?: {
+        send?: boolean;
+        name?: string;
+        session?: { name: string; description?: string };
+    }): Promise<PackagedZip>;
     /** Takes the toolbar off the page. Notes not yet on the server go on with the next toolbar started on it. */
     destroy(): void;
 }
@@ -95,15 +98,37 @@ declare global {
  * server they go to. A toolbar already on the page is taken off first, so calling it again (HMR, StrictMode) is safe.
  */
 export function createController(props: NotatoProps): NotatoController {
-    props = applyEnvironment(props, notatoEnvironment());
+    const originalProps = props;
+    const localPreference = "notato:local-only:" + props.project;
+    let savedLocal = false;
+    try {
+        savedLocal = sessionStorage.getItem(localPreference) === "true";
+    } catch {}
+    const localOnly = props.localOnly ?? savedLocal;
+    if (localOnly) {
+        const localUrl = new URL(props.localServer ?? "http://localhost:4747");
+        if (
+            !["http:", "https:"].includes(localUrl.protocol) ||
+            !["localhost", "127.0.0.1", "[::1]"].includes(localUrl.hostname) ||
+            localUrl.username ||
+            localUrl.password
+        )
+            throw new Error("Local-only feedback requires a loopback server URL.");
+        props = {
+            ...props,
+            server: localUrl.origin,
+            token: undefined,
+            plugins: props.plugins?.filter((plugin) => !("deliver" in plugin)),
+        };
+    }
     window.__notatoDestroy?.();
     setTransport(props.transport);
     setStyleNonce(props.nonce);
 
     const mode = props.mode ?? "dev";
     const server = props.server?.replace(/\/$/, "");
-    /** The server each note is posted to as it is made: dev and agent mode. Test mode sends it only bundles. */
-    const liveServer = mode === "test" ? undefined : server;
+    /** The server each note is posted to as it is made, including configured Test sessions. */
+    const liveServer = server;
     const scope = privateScope([server, props.project, mode, props.token, props.author]);
     const draftPersistence = createIdbPersistence(scope.then((s) => `review:${s}`));
     let review: Annotation["review"] | undefined;
@@ -263,6 +288,8 @@ export function createController(props: NotatoProps): NotatoController {
     const pipeline = createPipeline({
         mode,
         projectId: props.project,
+        sessionId: props.sessionId,
+        localOnly,
         appName: props.appName,
         appVersion: props.appVersion,
         author: () => ({ kind: "human", name: authorName() }),
@@ -357,7 +384,7 @@ export function createController(props: NotatoProps): NotatoController {
         fallbackAnchor: (a) => (a.variants ? variants.anchor(a.variants.group) : null),
         onTakeBackVariant: actions ? (id) => actions.chooseVariant(id, null) : undefined,
         onReply: actions ? (id, note, aside) => actions.reply(id, note, aside) : undefined,
-        // Recorded on the live server, or here when there is no server. Test mode's server takes only bundles.
+        // Recorded on the live server, or here when there is no server.
         onPeopleOnly: !server || actions ? (id, on) => setPeopleOnly(id, on) : undefined,
         agentName,
         refusal: (id) => sink?.refusal(id),
@@ -424,20 +451,6 @@ export function createController(props: NotatoProps): NotatoController {
         },
     });
     layer.append(toolbar.el);
-    if (props.connection) {
-        const c = props.connection;
-        toolbar.el.insertBefore(
-            h(
-                "span",
-                {
-                    class: "tb-destination",
-                    title: `${c.name} · ${c.server}${c.context ? ` · ${c.context.name}${c.context.branch ? ` · ${c.context.branch}` : ""}` : ""}`,
-                },
-                c.name
-            ),
-            toolbar.el.firstChild
-        );
-    }
     const toast = createToast(layer);
     /** Hidden until the page is reloaded (or annotate mode is asked for again). */
     let hidden = false;
@@ -609,6 +622,13 @@ export function createController(props: NotatoProps): NotatoController {
     const settingsPanel = createSettingsPanel({
         layer,
         settings,
+        localOnly,
+        onLocalOnly: (enabled) => {
+            try {
+                sessionStorage.setItem(localPreference, String(enabled));
+            } catch {}
+            createController({ ...originalProps, localOnly: enabled });
+        },
         anchor: () => settingsButton.el.getBoundingClientRect(),
         serverScreenshots: () => policy.screenshotsNow(),
         onHide: () => setHidden(true),
@@ -620,7 +640,6 @@ export function createController(props: NotatoProps): NotatoController {
                 ? {
                       url: liveServer,
                       project: props.project,
-                      destination: props.connection,
                       connection: () => connection,
                       status: () => actions.status(),
                   }
@@ -658,7 +677,7 @@ export function createController(props: NotatoProps): NotatoController {
     });
 
     function describeConnection() {
-        // Only dev and agent mode keep a live connection; test mode just uploads a bundle on request.
+        // Every mode keeps a live connection when a server is configured.
         if (!liveServer) return;
         const waiting = sink?.pending() ?? 0;
         const problem = sink?.problem();
@@ -786,11 +805,12 @@ export function createController(props: NotatoProps): NotatoController {
             variants: Boolean(liveServer) && !policy.captureOnlyNow(),
             references: policy.referencesNow(),
             reviewInstruction: review?.instruction,
+            defaultVisibility: mode === "test" ? "shared" : "personal",
             hint: hintNow(),
             screenshotsOff: screenshotsOffNow(),
             anchor: anchorOf(sel),
             onCancel: closeDraft,
-            onSave: async ({ comment, severity, intent, peopleOnly, references }) => {
+            onSave: async ({ comment, severity, intent, peopleOnly, references, visibility }) => {
                 if (review && reviewNotes().length + saving >= 50)
                     throw new Error("Send this review before adding more than 50 targets.");
                 if (review && peopleOnly)
@@ -832,6 +852,7 @@ export function createController(props: NotatoProps): NotatoController {
                         severity,
                         intent,
                         peopleOnly,
+                        visibility,
                         references: attached,
                         review: thisReview,
                     });
@@ -963,13 +984,40 @@ export function createController(props: NotatoProps): NotatoController {
         });
     };
 
-    const packageBundle = async (options: { send?: boolean; name?: string } = {}) => {
+    const packageBundle = async (
+        options: {
+            send?: boolean;
+            name?: string;
+            session?: { name: string; description?: string };
+        } = {}
+    ) => {
         const records = store.list().filter((r) => !r.annotation.review?.draft);
+        if (options.send && options.session && server) {
+            const sessionIds = new Set(
+                records.map((record) => record.annotation.sessionId).filter(Boolean)
+            );
+            if (sessionIds.size === 1) {
+                const response = await net.fetch(
+                    server + "/review-sessions/" + Array.from(sessionIds)[0],
+                    {
+                        method: "PATCH",
+                        headers: {
+                            "Content-Type": "application/json",
+                            ...(props.token ? { Authorization: "Bearer " + props.token } : {}),
+                        },
+                        body: JSON.stringify(options.session),
+                    }
+                );
+                if (!response.ok && response.status !== 403)
+                    throw new Error("Could not save the test session’s focus. Retry packaging.");
+            }
+        }
         const result = await packageNotes(records, {
             project: props.project,
             appName: props.appName,
             appVersion: props.appVersion,
             author: options.name ?? authorName(),
+            session: options.session,
             sinks,
             send: options.send,
         });
@@ -986,12 +1034,24 @@ export function createController(props: NotatoProps): NotatoController {
             routes: new Set(records.map((r) => r.annotation.route)).size,
             destination: mode === "test" ? (server ?? null) : null,
             name: authorName() ?? "",
+            session: mode === "test",
             // Notes that live on a server would only come back from it: there is nothing to remove from here.
             clearable: !liveServer,
             onCancel: () => packageDialog.close(),
-            onSubmit: async ({ name, clear }) => {
+            onSubmit: async ({ name, clear, sessionName, description }) => {
                 if (name) settings.set({ name });
-                const result = await packageBundle({ send: true, name });
+                const result = await packageBundle({
+                    send: true,
+                    name,
+                    ...(mode === "test" && sessionName
+                        ? {
+                              session: {
+                                  name: sessionName,
+                                  ...(description ? { description } : {}),
+                              },
+                          }
+                        : {}),
+                });
                 // Test mode has a zip sink (or one of the page's own in its place). Elsewhere the zip is downloaded
                 // here. Either way nothing is cleared until the download has happened.
                 const zip = result.delivery.find((d) => d.sink === "zip");

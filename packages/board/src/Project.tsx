@@ -37,6 +37,7 @@ import { NotFound } from "./NotFound.tsx";
 import { Overview } from "./Overview.tsx";
 import { ProjectMenu } from "./ProjectMenu.tsx";
 import { ProjectSettings } from "./ProjectSettings.tsx";
+import { ReviewSessions } from "./ReviewSessions.tsx";
 import { go, projectHref, type Tab } from "./route.ts";
 import { KEYS, remember, remembered, useRemembered } from "./storage.ts";
 import { copyText, Icon } from "./ui.tsx";
@@ -181,11 +182,13 @@ export function Project(props: Props) {
         () =>
             sortAnnotations(
                 (all ?? []).filter(
-                    (a) => matches(a, state.filters) && matchesSearch(a, state.search)
+                    (a) =>
+                        matches(a, state.filters, me.username ?? "local") &&
+                        matchesSearch(a, state.search)
                 ),
                 state.sort
             ),
-        [all, state]
+        [all, me.username, state]
     );
 
     const replace = useCallback(
@@ -276,6 +279,14 @@ export function Project(props: Props) {
                 </NotFound>
             );
         }
+        if (tab === "sessions")
+            return (
+                <ReviewSessions
+                    project={project}
+                    actor={me.username ?? "local"}
+                    annotations={all ?? []}
+                />
+            );
         if (tab === "team") return <Contexts project={project} me={me} annotations={all ?? []} />;
         if (tab === "connect" && admin)
             return <ConnectPage me={me} project={project} name={name} menu={menu} />;
@@ -325,6 +336,7 @@ export function Project(props: Props) {
         return (
             <Inbox
                 project={project}
+                actorId={me.username ?? "local"}
                 name={name}
                 all={all}
                 shown={shown}

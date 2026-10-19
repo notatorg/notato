@@ -30,6 +30,7 @@ const ROWS_PAGE = 200;
 
 interface Props {
     project: string;
+    actorId: string;
     /** What the project is called. */
     name: string;
     all: Annotation[];
@@ -98,11 +99,12 @@ export function Inbox(props: Props) {
             const f = { ...filters, status: v.statuses };
             out.set(
                 v.id,
-                all.filter((a) => matches(a, f) && matchesSearch(a, state.search)).length
+                all.filter((a) => matches(a, f, props.actorId) && matchesSearch(a, state.search))
+                    .length
             );
         }
         return out;
-    }, [all, filters, state.search]);
+    }, [all, filters, state.search, props.actorId]);
 
     const open = (id: string, replace = false) => go(projectHref(project, "inbox", id), replace);
 
@@ -217,7 +219,13 @@ export function Inbox(props: Props) {
                             count: viewCounts.get(v.id) ?? 0,
                         }))}
                     />
-                    <FilterBar all={all} bundles={bundles} state={state} onState={onState} />
+                    <FilterBar
+                        all={all}
+                        bundles={bundles}
+                        state={state}
+                        onState={onState}
+                        actorId={props.actorId}
+                    />
                 </div>
 
                 <div className="list" ref={list}>
@@ -288,6 +296,8 @@ export function Inbox(props: Props) {
                         key={current.id}
                         annotation={current}
                         project={project}
+                        actorId={props.actorId}
+                        canManage={current.createdBy === props.actorId}
                         detail={props.detail}
                         hidden={!shown.some((a) => a.id === current.id)}
                         onChange={props.onChange}

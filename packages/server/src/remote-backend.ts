@@ -145,6 +145,30 @@ export class RemoteBackend implements Backend {
      * The server pages its lists, so a filter without a limit (everything that matches, as the local store gives) is
      * fetched page by page until the server says there is no more.
      */
+    async listReviewSessions(project: string, _actor: string) {
+        const result = await this.json<{ items: import("./collaboration.ts").ReviewSession[] }>(
+            "/projects/" + encodeURIComponent(project) + "/review-sessions"
+        );
+        return result?.items ?? [];
+    }
+    getReviewSession(id: string, _actor: string) {
+        return this.json<{
+            session: import("./collaboration.ts").ReviewSession;
+            items: StoredAnnotation[];
+        }>("/review-sessions/" + encodeURIComponent(id));
+    }
+    async replyReviewSession(id: string, _actor: string, body: string, _author: Author) {
+        const result = await this.json<{ session: import("./collaboration.ts").ReviewSession }>(
+            "/review-sessions/" + encodeURIComponent(id) + "/replies",
+            {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ body }),
+            }
+        );
+        return result?.session ?? null;
+    }
+
     async list(filter: AnnotationFilter = {}) {
         if (filter.limit !== undefined) {
             const body = await this.json<{ items: StoredAnnotation[] }>(

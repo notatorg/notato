@@ -161,7 +161,7 @@ What a note's selector looks like, and what an agent passes to `notato_annotate`
 ## Modes
 
 - **dev**: notes go live to `notato dev`, pins turn amber when the agent acknowledges them and green when it resolves them, and replies arrive in the pin's card. On a resolved pin, **Ask the agent to revert** asks for the change to be undone. A note made while the server is down is kept on the device and sent when it comes back.
-- **test**: notes stay on the device (they survive a restart). **Package and share** in the toolbar's menu makes the bundle zip `notato_import_bundle` reads, opens the share sheet, and uploads it when a server is set.
+- **test**: feedback defaults to shared and, when a server is configured, is sent live into a review session. Notes also stay on the device for **Package and share**, which exports the bundle zip `notato_import_bundle` reads and uploads it when requested. Without a server, testing stays offline.
 - **agent**: like dev, and the app also takes `notato_annotate` requests: `notato_annotate { target: "#add_to_basket", comment: "…" }` is relayed to the app, which finds the element, takes the screenshot and files the note as the agent.
 
 ## Tokens
@@ -176,12 +176,12 @@ A capture-only token sends new notes and nothing else: someone who extracts it c
 
 ## People only and asides
 
-Everything people write reaches the agent: new notes and every reply. Two switches keep something between people instead:
+Replies reach the agent within its active feedback scope. Dev feedback is private to its creator by default; Test feedback is Shared. Change a note's visibility in the board to share it with the project. People only and Aside are additional ways to keep feedback between people:
 
 - **People only**, for a whole note. In the composer, the **People only** switch (_"Keep this between people: the agent won't see it."_, off by default) keeps the note and its whole thread from the agent. The note's card shows a **People only** chip, and the same switch there turns it on or off at any time, for anyone on the thread. Each change is recorded in the thread as an automatic entry (_"Made this people only: the agent won't see it."_ or _"Shared this with the agent."_); turning it off hands the note to the agent. From code: `AnnotateOptions(peopleOnly = true)`.
 - **Aside**, for one reply. Under the reply field, the **Aside** switch (_"Just for people: the agent won't see this reply."_) keeps that reply from the agent; it is off again for the next one. Asides show in the thread muted and outlined, labelled **Aside**.
 
-A note the server has is changed through the server, which records the change. A note still on the device (test mode, or one made while the server was down) is changed on the device, with the same entry added to its thread, so a package carries the history. If the switch is flipped while such a note is on its way to the server, the server is told once it has the note.
+A note the server has is changed through the server, which records the change. A note not yet sent to the server is changed on the device, with the same entry added to its thread, so a package carries the history. If the switch is flipped while such a note is on its way to the server, the server is told once it has the note.
 
 ## Pins
 
@@ -217,3 +217,7 @@ adb reverse tcp:4747 tcp:4747
 The contract tests run the server's own Zod schema over the JSON this library writes (`scripts/validate.ts`), and are skipped when `bun` is not installed.
 
 Capture-only uploads and retries follow the [shared capture contract](../../docs/capture-contract.md). With a server configured, screenshots require an explicit `screenshots: true` policy; unknown or unavailable initial policy means text-only capture. Local-only capture continues without a policy request.
+
+### Feedback ownership and review sessions
+
+Dev feedback defaults to personal; Test defaults to shared. The composer’s **Share with project** switch overrides the default for that note. **People only** separately keeps agents out. With a server configured, Test feedback is sent live and grouped into a review session from the start of the run; without one, device storage and zip packaging still work. Use the board’s **Review sessions** to name a run, set its focus and discuss it. Each developer uses their own credentials with the same project ID. See the [team feedback guide](../../docs/team-feedback.md).

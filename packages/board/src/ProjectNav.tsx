@@ -9,6 +9,7 @@ import { Icon, type IconName, Modal, ProjectMark } from "./ui.tsx";
 /** A project's pages, under the project's name at the top of the sidebar. */
 const VIEWS: Array<{ tab: Tab; label: string; icon: IconName; admin?: boolean }> = [
     { tab: "inbox", label: "Inbox", icon: "inbox" },
+    { tab: "sessions", label: "Review sessions", icon: "activity" },
     { tab: "activity", label: "Activity", icon: "activity" },
     { tab: "team", label: "Team and checkouts", icon: "sliders" },
     { tab: "overview", label: "Overview", icon: "chart" },

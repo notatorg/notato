@@ -119,7 +119,7 @@ internal sealed partial class NotatoController : INotato, IDisposable
     public string? Server => _state.Server ?? Options.ResolvedServer;
 
     /// <summary>Whether notes are sent to a server as they are made: there is one, and this is not test mode.</summary>
-    public bool HasServer => Server is not null && Mode != NotatoMode.Test;
+    public bool HasServer => Server is not null;
 
     public string? AuthorName => _state.Author ?? Options.Author;
 
@@ -289,6 +289,7 @@ internal sealed partial class NotatoController : INotato, IDisposable
     /// <summary>The options changed (a configuration source reloaded) or were reset: everything follows them again.</summary>
     private void Reconfigure()
     {
+        _reviewSessionId = "review_" + Guid.NewGuid().ToString("N");
         // A reset, or a new configured corner, can put the toolbar somewhere else.
         _fold.Moved();
         _invalid = Validate(Options);

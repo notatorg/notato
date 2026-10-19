@@ -9,7 +9,13 @@ export interface NotatoEvent {
     seq: number;
     annotation: Annotation;
     /** For a change: what it was just before, so a listener can tell what changed without remembering. */
-    previous?: { status: Annotation["status"]; offeredAt?: string };
+    previous?: {
+        status: Annotation["status"];
+        offeredAt?: string;
+        visibility?: Annotation["visibility"];
+        createdBy?: string;
+        peopleOnly?: boolean;
+    };
     /** One of many notes going at once (a whole project deleted): not something to tell a team about note by note. */
     bulk?: true;
 }

@@ -78,7 +78,10 @@ describe("the composer", () => {
         expect(chip.title).toBe(PEOPLE_ONLY_HINT);
         button(layer, "Save note")?.click();
         await settle();
-        expect(onSave.mock.calls[0]?.[0]).toEqual({ comment: "is this green right?" });
+        expect(onSave.mock.calls[0]?.[0]).toEqual({
+            comment: "is this green right?",
+            visibility: "personal",
+        });
         popover.destroy();
     });
 

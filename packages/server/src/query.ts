@@ -61,6 +61,13 @@ export function filterFromQuery(
     if (q.get("lastReply") === "human") filter.lastReplyBy = "human";
     if (q.get("diagnostic") === "0") filter.diagnostic = false;
     if (q.get("peopleOnly") === "0") filter.peopleOnly = false;
+    if (q.get("sessionId")) filter.sessionId = q.get("sessionId")!;
+    const feedbackScope = q.get("scope");
+    if (feedbackScope) {
+        if (feedbackScope !== "mine" && feedbackScope !== "shared" && feedbackScope !== "all")
+            throw new RequestError(`invalid feedback scope "${feedbackScope}"`);
+        filter.feedbackScope = feedbackScope;
+    }
     if (q.get("unhanded") === "1") filter.unhanded = true;
     const exclude = q.get("exclude");
     if (exclude) filter.excludeIds = exclude.split(",").filter(Boolean).slice(0, 200);
@@ -101,6 +108,8 @@ export function filterToQuery(filter: AnnotationFilter): URLSearchParams {
     if (filter.lastReplyBy) q.set("lastReply", filter.lastReplyBy);
     if (filter.diagnostic === false) q.set("diagnostic", "0");
     if (filter.peopleOnly === false) q.set("peopleOnly", "0");
+    if (filter.sessionId) q.set("sessionId", filter.sessionId);
+    if (filter.feedbackScope) q.set("scope", filter.feedbackScope);
     if (filter.unhanded) q.set("unhanded", "1");
     if (filter.limit !== undefined) q.set("limit", String(filter.limit));
     return q;

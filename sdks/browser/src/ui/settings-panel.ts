@@ -25,7 +25,6 @@ export interface ServerInfo {
 export interface ServerLinks {
     url: string;
     project: string;
-    destination?: import("@notato/core").BrowserConnection;
     connection(): ConnectionState;
     status(): Promise<ServerInfo | null>;
 }
@@ -33,6 +32,8 @@ export interface ServerLinks {
 export interface SettingsPanelOptions {
     layer: HTMLElement;
     settings: SettingsStore;
+    localOnly?: boolean;
+    onLocalOnly?(enabled: boolean): void;
     /** Where the toolbar's settings button is: the panel sits above it, or below it when the toolbar is near the top. */
     anchor(): { left: number; top: number; width: number; height?: number };
     /** Present when there is a server to show. */
@@ -228,7 +229,31 @@ export function createSettingsPanel(options: SettingsPanelOptions): SettingsPane
             options.onHide();
         });
 
+        const localToggle = h(
+            "button",
+            {
+                type: "button",
+                class: "slink",
+                "aria-pressed": String(Boolean(options.localOnly)),
+                onclick: () => options.onLocalOnly?.(!options.localOnly),
+            },
+            options.localOnly ? "Use configured server" : "Keep feedback local to this computer"
+        );
         const rows: HTMLElement[] = [
+            ...(options.onLocalOnly
+                ? [
+                      h(
+                          "div",
+                          { class: "sfield" },
+                          h(
+                              "div",
+                              { class: "slabel" },
+                              options.localOnly ? "Local only" : "Cloud / configured server"
+                          ),
+                          localToggle
+                      ),
+                  ]
+                : []),
             h(
                 "div",
                 { class: "sfield" },
@@ -365,7 +390,7 @@ export function createSettingsPanel(options: SettingsPanelOptions): SettingsPane
                     h(
                         "div",
                         { class: "shelp" },
-                        "Everything you write reaches it. Mark a note People only, or send a reply as an aside, to keep it between people."
+                        "Mine is private by default. Select Shared or All to include project feedback. People only notes and asides stay between people."
                     )
                 );
                 return;
@@ -393,13 +418,6 @@ export function createSettingsPanel(options: SettingsPanelOptions): SettingsPane
                     ` ${word}`
                 ),
                 h("div", { class: "shelp" }, `${server.url} · project ${server.project}`),
-                server.destination
-                    ? h(
-                          "div",
-                          { class: "slabel" },
-                          `Destination: ${server.destination.name}${server.destination.context ? ` · ${server.destination.context.name}${server.destination.context.branch ? ` · ${server.destination.context.branch}` : ""}` : ""}`
-                      )
-                    : null,
                 status
             ),
             agentField,

@@ -11,8 +11,8 @@ import { useEffect, useState } from "react";
 //   #/settings               settings and webhooks (admin)
 //   #/x/<page>[/<rest>]      a page an extension adds
 
-export type Tab = "inbox" | "activity" | "overview" | "connect" | "settings" | "team";
-const TABS: readonly string[] = ["activity", "overview", "connect", "settings", "team"];
+export type Tab = "inbox" | "activity" | "overview" | "connect" | "settings" | "team" | "sessions";
+const TABS: readonly string[] = ["activity", "overview", "connect", "settings", "team", "sessions"];
 
 export type Route =
     | { page: "home" }

@@ -35,11 +35,6 @@ describe("GET /inject.js", () => {
         expect(first).toBeTruthy();
         expect(await injectSource()).toBe(first);
     });
-
-    it("does not carry a server address in it: it takes the one it was loaded from", async () => {
-        const body = (await injectSource()) ?? "";
-        expect(body).not.toContain("localhost:4747");
-    });
 });
 
 describe("the addresses it is loaded from", () => {

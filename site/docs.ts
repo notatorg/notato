@@ -125,7 +125,7 @@ export const PAGES: Page[] = [
         group: "Agents and teams",
         title: "Testers, servers and webhooks",
         summary:
-            "Testers send a zip or post to a shared server, and webhooks tell Slack, Discord or Teams.",
+            "Dev feedback stays private by default, while named Test sessions share focused feedback with a team.",
         file: "README.md",
         sections: [
             "Test mode: testers send you a zip",
@@ -145,7 +145,6 @@ export const PAGES: Page[] = [
             "Variants: compare versions in the page",
             "Reviewing related feedback",
             "Team feedback and checkout queues",
-            "Checkout connection profiles",
             "The board: every project in one place",
             "Copy as Markdown, and export",
             "Screenshot size",

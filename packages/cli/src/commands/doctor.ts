@@ -12,7 +12,6 @@ import {
     readIfExists,
     resolveAgents,
 } from "../agents.ts";
-import { connectionRoot, selectedConnection, verifyConnection } from "../connection.ts";
 import { appMentionsNotato, describeApp, discoverApps, findGitRoot } from "../discover.ts";
 import { localServer } from "../options.ts";
 import { type RunProgram, runProgram } from "../process.ts";
@@ -653,26 +652,14 @@ export async function runDoctorCommand(argv: string[]): Promise<number> {
         console.log(HELP);
         return 0;
     }
-    const profile = selectedConnection(connectionRoot(values.cwd ?? process.cwd()));
-    if (profile && (values.server || values.token || values.project))
-        throw new Error(
-            "Doctor follows the selected checkout connection. Select the intended profile instead of overriding its server or credentials."
-        );
-    if (profile) await verifyConnection(profile);
     const checks = await runDoctor({
-        server: profile?.server ?? values.server ?? localServer(),
-        token: profile ? profile.appToken : (values.token ?? process.env.NOTATO_TOKEN),
-        project: profile?.project ?? values.project,
+        server: values.server ?? localServer(),
+        token: values.token ?? process.env.NOTATO_TOKEN,
+        project: values.project,
         cwd: values.cwd ?? process.cwd(),
         agents: values.agents && values.claude,
         agentIds: parseAgents(values.agent),
     });
-    if (profile)
-        checks.unshift({
-            name: "Checkout connection",
-            status: "ok",
-            detail: `${profile.name} · ${profile.server}${profile.context ? ` · ${profile.context.name}` : ""}`,
-        });
     console.log(formatChecks(checks));
     return checks.some((c) => c.status === "fail") ? 1 : 0;
 }

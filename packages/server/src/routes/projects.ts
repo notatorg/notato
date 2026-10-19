@@ -1,12 +1,17 @@
+import type { Status } from "@notato/schema";
 import { z } from "zod";
 import { canAccessProject, type Principal, UnknownProjectError } from "../auth.ts";
 import type { LocalBackend } from "../backend.ts";
+import { RequestError } from "../backend.ts";
+import { initializeProject, ownsProject } from "../collaboration.ts";
 import type { NewProject, ProjectRequest, ProjectRules } from "../http.ts";
-import { PROJECT_ID, tokenPurpose } from "../storage.ts";
+import { PROJECT_ID, type ProjectSummary, tokenPurpose } from "../storage.ts";
 import {
     assertAccess,
     assertAdmin,
     assertBoard,
+    feedbackActorId,
+    forReader,
     json,
     noContent,
     notFound,
@@ -35,9 +40,55 @@ const RenameBody = z.object({ name: z.string().min(1).max(200) });
 /** A probe carries nothing: a body, when there is one, is an empty JSON object, read within the usual limit. */
 const EmptyBody = z.object({}).strict();
 
-/** A project with its counts, as the list shows it; null when there is none with that id. */
-const summaryOf = async (backend: LocalBackend, projectId: string) =>
-    (await backend.store.listProjects()).find((p) => p.id === projectId) ?? null;
+const WAITING = new Set<Status>([
+    "open",
+    "awaiting_response",
+    "variant_chosen",
+    "revert_requested",
+]);
+
+/** A project summary counts only feedback this person can read, so private notes do not leak through totals. */
+export const accessibleProjectSummary = async (
+    backend: LocalBackend,
+    principal: Principal,
+    projectId: string,
+    known?: ProjectSummary
+) => {
+    const project = known ?? (await backend.store.listProjects()).find((p) => p.id === projectId);
+    if (!project) return null;
+    const items = await backend.list(forReader(principal, { projectId }));
+    const statuses: Partial<Record<Status, number>> = {};
+    let lastActivityAt = project.createdAt;
+    for (const { annotation } of items) {
+        statuses[annotation.status] = (statuses[annotation.status] ?? 0) + 1;
+        for (const at of [
+            annotation.createdAt,
+            ...annotation.thread.map((reply) => reply.createdAt),
+        ])
+            if (Date.parse(at) > Date.parse(lastActivityAt)) lastActivityAt = at;
+    }
+    return {
+        ...project,
+        annotations: items.length,
+        ...(project.readAt !== undefined || project.unread !== undefined
+            ? {
+                  unread: items.filter(
+                      ({ annotation }) =>
+                          !annotation.context.notatoDiagnostic &&
+                          [
+                              annotation.createdAt,
+                              ...annotation.thread.map((reply) => reply.createdAt),
+                          ].some((at) => at > (project.readAt ?? ""))
+                  ).length,
+              }
+            : {}),
+        open: Object.entries(statuses).reduce((count, [status, n]) => {
+            return WAITING.has(status as Status) ? count + (n ?? 0) : count;
+        }, 0),
+        statuses,
+        lastActivityAt,
+    } satisfies ProjectSummary;
+};
 
 /** What a new project is asked for, and what it is made with: by the deployment's rules, or as asked. */
 async function newProject(
@@ -61,32 +112,61 @@ async function newProject(
 export const projectRoutes: Routes = async ({ req, path, method, principal, match }, app) => {
     const { backend, auth, options } = app;
     const rules = options.projectRules;
-    const assertManager = (who: Principal) =>
-        rules?.assertManager ? rules.assertManager(who) : assertAdmin(who);
+    const summaryFor = async (id: string) =>
+        accessibleProjectSummary(
+            backend,
+            principal,
+            id,
+            (await rules?.list?.(principal))?.find((project) => project.id === id)
+        );
+    const assertManager = async (who: Principal, projectId?: string) => {
+        if (rules?.assertManager) return rules.assertManager(who, projectId);
+        if (who.kind === "admin") return;
+        if (
+            who.kind === "member" &&
+            (!projectId ||
+                (backend.store.coordination &&
+                    (await ownsProject(backend.store.coordination, projectId, who.username))))
+        )
+            return;
+        throw new RequestError("Project owner access required.", 403);
+    };
 
     if (path === "/projects" && method === "GET") {
         const listed = rules?.list
             ? await rules.list(principal)
             : await backend.store.listProjects();
-        return json({ items: listed.filter((p) => canAccessProject(principal, p.id)) });
+        const accessible = listed.filter((p) => canAccessProject(principal, p.id));
+        const visible = await Promise.all(
+            accessible.map((project) =>
+                accessibleProjectSummary(backend, principal, project.id, project)
+            )
+        );
+        return json({ items: visible.filter((project) => project !== null) });
     }
     if (path === "/projects" && method === "POST") {
-        assertManager(principal);
+        await assertManager(principal);
         assertBoard(req, "projects");
         const { body, made } = await newProject(req, principal, rules);
         const created = await backend.createProject(made.id, body.name, made.fields);
         if (!created) return json({ error: `a project with id "${made.id}" already exists` }, 409);
-        const project = await summaryOf(backend, created.id);
+        if (backend.store.coordination)
+            await initializeProject(
+                backend.store.coordination,
+                created.id,
+                feedbackActorId(principal)
+            );
+        const project = await summaryFor(created.id);
         // Apps on a server with logins need a token to send notes, so the first one comes with the project.
         if (!auth) return json({ project }, 201);
-        const { token, record } = await auth.issueToken(
-            created.id,
-            `${created.name} app`,
-            made.appToken
-        );
+        const { token, record } = await auth.issueToken(created.id, `${created.name} app`, {
+            ...made.appToken,
+            createdBy: made.appToken?.createdBy ?? feedbackActorId(principal),
+        });
         const agent = body.agent
             ? await auth.issueToken(created.id, `${created.name} agent`, {
                   ...made.agentToken,
+                  createdBy: made.agentToken?.createdBy ?? feedbackActorId(principal),
                   purpose: "agent",
               })
             : undefined;
@@ -125,19 +205,19 @@ export const projectRoutes: Routes = async ({ req, path, method, principal, matc
     const projectId = projectIdFrom(one[0]);
     assertAccess(principal, projectId);
     if (method === "GET") {
-        const project = await summaryOf(backend, projectId);
+        const project = await summaryFor(projectId);
         return project ? json(project) : notFound();
     }
     if (method === "PATCH") {
-        assertManager(principal);
+        await assertManager(principal, projectId);
         assertBoard(req, "projects");
         const { name } = await readJson(req, RenameBody);
         return (await backend.renameProject(projectId, name))
-            ? json(await summaryOf(backend, projectId))
+            ? json(await summaryFor(projectId))
             : notFound();
     }
     if (method === "DELETE") {
-        assertManager(principal);
+        await assertManager(principal, projectId);
         assertBoard(req, "projects");
         if (!(await backend.deleteProject(projectId))) return notFound();
         await auth?.store.revokeProjectTokens(projectId, new Date().toISOString());

@@ -9,6 +9,7 @@ import {
 } from "./api.ts";
 import { useBoardExtension } from "./extension.tsx";
 import { plural, projectName } from "./model.ts";
+import { ProjectMembers } from "./ProjectMembers.tsx";
 import { projectHref } from "./route.ts";
 import { TokenManager } from "./Tokens.tsx";
 import { FLASH_MS, Icon } from "./ui.tsx";
@@ -57,6 +58,7 @@ export function ProjectSettings({
                     <div className="sheet-tools">{menu}</div>
                 </header>
 
+                <ProjectMembers project={project} />
                 <Rename project={project} name={name} onRenamed={onRenamed} />
 
                 <section className="set-section">

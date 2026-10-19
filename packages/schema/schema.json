@@ -17,6 +17,48 @@
           "type": "string",
           "maxLength": 400
         },
+        "visibility": {
+          "type": "string",
+          "enum": [
+            "personal",
+            "shared"
+          ]
+        },
+        "sessionId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_-]{1,128}$"
+        },
+        "localOnly": {
+          "type": "boolean",
+          "const": true
+        },
+        "createdBy": {
+          "type": "string",
+          "maxLength": 200
+        },
+        "feedbackSession": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_-]{1,128}$"
+            },
+            "name": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 120
+            },
+            "description": {
+              "type": "string",
+              "maxLength": 4000
+            }
+          },
+          "required": [
+            "id",
+            "name"
+          ],
+          "additionalProperties": false
+        },
         "bundleId": {
           "type": [
             "string",
@@ -660,6 +702,13 @@
               },
               "peopleOnly": {
                 "type": "boolean"
+              },
+              "visibility": {
+                "type": "string",
+                "enum": [
+                  "personal",
+                  "shared"
+                ]
               }
             },
             "required": [
@@ -948,6 +997,13 @@
         },
         "peopleOnly": {
           "type": "boolean"
+        },
+        "visibility": {
+          "type": "string",
+          "enum": [
+            "personal",
+            "shared"
+          ]
         }
       },
       "required": [
@@ -1031,6 +1087,24 @@
           },
           "additionalProperties": false
         },
+        "session": {
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 120
+            },
+            "description": {
+              "type": "string",
+              "maxLength": 4000
+            }
+          },
+          "required": [
+            "name"
+          ],
+          "additionalProperties": false
+        },
         "appName": {
           "type": "string",
           "maxLength": 200
@@ -1054,6 +1128,48 @@
               "workId": {
                 "type": "string",
                 "maxLength": 400
+              },
+              "visibility": {
+                "type": "string",
+                "enum": [
+                  "personal",
+                  "shared"
+                ]
+              },
+              "sessionId": {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9_-]{1,128}$"
+              },
+              "localOnly": {
+                "type": "boolean",
+                "const": true
+              },
+              "createdBy": {
+                "type": "string",
+                "maxLength": 200
+              },
+              "feedbackSession": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9_-]{1,128}$"
+                  },
+                  "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 120
+                  },
+                  "description": {
+                    "type": "string",
+                    "maxLength": 4000
+                  }
+                },
+                "required": [
+                  "id",
+                  "name"
+                ],
+                "additionalProperties": false
               },
               "bundleId": {
                 "type": [
@@ -1698,6 +1814,13 @@
                     },
                     "peopleOnly": {
                       "type": "boolean"
+                    },
+                    "visibility": {
+                      "type": "string",
+                      "enum": [
+                        "personal",
+                        "shared"
+                      ]
                     }
                   },
                   "required": [

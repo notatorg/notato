@@ -22,7 +22,10 @@ import {
     writeSetting,
     writeWebhooks,
 } from "../src/index.ts";
-import { annotationFixture, filesFor, makeBackend } from "./helpers.ts";
+import { annotationFixture as feedbackFixture, filesFor, makeBackend } from "./helpers.ts";
+
+const annotationFixture = (over: Parameters<typeof feedbackFixture>[0] = {}) =>
+    feedbackFixture({ visibility: "shared", ...over });
 
 const dirs: string[] = [];
 const servers: Array<{ stop(force?: boolean): void }> = [];

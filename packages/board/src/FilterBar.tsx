@@ -25,6 +25,12 @@ interface Chip {
 
 function chipsOf(f: Filters): Chip[] {
     const chips: Chip[] = [];
+    if (f.scope)
+        chips.push({
+            key: "scope",
+            label: f.scope === "mine" ? "Mine" : "Shared",
+            clear: { scope: "" },
+        });
     if (f.route) chips.push({ key: "route", label: f.route, clear: { route: "" } });
     if (f.by)
         chips.push({ key: "by", label: f.by === NO_NAME ? "No name" : f.by, clear: { by: "" } });
@@ -54,12 +60,14 @@ export function FilterBar({
     bundles,
     state,
     onState,
+    actorId,
 }: {
     /** Every note in the project, for the pages and people to choose from. */
     all: Annotation[];
     bundles: BundleRecord[];
     state: InboxState;
     onState(next: Partial<InboxState>): void;
+    actorId: string;
 }) {
     const { filters } = state;
     const [open, setOpen] = useState(false);
@@ -131,6 +139,16 @@ export function FilterBar({
             {open ? (
                 <div className="filters">
                     <select
+                        aria-label="Feedback visibility"
+                        className={filters.scope ? "set" : ""}
+                        value={filters.scope ?? ""}
+                        onChange={(e) => setFilters({ scope: e.target.value as Filters["scope"] })}
+                    >
+                        <option value="">All accessible</option>
+                        <option value="mine">Mine</option>
+                        <option value="shared">Shared</option>
+                    </select>
+                    <select
                         aria-label="Page"
                         className={filters.route ? "set" : ""}
                         value={filters.route}
@@ -201,7 +219,7 @@ export function FilterBar({
                             <option value="none">Live (not from a bundle)</option>
                             {bundles.map((b) => (
                                 <option key={b.id} value={b.id}>
-                                    {`Bundle: ${b.author.name ?? "unnamed"} · ${new Date(b.createdAt).toLocaleDateString()} (${b.annotationCount})`}
+                                    {`${b.session?.name ?? b.author.name ?? "Unnamed session"} · ${new Date(b.createdAt).toLocaleDateString()} (${b.annotationCount})`}
                                 </option>
                             ))}
                         </select>

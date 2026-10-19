@@ -67,6 +67,7 @@ internal class Controller(
     /** Where the app reads Notato's state (`Notato.state`): written here whenever something it shows changes. */
     private val published: MutableStateFlow<NotatoState>,
 ) : Application.ActivityLifecycleCallbacks {
+    private var reviewSessionId = "review_" + Ulid.make()
     var config: NotatoConfig = config
         private set
 
@@ -114,7 +115,7 @@ internal class Controller(
 
     val mode get() = config.mode
     val server: String? get() = runtime.server ?: config.resolvedServer
-    val hasServer get() = server != null && mode != NotatoMode.TEST
+    val hasServer get() = server != null
     val authorName get() = runtime.author ?: config.author
     val serverOverride get() = runtime.server
     val screenshotsWanted get() = runtime.screenshots ?: config.screenshots
@@ -159,6 +160,7 @@ internal class Controller(
 
     fun reconfigure(next: NotatoConfig) {
         setEnabled(false, remember = false)
+        reviewSessionId = "review_" + Ulid.make()
         if (next.project != config.project) sync.switchProject(next.project)
         config = next
         runtime = RuntimeState(app, next.rememberRuntimeState)
@@ -461,9 +463,10 @@ internal class Controller(
             session.overlay.showSheet(
                 ComposerSheet(
                     session.overlay.ui, drawing.title, subtitle, screenshotsOff = !screenshotsOn || (root != null && secure(session, root)),
+                    sharedByDefault = mode == NotatoMode.TEST,
                     onParent = { selectParent(session) },
                     onCancel = { session.overlay.closeSheet() },
-                    onSend = { comment, intent, severity, peopleOnly -> submit(session, comment, intent, severity, peopleOnly) },
+                    onSend = { comment, intent, severity, peopleOnly, shared -> submit(session, comment, intent, severity, peopleOnly, shared) },
                     launch = { block -> scope.launch { block() } },
                 ),
                 dim = false, atTop = atTop,
@@ -502,9 +505,9 @@ internal class Controller(
     // ---- making notes --------------------------------------------------------------------------------------------
 
     /** The composer's Send: makes the note about what is selected and sends it. Returns what is wrong, or null. */
-    suspend fun submit(session: Session, comment: String, intent: String?, severity: String?, peopleOnly: Boolean): String? {
+    suspend fun submit(session: Session, comment: String, intent: String?, severity: String?, peopleOnly: Boolean, shared: Boolean): String? {
         val selection = session.selection ?: return "Select something first."
-        val record = create(session, selection, comment, intent, severity, Author.human(authorName), mode.name.lowercase(), null, peopleOnly)
+        val record = create(session, selection, comment, intent, severity, Author.human(authorName), mode.name.lowercase(), null, peopleOnly, if (shared) "shared" else "personal")
         session.selection = null
         session.overlay.showSelection(null)
         session.overlay.closeSheet()
@@ -522,9 +525,10 @@ internal class Controller(
     private suspend fun create(
         session: Session, selection: Selection, comment: String, intent: String?, severity: String?, author: Author, mode: String, steps: List<AgentStep>?,
         peopleOnly: Boolean = false,
+        visibility: String? = null,
     ): NoteRecord {
         try {
-            return make(session, selection, comment, intent, severity, author, mode, steps, peopleOnly)
+            return make(session, selection, comment, intent, severity, author, mode, steps, peopleOnly, visibility)
         } finally {
             // Several megabytes at full resolution: back now, not when the collector gets round to it.
             selection.shot.release()
@@ -534,6 +538,7 @@ internal class Controller(
     private suspend fun make(
         session: Session, selection: Selection, comment: String, intent: String?, severity: String?, author: Author, mode: String, steps: List<AgentStep>?,
         peopleOnly: Boolean,
+        visibility: String? = null,
     ): NoteRecord {
         // Taken just after the composer opened: almost always there long before Send is.
         val shot = selection.shot.await()
@@ -595,6 +600,8 @@ internal class Controller(
             context = context,
             status = Status.OPEN,
             peopleOnly = peopleOnly.takeIf { it },
+            visibility = visibility ?: if (mode == "test") "shared" else "personal",
+            sessionId = reviewSessionId.takeIf { mode == "test" },
         )
         // On the device before anything else: the screenshots are written out and only their files are kept.
         val store = sync.store

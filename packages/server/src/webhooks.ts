@@ -368,7 +368,11 @@ export function eventFor(
     /** When the variants on it were last offered, as far as this server has seen. */
     previousOffer?: string
 ): WebhookEvent | null {
-    if (event.type === "created") return "annotation.created";
+    if (
+        event.type === "created" ||
+        (event.previous?.visibility === "personal" && event.annotation.visibility === "shared")
+    )
+        return "annotation.created";
     if (event.type === "replied") return "annotation.replied";
     if (event.type === "deleted") return "annotation.deleted";
     const now = event.annotation.status;
@@ -448,6 +452,8 @@ export function startWebhooks(options: DispatcherOptions): WebhookDispatcher {
         }
         // `notato doctor` files a test annotation and deletes it: a team's channel should not hear about that.
         if (event.annotation.context?.notatoDiagnostic === true) return;
+        // A project-level webhook is a shared destination. Never disclose a creator's personal feedback to it.
+        if (event.annotation.visibility === "personal") return;
         // A whole project deleted is one act, not thousands of cards in a channel.
         if (event.bulk) return;
         const name = eventFor(event, previous, previousOffer);

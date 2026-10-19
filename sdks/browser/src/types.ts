@@ -1,4 +1,4 @@
-import type { BrowserConnection, CapturePlugin, IdentityPlugin, SinkPlugin } from "@notato/core";
+import type { CapturePlugin, IdentityPlugin, SinkPlugin } from "@notato/core";
 import type { AgentStep, Annotation, Intent, Mode, Severity } from "@notato/schema";
 import type { Transport } from "./net.ts";
 import type { ToolbarPosition } from "./ui/toolbar.ts";
@@ -8,10 +8,14 @@ import type { VariantGroupInfo } from "./ui/variants.ts";
 export type NotatoPlugin = IdentityPlugin | CapturePlugin | SinkPlugin;
 
 export interface NotatoProps {
-    /** Display metadata from the selected checkout profile. Credential scope is always enforced by the server. */
-    connection?: Omit<BrowserConnection, "token">;
-    /** `dev` annotates live to a local server, `test` exports bundles, `agent` is driven by an AI agent. */
+    /** `dev` annotates live to a local server, `test` shares a review session and supports bundle exports, `agent` is driven by an AI agent. */
     mode?: Mode;
+    /** Keep this toolbar’s feedback on the local development server. Cloud credentials and external sinks are disabled. */
+    localOnly?: boolean;
+    /** Loopback server used for local-only feedback. Defaults to http://localhost:4747. */
+    localServer?: string;
+    /** Join a specific accessible review session. Test mode creates one for each run by default. */
+    sessionId?: string;
     /**
      * Server base URL, e.g. `http://localhost:4747`. Annotations are posted there and its status changes come
      * back live. Omit it in test mode to export zips only.

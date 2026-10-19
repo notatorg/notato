@@ -1,8 +1,8 @@
 import type { Annotation, Reply } from "@notato/schema";
 import { ulid } from "ulid";
 
-// What the agent sees of a note. Everything people write reaches it, except what they keep for themselves: a note
-// marked People only (all of it), and a single reply sent as an aside.
+// What the agent sees of an authorised note. Feedback visibility is checked before this view is made; People only
+// then keeps a shared note's whole thread from agents, and an aside keeps one reply from them.
 
 /**
  * The latest word on a note as the agent sees it: the newest reply that is not an aside. Asides are for the people on
@@ -23,11 +23,15 @@ export function lastWord(a: Annotation): Reply | undefined {
  */
 export function awaitsAgent(a: Annotation): boolean {
     const last = lastWord(a);
-    return last?.author.kind === "human" && (!last.automatic || last.peopleOnly === false);
+    return (
+        last?.author.kind === "human" &&
+        (!last.automatic || last.peopleOnly === false || last.visibility === "shared")
+    );
 }
 
 /** Whether the latest word hands the note back to the agent: People only, just turned off. */
-export const sharedAgain = (a: Annotation) => lastWord(a)?.peopleOnly === false;
+export const sharedAgain = (a: Annotation) =>
+    lastWord(a)?.peopleOnly === false || lastWord(a)?.visibility === "shared";
 
 /** The note as the agent is shown it: asides left out. */
 export function agentView(a: Annotation): Annotation {
