@@ -104,7 +104,7 @@ export function WorkAssignment({ annotation }: { annotation: Annotation }) {
             ) : null}
             <div className="work-actions">
                 <select
-                    aria-label="Assign review to checkout"
+                    aria-label="Assign review to a dev setup"
                     value={selected}
                     onChange={(e) => setSelected(e.target.value)}
                 >
@@ -236,11 +236,10 @@ export function Contexts({
             <div className="sheet-inner wide team-page">
                 <header className="sheet-head">
                     <div>
-                        <p className="eyebrow">TEAM FEEDBACK</p>
-                        <h1>One project. A clear owner for every review.</h1>
+                        <h1>Team</h1>
                         <p>
-                            Keep your own feedback loop in a checkout. Share reviews here, then
-                            assign them to the developer and agent doing the work.
+                            Connect your own dev setup so feedback from your app reaches your agent,
+                            and see who is working on this project's shared feedback.
                         </p>
                     </div>
                 </header>
@@ -252,19 +251,20 @@ export function Contexts({
                 <section className="team-intro">
                     <div>
                         <Icon name="users" />
-                        <h2>Your checkout, your agent</h2>
+                        <h2>Connect your dev setup</h2>
                         <p>
-                            Each checkout has a paired capture key and agent connection. Feedback
-                            reaches that checkout, and one agent reserves each review before
-                            editing.
+                            A dev setup is you, your app and your coding agent on one machine or
+                            branch. Name it and Notato makes two keys: one for your app, one for
+                            your agent.
                         </p>
                         <p className="muted">
-                            Connecting the first checkout enables team queues for this project.
-                            Reconnect existing project-wide agents with checkout keys.
+                            What you capture while building stays yours. Feedback from testers or
+                            pull requests waits in the shared queue until someone is assigned, and
+                            one agent reserves each review before editing it.
                         </p>
                         <p className="muted">
-                            Teammates retain project visibility. Checkout routing controls which
-                            agent receives the work.
+                            Everyone on the project can still see all of its feedback. Setups only
+                            decide which agent is sent the work.
                         </p>
                     </div>
                     <form
@@ -281,11 +281,11 @@ export function Contexts({
                         }}
                     >
                         <label>
-                            Checkout name
+                            Name this setup
                             <input
                                 required
                                 maxLength={120}
-                                placeholder="My checkout"
+                                placeholder="My laptop"
                                 value={name}
                                 onChange={(e) => setName(e.target.value)}
                             />
@@ -294,13 +294,13 @@ export function Contexts({
                             Branch or worktree label
                             <input
                                 maxLength={200}
-                                placeholder="feature/checkout"
+                                placeholder="feature/pricing"
                                 value={branch}
                                 onChange={(e) => setBranch(e.target.value)}
                             />
                         </label>
                         <button disabled={busy} type="submit">
-                            Connect a checkout
+                            Connect this setup
                         </button>
                     </form>
                 </section>
@@ -311,9 +311,7 @@ export function Contexts({
                                 <span className="checkout-dot" />
                                 <strong>{c.name}</strong>
                                 <span className="tag">
-                                    {c.owner === (me.username ?? "local")
-                                        ? "Your checkout"
-                                        : "Teammate"}
+                                    {c.owner === (me.username ?? "local") ? "Yours" : "Teammate's"}
                                 </span>
                             </div>
                             <p>
@@ -345,7 +343,7 @@ export function Contexts({
                                         )
                                     }
                                 >
-                                    Set up app and agent
+                                    Get keys
                                 </button>
                                 <button
                                     type="button"
@@ -357,7 +355,7 @@ export function Contexts({
                                     onClick={() => {
                                         if (
                                             window.confirm(
-                                                "Archive this checkout? Its credentials will stop working. Assigned work stays visible and can be recovered."
+                                                "Archive this setup? Its keys will stop working. Assigned work stays visible and can be recovered."
                                             )
                                         )
                                             void perform(() =>
@@ -468,8 +466,8 @@ export function Contexts({
                                 Copy capture key
                             </button>
                             <p className="muted">
-                                The app key can read and reply to this checkout’s feedback. It
-                                cannot connect to MCP or reach another checkout.
+                                The app key can read and reply to this setup's feedback. It cannot
+                                connect to MCP or reach another setup.
                             </p>
                             <h3>2. Coding agent</h3>
                             <p>
@@ -492,7 +490,7 @@ export function Contexts({
                             </button>
                             {copied ? <p role="status">Copied. Keep keys out of Git.</p> : null}
                             <p className="muted">
-                                Credentials expire in 90 days. Archiving this checkout immediately
+                                Credentials expire in 90 days. Archiving this setup immediately
                                 stops both connections.
                             </p>
                         </div>

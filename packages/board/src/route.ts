@@ -7,8 +7,9 @@ import { useEffect, useState } from "react";
 //   #/p/<project>/overview   the numbers
 //   #/p/<project>/connect    how to connect an app to it
 //   #/p/<project>/settings   its name, tokens, and deleting it (admin)
-//   #/tokens                 tokens (serve mode, admin)
-//   #/settings               settings and webhooks (admin)
+//   #/settings               settings and webhooks (admin), and this browser's preferences
+//   #/settings/tokens        tokens (serve mode, admin): a tab of Settings; #/tokens still opens it
+//   #/settings/<tab>         a tab an extension adds to Settings
 //   #/x/<page>[/<rest>]      a page an extension adds
 
 export type Tab = "inbox" | "activity" | "overview" | "connect" | "settings" | "team" | "sessions";
@@ -17,8 +18,7 @@ const TABS: readonly string[] = ["activity", "overview", "connect", "settings", 
 export type Route =
     | { page: "home" }
     | { page: "not-found" }
-    | { page: "tokens" }
-    | { page: "settings" }
+    | { page: "settings"; tab?: string }
     | { page: "ext"; name: string; rest: string }
     | { page: "project"; project: string; tab: Tab; selected?: string };
 
@@ -33,8 +33,10 @@ const decode = (s: string) => {
 export function parseRoute(hash: string): Route {
     const path = hash.replace(/^#/, "").replace(/\/+$/, "") || "/";
     if (path === "/") return { page: "home" };
-    if (path === "/tokens") return { page: "tokens" };
+    if (path === "/tokens") return { page: "settings", tab: "tokens" };
     if (path === "/settings") return { page: "settings" };
+    const tab = /^\/settings\/([^/]+)$/.exec(path)?.[1];
+    if (tab) return { page: "settings", tab: decode(tab) };
     const ext = /^\/x\/([^/]+)(?:\/(.*))?$/.exec(path);
     if (ext?.[1]) return { page: "ext", name: decode(ext[1]), rest: decode(ext[2] ?? "") };
     const project = /^\/p\/([^/]+)(?:\/(.*))?$/.exec(path);
@@ -56,10 +58,10 @@ export function href(route: Route): string {
             return "#/";
         case "not-found":
             return "#/404";
-        case "tokens":
-            return "#/tokens";
         case "settings":
-            return "#/settings";
+            return route.tab && route.tab !== "general"
+                ? `#/settings/${encodeURIComponent(route.tab)}`
+                : "#/settings";
         case "ext":
             return `#/x/${encodeURIComponent(route.name)}${route.rest ? `/${route.rest}` : ""}`;
         case "project": {

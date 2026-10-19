@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { canManageTokens, type Me, type ProjectSummary } from "./api.ts";
+import type { Me, ProjectSummary } from "./api.ts";
 import { accountNameOf, useBoardExtension } from "./extension.tsx";
 import { type LiveState, useLiveState, useSeenVersion } from "./live.ts";
 import { initial } from "./model.ts";
@@ -98,15 +98,6 @@ export function Sidebar({ me, route, current, projects, onNewProject }: Props) {
                         </a>
                     );
                 })}
-                {me.authRequired && canManageTokens(me) ? (
-                    <a
-                        className={route.page === "tokens" ? "side-link active" : "side-link"}
-                        href={href({ page: "tokens" })}
-                    >
-                        <Icon name="key" />
-                        Tokens
-                    </a>
-                ) : null}
                 <a
                     className={route.page === "settings" ? "side-link active" : "side-link"}
                     href={href({ page: "settings" })}

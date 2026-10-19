@@ -30,7 +30,7 @@ import { NewProject } from "./NewProject.tsx";
 import { NotFound } from "./NotFound.tsx";
 import { Project } from "./Project.tsx";
 import { go, projectHref, type Route, useRoute } from "./route.ts";
-import { Settings } from "./Settings.tsx";
+import { SettingsPage } from "./Settings.tsx";
 import { Sidebar } from "./Sidebar.tsx";
 import {
     clearAccountMemory,
@@ -41,7 +41,6 @@ import {
     remembered,
     setAccountName,
 } from "./storage.ts";
-import { Tokens } from "./Tokens.tsx";
 import { Icon, Logo } from "./ui.tsx";
 
 /** Signs in first when the server asks for it, then shows the board. */
@@ -305,14 +304,10 @@ function Shell({ me, route, onSignedOut }: { me: Me; route: Route; onSignedOut()
                 onNewProject={newProject}
             />
             <main className="content">
-                {route.page === "tokens" && canManageTokens(me) && me.authRequired ? (
-                    <div className="sheet">
-                        <div className="sheet-inner">
-                            <Tokens me={me} projects={projects} />
-                        </div>
-                    </div>
-                ) : route.page === "settings" ? (
-                    <Settings
+                {route.page === "settings" ? (
+                    <SettingsPage
+                        me={me}
+                        tab={route.tab}
                         projects={projects}
                         manageServer={isServerAdmin(me)}
                         accountName={accountNameOf(me, extension)}

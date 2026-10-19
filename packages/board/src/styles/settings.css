@@ -289,3 +289,16 @@ button.add-button:hover:not(:disabled) {
     max-width: 100%;
     flex-wrap: wrap;
 }
+
+/* Tabs under Settings' title: General, any the extension adds, Tokens. */
+.settings > .settings-tabs {
+    align-self: flex-start;
+    max-width: 100%;
+    margin-bottom: 4px;
+}
+.settings-intro {
+    max-width: 640px;
+    padding-bottom: 14px;
+    font-size: 13px;
+    line-height: 1.5;
+}

@@ -309,8 +309,9 @@ describe("routes", () => {
         const routes = [
             { page: "home" },
             { page: "not-found" },
-            { page: "tokens" },
             { page: "settings" },
+            { page: "settings", tab: "tokens" },
+            { page: "settings", tab: "account" },
             { page: "project", project: "checkout web", tab: "inbox" },
             { page: "project", project: "a/b", tab: "inbox", selected: "01ABC" },
             { page: "project", project: "x", tab: "activity" },

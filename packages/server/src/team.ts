@@ -434,7 +434,10 @@ export function teamBackend(
         },
         claimWork: async (id, action, checkoutHead) => {
             if (!contextId)
-                throw new RequestError("Connect a checkout context to claim assigned work.", 409);
+                throw new RequestError(
+                    "Connect a dev setup (the board's Team page) to claim assigned work.",
+                    409
+                );
             const stored = await allowed(await inner.get(id));
             if (!stored) throw new RequestError("Feedback is outside this checkout.", 404);
             const result = await teams.claim(

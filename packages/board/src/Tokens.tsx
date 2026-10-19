@@ -16,19 +16,30 @@ import { keepFreshToken } from "./storage.ts";
 import { CodeBlock, Icon, Modal, Segmented } from "./ui.tsx";
 
 /** The Tokens page: every token on the server, and making one for a project or for an agent. */
-export function Tokens({ me, projects }: { me: Me; projects: ProjectSummary[] | null }) {
+export function Tokens({
+    me,
+    projects,
+    embedded = false,
+}: {
+    me: Me;
+    projects: ProjectSummary[] | null;
+    /** Inside a Settings tab: the intro is a line of text, not a page heading. */
+    embedded?: boolean;
+}) {
+    const intro =
+        "App/tester tokens let people capture feedback, with optional access to read and change it. Agent tokens connect coding agents through MCP. An agent token is restricted to the projects it is issued for.";
     return (
         <>
-            <header className="sheet-head">
-                <div>
-                    <h1>Tokens</h1>
-                    <p>
-                        App/tester tokens let people capture feedback, with optional access to read
-                        and change it. Agent tokens connect coding agents through MCP. An agent
-                        token is restricted to the projects it is issued for.
-                    </p>
-                </div>
-            </header>
+            {embedded ? (
+                <p className="muted settings-intro">{intro}</p>
+            ) : (
+                <header className="sheet-head">
+                    <div>
+                        <h1>Tokens</h1>
+                        <p>{intro}</p>
+                    </div>
+                </header>
+            )}
             <TokenManager me={me} projects={projects} />
         </>
     );

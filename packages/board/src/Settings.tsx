@@ -1,10 +1,12 @@
 import { DETAILS } from "@notato/core";
-import { useEffect, useState } from "react";
+import { type ReactNode, useEffect, useState } from "react";
 import { AgentsSection, agentsText } from "./Agents.tsx";
 import {
+    canManageTokens,
     deleteWebhook,
     getSettings,
     getStatus,
+    type Me,
     type OnOff,
     type ProjectSummary,
     type ServerStatus,
@@ -13,10 +15,13 @@ import {
     setSetting,
     type WebhookView,
 } from "./api.ts";
+import { useBoardExtension } from "./extension.tsx";
 import { LocalPassword, LocalUsers } from "./LocalUsers.tsx";
 import { capitalise, duration, plural } from "./model.ts";
+import { go, href } from "./route.ts";
 import { KEYS, setBoardName, useBoardName, useRemembered } from "./storage.ts";
 import { TestDialog } from "./TestPanel.tsx";
+import { Tokens } from "./Tokens.tsx";
 import { FLASH_MS, Icon, Segmented, ThemeSwitch, Toggle } from "./ui.tsx";
 import { WebhookEditor } from "./WebhookEditor.tsx";
 import { eventsSummary, formatLabel } from "./webhook-form.ts";
@@ -33,7 +38,10 @@ export function Settings({
     manageServer = true,
     accountName,
     onSignOut,
+    tabs = null,
 }: {
+    /** The tab strip, shown under the title when Settings has more than one page. */
+    tabs?: ReactNode;
     projects: ProjectSummary[] | null;
     /** False for someone who may not see or change the server's own settings: they get this browser's preferences. */
     manageServer?: boolean;
@@ -122,6 +130,7 @@ export function Settings({
                             <p>Preferences for this browser.</p>
                         </div>
                     </header>
+                    {tabs}
                     <LocalPassword />
                     <BrowserPreferences accountName={accountName} />
                     <AccountSection name={accountName} onSignOut={onSignOut} />
@@ -135,6 +144,7 @@ export function Settings({
             <div className="sheet">
                 <div className="sheet-inner settings">
                     {head}
+                    {tabs}
                     {error ? <p className="error">{error}</p> : <p className="muted">Loading…</p>}
                     <AccountSection name={accountName} onSignOut={onSignOut} />
                 </div>
@@ -148,6 +158,7 @@ export function Settings({
         <div className="sheet">
             <div className="sheet-inner settings">
                 {head}
+                {tabs}
                 <LocalPassword />
                 <LocalUsers />
 
@@ -570,5 +581,78 @@ function AccountSection({ name, onSignOut }: { name?: string; onSignOut?: () => 
                 ) : null}
             </div>
         </section>
+    );
+}
+
+/**
+ * Settings and the pages that sit with it: this browser's preferences and the server's settings (General), whatever an
+ * extension adds for the signed-in person (an account page), and Tokens. With only General there is no tab strip.
+ */
+export function SettingsPage({
+    me,
+    tab,
+    projects,
+    manageServer,
+    accountName,
+    onSignOut,
+}: {
+    me: Me;
+    tab?: string;
+    projects: ProjectSummary[] | null;
+    manageServer: boolean;
+    accountName?: string;
+    onSignOut?: () => Promise<void>;
+}) {
+    const extension = useBoardExtension();
+    const added = extension?.settingsTabs ?? [];
+    const tokens = Boolean(me.authRequired && canManageTokens(me));
+    const pages = [
+        { id: "general", label: "General" },
+        ...added.map((t) => ({ id: t.id, label: t.label })),
+        ...(tokens ? [{ id: "tokens", label: "Tokens" }] : []),
+    ];
+    const current = pages.some((p) => p.id === tab) ? (tab as string) : "general";
+    const strip =
+        pages.length > 1 ? (
+            <Segmented
+                className="settings-tabs"
+                label="Settings pages"
+                value={current}
+                options={pages.map((p) => ({ id: p.id, label: p.label }))}
+                onChange={(id) => go(href({ page: "settings", tab: id }))}
+            />
+        ) : null;
+    if (current === "general")
+        return (
+            <Settings
+                projects={projects}
+                manageServer={manageServer}
+                accountName={accountName}
+                onSignOut={onSignOut}
+                tabs={strip}
+            />
+        );
+    const Added = added.find((t) => t.id === current)?.Page;
+    return (
+        <div className="sheet">
+            <div className="sheet-inner settings">
+                <header className="sheet-head">
+                    <div>
+                        <h1>Settings</h1>
+                        <p>
+                            {current === "tokens"
+                                ? "Keys that let apps and coding agents talk to this server."
+                                : "Your account."}
+                        </p>
+                    </div>
+                </header>
+                {strip}
+                {current === "tokens" ? (
+                    <Tokens me={me} projects={projects} embedded />
+                ) : Added ? (
+                    <Added me={me} />
+                ) : null}
+            </div>
+        </div>
     );
 }

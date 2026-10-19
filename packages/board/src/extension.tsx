@@ -27,6 +27,11 @@ export interface BoardExtension {
     ProjectNav?: ComponentType<ProjectNavProps>;
     /** Shown at the top of the sidebar, above the open project: a workspace switcher. */
     SidebarTop?: ComponentType<{ me: Me }>;
+    /**
+     * Tabs it adds to Settings, after General and before Tokens, each at `#/settings/<id>`: what belongs to the
+     * signed-in person or the account rather than to a project.
+     */
+    settingsTabs?: Array<{ id: string; label: string; Page: ComponentType<{ me: Me }> }>;
     /** Shown at the end of a project's settings. */
     ProjectSettingsExtra?: ComponentType<{ me: Me; projectId: string }>;
     /** Signs the person out of whatever the extension signed them in to, before the server forgets the session. */
