@@ -266,6 +266,10 @@ export function Contexts({
                             Everyone on the project can still see all of its feedback. Setups only
                             decide which agent is sent the work.
                         </p>
+                        <p className="muted">
+                            Working alone? You can skip this page: one app token and one agent token
+                            for the project are all you need.
+                        </p>
                     </div>
                     <form
                         onSubmit={(e) => {

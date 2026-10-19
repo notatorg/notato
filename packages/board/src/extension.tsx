@@ -19,7 +19,13 @@ export interface BoardExtension {
     /** Pages of its own, at `#/x/<key>` (anything after the key is `rest`). */
     pages?: Record<string, ComponentType<ExtensionPageProps>>;
     /** Links the sidebar shows beneath its own: they lead to `#/x/<page>`. */
-    nav?: Array<{ label: string; page: string; icon?: IconName }>;
+    nav?: Array<{
+        label: string;
+        page: string;
+        icon?: IconName;
+        /** Hides the link for people it is no use to (a guest with no workspace pages). Default: shown. */
+        show?: (me: Me) => boolean;
+    }>;
     /**
      * Replaces the sidebar's list of projects, and the open project's pages above it: a deployment with many projects
      * (and workspaces to hold them) may prefer a switcher.

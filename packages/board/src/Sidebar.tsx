@@ -83,21 +83,23 @@ export function Sidebar({ me, route, current, projects, onNewProject }: Props) {
             })()}
 
             <div className="side-foot">
-                {extension?.nav?.map((item) => {
-                    const target = href({ page: "ext", name: item.page, rest: "" });
-                    const on = route.page === "ext" && route.name === item.page;
-                    return (
-                        <a
-                            key={item.page}
-                            className={on ? "side-link active" : "side-link"}
-                            href={target}
-                            aria-current={on ? "page" : undefined}
-                        >
-                            {item.icon ? <Icon name={item.icon} /> : null}
-                            {item.label}
-                        </a>
-                    );
-                })}
+                {extension?.nav
+                    ?.filter((item) => item.show?.(me) !== false)
+                    .map((item) => {
+                        const target = href({ page: "ext", name: item.page, rest: "" });
+                        const on = route.page === "ext" && route.name === item.page;
+                        return (
+                            <a
+                                key={item.page}
+                                className={on ? "side-link active" : "side-link"}
+                                href={target}
+                                aria-current={on ? "page" : undefined}
+                            >
+                                {item.icon ? <Icon name={item.icon} /> : null}
+                                {item.label}
+                            </a>
+                        );
+                    })}
                 <a
                     className={route.page === "settings" ? "side-link active" : "side-link"}
                     href={href({ page: "settings" })}
