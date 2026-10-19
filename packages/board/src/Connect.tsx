@@ -103,6 +103,7 @@ function ConnectApp({ me, project, name }: { me: Me; project: string; name: stri
 
     return (
         <div className="connect">
+            <p className="connect-label">Your app</p>
             {!needsToken ? (
                 <div className="connect-note">
                     <Icon name="check" size={15} className="note-icon" />
@@ -142,6 +143,14 @@ function ConnectApp({ me, project, name }: { me: Me; project: string; name: stri
                 </div>
             )}
 
+            <Segmented
+                label="Platform"
+                className="platforms"
+                value={platform}
+                onChange={setPlatform}
+                options={guides.map((g) => ({ id: g.id, label: g.label }))}
+            />
+            {guide ? <GuideView guide={guide} /> : null}
             {agentToken ? (
                 <>
                     <p className="connect-label">Your coding agent</p>
@@ -182,14 +191,6 @@ function ConnectApp({ me, project, name }: { me: Me; project: string; name: stri
                 </>
             ) : null}
 
-            <Segmented
-                label="Platform"
-                className="platforms"
-                value={platform}
-                onChange={setPlatform}
-                options={guides.map((g) => ({ id: g.id, label: g.label }))}
-            />
-            {guide ? <GuideView guide={guide} /> : null}
             <details className="connect-checks">
                 <summary>Check the connection</summary>
                 <ol>
