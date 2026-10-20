@@ -84,17 +84,31 @@ Optional admissions and waitlist management use `NOTATO_BETA_ENABLED=1`; the ins
 
 Back up the **whole Postgres database**, including Better Auth's `notato_auth_*` tables, `notato_instance`, invitations and the `notato` schema. Postgres exports alone do not contain screenshots. Back up the private S3 bucket and the deployment settings, especially `NOTATO_AUTH_SECRET` and `NOTATO_PLUGIN_KEY`, in encrypted storage with a separate recovery copy.
 
-For a simple single-host recovery point, stop application and object writes, take a Postgres dump, and snapshot the object-store volume while it is stopped. Example database export (run from this directory):
+For a simple single-host recovery point, stop application and object writes, take a Postgres dump, and snapshot the object-store volume while it is stopped. Run these from this directory (the Compose project is named `notato`, so volumes are `notato_*` unless you pass `-p`; `docker volume ls` shows the volume names):
 
 ```sh
 docker compose --env-file .env stop server
 docker compose --env-file .env exec -T postgres pg_dump -U notato -d notato -Fc > /private/backup/notato.dump
 docker compose --env-file .env stop objects
-# Snapshot the object-data volume and save the private environment file in encrypted backup storage.
+docker run --rm -v notato_object-data:/data:ro alpine tar czf - -C /data . > /private/backup/objects.tgz
 docker compose --env-file .env start objects server
 ```
 
-Use your storage system's consistent snapshot or replication procedure for larger deployments. Test a restore into new volumes with the same keys before relying on a backup. Restore Postgres and the matching object snapshot together. Keep writes stopped during restore; change the canonical public origin for an isolated recovery drill. The lightweight developer server's SQLite backup commands do not back up this system.
+Streaming the archive through standard output needs no host folder to be shared with Docker, so it also works on Colima and Docker Desktop. Save `.env` in encrypted backup storage beside these files.
+
+Restoring is the same in reverse, into empty volumes and with the **same** `.env` (so `NOTATO_AUTH_SECRET` and `NOTATO_PLUGIN_KEY` match). This sequence has been tested end to end, including a changed administrator password, a note and its screenshot:
+
+```sh
+docker compose --env-file .env down --volumes        # only when replacing a lost or broken instance
+docker compose --env-file .env up -d --wait postgres objects
+docker compose --env-file .env stop objects
+docker run --rm -i -v notato_object-data:/data alpine sh -c 'rm -rf /data/* /data/.[!.]*; tar xzf - -C /data' < /private/backup/objects.tgz
+docker compose --env-file .env start objects
+docker compose --env-file .env exec -T postgres pg_restore -U notato -d notato --clean --if-exists --no-owner < /private/backup/notato.dump
+docker compose --env-file .env up -d --wait
+```
+
+Sign in with your current password, not the one in `.env`, and open a note with a screenshot to confirm both halves came back. Restore Postgres and the matching object snapshot together, and keep writes stopped while you do. Change the canonical public origin for an isolated recovery drill. Use your storage system's consistent snapshot or replication procedure for larger deployments. The lightweight developer server's SQLite backup commands do not back up this system. Marketing-email withdrawals made after the dump are missing from a restored database: see `services/server/scripts/email-restore.ts` if you send marketing email.
 
 ## Upgrade and roll back
 
