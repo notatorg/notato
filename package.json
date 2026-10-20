@@ -24,7 +24,7 @@
         "release:build": "bun run scripts/build-release.ts",
         "version": "bun scripts/version.ts",
         "build:site": "bun site/build.ts",
-        "preview:site": "wrangler preview",
+        "preview:site": "bun site/deploy-preview.ts",
         "deploy:site": "wrangler deploy",
         "site": "bun site/build.ts --serve",
         "build:service": "bun run --filter @notato/service-board build",

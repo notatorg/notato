@@ -33,16 +33,17 @@ Rename a README heading and update `PAGES` to match. `bun run site` rebuilds the
 
 ## Publishing
 
-Cloudflare Workers Builds publishes this site from GitHub using one Worker, `notato-site`, and the root
-[`wrangler.json`](../wrangler.json). The site is static assets; it does not need a Worker script, database or
-application server. Wrangler is pinned in the root `package.json` and `bun.lock`.
+Cloudflare Workers Builds publishes this site from GitHub using the root [`wrangler.json`](../wrangler.json).
+The site is static assets; it needs no Worker script, database or application server. Wrangler is pinned in
+the root `package.json` and `bun.lock`. Both addresses are on notato.dev; nothing is published on `workers.dev`.
 
 | Git branch | Result | Command after the build |
 | --- | --- | --- |
-| `develop` | Updates the named develop Preview under `notato-site` | `bun run preview:site` |
-| `main` | Publishes the production website at `notato.dev` | `bun run deploy:site` |
+| `develop` | Updates the preview at `preview.notato.dev` (Worker `notato-site-preview`) | `bun run preview:site` |
+| `main` | Publishes the production website at `notato.dev` (Worker `notato-site`) | `bun run deploy:site` |
+| any other branch | Built to catch errors, not published | `bun run preview:site` (does nothing) |
 
-Open feature and fix pull requests against `develop`. After checking its Preview, open a release pull request
+Open feature and fix pull requests against `develop`. After checking the preview, open a release pull request
 from `develop` into `main`. Merging into `main` publishes the website. Publishing SDK packages, container images
 and GitHub releases still requires the explicit tagged-release process in [RELEASING.md](../RELEASING.md).
 
@@ -55,25 +56,22 @@ Connect the `notatorg/notato` GitHub repository to the `notato-site` Worker, wit
 | Root directory | Repository root (`/`) |
 | Production branch | `main` |
 | Build command | `bun run build:site` |
-| Production deploy command | `bun run deploy:site` |
-| Preview command | `bun run preview:site` |
-| Preview builds | Enabled for non-production branches, including `develop` |
+| Deploy command (production) | `bun run deploy:site` |
+| Non-production branch deploy command | `bun run preview:site` |
+| Non-production branch builds | Enabled |
 | Build variable | `BUN_VERSION=1.4.3`, matching CI |
 
-Enable Worker Previews. For an older connection, complete Cloudflare's **Set up Worker Previews** step before
-using the Preview command. Both commands read the same root Wrangler file. Its `previews` block enables native
-Previews; production routes are never attached to a Preview. Cloudflare gives each branch its own Preview,
-so feature branch pushes cannot replace the shared develop Preview. A merge into `develop` updates that
-branch's stable Preview URL; a merge into `main` updates production.
+The preview is a second Worker, `notato-site-preview`, defined by `env.preview` in `wrangler.json`, so the
+`preview.notato.dev` custom domain never touches production. The first `develop` build creates it and attaches
+the domain, which needs `notato.dev` to be a zone in the same Cloudflare account. `site/deploy-preview.ts`
+publishes only `develop`, so other branches cannot replace the shared preview.
 
 Cloudflare installs dependencies from `bun.lock` before building. `WORKERS_CI_BRANCH`, supplied by Cloudflare,
 determines the build mode automatically: `main` is production, and other branches are previews. Remove any old
 `NOTATO_SITE_ENV` dashboard override. For local checks, use `NOTATO_SITE_ENV=preview bun run build:site` or
 `NOTATO_SITE_ENV=production bun run build:site`.
 
-Preview builds have an `X-Robots-Tag: noindex, nofollow` header. Production builds omit it. The public
-`workers.dev` suffix belongs to the Cloudflare account, so its name may differ from Notato's. Keep that
-account-wide name unchanged when other projects use it; production uses `notato.dev`.
+Preview builds have an `X-Robots-Tag: noindex, nofollow` header. Production builds omit it.
 
 ### Analytics
 
@@ -85,9 +83,8 @@ builds ignore it even if the variable is present.
 
 ### Initial migration
 
-Rename the existing `notato-site-preview` Worker to `notato-site` and update its build settings as above.
-Create and build `develop` first; a Worker does not need a production deployment before its first native Preview.
-Keep the existing website serving while checking that Preview. `main` must contain the root Wrangler file and
+Update the Worker's build settings as above, then build `develop` first and check `preview.notato.dev`.
+Keep the existing website serving while doing so. `main` must contain the root Wrangler file and
 build scripts before its first Cloudflare production build; do not retry a build of an older `main` commit.
 
 The first production deployment attaches `notato.dev` through the custom domain in `wrangler.json`. Replace any

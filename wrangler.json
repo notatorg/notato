@@ -3,12 +3,24 @@
     "name": "notato-site",
     "compatibility_date": "2026-10-15",
     "workers_dev": false,
-    "preview_urls": true,
+    "preview_urls": false,
     "routes": [{ "pattern": "notato.dev", "custom_domain": true }],
     "assets": {
         "directory": "./site/dist",
         "html_handling": "auto-trailing-slash",
         "not_found_handling": "404-page"
     },
-    "previews": {}
+    "env": {
+        "preview": {
+            "name": "notato-site-preview",
+            "workers_dev": false,
+            "preview_urls": false,
+            "routes": [{ "pattern": "preview.notato.dev", "custom_domain": true }],
+            "assets": {
+                "directory": "./site/dist",
+                "html_handling": "auto-trailing-slash",
+                "not_found_handling": "404-page"
+            }
+        }
+    }
 }
