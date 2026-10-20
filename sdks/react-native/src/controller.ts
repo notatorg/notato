@@ -3,6 +3,7 @@ import {
     buildAnnotation,
     type DeviceInfo,
     type NetworkEntry,
+    routeName,
     settingPeopleOnly,
 } from "./annotation.ts";
 import { writeBundle } from "./bundle.ts";
@@ -26,6 +27,7 @@ import {
     resolveConfig,
 } from "./config.ts";
 import type { ServerEvent } from "./events.ts";
+import { HiddenAnnotations, isCompleted } from "./hidden.ts";
 import { identityOf } from "./identity.ts";
 import { ulid } from "./ids.ts";
 import type { Picked } from "./inspect.ts";
@@ -123,6 +125,7 @@ export interface Host {
 
 /** What a person chose at runtime, kept across launches unless `rememberRuntimeState` is off. */
 interface Settings {
+    hiddenAnnotations?: string;
     enabled?: boolean;
     toolbarVisible?: boolean;
     author?: string;
@@ -217,6 +220,7 @@ export class NotatoController {
     /** The project whose notes kept on the device have been read in. */
     private loadedFor?: string;
     private readonly store = new NoteStore();
+    private readonly hidden = new HiddenAnnotations();
     /** The screenshots of notes not on the server yet, by id: read from here first, from storage after a restart. */
     private readonly assets = new Map<string, Uint8Array>();
 
@@ -290,6 +294,7 @@ export class NotatoController {
     getState = (): NotatoState => this.snapshot;
 
     private build(): NotatoState {
+        this.syncHidden();
         const c = this.config;
         return {
             enabled: this.enabled,
@@ -803,17 +808,79 @@ export class NotatoController {
 
     /** The number the next note on this screen gets: one more than the notes already on it. */
     nextPin(route: string): number {
-        return this.notesOn(route).length + 1;
+        return (
+            this.store.all.filter((r) => routeName(r.annotation.route) === routeName(route))
+                .length + 1
+        );
     }
 
     /** The notes on a screen, oldest first, numbered as their pins are. The same list until one of them changes. */
     notesOn(route: string): readonly NumberedNote[] {
+        this.syncHidden();
         return this.store.notesOn(route);
     }
 
     /** The notes on a screen that get a pin here: those made in a React Native app. */
     pinsOn(route: string): readonly NumberedNote[] {
+        this.syncHidden();
         return this.store.pinsOn(route);
+    }
+
+    private syncHidden(): void {
+        this.hidden.select(
+            [
+                this.server,
+                this.config?.project,
+                this.mode,
+                this.connectionInfo?.token,
+                this.authorName,
+            ],
+            this.settings.hiddenAnnotations
+        );
+        this.store.setHidden(this.hidden.ids);
+    }
+
+    get hiddenCount(): number {
+        this.syncHidden();
+        return this.hidden.ids.size;
+    }
+
+    get completedCount(): number {
+        this.syncHidden();
+        return this.store.all.filter(
+            (r) => isCompleted(r.annotation) && !this.hidden.ids.has(r.annotation.id)
+        ).length;
+    }
+
+    get visibleCount(): number {
+        this.syncHidden();
+        return this.store.all.filter(
+            (r) => !(isCompleted(r.annotation) && this.hidden.ids.has(r.annotation.id))
+        ).length;
+    }
+
+    hideAnnotation(id: string): void {
+        this.syncHidden();
+        const a = this.store.get(id)?.annotation;
+        if (a && this.hidden.hide([a])) this.saveHidden();
+    }
+
+    hideCompleted(): void {
+        this.syncHidden();
+        if (this.hidden.hide(this.store.all.map((r) => r.annotation))) this.saveHidden();
+    }
+
+    restoreHidden(): void {
+        this.syncHidden();
+        this.hidden.clear();
+        this.saveHidden();
+    }
+
+    private saveHidden(): void {
+        this.settings.hiddenAnnotations = this.hidden.encoded;
+        this.store.setHidden(this.hidden.ids);
+        this.rememberSettings();
+        this.emit();
     }
 
     /**

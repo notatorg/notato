@@ -86,7 +86,8 @@ internal class Controller(
     // Kept out of Auto Backup and device-to-device transfers, which copy filesDir: earlier versions kept notes there, and
     // they are moved over when the notes are first read.
     val sync = NoteSync(this, File(app.noBackupFilesDir, "notato"), config.project, formerBase = File(app.filesDir, "notato"))
-    private val screens = ScreenNotes(sync.notes)
+    private val hidden = HiddenAnnotations()
+    private val screens = ScreenNotes(sync.notes, hidden)
     private val shake = ShakeDetector(app) { setToolbar(!toolbarVisible) }
 
     private val sessions = mutableMapOf<Activity, Session>()
@@ -370,7 +371,41 @@ internal class Controller(
     val pendingCount: Int get() = screens.pending
 
     /** The notes on the session's screen, oldest first, numbered as their pins are. */
-    fun recordsOnRoute(session: Session): List<Pair<Int, NoteRecord>> = screens.on(session.route.ifEmpty { session.currentRoute() })
+    fun recordsOnRoute(session: Session): List<Pair<Int, NoteRecord>> {
+        syncHidden()
+        return screens.on(session.route.ifEmpty { session.currentRoute() })
+    }
+
+    private fun syncHidden() {
+        if (hidden.select(listOf(server, config.project, mode.name, server?.let { config.tokenFor(it) }, authorName), runtime.hiddenAnnotations)) sync.notes.changed()
+    }
+
+    val hiddenCount: Int get() { syncHidden(); return hidden.ids.size }
+    val completedCount: Int get() { syncHidden(); return sync.notes.all.count { HiddenAnnotations.isCompleted(it.annotation.status) && !hidden.contains(it.annotation) } }
+    val visibleCount: Int get() { syncHidden(); return sync.notes.all.count { !hidden.contains(it.annotation) } }
+
+    fun hideAnnotation(id: String) {
+        syncHidden()
+        val a = sync.notes[id]?.annotation ?: return
+        if (hidden.hide(listOf(a))) saveHidden()
+    }
+
+    fun hideCompleted() {
+        syncHidden()
+        if (hidden.hide(sync.notes.all.map { it.annotation })) saveHidden()
+    }
+
+    fun restoreHidden() {
+        syncHidden()
+        hidden.clear()
+        saveHidden()
+    }
+
+    private fun saveHidden() {
+        runtime.hiddenAnnotations = hidden.encoded
+        sync.notes.changed()
+        publish()
+    }
 
     /** The ids of the notes on the session's screen that have a pin (see [pinned]). */
     fun pinnedOn(session: Session): Set<String> = pinned(recordsOnRoute(session)).mapTo(HashSet()) { it.second.annotation.id }
@@ -546,7 +581,7 @@ internal class Controller(
         val density = root?.resources?.displayMetrics?.density ?: 1f
         val element = selection.element
         val route = session.currentRoute()
-        val pin = screens.on(route).size + 1
+        val pin = sync.notes.all.count { it.annotation.route == route } + 1
         val masks = selection.masks(shot.all, config.resolvedMaskInputs)
         val shots = shot.screen?.takeIf { screenshotsOn }?.let { screen ->
             screen.use {
@@ -857,6 +892,7 @@ internal class Controller(
 
     /** Draws the overlays again: for what only they show (the toolbar's place and fold, the pins shown or hidden). */
     private fun render() {
+        syncHidden()
         for (session in sessions.values) session.overlay.render()
         // The notes or what is shown may have changed: the pins are placed again.
         wake()

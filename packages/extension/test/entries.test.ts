@@ -107,6 +107,20 @@ function ask(message: unknown, sender: chrome.runtime.MessageSender): Promise<un
 }
 
 describe("the background worker", () => {
+    it("refuses connection checks from pages, so they cannot choose a server or supply a token", async () => {
+        expect(
+            await ask(
+                {
+                    kind: "check",
+                    server: "https://elsewhere.example",
+                    project: "other",
+                    token: "page_supplied",
+                },
+                { origin: "https://app.example", url: "https://app.example/" }
+            )
+        ).toBeUndefined();
+    });
+
     it("keeps the extension's storage from content scripts as soon as it starts", () => {
         expect(accessLevels).toEqual([{ accessLevel: "TRUSTED_CONTEXTS" }]);
     });

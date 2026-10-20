@@ -179,6 +179,9 @@ internal class SheetBuilder(private val controller: Controller, private val sess
         SheetCopy.earlier(a.thread.size)?.let { rows += ui.text(it, 12f, ui.cardMuted) }
         val buttons = mutableListOf<View>()
         val choices = mutableListOf<Pair<String, () -> Unit>>()
+        if (dev.notato.android.internal.HiddenAnnotations.isCompleted(a.status)) {
+            choices += "Hide from this app" to { close(); controller.hideAnnotation(a.id) }
+        }
         if (sentOnly) {
             // No reply, revert or delete: the server would refuse each. Close is the header's ×.
             rows += ui.text(SENT_ONLY, 12.5f, ui.cardMuted)
@@ -217,7 +220,7 @@ internal class SheetBuilder(private val controller: Controller, private val sess
             // Close is the header's ×.
             choices += "Delete" to { android.app.AlertDialog.Builder(ui.context).setTitle("Delete this note?").setMessage("This permanently deletes the note.").setNegativeButton("Cancel", null).setPositiveButton("Delete") { _, _ -> run(status, { sync.delete(a.id) }, "Note deleted") }.show() }
         }
-        if (!sentOnly) {
+        if (!sentOnly || dev.notato.android.internal.HiddenAnnotations.isCompleted(a.status)) {
             lateinit var more: View
             more = ui.sheetButton("More options") {
                 val popup = android.widget.PopupMenu(ui.context, more)
@@ -256,7 +259,7 @@ internal class SheetBuilder(private val controller: Controller, private val sess
     /** Everything the menu shows: it is built again when this changes. */
     private fun menuState(): List<Any?> = listOf(
         controller.mode, controller.serverHost, controller.hasServer, sync.connection, sync.failure, sync.retrying, sync.captureOnly,
-        controller.pinsVisible, controller.recordsOnRoute(session).size, sync.notes.size, controller.pendingCount, controller.shakeAvailable,
+        controller.pinsVisible, controller.recordsOnRoute(session).size, controller.visibleCount, controller.pendingCount, controller.shakeAvailable,
     )
 
     private fun menuRows(): View {
@@ -284,7 +287,7 @@ internal class SheetBuilder(private val controller: Controller, private val sess
                     else -> "$here pins on this screen"
                 },
             ) { controller.togglePins() },
-            opens(Icon.LIST, "Notes", SheetCopy.notes(here, sync.notes.size)) { notesPage() },
+            opens(Icon.LIST, "Notes", SheetCopy.notes(here, controller.visibleCount)) { notesPage() },
         )
         if (controller.mode == NotatoMode.TEST && pending > 0) {
             groups += listOf(
@@ -386,7 +389,7 @@ internal class SheetBuilder(private val controller: Controller, private val sess
     /** The notes on this screen (the first ten), each opening its card with Back to this list. */
     private fun notesPage() = SheetPage(SheetPlace.Notes) {
         val list = controller.recordsOnRoute(session)
-        val all = sync.notes.size
+        val all = controller.visibleCount
         val rows = ui.own(LinearLayout(ui.context)).apply { orientation = LinearLayout.VERTICAL }
         if (list.isEmpty()) {
             rows.addView(ui.sheetRow(ui.tile(Icon.CROSSHAIR, Ui.TileStyle.PRIMARY), "Annotate", "No notes on this screen yet") {
@@ -431,6 +434,9 @@ internal class SheetBuilder(private val controller: Controller, private val sess
             ui.column(6, ui.fieldLabel("Your name"), name),
             ui.column(6, ui.fieldLabel("Server"), server, serverError, inset(ui.text(controller.describeConnection(), 12f, ui.cardMuted))),
             shotsRow,
+            ui.sheetButton("Hide completed annotations (${controller.completedCount})") { close(); controller.hideCompleted() }.apply { isEnabled = controller.completedCount > 0 },
+            ui.text("Across this app, on this device. Kept in the dashboard.", 12.5f, ui.cardMuted),
+            ui.sheetButton("Restore hidden annotations (${controller.hiddenCount})") { close(); controller.restoreHidden() },
         )
         val buttons = ButtonRow(ui, listOf(
             ui.sheetButton("Reset") {

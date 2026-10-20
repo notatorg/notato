@@ -83,6 +83,7 @@ final class NoteRecord: Identifiable {
 @MainActor
 struct ScreenNotes {
     var all: [NoteRecord] = []
+    var numbers: [String: Int] = [:]
     /// The notes pinned on the screen: the newest `PinLayout.maxPins` of those made on this platform (a note from
     /// another is about another app's screen of the same name), with their numbers among `all`. Every note is in the
     /// Notes list all the same.
@@ -92,6 +93,10 @@ struct ScreenNotes {
 
     /// The newest `limit`, still in pin order, with their numbers.
     func newest(_ limit: Int) -> [(number: Int, record: NoteRecord)] {
-        all.indices.suffix(limit).map { (number: $0 + 1, record: all[$0]) }
+        all.indices.suffix(limit).map { (number: numbers[all[$0].id] ?? $0 + 1, record: all[$0]) }
+    }
+
+    func number(of record: NoteRecord) -> Int? {
+        numbers[record.id] ?? all.firstIndex { $0.id == record.id }.map { $0 + 1 }
     }
 }

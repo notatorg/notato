@@ -9,6 +9,7 @@ import 'client.dart';
 import 'config.dart';
 import 'controller.dart';
 import 'events.dart';
+import 'hidden.dart';
 import 'identity.dart';
 import 'ids.dart';
 import 'logs.dart';
@@ -106,6 +107,7 @@ class NotatoRuntime extends ChangeNotifier implements NotatoController {
   NotatoConfig? _config;
   NotatoStorage _storage = MemoryStorage();
   Map<String, Object?> _settings = {};
+  final _hidden = HiddenAnnotations();
   final _notes = NoteBook();
 
   /// Screenshots of the notes not sent yet, kept in memory as well as in [_storage].
@@ -513,13 +515,71 @@ class NotatoRuntime extends ChangeNotifier implements NotatoController {
   // ---- making a note -----------------------------------------------------------------------------------------------
 
   /// The notes on a screen, oldest first, numbered as their pins are.
-  ScreenNotes notesOn(String route) => _notes.notesOn(route);
+  ScreenNotes notesOn(String route) {
+    _syncHidden();
+    return _notes.notesOn(route);
+  }
 
   /// The notes on a screen that get a pin here: those made in a Flutter app.
-  ScreenNotes pinsOn(String route) => _notes.pinsOn(route);
+  ScreenNotes pinsOn(String route) {
+    _syncHidden();
+    return _notes.pinsOn(route);
+  }
 
   /// The number the next note on this screen gets: one more than the notes already on it.
-  int nextPin(String route) => notesOn(route).length + 1;
+  int nextPin(String route) => notes.where((r) => r.route == routeName(route)).length + 1;
+
+  void _syncHidden() {
+    _hidden.select([
+      server,
+      _config?.project,
+      mode.name,
+      server == _config?.server ? _config?.token : null,
+      authorName,
+    ], _settings['hiddenAnnotations'] as String?);
+    _notes.setHidden(_hidden.ids);
+  }
+
+  int get hiddenCount {
+    _syncHidden();
+    return _hidden.ids.length;
+  }
+
+  int get completedCount {
+    _syncHidden();
+    return notes
+        .where((r) => HiddenAnnotations.isCompleted(r.annotation['status']) && !_hidden.contains(r.annotation))
+        .length;
+  }
+
+  int get visibleCount {
+    _syncHidden();
+    return notes.where((r) => !_hidden.contains(r.annotation)).length;
+  }
+
+  void hideAnnotation(String id) {
+    _syncHidden();
+    final a = _notes[id]?.annotation;
+    if (a != null && _hidden.hide([a])) _saveHidden();
+  }
+
+  void hideCompleted() {
+    _syncHidden();
+    if (_hidden.hide(notes.map((r) => r.annotation))) _saveHidden();
+  }
+
+  void restoreHidden() {
+    _syncHidden();
+    _hidden.clear();
+    _saveHidden();
+  }
+
+  void _saveHidden() {
+    _settings['hiddenAnnotations'] = _hidden.encoded;
+    _notes.setHidden(_hidden.ids);
+    _saveSettings();
+    notifyListeners();
+  }
 
   /// For tests: the notes as if they had come from the server.
   @visibleForTesting

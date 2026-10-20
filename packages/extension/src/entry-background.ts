@@ -4,6 +4,7 @@ import { closeToContentScripts, loadSites, reregisterAll } from "./sites.ts";
 
 const worker = createWorker({
     fetch: (input, init) => fetch(input, init),
+    extensionOrigin: chrome.runtime.getURL("").replace(/\/$/, ""),
     siteConfig: async (origin) => (await loadSites())[origin] ?? null,
 });
 
@@ -28,8 +29,8 @@ chrome.runtime.onMessage.addListener((message: ToBackground | ConfigRequest, sen
         return true;
     }
     const fromExtension = (sender.url ?? "").startsWith(chrome.runtime.getURL(""));
-    // `ping` is how the popup tests a server: not something a page's script may ask for.
-    if (message.kind === "ping" && !fromExtension) return false;
+    // Only the popup may check unsaved settings or supply a token. Pages stay bound to their saved configuration.
+    if (message.kind === "check" && !fromExtension) return false;
     void worker.handle(originOf(sender), message).then(respond);
     return true; // the answer comes later
 });

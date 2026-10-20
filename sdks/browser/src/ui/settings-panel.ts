@@ -42,7 +42,12 @@ export interface SettingsPanelOptions {
     serverScreenshots(): boolean;
     /** Hides Notato until the page is reloaded. */
     onHide(): void;
-    hiddenNotes?: { count(): number; restore(): void };
+    hiddenNotes?: {
+        count(): number;
+        completedCount(): number;
+        hideCompleted(): void;
+        restore(): void;
+    };
     /** The panel opened or closed, however it happened (the toolbar shows its button pressed while it is open). */
     onToggle?(open: boolean): void;
     /** The button that opens and closes the panel: a press on it is left to its click, which closes the panel. */
@@ -53,6 +58,7 @@ export interface SettingsPanel {
     open(): void;
     close(): void;
     toggle(): void;
+    refresh(): void;
     readonly isOpen: boolean;
     destroy(): void;
 }
@@ -75,11 +81,13 @@ export function createSettingsPanel(options: SettingsPanelOptions): SettingsPane
     let off: (() => void) | undefined;
     /** Saves a name typed but not yet saved: the panel can close, or move on, without the field being left first. */
     let commitName: (() => void) | undefined;
+    let refreshHiddenActions: (() => void) | undefined;
 
     const close = () => {
         const was = el !== null;
         commitName?.();
         commitName = undefined;
+        refreshHiddenActions = undefined;
         off?.();
         off = undefined;
         if (el) {
@@ -125,6 +133,7 @@ export function createSettingsPanel(options: SettingsPanelOptions): SettingsPane
         sw.addEventListener("click", () => {
             settings.set({ [key]: !on() });
             refresh();
+            refreshHiddenActions?.();
         });
         refresh();
         return {
@@ -164,6 +173,7 @@ export function createSettingsPanel(options: SettingsPanelOptions): SettingsPane
             if (name.value === settings.get().name) return;
             settings.set({ name: name.value });
             mine.refresh(); // the switch for "only my notes" needs a name to mean anything
+            refreshHiddenActions?.();
         };
         name.addEventListener("change", saveName);
         commitName = saveName;
@@ -311,21 +321,34 @@ export function createSettingsPanel(options: SettingsPanelOptions): SettingsPane
             });
             rows.push(go);
         }
-        if (options.hiddenNotes)
-            rows.push(
-                h(
-                    "button",
-                    {
-                        class: "slink",
-                        type: "button",
-                        onclick: () => {
-                            options.hiddenNotes?.restore();
-                            close();
-                        },
-                    },
-                    `Restore hidden annotations (${options.hiddenNotes.count()})`
-                )
-            );
+        const hiddenNotes = options.hiddenNotes;
+        if (hiddenNotes) {
+            const hideCompleted = h("button", {
+                class: "slink",
+                type: "button",
+                title: "Across this app, in this browser; keep them in the dashboard",
+                onclick: () => {
+                    close();
+                    hiddenNotes.hideCompleted();
+                },
+            });
+            const restore = h("button", {
+                class: "slink",
+                type: "button",
+                onclick: () => {
+                    close();
+                    hiddenNotes.restore();
+                },
+            });
+            refreshHiddenActions = () => {
+                const count = hiddenNotes.completedCount();
+                hideCompleted.textContent = `Hide completed annotations (${count})`;
+                hideCompleted.disabled = count === 0;
+                restore.textContent = `Restore hidden annotations (${hiddenNotes.count()})`;
+            };
+            refreshHiddenActions();
+            rows.push(hideCompleted, restore);
+        }
         rows.push(hide);
         return rows;
     }
@@ -425,6 +448,7 @@ export function createSettingsPanel(options: SettingsPanelOptions): SettingsPane
     }
 
     function render() {
+        refreshHiddenActions = undefined;
         if (!el) return;
         commitName?.();
         commitName = undefined;
@@ -493,6 +517,9 @@ export function createSettingsPanel(options: SettingsPanelOptions): SettingsPane
         toggle() {
             if (el) close();
             else this.open();
+        },
+        refresh() {
+            refreshHiddenActions?.();
         },
         destroy() {
             close();

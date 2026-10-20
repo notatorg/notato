@@ -53,6 +53,10 @@ browser. It never deletes the note or changes the dashboard. Settings → **Rest
 hidden annotations** brings them back. A reopened task or a new agent question is
 visible even if it was hidden while completed.
 
+Settings → **Hide completed annotations** hides all completed notes across the app
+at once, including notes on other pages and beyond the 150 drawn pins. It respects
+**Only my notes** and uses the same browser preference as hiding a single note.
+
 Agents can call **notato_ask_question** to put a task in **Needs your answer**.
 Reply in the app or dashboard to resume it; an aside or a People only reply stays
 private and does not resume the agent. The waiting task retains any variant pick
@@ -60,5 +64,6 @@ or revert request. `notato_get_review` reads every target before a shared fix.
 Reference bytes are downloaded only when the dashboard opens them or an agent
 calls `notato_get` (use `references: false` when only text is needed).
 
-These capture controls are shared by the browser, React and Angular SDKs. Native
-capture controls remain unchanged; the shared question state is readable by them.
+Grouped reviews and reference image capture are shared by the browser, React and
+Angular SDKs. Native SDKs also support individual and bulk hiding of completed
+annotations and can read the shared question state.

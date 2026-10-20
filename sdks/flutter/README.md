@@ -184,6 +184,18 @@ Replies reach the agent within its active feedback scope. Dev feedback is privat
 - Platform views (a map, a web view) are one widget, with nothing inside them.
 - Verified on the iOS simulator (iPhone 17 Pro, iOS 26.5) with Flutter 3.47: picking, Parent, masking, both screenshots, the widget's file and line, the composer, the ⋯ menu, live status and the agent's replies, People only, the agent relay through `notato_annotate`, annotating from code, and test mode's package uploaded and shared. Not yet run on Android, a physical device, macOS or the web.
 
+## Hiding completed annotations
+
+On a resolved or reverted note, open **More options → Hide from this app** to hide
+its pin and card on this device. In **Settings**, **Hide completed annotations**
+hides completed notes across every screen at once, including notes beyond the
+150 drawn pins. **Restore hidden annotations** brings them back.
+
+Hiding keeps the feedback, screenshots and thread in the dashboard and exports.
+It never changes the note on the server. Reopened tasks and new agent questions
+remain visible. The preference is scoped to the server, project, mode, credential
+and name, and survives app restarts when runtime preferences are remembered.
+
 ## Development
 
 ```bash

@@ -1,0 +1,257 @@
+.recovery-page {
+    min-height: 100dvh;
+    padding: 24px;
+    overflow: auto;
+}
+.recovery-header {
+    max-width: 900px;
+    margin: 0 auto 24px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 20px;
+}
+.recovery-header label {
+    min-width: 160px;
+}
+.recovery-card {
+    max-width: 900px;
+    margin: auto;
+    padding: clamp(20px, 4vw, 40px);
+    border: 1px solid var(--line);
+    border-radius: 20px;
+    background: var(--panel, var(--bg));
+    display: grid;
+    gap: 18px;
+}
+.recovery-card section {
+    display: grid;
+    gap: 16px;
+    min-width: 0;
+}
+.recovery-card h1 {
+    font-size: clamp(24px, 4vw, 34px);
+}
+.recovery-card h2 {
+    font-size: 21px;
+}
+.recovery-card h3 {
+    font-size: 17px;
+}
+.recovery-card label {
+    display: grid;
+    gap: 8px;
+}
+.recovery-card select,
+.recovery-card input {
+    max-width: 100%;
+}
+.recovery-card details > summary {
+    cursor: pointer;
+    margin: 12px 0;
+}
+.recovery-card .data-controls {
+    padding: 16px;
+}
+.recovery-steps {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px 24px;
+    padding: 16px 0;
+    list-style: none;
+    border-block: 1px solid var(--line);
+    color: var(--muted);
+    font-size: 13px;
+}
+.recovery-steps [aria-current="step"] {
+    color: var(--text);
+    font-weight: 700;
+}
+.recovery-items {
+    display: grid;
+    gap: 12px;
+    padding: 0;
+    list-style: none;
+}
+.recovery-items li {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 12px;
+    border: 1px solid var(--line);
+    padding: 14px;
+    border-radius: 12px;
+}
+.recovery-items li > div {
+    min-width: 0;
+    flex: 1 1 200px;
+    display: grid;
+    gap: 5px;
+    overflow-wrap: anywhere;
+}
+.recovery-items span {
+    color: var(--muted);
+    font-size: 12px;
+}
+.recovery-navigation {
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+    border-top: 1px solid var(--line);
+    padding-top: 20px;
+}
+@media (max-width: 600px) {
+    .recovery-page {
+        padding: 16px 10px;
+    }
+    .recovery-card {
+        padding: 20px 16px;
+    }
+}
+.recovery-header .workspace-context {
+    min-width: 220px;
+    max-width: min(340px, 70vw);
+    margin: 0;
+}
+.recovery-steps {
+    gap: 8px;
+}
+.recovery-steps li {
+    flex: 1 1 130px;
+}
+.recovery-steps button {
+    width: 100%;
+    height: auto;
+    display: grid;
+    gap: 8px;
+    padding: 12px;
+    text-align: left;
+    justify-content: stretch;
+    background: transparent;
+    border: 1px solid transparent;
+}
+.recovery-steps [aria-current="step"] button {
+    background: var(--selected);
+    border-color: var(--accent);
+}
+.recovery-state {
+    font-size: 12px;
+    font-weight: 600;
+}
+.recovery-state.ready {
+    color: var(--accent-text);
+}
+.recovery-state.over {
+    color: var(--bad);
+}
+.recovery-requirements {
+    display: grid;
+    gap: 10px;
+    padding: 0;
+    list-style: none;
+}
+.recovery-requirements li {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px;
+    border: 1px solid var(--line);
+    border-left: 4px solid var(--accent);
+    border-radius: 10px;
+    padding: 12px 14px;
+}
+.recovery-requirements li.over {
+    border-left-color: var(--bad);
+}
+.recovery-requirements li > div {
+    flex: 1 1 240px;
+    min-width: 0;
+}
+.recovery-requirements p {
+    font-size: 13px;
+    color: var(--muted);
+    margin-top: 6px;
+}
+.recovery-requirements .over > .recovery-state {
+    color: var(--bad);
+}
+.recovery-callout {
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 16px;
+    display: grid;
+    gap: 12px;
+}
+.recovery-callout.over {
+    border-left: 4px solid var(--bad);
+}
+.recovery-callout.ready {
+    border-left: 4px solid var(--accent);
+}
+.recovery-delete-option,
+.recovery-list,
+.recovery-activate {
+    display: grid;
+    gap: 12px;
+}
+.recovery-bulk {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 0;
+}
+.recovery-card label.recovery-check {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-width: 0;
+}
+.recovery-check input[type="checkbox"] {
+    width: 18px;
+    height: 18px;
+    flex: none;
+    accent-color: var(--accent);
+}
+.recovery-items .recovery-check {
+    flex: 1 1 220px;
+}
+.recovery-item-text {
+    display: grid;
+    gap: 6px;
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+.recovery-item-text strong {
+    color: var(--text);
+    font-size: 14px;
+}
+.recovery-confirm-items {
+    display: grid;
+    gap: 10px;
+    padding-left: 20px;
+    max-height: 200px;
+    overflow: auto;
+}
+.recovery-confirm-items li {
+    overflow-wrap: anywhere;
+}
+.recovery-confirm-items span {
+    display: block;
+    color: var(--muted);
+    font-size: 12px;
+    margin-top: 4px;
+}
+@media (max-width: 600px) {
+    .recovery-steps li {
+        flex-basis: 110px;
+    }
+    .recovery-steps button {
+        padding: 10px 6px;
+    }
+    .recovery-header .workspace-context {
+        min-width: 190px;
+    }
+}

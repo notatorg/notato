@@ -22,7 +22,10 @@
         "sdks/*/src",
         "sdks/*/test",
         "sdks/react/example/src",
-        "scripts"
+        "scripts",
+        "services/*/src",
+        "services/*/test",
+        "services/*/scripts"
     ],
     // React Native declares its own globals (FormData, timers), which would change the server's types: it has a program
     // of its own (sdks/react-native/tsconfig.json), and `bun run typecheck` checks both.

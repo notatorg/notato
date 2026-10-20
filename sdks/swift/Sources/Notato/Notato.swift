@@ -75,6 +75,7 @@ public final class Notato {
     private(set) var generation = 0
     /// What the person chose on the device, over the configuration.
     var state = RuntimeState(remember: true)
+    @ObservationIgnored private var hidden = HiddenAnnotations()
     /// `NOTATO_ENABLED` and `NOTATO_SERVER`, as they were when Notato started.
     @ObservationIgnored var launch = LaunchEnvironment([:])
     /// What a server said it allows at `/config` (`readPolicy`): nil until one has answered.
@@ -299,20 +300,57 @@ public final class Notato {
     /// The notes on a screen, in pin order. Worked out for every screen at once, and again only when a note is added
     /// or forgotten, so the overlay can ask on every tick.
     func notes(onRoute route: String) -> ScreenNotes {
-        if screens?.generation != generation { screens = (generation, Self.byScreen(records)) }
+        syncHidden()
+        if screens?.generation != generation { screens = (generation, Self.byScreen(records, hidden: hidden.ids)) }
         return screens?.notes[route] ?? ScreenNotes()
     }
 
-    static func byScreen(_ records: [NoteRecord]) -> [String: ScreenNotes] {
+    private func syncHidden() {
+        let credential = server.flatMap { url in configuration.flatMap { Self.token(for: url, configuration: $0) } }
+        if hidden.select([server?.absoluteString, configuration?.project, mode.rawValue, credential, authorName], saved: state.hiddenAnnotations) {
+            generation += 1
+        }
+    }
+
+    var hiddenCount: Int { syncHidden(); return hidden.ids.count }
+    var completedCount: Int { syncHidden(); return records.filter { HiddenAnnotations.isCompleted($0.annotation.status) && !hidden.contains($0.annotation) }.count }
+    var visibleCount: Int { syncHidden(); return records.filter { !hidden.contains($0.annotation) }.count }
+
+    func hideAnnotation(_ id: String) {
+        syncHidden()
+        if let a = record(id)?.annotation, hidden.hide([a]) { saveHidden() }
+    }
+
+    func hideCompleted() {
+        syncHidden()
+        if hidden.hide(annotations) { saveHidden() }
+    }
+
+    func restoreHidden() {
+        syncHidden()
+        hidden.clear()
+        saveHidden()
+    }
+
+    private func saveHidden() {
+        state.hiddenAnnotations = hidden.encoded
+        generation += 1
+        #if canImport(UIKit)
+        platform?.refresh()
+        #endif
+    }
+
+    static func byScreen(_ records: [NoteRecord], hidden: Set<String> = []) -> [String: ScreenNotes] {
         var screens: [String: ScreenNotes] = [:]
         for (route, notes) in Dictionary(grouping: records, by: \.route) {
             let all = notes.sorted { ($0.createdAt, $0.id) < ($1.createdAt, $1.id) }
+            let visible = all.enumerated().filter { !(hidden.contains($0.element.id) && HiddenAnnotations.isCompleted($0.element.annotation.status)) }
             var pinned: [(number: Int, record: NoteRecord)] = []
-            for (offset, record) in all.enumerated().reversed() where record.platform == platformName {
+            for (offset, record) in visible.reversed() where record.platform == platformName {
                 pinned.append((offset + 1, record))
                 if pinned.count == PinLayout.maxPins { break }
             }
-            screens[route] = ScreenNotes(all: all, pinned: pinned.reversed())
+            screens[route] = ScreenNotes(all: visible.map(\.element), numbers: Dictionary(uniqueKeysWithValues: visible.map { ($0.element.id, $0.offset + 1) }), pinned: pinned.reversed())
         }
         return screens
     }
@@ -443,7 +481,9 @@ public final class Notato {
         var sent: [String] = []
         for annotation in listed where annotation.projectId == project && !deletedHere.contains(annotation.id) {
             if let known = byId[annotation.id] ?? addedById[annotation.id] {
+                let wasHidden = hidden.contains(known.annotation)
                 if Self.adopt(annotation, into: known, summary: summary) { sent.append(known.id) }
+                if wasHidden != hidden.contains(known.annotation) { generation += 1 }
             } else {
                 let record = NoteRecord(annotation)
                 addedById[record.id] = record

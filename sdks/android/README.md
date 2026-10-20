@@ -204,6 +204,18 @@ Notato's UI is plain Views in a layer added to the top window of the resumed Act
 - WebViews are one element: what is inside them is not inspected.
 - Verified on a Pixel 7 emulator (Android 16, API 36) against `notato dev`, with real taps through `adb shell input`: Compose and View screens, a full-screen Compose dialog, a second Activity with a Fragment, live status over SSE, reply and revert, agent relay, test-mode packaging and sharing, on and off at runtime, and the toolbar dragged and remembered. Not yet run: a physical device, API levels below 34, a `notato serve` server with a token. How it copes with large projects (pins, the summary list, screenshots kept as files) is covered by the unit tests, not yet on a device.
 
+## Hiding completed annotations
+
+On a resolved or reverted note, open **More options → Hide from this app** to hide
+its pin and card on this device. In **Settings**, **Hide completed annotations**
+hides completed notes across every screen at once, including notes beyond the
+150 drawn pins. **Restore hidden annotations** brings them back.
+
+Hiding keeps the feedback, screenshots and thread in the dashboard and exports.
+It never changes the note on the server. Reopened tasks and new agent questions
+remain visible. The preference is scoped to the server, project, mode, credential
+and name, and survives app restarts when runtime preferences are remembered.
+
 ## Development
 
 ```bash

@@ -237,6 +237,18 @@ Notato draws its UI in SwiftUI, in a window of its own above the app's window in
 - iPad multi-window works per scene (each window's overlay reads only its own window's marks) but has had less testing. Shaking does not reach the simulator (use `Notato.shared.showToolbar()`).
 - Verified on the iPhone 17 Pro simulator (iOS 26.5) against `notato dev`, with XCUITest driving real taps (`Example/ShopSampleUITests`). Not yet run: a physical device, Mac Catalyst, a `notato serve` server with a token.
 
+## Hiding completed annotations
+
+On a resolved or reverted note, open **More options → Hide from this app** to hide
+its pin and card on this device. In **Settings**, **Hide completed annotations**
+hides completed notes across every screen at once, including notes beyond the
+150 drawn pins. **Restore hidden annotations** brings them back.
+
+Hiding keeps the feedback, screenshots and thread in the dashboard and exports.
+It never changes the note on the server. Reopened tasks and new agent questions
+remain visible. The preference is scoped to the server, project, mode, credential
+and name, and survives app restarts when runtime preferences are remembered.
+
 ## Development
 
 The package's manifest is `Package.swift` at the repository root (SwiftPM finds a package only there), so `swift` and `xcodebuild` run from the root:

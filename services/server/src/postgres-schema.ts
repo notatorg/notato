@@ -1,0 +1,93 @@
+/** Server-owned records, separate from the identity tables. Browsers access data through Notato's API. */
+export const POSTGRES_SCHEMA_VERSION = 20;
+export const PROJECT_READS_SCHEMA = `CREATE TABLE IF NOT EXISTS notato.project_reads (
+    project_id TEXT NOT NULL REFERENCES notato.projects(id) ON DELETE CASCADE,
+    username TEXT NOT NULL REFERENCES notato.users(username) ON DELETE CASCADE,
+    read_at TEXT NOT NULL, PRIMARY KEY(project_id,username))`;
+export const POSTGRES_SCHEMA = [
+    `CREATE TABLE IF NOT EXISTS notato.users (
+        username TEXT PRIMARY KEY, password_hash TEXT NOT NULL, created_at TEXT NOT NULL,
+        is_admin BOOLEAN NOT NULL DEFAULT FALSE, email TEXT, display_name TEXT,
+        identity_provider TEXT, identity_subject TEXT, UNIQUE(identity_provider, identity_subject))`,
+    `CREATE TABLE IF NOT EXISTS notato.workspaces (id TEXT PRIMARY KEY, name TEXT NOT NULL, created_at TEXT NOT NULL)`,
+    `CREATE TABLE IF NOT EXISTS notato.memberships (
+        workspace_id TEXT NOT NULL REFERENCES notato.workspaces(id) ON DELETE CASCADE,
+        username TEXT NOT NULL REFERENCES notato.users(username) ON DELETE CASCADE,
+        role TEXT NOT NULL CHECK(role IN ('owner','admin','member')), created_at TEXT NOT NULL,
+        PRIMARY KEY(workspace_id,username))`,
+    `CREATE INDEX IF NOT EXISTS idx_memberships_user ON notato.memberships(username,workspace_id)`,
+    `CREATE TABLE IF NOT EXISTS notato.projects (
+        id TEXT PRIMARY KEY, name TEXT NOT NULL, created_at TEXT NOT NULL,
+        workspace_id TEXT NOT NULL REFERENCES notato.workspaces(id), allowed_origins TEXT NOT NULL DEFAULT '[]')`,
+    `CREATE INDEX IF NOT EXISTS idx_projects_workspace ON notato.projects(workspace_id,id)`,
+    PROJECT_READS_SCHEMA,
+    `CREATE TABLE IF NOT EXISTS notato.annotations (
+        seq BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY, id TEXT NOT NULL UNIQUE, project_id TEXT NOT NULL,
+        bundle_id TEXT, status TEXT NOT NULL, severity TEXT, route TEXT NOT NULL, author_kind TEXT NOT NULL,
+        created_at TEXT NOT NULL, json TEXT NOT NULL, awaits_agent INTEGER NOT NULL DEFAULT 0,
+        people_only INTEGER NOT NULL DEFAULT 0, diagnostic INTEGER NOT NULL DEFAULT 0, intent TEXT,
+        author_name TEXT, last_activity_at TEXT, last_word_id TEXT, handed_reply_id TEXT,
+        capture_scope TEXT, capture_fingerprint TEXT)`,
+    `CREATE INDEX IF NOT EXISTS idx_annotations_project_status ON notato.annotations(project_id,status)`,
+    `CREATE INDEX IF NOT EXISTS idx_annotations_project_seq ON notato.annotations(project_id,seq)`,
+    `CREATE INDEX IF NOT EXISTS idx_annotations_status_seq ON notato.annotations(status,seq)`,
+    `CREATE INDEX IF NOT EXISTS idx_annotations_bundle ON notato.annotations(bundle_id)`,
+    `CREATE INDEX IF NOT EXISTS idx_annotations_awaits ON notato.annotations(project_id,seq) WHERE awaits_agent = 1`,
+    `CREATE INDEX IF NOT EXISTS idx_annotations_project_activity ON notato.annotations(project_id,last_activity_at)`,
+    `CREATE INDEX IF NOT EXISTS idx_annotations_full_shot ON notato.annotations((json::jsonb #>> '{screenshots,full,id}'))`,
+    `CREATE INDEX IF NOT EXISTS idx_annotations_thumbnail_shot ON notato.annotations((json::jsonb #>> '{screenshots,thumbnail,id}'))`,
+    `CREATE INDEX IF NOT EXISTS idx_annotations_crop_shot ON notato.annotations((json::jsonb #>> '{screenshots,crop,id}'))`,
+    `CREATE TABLE IF NOT EXISTS notato.bundles (
+        id TEXT PRIMARY KEY, project_id TEXT NOT NULL, created_at TEXT NOT NULL, imported_at TEXT NOT NULL, json TEXT NOT NULL)`,
+    `CREATE INDEX IF NOT EXISTS idx_bundles_project ON notato.bundles(project_id)`,
+    `CREATE TABLE IF NOT EXISTS notato.sessions (
+        id TEXT PRIMARY KEY, username TEXT NOT NULL REFERENCES notato.users(username) ON DELETE CASCADE,
+        created_at TEXT NOT NULL, expires_at TEXT NOT NULL, workspace_id TEXT REFERENCES notato.workspaces(id))`,
+    `CREATE INDEX IF NOT EXISTS idx_sessions_user ON notato.sessions(username)`,
+    `CREATE INDEX IF NOT EXISTS idx_sessions_expiry ON notato.sessions(expires_at)`,
+    `CREATE TABLE IF NOT EXISTS notato.tokens (
+        id TEXT PRIMARY KEY, project_id TEXT NOT NULL, name TEXT NOT NULL, token_hash TEXT NOT NULL UNIQUE,
+        created_at TEXT NOT NULL, last_used_at TEXT, revoked_at TEXT, workspace_id TEXT REFERENCES notato.workspaces(id))`,
+    `CREATE INDEX IF NOT EXISTS idx_tokens_project ON notato.tokens(project_id)`,
+    `CREATE TABLE IF NOT EXISTS notato.invitations (
+        id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL REFERENCES notato.workspaces(id), email TEXT NOT NULL,
+        role TEXT NOT NULL CHECK(role IN ('owner','admin','member')), token_hash TEXT NOT NULL UNIQUE,
+        created_by TEXT NOT NULL REFERENCES notato.users(username), created_at TEXT NOT NULL,
+        expires_at TEXT NOT NULL, accepted_at TEXT, revoked_at TEXT)`,
+    `CREATE INDEX IF NOT EXISTS idx_invitations_workspace ON notato.invitations(workspace_id)`,
+];
+
+export const POSTGRES_TABLES = [
+    "team_records",
+    "plugin_connections",
+    "plugin_actions",
+    "plugin_workflows",
+    "plugin_jobs",
+    "plugin_usage",
+    "plugin_oauth",
+    "meta",
+    "users",
+    "workspaces",
+    "memberships",
+    "projects",
+    "project_reads",
+    "workspace_policy",
+    "workspace_billing",
+    "billing_events",
+    "workspace_plans",
+    "monthly_note_usage",
+    "deleted_identities",
+    "annotations",
+    "bundles",
+    "sessions",
+    "tokens",
+    "invitations",
+    "identity_revocations",
+    "audit",
+    "identity_devices",
+    "beta_settings",
+    "beta_requests",
+    "communication_preferences",
+    "communication_preference_events",
+    "email_suppressions",
+];

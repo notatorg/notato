@@ -1,5 +1,6 @@
 import type { Annotation } from "@notato/schema";
 import { PLATFORM, routeName } from "./annotation.ts";
+import { isCompleted } from "./hidden.ts";
 
 /** A note Notato knows of: from the server, or made here and not sent yet. */
 export interface NoteRecord {
@@ -45,6 +46,13 @@ const madeOrder = (a: NoteRecord, b: NoteRecord) => {
  * is replaced whole on each change, never changed in place, so React sees every change and nothing else.
  */
 export class NoteStore {
+    private hidden: ReadonlySet<string> = new Set();
+
+    setHidden(ids: ReadonlySet<string>): void {
+        if (ids === this.hidden) return;
+        this.hidden = ids;
+        this.screens.clear();
+    }
     private records: NoteRecord[] = [];
     /** Where each note is in `records`, by id. */
     private at = new Map<string, number>();
@@ -158,7 +166,16 @@ export class NoteStore {
         if (!list) {
             const here = this.records.filter((r) => routeName(r.annotation.route) === key);
             list = here.length
-                ? here.sort(madeOrder).map((record, i) => ({ number: i + 1, record }))
+                ? here
+                      .sort(madeOrder)
+                      .map((record, i) => ({ number: i + 1, record }))
+                      .filter(
+                          ({ record }) =>
+                              !(
+                                  isCompleted(record.annotation) &&
+                                  this.hidden.has(record.annotation.id)
+                              )
+                      )
                 : NONE;
             this.screens.set(key, list);
         }

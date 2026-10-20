@@ -1,0 +1,10 @@
+{
+    "name": "@notato/service-monitor",
+    "version": "0.3.0",
+    "private": true,
+    "type": "module",
+    "description": "Independent Notato health, capacity and backup monitoring, with SMTP delivery.",
+    "dependencies": {
+        "@notato/service-server": "workspace:*"
+    }
+}

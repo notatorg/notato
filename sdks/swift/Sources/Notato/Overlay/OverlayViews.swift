@@ -124,7 +124,7 @@ struct OverlayRoot: View {
         case let .pin(id, fromList):
             if let session = session.value, let record = notato.record(id) {
                 // Its number among the notes on this screen; none when it is on another.
-                let number = hooks.notes(on: session).all.firstIndex { $0 === record }.map { $0 + 1 } ?? 0
+                let number = hooks.notes(on: session).number(of: record) ?? 0
                 PinCard(record: record, number: number, notato: notato, back: fromList ? { model.sheet = .list } : nil,
                         close: close, done: { message in model.show(toast: message) })
             }

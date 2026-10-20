@@ -5,6 +5,7 @@ import 'package:flutter/material.dart' hide Badge;
 import '../annotation.dart';
 import '../config.dart';
 import '../controller.dart';
+import '../hidden.dart';
 import '../note_book.dart';
 import '../runtime.dart';
 import 'parts.dart';
@@ -212,7 +213,7 @@ class MenuSheet extends StatelessWidget {
                 MenuRow(
                   tile: const SheetTile.icon('list'),
                   title: 'Notes',
-                  detail: '$here on this screen · ${runtime.notes.length} in all',
+                  detail: '$here on this screen · ${runtime.visibleCount} in all',
                   opens: true,
                   onTap: () => open(const ListSheetKind()),
                 ),
@@ -277,7 +278,7 @@ class NotesSheet extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final p = Palette.of(context);
-    final others = runtime.notes.length - list.length;
+    final others = runtime.visibleCount - list.length;
     final footer = others <= 0 ? 0 : 1;
     return Column(
       mainAxisSize: MainAxisSize.min,
@@ -285,7 +286,7 @@ class NotesSheet extends StatelessWidget {
       children: [
         SheetHeader(
           title: 'Notes',
-          subtitle: '${list.length} on this screen · ${runtime.notes.length} in all',
+          subtitle: '${list.length} on this screen · ${runtime.visibleCount} in all',
           leading: HeaderButton.back(onPressed: () => open(const MenuSheetKind())),
           trailing: HeaderButton.close(onPressed: () => open(null)),
         ),
@@ -426,6 +427,28 @@ class _SettingsSheetState extends State<SettingsSheet> {
                       : 'Off until the server says it takes them',
                   value: _screenshots,
                   onChanged: (v) => setState(() => _screenshots = v),
+                ),
+                SheetButton(
+                  'Hide completed annotations (${runtime.completedCount})',
+                  key: const ValueKey('NotatoHideCompleted'),
+                  onPressed: runtime.completedCount == 0
+                      ? null
+                      : () {
+                          widget.open(null);
+                          runtime.hideCompleted();
+                        },
+                ),
+                Text(
+                  'Across this app, on this device. Kept in the dashboard.',
+                  style: TextStyle(fontSize: 12.5, color: p.muted),
+                ),
+                SheetButton(
+                  'Restore hidden annotations (${runtime.hiddenCount})',
+                  key: const ValueKey('NotatoRestoreHidden'),
+                  onPressed: () {
+                    widget.open(null);
+                    runtime.restoreHidden();
+                  },
                 ),
               ],
             ),
@@ -688,7 +711,7 @@ class _NoteCardState extends State<NoteCard> {
     final canRevert = live && status == 'resolved' && intent != 'question' && intent != 'approve';
     final canDelete = !sentOnly && (!live || (record.mine && status == 'open'));
     final actions = <Widget>[
-      if (!sentOnly)
+      if (!sentOnly || HiddenAnnotations.isCompleted(status))
         SheetButton(
           _optionsOpen ? 'Close options' : 'More options',
           key: const ValueKey('NotatoMoreOptions'),
@@ -800,7 +823,7 @@ class _NoteCardState extends State<NoteCard> {
           const SizedBox(height: 8),
           if (_aside) Text('Next reply hidden from agent', style: TextStyle(fontSize: 12, color: p.muted)),
         ],
-        if (_optionsOpen && !sentOnly)
+        if (_optionsOpen && (!sentOnly || HiddenAnnotations.isCompleted(status)))
           Flexible(
             child: ConstrainedBox(
               constraints: const BoxConstraints(maxHeight: 240),
@@ -836,6 +859,15 @@ class _NoteCardState extends State<NoteCard> {
                       SheetButton(
                         'Cancel revert request',
                         onPressed: () => _run(() => runtime.cancelRevert(record.id), 'Revert request taken back'),
+                      ),
+                    if (HiddenAnnotations.isCompleted(status))
+                      SheetButton(
+                        'Hide from this app',
+                        key: const ValueKey('NotatoHideAnnotation'),
+                        onPressed: () {
+                          widget.open(null);
+                          runtime.hideAnnotation(record.id);
+                        },
                       ),
                     if (canDelete)
                       SheetButton(

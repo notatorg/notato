@@ -221,7 +221,7 @@ internal sealed partial class NotatoOverlay
             rows.Children.Add(row);
         }
 
-        int others = _controller.Annotations.Count - list.Count;
+        int others = _controller.VisibleCount - list.Count;
         string more = string.Join(" ", new[]
         {
             list.Count > 10 ? $"{list.Count - 10} more here: tap their pins." : null,
@@ -238,7 +238,7 @@ internal sealed partial class NotatoOverlay
         VerticalStackLayout body = Ui.Plain(new VerticalStackLayout
         {
             Spacing = 10,
-            Children = { SubHeader("Notes", MenuText.NotesLine(list.Count, _controller.Annotations.Count)), new SheetBody(rows) },
+            Children = { SubHeader("Notes", MenuText.NotesLine(list.Count, _controller.VisibleCount)), new SheetBody(rows) },
         });
         ShowSheet(Ui.Sheet(body, CloseSheet), dim: true, fromBar: true);
     }
@@ -263,6 +263,9 @@ internal sealed partial class NotatoOverlay
                 Ui.Plain(new VerticalStackLayout { Spacing = 6, Children = { Ui.FieldLabel("Your name"), Fields.Box(name) } }),
                 Ui.Plain(new VerticalStackLayout { Spacing = 6, Children = { Ui.FieldLabel("Server"), Fields.Box(server), connection } }),
                 shotsRow,
+                Ui.SheetButton($"Hide completed annotations ({_controller.CompletedCount})", () => { CloseSheet(); _controller.HideCompleted(); }),
+                Ui.Text("Across this app, on this device. Kept in the dashboard.", 12.5, Ui.CardMuted),
+                Ui.SheetButton($"Restore hidden annotations ({_controller.HiddenCount})", () => { CloseSheet(); _controller.RestoreHidden(); }),
             },
         });
         VerticalStackLayout body = Ui.Plain(new VerticalStackLayout

@@ -270,7 +270,11 @@ bun run build:extension     # or take notato-extension-<version>.zip from a rele
 
 Then in `chrome://extensions` turn on Developer mode, **Load unpacked**, and choose `packages/extension/dist` (or the unzipped folder). On a page, click the Notato icon, switch **Notato on this site** on, allow the permission Chrome asks for, and check the server address (the default is `http://localhost:4747`) and the project. It remembers each site, loads itself there from then on, and does nothing anywhere else. It needs no hot reload: variants appear when the page next loads or reloads.
 
+**Check connection** tests whether the selected server, project and token accept feedback from the extension, without creating a note. If the server blocks its origin, the popup shows the extension origin to allow in that project's server settings.
+
 **No server.** Under **Notes go to**, choose **This browser only** and the site needs no Notato server at all. The toolbar runs as it does in [test mode](#test-mode-testers-send-you-a-zip): notes and their screenshots are kept in this browser across reloads, what is typed is covered in screenshots, and the toolbar's export button downloads them as a zip (with a `feedback.md`) or copies them as Markdown. A Notato board imports the zip into the same project, so a tester can annotate a site with only the extension and send you the file. For such a site the extension reaches no server at all, and asks Chrome for the site alone.
+
+The extension also has **Hide from this app** on completed notes and **Settings → Hide completed annotations** for bulk hiding. **Restore hidden annotations** brings them back. Hiding is remembered in this browser without deleting feedback from the dashboard; reopened tasks and new agent questions remain visible. After rebuilding an unpacked extension, reload it in `chrome://extensions` and refresh the page to load the updated toolbar.
 
 How it stays safe and works on pages with their own security policy: the part that reads the page runs in the page; it cannot call the server itself, so it asks a relay, which asks the extension's background worker. The worker only reaches the server set for that site, and only Notato's own API on it, so a page cannot use the extension to reach anything else on your machine. It asks for almost nothing up front: scripting and storage, plus loopback addresses; each site and any other server address is asked for when you turn it on. An unpacked build has a fixed id that the server accepts by default; a build from a store has its own, which you list with `--cors-origin chrome-extension://<id>`. The extension is not on any store. A page that is turned on could write notes to your project through the extension (it could with an SDK token too), so turn it on for sites you trust.
 
@@ -409,6 +413,12 @@ docker run -p 4747:4747 -v notato:/data -e NOTATO_ADMIN_PASSWORD=… ghcr.io/not
 | `NOTATO_CONFIG`, `NOTATO_SCREENSHOTS`         | Settings file (default `./notato.config.json`); `on`/`off` overrides the file. See [Screenshots](#screenshots-on-or-off) |
 | `NOTATO_MCP`                                  | `off` refuses agents whatever the file says. See [MCP over HTTP](#mcp-tools)                                             |
 | `NOTATO_PROJECT`                              | `notato dev`: the projects this agent works on, comma-separated. See [Several repositories](#mcp-tools)                  |
+
+## Full self-hosted server
+
+The full Notato server is open source under MIT. It adds accounts, workspaces, collaboration, integrations, workflows and pull-request reviews to the same SDK and MCP APIs. Run it with Docker Compose, Postgres, Better Auth, S3-compatible screenshot storage and standard SMTP. The supplied stack includes local object storage and a mock email inbox, so no SaaS account is required.
+
+Registration is invitation-only by default, with a protected instance administrator and optional per-account two-factor authentication. Public registration is configurable. All product features are available when self-hosting; the lightweight SQLite developer loop above stays as it is. See the [self-hosting guide](deploy/self-hosted/README.md) and [server architecture](services/README.md).
 
 ## Reviewing related feedback
 

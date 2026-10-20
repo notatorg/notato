@@ -1,0 +1,23 @@
+{
+    "name": "@notato/service-board",
+    "version": "0.3.0",
+    "description": "The full Notato board with accounts, workspaces and integrations.",
+    "private": true,
+    "type": "module",
+    "scripts": {
+        "build": "bun run scripts/build.ts"
+    },
+    "dependencies": {
+        "@notato/board": "workspace:*",
+        "@notato/core": "workspace:*",
+        "@notato/schema": "workspace:*",
+        "react": "^19.3.0",
+        "react-dom": "^19.3.0",
+        "better-auth": "^1.7.11"
+    },
+    "devDependencies": {
+        "@types/react": "^19.0.0",
+        "@types/react-dom": "^19.0.0",
+        "happy-dom": "^20.0.0"
+    }
+}

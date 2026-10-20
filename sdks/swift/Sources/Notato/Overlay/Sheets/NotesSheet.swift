@@ -17,7 +17,7 @@ struct NotesSheet: View {
     var body: some View {
         let notes = session.value.map { hooks.notes(on: $0) } ?? ScreenNotes()
         VStack(spacing: 10) {
-            SheetHeader(title: "Notes", subtitle: "\(notes.count) on this screen · \(notato.records.count) in all") {
+            SheetHeader(title: "Notes", subtitle: "\(notes.count) on this screen · \(notato.visibleCount) in all") {
                 HeaderButton(.back, action: back)
             } trailing: {
                 HeaderButton(.close, action: close)
@@ -33,7 +33,7 @@ struct NotesSheet: View {
     private func rows(_ notes: ScreenNotes) -> some View {
         let newest = notes.newest(Self.shown)
         let older = notes.count - newest.count
-        let others = notato.records.count - notes.count
+        let others = notato.visibleCount - notes.count
         let more = [older > 0 ? "\(older) older on this screen." : nil, others > 0 ? "\(others) more on other screens." : nil].compactMap { $0 }
         return LazyVStack(alignment: .leading, spacing: 0) {
             if notes.all.isEmpty {

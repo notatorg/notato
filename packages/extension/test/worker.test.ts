@@ -314,32 +314,86 @@ describe("the worker's requests", () => {
         expect(reply).toEqual({ ok: false, message: "connection refused" });
     });
 
-    it("ping says whether a Notato server is there, and does not need a site", async () => {
-        const found = await worker(async () =>
-            Response.json({ ok: true, service: "notato" })
-        ).handle("", {
-            kind: "ping",
-            server: "http://localhost:4747/",
+    it("checks the popup's unsaved project and token without creating feedback or sending cookies", async () => {
+        const calls: Array<{ url: string; init?: RequestInit }> = [];
+        const found = await worker(async (url, init) => {
+            calls.push({ url, init });
+            return Response.json({ ok: true, projectId: "new-project" });
+        }).handle("", {
+            kind: "check",
+            server: "https://cloud.example/api/",
+            project: "new-project",
+            token: "notato_unsaved",
         });
-        expect(
-            found.ok &&
-                (await new Response(Buffer.from(found.response.base64 ?? "", "base64")).json())
-        ).toEqual({ ok: true });
-        const other = await worker(async () => Response.json({ service: "something-else" })).handle(
-            "",
-            {
-                kind: "ping",
-                server: "http://localhost:4747",
-            }
+        expect(found.ok).toBe(true);
+        expect(calls).toHaveLength(1);
+        expect(calls[0]?.url).toBe("https://cloud.example/api/projects/new-project/connection");
+        expect(calls[0]?.init?.method).toBe("POST");
+        expect(calls[0]?.init?.body).toBe("{}");
+        expect(calls[0]?.init?.credentials).toBe("omit");
+        expect(calls[0]?.init?.redirect).toBe("manual");
+        expect(new Headers(calls[0]?.init?.headers).get("authorization")).toBe(
+            "Bearer notato_unsaved"
         );
-        expect(
-            other.ok &&
-                (await new Response(Buffer.from(other.response.base64 ?? "", "base64")).json())
-        ).toEqual({ ok: false });
+    });
+
+    it("reports a rejected extension origin with the exact origin to allow", async () => {
+        const extensionOrigin = "chrome-extension://abcdefghijklmnopabcdefghijklmnop";
+        const w = createWorker({
+            fetch: async () => Response.json({ error: "Origin not allowed" }, { status: 403 }),
+            siteConfig: async () => null,
+            extensionOrigin,
+        });
+        const reply = await w.handle("", { kind: "check", server: SITE.server, project: "p" });
+        expect(reply.ok).toBe(false);
+        expect(!reply.ok && reply.message).toContain(extensionOrigin);
+        expect(!reply.ok && reply.message).toContain("Settings → Browser origins");
+    });
+
+    it("does not mistake a healthy server, wrong project, invalid token, or redirect for capture access", async () => {
+        for (const response of [
+            Response.json({ ok: true, service: "notato" }),
+            Response.json({ ok: true, projectId: "someone-else" }),
+            Response.json({ error: "Unauthorized" }, { status: 401 }),
+            Response.json({ error: "Forbidden" }, { status: 403 }),
+            Response.json({ error: "Unknown project" }, { status: 404 }),
+            Response.json({ ok: true, projectId: "p" }, { status: 500 }),
+            new Response("<html>Sign in</html>"),
+            new Response(null, { status: 302, headers: { location: "https://other.example" } }),
+        ]) {
+            const reply = await worker(async () => response).handle("", {
+                kind: "check",
+                server: SITE.server,
+                project: "p",
+            });
+            expect(reply.ok).toBe(false);
+        }
         const down = await worker(async () => {
             throw new Error("refused");
-        }).handle("", { kind: "ping", server: "http://localhost:4747" });
+        }).handle("", {
+            kind: "check",
+            server: SITE.server,
+            project: "p",
+        });
         expect(down.ok).toBe(false);
+    });
+
+    it("refuses non-HTTP server addresses and credentials before sending a project token", async () => {
+        let calls = 0;
+        const w = worker(async () => {
+            calls++;
+            return Response.json({ ok: true, projectId: "p" });
+        });
+        for (const server of [
+            "file:///tmp/",
+            "https://user:pass@cloud.example",
+            "https://cloud.example?token=x",
+            "not a URL",
+        ])
+            expect(
+                (await w.handle("", { kind: "check", server, project: "p", token: "secret" })).ok
+            ).toBe(false);
+        expect(calls).toBe(0);
     });
 });
 

@@ -605,7 +605,7 @@ final class PlatformHooks {
         let limit = configuration.logLimit, since = notato.started
         let logs = configuration.captureLogs ? Task.detached { LogRecorder.recent(limit: limit, since: since) } : nil
         let route = self.route(of: session)
-        let pin = notato.notes(onRoute: route).count + 1
+        let pin = notato.records.filter { $0.route == route }.count + 1
         let targets = selection.elements.map(\.frame)
         var drawing: Task<ComposedScreenshots?, Never>?
         if let screen = selection.screen, notato.screenshotsOn {

@@ -21,3 +21,7 @@ packages/board/dist
 
 # Angular CLI caches
 .angular/
+
+# Full server and independent monitoring data (developer data remains .notato/).
+notato-server-data/
+.notato-monitor/

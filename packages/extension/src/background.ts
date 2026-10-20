@@ -23,6 +23,7 @@ export interface WorkerPort {
 
 export interface WorkerOptions {
     fetch(input: string, init?: RequestInit): Promise<Response>;
+    extensionOrigin?: string;
     /** The settings for a site, by its origin. */
     siteConfig(origin: string): Promise<SiteConfig | null>;
     timeoutMs?: number;
@@ -112,19 +113,68 @@ export function createWorker(options: WorkerOptions) {
         },
 
         async handle(origin: string, message: ToBackground): Promise<BackgroundReply> {
-            if (message.kind === "ping") {
+            if (message.kind === "check") {
                 try {
-                    const res = await options.fetch(`${message.server.replace(/\/$/, "")}/health`, {
-                        signal: AbortSignal.timeout(options.timeoutMs ?? 5000),
-                    });
+                    const base = new URL(message.server);
+                    if (
+                        !["http:", "https:"].includes(base.protocol) ||
+                        base.username ||
+                        base.password ||
+                        base.search ||
+                        base.hash
+                    )
+                        return { ok: false, message: "That is not a server address." };
+                    const headers = new Headers({ "content-type": "application/json" });
+                    if (message.token) headers.set("authorization", `Bearer ${message.token}`);
+                    // This checks capture access without creating a note. The browser supplies the same extension
+                    // origin as a real capture, so a healthy server cannot hide a rejected token or origin.
+                    const res = await options.fetch(
+                        `${base.href.replace(/\/$/, "")}/projects/${encodeURIComponent(message.project)}/connection`,
+                        {
+                            method: "POST",
+                            headers,
+                            body: "{}",
+                            credentials: "omit",
+                            redirect: "manual",
+                            signal: AbortSignal.timeout(options.timeoutMs ?? 5000),
+                        }
+                    );
+                    if (isRedirect(res)) return { ok: false, message: REDIRECTED };
                     const body = (await res.json().catch(() => null)) as {
-                        service?: string;
+                        ok?: boolean;
+                        projectId?: string;
+                        error?: string;
                     } | null;
+                    if (
+                        res.status === 403 &&
+                        typeof body?.error === "string" &&
+                        /origin/i.test(body.error)
+                    )
+                        return {
+                            ok: false,
+                            message: `The server blocks this extension's origin. In this project's Settings → Browser origins, add ${options.extensionOrigin ?? "the chrome-extension:// ID from chrome://extensions"}.`,
+                        };
+                    if (res.status === 401)
+                        return {
+                            ok: false,
+                            message:
+                                "The server rejected the project token. Use an app/tester token for this project.",
+                        };
+                    if (res.status === 403)
+                        return {
+                            ok: false,
+                            message:
+                                "The server denied access to this project. Check the project ID and app/tester token.",
+                        };
+                    if (!res.ok || body?.ok !== true || body.projectId !== message.project)
+                        return {
+                            ok: false,
+                            message:
+                                "Could not verify feedback access. Check the server address and project ID, and use a server with connection checks.",
+                        };
                     return {
                         ok: true,
-                        response: await encodeResponse(
-                            Response.json({ ok: body?.service === "notato" })
-                        ),
+                        response: await encodeResponse(Response.json({ ok: true })),
                     };
                 } catch (error) {
                     return {

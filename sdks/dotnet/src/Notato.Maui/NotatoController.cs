@@ -419,6 +419,7 @@ internal sealed partial class NotatoController : INotato, IDisposable
     /// </summary>
     private void RaiseChanged()
     {
+        SyncHidden();
         if (_publishedVersion != _records.Version)
         {
             (IReadOnlyList<Annotation> annotations, int pending) = _records.Snapshot();

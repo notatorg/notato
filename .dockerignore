@@ -29,3 +29,7 @@ site
 **/.angular
 .swiftpm
 **/*.tsbuildinfo
+
+# Persistent full-server data must never enter an image.
+**/notato-server-data
+**/.notato-monitor

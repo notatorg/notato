@@ -1,0 +1,89 @@
+name: notato
+services:
+  server:
+    build:
+      context: ../..
+      dockerfile: services/Dockerfile
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${NOTATO_HTTP_PORT:-4799}:4799"
+    environment:
+      NOTATO_PUBLIC_URL: ${NOTATO_PUBLIC_URL:-http://localhost:4799}
+      NOTATO_DATABASE_URL: postgres://notato:${NOTATO_POSTGRES_PASSWORD:?Run init.ts first}@postgres:5432/notato
+      NOTATO_DATABASE_SSL: disable
+      NOTATO_AUTH_SECRET: ${NOTATO_AUTH_SECRET:?Run init.ts first}
+      NOTATO_ADMIN_EMAIL: ${NOTATO_ADMIN_EMAIL:?Set an administrator email}
+      NOTATO_ADMIN_NAME: ${NOTATO_ADMIN_NAME:-Instance administrator}
+      NOTATO_ADMIN_PASSWORD: ${NOTATO_ADMIN_PASSWORD:?Set an administrator password}
+      NOTATO_SIGNUP_MODE: ${NOTATO_SIGNUP_MODE:-closed}
+      NOTATO_SIGNUP_ALLOWED_EMAILS: ${NOTATO_SIGNUP_ALLOWED_EMAILS:-}
+      NOTATO_RESOURCE_LIMITS: ${NOTATO_RESOURCE_LIMITS:-}
+      NOTATO_PLUGIN_KEY: ${NOTATO_PLUGIN_KEY:?Run init.ts first}
+      NOTATO_S3_ENDPOINT: ${NOTATO_S3_ENDPOINT:-http://objects:8333}
+      NOTATO_S3_BUCKET: ${NOTATO_S3_BUCKET:-screenshots}
+      NOTATO_S3_REGION: ${NOTATO_S3_REGION:-us-east-1}
+      NOTATO_S3_FORCE_PATH_STYLE: ${NOTATO_S3_FORCE_PATH_STYLE:-true}
+      NOTATO_S3_ACCESS_KEY_ID: ${NOTATO_S3_ACCESS_KEY_ID:?Run init.ts first}
+      NOTATO_S3_SECRET_ACCESS_KEY: ${NOTATO_S3_SECRET_ACCESS_KEY:?Run init.ts first}
+      NOTATO_SMTP_HOST: ${NOTATO_SMTP_HOST:-mailpit}
+      NOTATO_SMTP_PORT: ${NOTATO_SMTP_PORT:-1025}
+      NOTATO_SMTP_SECURE: ${NOTATO_SMTP_SECURE:-false}
+      NOTATO_SMTP_USER: ${NOTATO_SMTP_USER:-}
+      NOTATO_SMTP_PASSWORD: ${NOTATO_SMTP_PASSWORD:-}
+      NOTATO_EMAIL_FROM: ${NOTATO_EMAIL_FROM:-notato@example.test}
+      NOTATO_TRUST_PROXY: ${NOTATO_TRUST_PROXY:-0}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      objects:
+        condition: service_healthy
+      mailpit:
+        condition: service_started
+    volumes:
+      - server-data:/data
+    security_opt:
+      - no-new-privileges:true
+    cap_drop: [ALL]
+  postgres:
+    image: postgres:17@sha256:2d2b8998d31037bf721cfdf764d76ba74171b4fab3431b7f72c27c56ddbdf9e3
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: notato
+      POSTGRES_DB: notato
+      POSTGRES_PASSWORD: ${NOTATO_POSTGRES_PASSWORD:?Run init.ts first}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: [CMD-SHELL, "pg_isready -U notato -d notato"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+  objects:
+    image: chrislusf/seaweedfs:4.48@sha256:4e61d15fd35994cb1e43e1e553dff106794841fd9a99ade2fc8c8bfce4d7872d
+    command: [mini, -dir=/data]
+    restart: unless-stopped
+    environment:
+      AWS_ACCESS_KEY_ID: ${NOTATO_S3_ACCESS_KEY_ID:?Run init.ts first}
+      AWS_SECRET_ACCESS_KEY: ${NOTATO_S3_SECRET_ACCESS_KEY:?Run init.ts first}
+      S3_BUCKET: ${NOTATO_S3_BUCKET:-screenshots}
+    volumes:
+      - object-data:/data
+    healthcheck:
+      test: [CMD, wget, -q, -O, /dev/null, http://localhost:9333/cluster/status]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+  mailpit:
+    image: axllent/mailpit:v1.31.6@sha256:23fe39e81bde596a918000b3135c0f85dc8bb4c9ea6be274b051143f3e300387
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${NOTATO_MAIL_PORT:-8026}:8025"
+    environment:
+      MP_DATABASE: /data/mailpit.db
+    volumes:
+      - mail-data:/data
+volumes:
+  server-data:
+  postgres-data:
+  object-data:
+  mail-data:

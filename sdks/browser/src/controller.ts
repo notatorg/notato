@@ -64,7 +64,7 @@ import { type ConnectionState, createToolbar } from "./ui/toolbar.ts";
 import { createVariants } from "./ui/variants.ts";
 import { redactUrl } from "./url.ts";
 import { SDK } from "./version.ts";
-import { createHiddenNotes, privateScope } from "./view-preferences.ts";
+import { createHiddenNotes, isFinished, privateScope } from "./view-preferences.ts";
 
 export interface NotatoController {
     /** Turns annotate mode on or off, as the toolbar's Annotate button and the shortcut do. */
@@ -410,6 +410,7 @@ export function createController(props: NotatoProps): NotatoController {
                 : "Start a grouped review"
         );
         reviewButton.setPressed(Boolean(review));
+        settingsPanel.refresh();
     };
     // The store says so for each note it takes, reading the server's list hands it hundreds at once, and a busy project
     // sends many changes a second: the pins are brought up to date at most once a frame, after the lot.
@@ -632,7 +633,12 @@ export function createController(props: NotatoProps): NotatoController {
         anchor: () => settingsButton.el.getBoundingClientRect(),
         serverScreenshots: () => policy.screenshotsNow(),
         onHide: () => setHidden(true),
-        hiddenNotes: { count: hiddenNotes.count, restore: hiddenNotes.clear },
+        hiddenNotes: {
+            count: hiddenNotes.count,
+            completedCount: () => shown().filter((r) => isFinished(r.annotation)).length,
+            hideCompleted: () => void hiddenNotes.hideMany(shown().map((r) => r.annotation)),
+            restore: hiddenNotes.clear,
+        },
         onToggle: (open) => settingsButton.setExpanded(open),
         owner: () => settingsButton.el,
         server:

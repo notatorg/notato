@@ -38,6 +38,7 @@
         "react-native.config.cjs"
     ],
     "dependencies": {
+        "@noble/hashes": "^2.4.0",
         "@notato/schema": "workspace:*",
         "fflate": "^0.8.2"
     },

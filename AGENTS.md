@@ -21,7 +21,16 @@ npx notato                           # runs the board and MCP (also started for 
 
 Then read the project's notes with the `notato_watch` MCP tool and work through them (acknowledge, fix, resolve); the skills `init` wrote explain the loop.
 
-## A shared server (testers on other machines)
+## Full self-hosted service (accounts and workspaces)
+
+The full MIT service is in `services/`, with deployment instructions in
+`deploy/self-hosted/README.md`. It uses Docker, Postgres, Better Auth, private
+S3-compatible image storage and standard SMTP. Accounts are required; registration
+is invitation-only by default, and per-account two-factor authentication is optional.
+Product features are not gated by paid plans. Keep these dependencies out of the
+lightweight SQLite developer loop. Provider integrations remain optional.
+
+## A lightweight shared server (testers on other machines)
 
 ```bash
 export NOTATO_ADMIN_PASSWORD=...           # or one is generated and printed once

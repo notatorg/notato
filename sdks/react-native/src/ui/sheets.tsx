@@ -11,6 +11,7 @@ import {
 } from "react-native";
 import { PEOPLE_ONLY } from "../annotation.ts";
 import type { ConnectionState, NotatoController, NotatoState } from "../controller.ts";
+import { isCompleted } from "../hidden.ts";
 import type { NoteRecord, NumberedNote } from "../notes.ts";
 import {
     Badge,
@@ -86,7 +87,14 @@ export const SheetView = memo(function SheetView(props: {
                 />
             );
         case "list":
-            return <NotesSheet state={state} list={here} open={open} annotate={props.annotate} />;
+            return (
+                <NotesSheet
+                    total={notato.visibleCount}
+                    list={here}
+                    open={open}
+                    annotate={props.annotate}
+                />
+            );
         case "settings":
             return <SettingsSheet notato={notato} state={state} open={open} toast={toast} />;
         case "clear":
@@ -241,7 +249,7 @@ export function MenuSheet(props: {
                 <MenuRow
                     tile={{ icon: "list" }}
                     title="Notes"
-                    detail={`${props.here} on this screen · ${state.notes.length} in all`}
+                    detail={`${props.here} on this screen · ${props.notato.visibleCount} in all`}
                     opens
                     onPress={() => props.open({ kind: "list" })}
                 />
@@ -297,15 +305,15 @@ export function MenuSheet(props: {
 
 /** Every note on this screen, newest first, each opening its card: a list that draws only the rows in sight. */
 export function NotesSheet(props: {
-    state: NotatoState;
+    total: number;
     list: readonly NumberedNote[];
     open(sheet: Sheet | null): void;
     annotate(): void;
 }) {
     const p = usePalette();
-    const { list, state, open } = props;
+    const { list, total, open } = props;
     const newest = useMemo(() => [...list].reverse(), [list]);
-    const others = state.notes.length - list.length;
+    const others = total - list.length;
     const renderItem = useCallback<ListRenderItem<NumberedNote>>(
         ({ item: { number, record } }) => {
             const a = record.annotation;
@@ -332,7 +340,7 @@ export function NotesSheet(props: {
         <>
             <SheetHeader
                 title="Notes"
-                subtitle={`${list.length} on this screen · ${state.notes.length} in all`}
+                subtitle={`${list.length} on this screen · ${total} in all`}
                 leading={<HeaderButton kind="back" onPress={() => open({ kind: "menu" })} />}
                 trailing={<HeaderButton kind="close" onPress={() => open(null)} />}
             />
@@ -437,6 +445,26 @@ export function SettingsSheet(props: {
                         }
                         value={screenshots}
                         onChange={setScreenshots}
+                    />
+                    <SheetButton
+                        title={`Hide completed annotations (${notato.completedCount})`}
+                        disabled={notato.completedCount === 0}
+                        testID="NotatoHideCompleted"
+                        onPress={() => {
+                            props.open(null);
+                            notato.hideCompleted();
+                        }}
+                    />
+                    <Text style={[styles.hint, { color: p.muted }]}>
+                        Across this app, on this device. Kept in the dashboard.
+                    </Text>
+                    <SheetButton
+                        title={`Restore hidden annotations (${notato.hiddenCount})`}
+                        testID="NotatoRestoreHidden"
+                        onPress={() => {
+                            props.open(null);
+                            notato.restoreHidden();
+                        }}
                     />
                 </View>
             </SheetScroll>
@@ -705,7 +733,7 @@ export function NoteCard(props: {
                     ) : null}
                 </View>
             ) : null}
-            {!sentOnly && optionsOpen ? (
+            {(!sentOnly || isCompleted(a)) && optionsOpen ? (
                 <SheetScroll>
                     <View style={styles.card}>
                         <FlagToggle
@@ -747,6 +775,16 @@ export function NoteCard(props: {
                                 }
                             />
                         ) : null}
+                        {isCompleted(a) ? (
+                            <SheetButton
+                                title="Hide from this app"
+                                testID="NotatoHideAnnotation"
+                                onPress={() => {
+                                    props.open(null);
+                                    notato.hideAnnotation(a.id);
+                                }}
+                            />
+                        ) : null}
                         {canDelete ? (
                             <SheetButton
                                 title={deleteArmed ? "Confirm delete" : "Delete"}
@@ -764,7 +802,7 @@ export function NoteCard(props: {
                 </SheetScroll>
             ) : null}
             <View style={styles.buttons}>
-                {!sentOnly ? (
+                {!sentOnly || isCompleted(a) ? (
                     <SheetButton
                         title={optionsOpen ? "Close options" : "More options"}
                         testID="NotatoMoreOptions"

@@ -56,7 +56,7 @@ export const SEMVER = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/;
 
 /** Every package.json in the workspaces that carries a version (examples need none). */
 export function npmStamps(): Stamp[] {
-    const dirs = ["packages", "sdks"].flatMap((parent) =>
+    const dirs = ["packages", "sdks", "services"].flatMap((parent) =>
         readdirSync(join(ROOT, parent), { withFileTypes: true })
             .filter((d) => d.isDirectory())
             .map((d) => join(parent, d.name))

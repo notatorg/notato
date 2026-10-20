@@ -63,7 +63,7 @@ internal class ScanIndex(val elements: List<ScreenElement>) {
  * The notes grouped by the screen they were made on, oldest first and numbered as their pins are, and how many wait
  * to be sent: worked out again only when [notes] has changed, not on every frame or render.
  */
-internal class ScreenNotes(private val notes: NoteBook) {
+internal class ScreenNotes(private val notes: NoteBook, private val hidden: HiddenAnnotations = HiddenAnnotations()) {
     private var groupedVersion = -1L
     private var byRoute: Map<String, List<Pair<Int, NoteRecord>>> = emptyMap()
     private var waiting = 0
@@ -90,7 +90,7 @@ internal class ScreenNotes(private val notes: NoteBook) {
             if (record.pending) pending++
         }
         val order = compareBy<NoteRecord>({ it.annotation.createdAt }, { it.annotation.id })
-        byRoute = groups.mapValues { (_, list) -> list.sortedWith(order).mapIndexed { index, record -> index + 1 to record } }
+        byRoute = groups.mapValues { (_, list) -> list.sortedWith(order).mapIndexed { index, record -> index + 1 to record }.filter { !hidden.contains(it.second.annotation) } }
         waiting = pending
         groupedVersion = notes.version
     }

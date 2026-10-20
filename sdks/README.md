@@ -43,3 +43,11 @@ The native SDKs (`swift`, `android`, `dotnet`, `react-native`, `flutter`) have o
 - **Selectors**: `#id`, a type or role, `[label="…"]`, `:text("…")`, `:nth(n)`, and leading names for the components around it; pins are found again by them.
 - **A runtime API**: on and off, the toolbar, start and stop annotating, select, annotate from code (as a person or an agent), package, record a request; runtime choices remembered until reset.
 - **Context**: the app's recent warnings and errors (`context.console`) and recorded requests (`context.network`).
+
+## Hiding completed annotations
+
+Every SDK can hide a completed note locally with **More options → Hide from this app**.
+**Settings → Hide completed annotations** hides completed notes across all screens,
+and **Restore hidden annotations** brings them back. Feedback remains in the
+dashboard; reopened tasks and agent questions remain visible. Web
+preferences are kept in the browser, and native preferences on the device.

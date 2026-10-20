@@ -28,6 +28,10 @@ COPY sdks/browser/package.json sdks/browser/
 COPY sdks/react/package.json sdks/react/
 COPY sdks/react-native/package.json sdks/react-native/
 COPY sdks/react/example/package.json sdks/react/example/
+COPY services/server/package.json services/server/
+COPY services/board/package.json services/board/
+COPY services/cli/package.json services/cli/
+COPY services/monitor/package.json services/monitor/
 RUN bun install --frozen-lockfile
 COPY . .
 ARG TARGETARCH

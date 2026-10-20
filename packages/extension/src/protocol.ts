@@ -392,10 +392,10 @@ export type ToPage =
           state: "open" | "error";
       };
 
-/** From the relay to the background worker. */
+/** From the relay, or the extension's own popup, to the background worker. */
 export type ToBackground =
     | { kind: "fetch"; url: string; init: WireInit }
-    | { kind: "ping"; server: string };
+    | { kind: "check"; server: string; project: string; token?: string };
 
 export type BackgroundReply = { ok: true; response: WireResponse } | { ok: false; message: string };
 

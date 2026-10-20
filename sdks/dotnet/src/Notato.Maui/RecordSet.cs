@@ -1,4 +1,5 @@
 using Notato.Maui.Model;
+using Notato.Maui.Runtime;
 using System.Collections;
 using System.Collections.ObjectModel;
 
@@ -22,6 +23,18 @@ internal sealed class RecordSet : IEnumerable<NoteRecord>
     private readonly HashSet<string> _deleted = new(StringComparer.Ordinal);
     private Dictionary<string, Screen>? _screens;
     private int _screensVersion = -1;
+    private IReadOnlySet<string> _hidden = new HashSet<string>(StringComparer.Ordinal);
+
+    public void SetHidden(IReadOnlySet<string> ids)
+    {
+        if (ReferenceEquals(ids, _hidden))
+        {
+            return;
+        }
+
+        _hidden = ids;
+        Touch();
+    }
 
     /// <summary>A screen's notes, oldest first and numbered, and those of them that get a pin.</summary>
     private sealed record Screen(IReadOnlyList<(int Number, NoteRecord Record)> All, IReadOnlyList<(int Number, NoteRecord Record)> Pinned);
@@ -152,6 +165,11 @@ internal sealed class RecordSet : IEnumerable<NoteRecord>
             List<(int Number, NoteRecord Record)> pinned = [];
             for (int i = 0; i < group.Count; i++)
             {
+                if (HiddenAnnotations.IsCompleted(group[i].Annotation.Status) && _hidden.Contains(group[i].Annotation.Id))
+                {
+                    continue;
+                }
+
                 all.Add((i + 1, group[i]));
                 if (group[i].Annotation.Environment.Platform == Platform)
                 {

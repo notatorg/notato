@@ -503,6 +503,95 @@ describe("the server's list", () => {
     });
 });
 
+describe("hiding completed annotations in bulk", () => {
+    beforeEach(() => {
+        localStorage.clear();
+        reducedMotion();
+    });
+    afterEach(() => localStorage.clear());
+    const button = (label: string) =>
+        [...ui().querySelectorAll<HTMLButtonElement>("button")].find(
+            (b) => b.textContent?.includes(label) || b.title === label
+        ) as HTMLButtonElement;
+    const count = () => ui().querySelector(".tb-count")?.textContent;
+    const add = (
+        server: ReturnType<typeof fakeServer>,
+        id: string,
+        over: Partial<Annotation> = {}
+    ) => {
+        server.notes.set(id, { ...sampleAnnotation, id, route: "/", ...over });
+    };
+
+    it("hides completed notes across pages beyond the pin limit, retains them and restores them", async () => {
+        const server = fakeServer();
+        for (let i = 0; i < 160; i++) add(server, `done-${i}`, { status: "resolved" });
+        add(server, "other-page", { status: "reverted", route: "/other" });
+        add(server, "open", { status: "open" });
+        add(server, "question", { status: "awaiting_response" });
+        const original = structuredClone([...server.notes.values()]);
+        const props = { server: SERVER, transport: server.transport, token: "same-user" };
+        let notato = mount(props);
+        await server.hello();
+        await until(() => count() === "162");
+        expect(ui().querySelectorAll(".pin")).toHaveLength(150);
+        button("Settings").click();
+        button("Hide completed annotations (161)").click();
+        await until(() => count() === "2");
+        expect(ui().querySelectorAll(".pin")).toHaveLength(2);
+        expect(notato.list()).toEqual(original);
+        expect([...server.notes.values()]).toEqual(original);
+        expect(server.deletes).toEqual([]);
+        expect(
+            server.transport.fetch.mock.calls.every(
+                ([, init]) => !init?.method || init.method === "GET"
+            )
+        ).toBe(true);
+
+        const streams = server.streams.length;
+        notato = reload(props);
+        await until(() => server.streams.length > streams, "the reloaded stream");
+        await server.hello();
+        await until(() => count() === "2");
+        expect(notato.list()).toHaveLength(163);
+        server.say("updated", { annotation: { ...server.notes.get("done-0"), status: "open" } });
+        server.say("updated", {
+            annotation: { ...server.notes.get("done-1"), status: "awaiting_response" },
+        });
+        await until(() => count() === "4");
+        button("Settings").click();
+        expect(button("Hide completed annotations (0)").disabled).toBe(true);
+        button("Restore hidden annotations (161)").click();
+        await until(() => count() === "162");
+    });
+
+    it("respects Only my notes and updates the available count when filters or statuses change", async () => {
+        localStorage.setItem("notato:author", "Alice");
+        const server = fakeServer();
+        add(server, "mine", { status: "open", author: { kind: "human", name: "Alice" } });
+        add(server, "theirs", { status: "resolved", author: { kind: "human", name: "Bob" } });
+        mount({ server: SERVER, transport: server.transport });
+        await server.hello();
+        await until(() => count() === "2");
+        button("Settings").click();
+        expect(button("Hide completed annotations (1)").disabled).toBe(false);
+        const mineOnly = () =>
+            ui().querySelector<HTMLButtonElement>('button[aria-label="Only my notes"]');
+        mineOnly()?.click();
+        expect(button("Hide completed annotations (0)").disabled).toBe(true);
+        server.say("updated", {
+            annotation: { ...server.notes.get("mine"), status: "resolved" },
+        });
+        await until(() => Boolean(button("Hide completed annotations (1)")));
+        button("Hide completed annotations (1)").click();
+        await until(() => count() === "0");
+        button("Settings").click();
+        mineOnly()?.click();
+        await until(() => count() === "1");
+        expect(button("Restore hidden annotations (1)")).toBeDefined();
+        expect(button("Hide completed annotations (1)").disabled).toBe(false);
+    });
+});
+
 describe("a change the person makes on a note", () => {
     it("is shown from the server's answer, without reading every note again", async () => {
         const server = fakeServer();

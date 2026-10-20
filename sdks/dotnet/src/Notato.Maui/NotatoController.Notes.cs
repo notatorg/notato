@@ -138,7 +138,7 @@ internal sealed partial class NotatoController
         List<Rect> rects = [.. elements.Select(e => geometry.BoundsOf(e) ?? Rect.Zero)];
         Rect union = rects.Aggregate((a, b) => a.Union(b));
         (string route, string url, _, _, _) = AppContextInfo.RouteOf(session.Window);
-        int pin = _records.On(route).Count + 1;
+        int pin = _records.Count(r => r.Annotation.Route == route) + 1;
         bool mask = options.ResolvedMaskInputs;
 
         ComposedScreenshots? shots = null;

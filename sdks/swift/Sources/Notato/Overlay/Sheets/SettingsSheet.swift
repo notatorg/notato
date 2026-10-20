@@ -38,6 +38,19 @@ struct SettingsSheet: View {
                                   : notato.serverPolicy?.screenshots == false ? "The server has them turned off"
                                   : "None until the server says it takes them",
                               isOn: $screenshots)
+                    SheetButton("Hide completed annotations (\(notato.completedCount))") {
+                        close()
+                        notato.hideCompleted()
+                    }
+                    .disabled(notato.completedCount == 0)
+                    .accessibilityIdentifier("NotatoHideCompleted")
+                    Text("Across this app, on this device. Kept in the dashboard.")
+                        .font(.system(size: 12.5)).foregroundStyle(Palette.muted)
+                    SheetButton("Restore hidden annotations (\(notato.hiddenCount))") {
+                        close()
+                        notato.restoreHidden()
+                    }
+                    .accessibilityIdentifier("NotatoRestoreHidden")
                 }
             }
             HStack(spacing: 10) {

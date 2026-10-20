@@ -126,7 +126,7 @@ struct MenuSheet: View {
                     detail: here == 0 ? "No pins on this screen" : here == 1 ? "1 pin on this screen" : "\(here) pins on this screen") {
                 run { notato.togglePins() }
             }
-            MenuRow(icon: .symbol("list.bullet"), title: "Notes", detail: "\(here) on this screen · \(notato.records.count) in all", opens: true) {
+            MenuRow(icon: .symbol("list.bullet"), title: "Notes", detail: "\(here) on this screen · \(notato.visibleCount) in all", opens: true) {
                 run { model.sheet = .list }
             }
             if notato.mode == .test, pending > 0 {

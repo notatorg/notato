@@ -16,7 +16,7 @@ export function createHiddenNotes(scope: Promise<string>, changed: () => void) {
     const hidden = new Set<string>();
     const save = () => {
         try {
-            if (key) localStorage.setItem(key, JSON.stringify([...hidden].slice(-2000)));
+            if (key) localStorage.setItem(key, JSON.stringify([...hidden]));
         } catch {
             /* optional preference */
         }
@@ -26,23 +26,30 @@ export function createHiddenNotes(scope: Promise<string>, changed: () => void) {
         try {
             const saved: unknown = JSON.parse(localStorage.getItem(key) ?? "[]");
             if (Array.isArray(saved))
-                for (const id of saved.slice(-2000)) if (typeof id === "string") hidden.add(id);
+                for (const id of saved) if (typeof id === "string") hidden.add(id);
         } catch {
             /* optional preference */
         }
         changed();
     });
+    const hideMany = async (annotations: Iterable<Annotation>) => {
+        await ready;
+        let added = false;
+        for (const a of annotations) {
+            if (!isFinished(a) || hidden.has(a.id)) continue;
+            hidden.add(a.id);
+            added = true;
+        }
+        if (added) {
+            save();
+            changed();
+        }
+    };
     return {
         ready,
         has: (a: Annotation) => isFinished(a) && hidden.has(a.id),
-        async hide(a: Annotation) {
-            await ready;
-            if (isFinished(a)) {
-                hidden.add(a.id);
-                save();
-                changed();
-            }
-        },
+        hide: (a: Annotation) => hideMany([a]),
+        hideMany,
         clear() {
             hidden.clear();
             save();

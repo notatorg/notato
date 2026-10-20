@@ -46,6 +46,9 @@ internal class RuntimeState(private val store: Store) {
     var pinsVisible: Boolean?
         get() = bool("pins")
         set(value) = setBool("pins", value)
+    var hiddenAnnotations: String?
+        get() = get("hidden.annotations")
+        set(value) = set("hidden.annotations", value)
     var author: String?
         get() = get("author")
         set(value) = set("author", value?.trim()?.ifEmpty { null })
@@ -68,6 +71,6 @@ internal class RuntimeState(private val store: Store) {
         set(value) = setBool("toolbar.collapsed", value.takeIf { it })
 
     fun reset() {
-        for (key in listOf("enabled", "toolbar", "screenshots", "pins", "author", "server", "toolbar.position", "toolbar.collapsed")) set(key, null)
+        for (key in listOf("enabled", "toolbar", "screenshots", "pins", "author", "server", "toolbar.position", "toolbar.collapsed", "hidden.annotations")) set(key, null)
     }
 }

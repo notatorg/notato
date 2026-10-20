@@ -173,6 +173,18 @@ Replies reach the agent within its active feedback scope. Dev feedback is privat
 - There is no shake to bring the toolbar back: in a development build a shake opens React Native's developer menu, which has **Notato: show or hide the toolbar**.
 - Verified in Expo Go 57 with React Native 0.86 on the iOS simulator (iPhone 17 Pro, iOS 26.5): picking, masking, both screenshots, the component and its file, the composer, the ⋯ menu, live status, replies and asides, People only, revert, annotating from code, the agent relay through `notato_annotate`, and test mode's package uploaded and shared. Not yet verified at this version on the Android emulator, on a physical device, or in a bare app.
 
+## Hiding completed annotations
+
+On a resolved or reverted note, open **More options → Hide from this app** to hide
+its pin and card on this device. In **Settings**, **Hide completed annotations**
+hides completed notes across every screen at once, including notes beyond the
+150 drawn pins. **Restore hidden annotations** brings them back.
+
+Hiding keeps the feedback, screenshots and thread in the dashboard and exports.
+It never changes the note on the server. Reopened tasks and new agent questions
+remain visible. The preference is scoped to the server, project, mode, credential
+and name, and survives app restarts when runtime preferences are remembered.
+
 ## Development
 
 ```bash

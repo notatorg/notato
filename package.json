@@ -7,7 +7,8 @@
         "packages/*",
         "sdks/*",
         "sdks/react/example",
-        "sdks/angular/example"
+        "sdks/angular/example",
+        "services/*"
     ],
     "scripts": {
         "build:schema": "bun run --filter @notato/schema build",
@@ -16,12 +17,16 @@
         "format": "biome check --write .",
         "test": "bun run test:node && bun run test:bun",
         "test:node": "vitest run",
-        "test:bun": "bun test packages/server packages/cli packages/board packages/extension scripts",
+        "test:bun": "bun test packages/server packages/cli packages/board packages/extension scripts services",
         "check": "bun run lint && bun run typecheck && bun run test",
         "build:board": "bun run --filter @notato/board build",
         "build:extension": "bun run --filter @notato/extension build",
         "release:build": "bun run scripts/build-release.ts",
-        "version": "bun scripts/version.ts"
+        "version": "bun scripts/version.ts",
+        "build:service": "bun run --filter @notato/service-board build",
+        "serve:service": "bun services/cli/src/main.ts serve",
+        "test:service": "bun test services",
+        "check:service": "bun run lint && bun run typecheck && bun run test:service && bun run build:service"
     },
     "devDependencies": {
         "@biomejs/biome": "^2.5.15",

@@ -95,9 +95,20 @@ struct PinCard: View {
     @ViewBuilder
     private func actions(_ a: Annotation) -> some View {
         if sendOnly {
-            EmptyView()
+            if HiddenAnnotations.isCompleted(a.status) {
+                SheetButton("Hide from this app") {
+                    close()
+                    notato.hideAnnotation(a.id)
+                }
+            }
         } else {
             Menu {
+                if HiddenAnnotations.isCompleted(a.status) {
+                    Button("Hide from this app") {
+                        close()
+                        notato.hideAnnotation(a.id)
+                    }
+                }
                 Toggle(PeopleOnlyCopy.title, isOn: Binding(get: { askedPeopleOnly ?? a.isPeopleOnly }, set: { setPeopleOnly($0) }))
                     .disabled(askedPeopleOnly != nil)
                 if notato.hasServer, !record.pending {

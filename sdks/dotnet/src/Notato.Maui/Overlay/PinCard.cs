@@ -2,6 +2,7 @@ using Microsoft.Maui.Controls;
 using Microsoft.Maui.Graphics;
 using Notato.Maui.Inspection;
 using Notato.Maui.Model;
+using Notato.Maui.Runtime;
 using System.Globalization;
 
 namespace Notato.Maui.Overlay;
@@ -170,7 +171,7 @@ internal sealed class PinCard : ContentView
         }
 
         // ---- the buttons: what can be done with it now -------------------------------------------------------------
-        // A note sent with a capture-only token gets none: replying, reverting and deleting are the board's.
+        // A capture-only token can change local visibility; replies, reverts and deletes stay on the board.
         VerticalStackLayout deleteConfirmation = Ui.Plain(new VerticalStackLayout { Spacing = 8, IsVisible = false });
         deleteConfirmation.Children.Add(Ui.Text("Delete this note permanently?", 13, Ui.CardText));
         deleteConfirmation.Children.Add(Ui.ButtonRow([
@@ -178,7 +179,13 @@ internal sealed class PinCard : ContentView
             Ui.SheetButton("Delete note", () => _ = Run(() => controller.DeleteAsync(a.Id), "Note deleted"), Ui.SheetButtonKind.Danger),
         ]));
         List<Border> actions = [];
-        if (!sentOnly)
+        if (HiddenAnnotations.IsCompleted(a.Status))
+        {
+            Border hide = Ui.SheetButton("Hide from this app", () => { close(); controller.HideAnnotation(a.Id); });
+            hide.AutomationId = "NotatoHideAnnotation";
+            options.Children.Add(hide);
+        }
+        if (!sentOnly || HiddenAnnotations.IsCompleted(a.Status))
         {
             Border more = Ui.SheetButton("More options", () =>
             {

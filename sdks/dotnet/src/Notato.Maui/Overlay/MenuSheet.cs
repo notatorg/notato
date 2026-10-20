@@ -153,7 +153,7 @@ internal sealed class MenuSheet : ContentView
         }
 
         List<MenuRow> list = MenuText.Rows(new MenuFacts(_controller.Mode, _controller.PinsVisible, _controller.CountOnRoute(_session),
-            _controller.Annotations.Count, _controller.PendingCount, _controller.ShakeAvailable));
+            _controller.VisibleCount, _controller.PendingCount, _controller.ShakeAvailable));
         string key = string.Join("\n", list.Select(r => r.Title + "\t" + r.Subtitle));
         if (key == _shownRows)
         {
