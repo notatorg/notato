@@ -267,52 +267,60 @@ export function createPopover(layer: HTMLElement, frames: Frames = createFrames(
                     capitalize(s)
                 )
             );
-            const visibilityDetail = h(
-                "p",
-                {},
-                visibility === "shared"
-                    ? "Everyone with access to this project can see this feedback."
-                    : "Only you and your agent can see this feedback."
-            );
-            const shareChip = h(
-                "button",
-                {
-                    class: "chip people",
-                    type: "button",
-                    "aria-pressed": String(visibility === "shared"),
-                    title: "Choose whether this feedback belongs only to you or is shared with the project.",
-                    onclick: (ev: Event) => {
-                        visibility = visibility === "personal" ? "shared" : "personal";
-                        shareChip.setAttribute("aria-pressed", String(visibility === "shared"));
-                        visibilityDetail.textContent =
-                            visibility === "shared"
-                                ? "Everyone with access to this project can see this feedback."
-                                : "Only you and your agent can see this feedback.";
-                        shareChip.textContent =
-                            visibility === "shared" ? "Keep it personal" : "Share with project";
-                        ev.stopPropagation();
+            const visibilityDetail = h("p", {});
+            const showVisibility = () => {
+                visibilityDetail.textContent = peopleOnly
+                    ? "Only people can see this note."
+                    : visibility === "shared"
+                      ? "Everyone with access to this project can see this feedback."
+                      : "Only you and your agent can see this feedback.";
+            };
+            showVisibility();
+            const visibilitySwitch = (
+                label: string,
+                iconSvg: string,
+                pressed: boolean,
+                title: string,
+                toggle: () => boolean
+            ) => {
+                const sw: HTMLButtonElement = h(
+                    "button",
+                    {
+                        class: "vis-switch",
+                        type: "button",
+                        "aria-pressed": String(pressed),
+                        title,
+                        onclick: (ev: Event) => {
+                            sw.setAttribute("aria-pressed", String(toggle()));
+                            showVisibility();
+                            ev.stopPropagation();
+                        },
                     },
-                },
-                visibility === "shared" ? "Keep it personal" : "Share with project"
+                    icon(iconSvg),
+                    h("span", { class: "vis-label" }, label),
+                    h("span", { class: "vis-track", "aria-hidden": "true" })
+                );
+                return sw;
+            };
+            const shareChip = visibilitySwitch(
+                "Share with project",
+                ICONS.people,
+                visibility === "shared",
+                "Choose whether this feedback belongs only to you or is shared with the project.",
+                () => {
+                    visibility = visibility === "personal" ? "shared" : "personal";
+                    return visibility === "shared";
+                }
             );
-            const peopleChip = h(
-                "button",
-                {
-                    class: "chip people",
-                    type: "button",
-                    "aria-pressed": "false",
-                    title: PEOPLE_ONLY_HINT,
-                    onclick: (ev: Event) => {
-                        peopleOnly = !peopleOnly;
-                        peopleChip.setAttribute("aria-pressed", String(peopleOnly));
-                        visibilityDetail.textContent = peopleOnly
-                            ? "Only people can see this note."
-                            : "Agents can see this note.";
-                        ev.stopPropagation();
-                    },
-                },
-                icon(ICONS.lock),
-                "Hide from agent"
+            const peopleChip = visibilitySwitch(
+                "Hide from agent",
+                ICONS.lock,
+                false,
+                PEOPLE_ONLY_HINT,
+                () => {
+                    peopleOnly = !peopleOnly;
+                    return peopleOnly;
+                }
             );
             hintEl = h("p", { class: "hint" });
             showHint(init.hint);
@@ -588,13 +596,10 @@ export function createPopover(layer: HTMLElement, frames: Frames = createFrames(
                                   role: "group",
                                   "aria-label": "Visibility",
                               },
-                              h(
-                                  "div",
-                                  {},
-                                  h("span", { class: "composer-label" }, "Visibility"),
-                                  visibilityDetail
-                              ),
-                              h("div", { class: "visibility-actions" }, shareChip, peopleChip)
+                              h("span", { class: "composer-label" }, "Visibility"),
+                              shareChip,
+                              peopleChip,
+                              visibilityDetail
                           )
                 ),
                 h(

@@ -447,9 +447,25 @@ button, input, textarea { font: inherit; }
 .composer-intents.has-variants .chip { grid-column: span 2; }
 .composer-intents.has-variants .chip:nth-last-child(-n+2) { grid-column: span 3; }
 .composer-severities { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); }
-.composer-visibility { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding-top: 12px; border-top: 1px solid var(--p-line); }
-.composer-visibility p { margin: 3px 0 0; color: var(--p-mute); font-size: 11px; line-height: 1.4; }
-.composer-visibility .people { flex: none; padding: 7px 9px; border-radius: 8px; font-size: 12px; }
+.composer-visibility { display: grid; gap: 7px; padding-top: 12px; border-top: 1px solid var(--p-line); }
+.composer-visibility p { margin: 1px 0 0; color: var(--p-mute); font-size: 11px; line-height: 1.4; }
+.vis-switch {
+  display: flex; align-items: center; gap: 9px; width: 100%; padding: 8px 10px; border: 0; border-radius: 8px;
+  background: transparent; color: var(--p-text); box-shadow: inset 0 0 0 1px var(--p-line);
+  font: inherit; font-size: 12.5px; font-weight: 600; text-align: left; cursor: pointer;
+}
+.vis-switch:hover { background: var(--p-soft); }
+.vis-switch:focus-visible { outline: 2px solid var(--acc); outline-offset: 1px; }
+.vis-switch .icon { display: inline-flex; flex: none; color: var(--p-mute); }
+.vis-switch .vis-label { flex: 1; min-width: 0; }
+.vis-track { position: relative; flex: none; width: 30px; height: 18px; border-radius: 999px; background: var(--p-line); transition: background 0.15s; }
+.vis-track::after {
+  content: ""; position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 50%;
+  background: var(--p-bg); box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3); transition: transform 0.15s;
+}
+.vis-switch[aria-pressed="true"] .vis-track { background: var(--acc); }
+.vis-switch[aria-pressed="true"] .vis-track::after { transform: translateX(12px); }
+@media (prefers-reduced-motion: reduce) { .vis-track, .vis-track::after { transition: none; } }
 .composer-footer { flex-shrink: 0; display: grid; gap: 8px; padding: 11px 14px; border-top: 1px solid var(--p-line); background: var(--p-bg); }
 .composer-footer .status { margin: 0; color: var(--p-mute); font-size: 12px; overflow-wrap: anywhere; }
 .composer-footer .status:empty { display: none; }

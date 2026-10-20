@@ -9,6 +9,7 @@ Every Notato package is released together, at one version: the `notato` command 
 
 - **Quieter feedback cards.** Browser, React, Angular and native SDKs keep secondary actions under More options. “Hide from agent” and “Hide reply from agent” replace People only and Aside, with an indicator before a private reply is sent. Completion states remain Resolved and Dismissed. Revert is available only for resolved changes, with the server enforcing the same rule.
 
+- The browser, React and Angular composer shows sharing as two switches, **Share with project** and **Hide from agent**, with one line saying who can see the note, matching the mobile SDKs.
 - Enforce People only on direct MCP reads and agent-token API reads, exports and screenshots. Private event changes clear an agent's cached note without sending its contents; only people can change visibility.
 - Paste reference images into the browser, React and Angular annotation composer with Cmd+V / Ctrl+V, using the same limits and optimisation as selected files. A themed attachment area makes pasting prominent, with a visible shortcut, Choose images button and attachment count.
 - Clearer browser composers: labelled feedback and severity options, a separate visibility control, neutral screenshot-off status, local reference thumbnails and save actions that stay visible while the form scrolls.
