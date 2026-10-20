@@ -1,6 +1,6 @@
 # Self-hosting Notato
 
-The full Notato server is MIT and runs without SaaS accounts. Docker Compose supplies the application, Postgres, [SeaweedFS](https://github.com/seaweedfs/seaweedfs#docker) for private S3-compatible screenshots, and [Mailpit](https://mailpit.axllent.org/docs/install/docker/) for a local email inbox. Integrations such as GitHub, Azure DevOps, Linear, Jira, Slack, Teams and webhooks remain available when explicitly configured. Collaboration, workspaces, workflows and reviews have no subscription requirement.
+The full Notato server is MIT and runs without SaaS accounts. Docker Compose supplies the application, Postgres, [SeaweedFS](https://github.com/seaweedfs/seaweedfs#docker) for private S3-compatible screenshots, and [Mailpit](https://mailpit.axllent.org/docs/install/docker/) for a local email inbox. Integrations such as GitHub, GitLab, Azure DevOps, Linear, Slack, Teams and webhooks remain available when explicitly configured. Collaboration, workspaces, workflows and reviews have no subscription requirement.
 
 The existing `npx notato` developer loop remains on SQLite and local files. Use the full server when you need accounts and a shared instance. No existing developer database or hosted test database is migrated by these instructions.
 
