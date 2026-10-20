@@ -206,7 +206,7 @@ it("only trusts successful, public, non-production HTTPS preview addresses", () 
     expect(previewFromDeployment(deployment(OLD, undefined) as never)).toBeNull();
 });
 
-it("refuses unsigned, wrongly signed or unconfigured deliveries", async () => {
+it("refuses unsigned or wrongly signed deliveries without updating the review", async () => {
     const w = await setup();
     await w.seed();
     const bad = await w.send("pull_request", pullRequest(), "wrong-secret-wrong-secret");
@@ -214,11 +214,11 @@ it("refuses unsigned, wrongly signed or unconfigured deliveries", async () => {
     expect((await w.s.call("/github/webhook", { method: "POST", body: "{}" })).status).toBe(401);
     expect((await w.work()).pullRequest.latestHeadSha).toBe(OLD);
     expect((await w.send("ping", { zen: "hi" })).status).toBe(200);
+});
 
-    const { s } = await setup();
+it("leaves the webhook endpoint unavailable when no secret is configured", async () => {
     const off = await startServe(defer, { managedAuth: fakeManagedAuth(), testPlans: true });
     expect((await off.call("/github/webhook", { method: "POST", body: "{}" })).status).toBe(404);
-    expect(s).toBeDefined();
 });
 
 it("keeps a review's state and newest commit current without a manual refresh", async () => {
