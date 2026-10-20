@@ -43,11 +43,19 @@ struct ComposerCard: View {
                     .focused($focused)
                     .field()
                     .accessibilityIdentifier("NotatoComment")
-                Chips(options: [(Intent.fix, "Fix"), (Intent.change, "Change"), (Intent.question, "Question"), (Intent.approve, "Approve")], selected: $intent)
-                Chips(options: [(Severity.blocker, "Blocker"), (Severity.major, "Major"), (Severity.minor, "Minor"), (Severity.nit, "Nit")], selected: $severity)
-                FlagToggle(title: "Share with project", hint: "Project members can see this feedback.", isOn: Binding(get: { sharedOverride ?? sharedByDefault }, set: { sharedOverride = $0 }))
-                FlagToggle(title: PeopleOnlyCopy.title, hint: PeopleOnlyCopy.hint, isOn: $peopleOnly)
-                    .accessibilityIdentifier("NotatoPeopleOnly")
+                ComposerGroup("Feedback type") {
+                    Chips(options: [(Intent.fix, "Fix"), (Intent.change, "Change"), (Intent.question, "Question"), (Intent.approve, "Approve")], selected: $intent)
+                }
+                ComposerGroup("Severity") {
+                    Chips(options: [(Severity.blocker, "Blocker"), (Severity.major, "Major"), (Severity.minor, "Minor"), (Severity.nit, "Nit")], selected: $severity, dots: true)
+                }
+                VStack(alignment: .leading, spacing: 10) {
+                    Rectangle().fill(Palette.line).frame(height: 1)
+                    Text("Visibility").font(.system(size: 13, weight: .semibold))
+                    FlagToggle(title: "Share with project", hint: "Project members can see this feedback.", isOn: Binding(get: { sharedOverride ?? sharedByDefault }, set: { sharedOverride = $0 }))
+                    FlagToggle(title: PeopleOnlyCopy.title, hint: PeopleOnlyCopy.hint, isOn: $peopleOnly)
+                        .accessibilityIdentifier("NotatoPeopleOnly")
+                }
                 if let problem { Text(problem).font(.caption).foregroundStyle(Palette.danger) }
                 HStack(spacing: 10) {
                     Text(screenshotsOff ? "No screenshot: they are turned off." : "Tap another element to change what this note is about.")
@@ -70,27 +78,59 @@ struct ComposerCard: View {
     }
 }
 
-/// A row of choices, at most one on: tapping the one that is on turns it off.
+/// A labelled part of the composer, as the web composer's: a small heading over its controls.
+struct ComposerGroup<Content: View>: View {
+    let title: String
+    @ViewBuilder var content: Content
+
+    init(_ title: String, @ViewBuilder content: () -> Content) {
+        self.title = title
+        self.content = content()
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 7) {
+            Text(title).font(.system(size: 13, weight: .semibold))
+            content
+        }
+    }
+}
+
+/// A row of equal choices, at most one on: tapping the one that is on turns it off. The one that is on is filled with
+/// the text colour, as on the web; `dots` puts the severity's colour beside each label.
 struct Chips: View {
     let options: [(String, String)]
     @Binding var selected: String?
+    var dots = false
 
     var body: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 6) {
-                ForEach(options, id: \.0) { value, label in
-                    let on = selected == value
-                    Button { selected = on ? nil : value } label: {
-                        Text(label)
-                            .font(.system(size: 14, weight: .semibold))
-                            .padding(.horizontal, 11).padding(.vertical, 6)
-                            .foregroundStyle(on ? Color.white : Palette.text)
-                            .background(on ? Palette.accent : Color.clear, in: Capsule())
-                            .overlay(Capsule().strokeBorder(on ? Palette.accent : Palette.line))
+        HStack(spacing: 6) {
+            ForEach(options, id: \.0) { value, label in
+                let on = selected == value
+                Button { selected = on ? nil : value } label: {
+                    HStack(spacing: 5) {
+                        if dots { Circle().fill(Self.dot(value)).frame(width: 7, height: 7) }
+                        Text(label).lineLimit(1).minimumScaleFactor(0.8)
                     }
-                    .buttonStyle(.plain)
+                    .font(.system(size: 14, weight: .semibold))
+                    .frame(maxWidth: .infinity, minHeight: 38)
+                    .foregroundStyle(on ? Palette.background : Palette.text)
+                    .background(on ? Palette.text : Color.clear, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(on ? Palette.text : Palette.line))
                 }
+                .buttonStyle(.plain)
+                .accessibilityAddTraits(on ? .isSelected : [])
             }
+        }
+    }
+
+    /// The severity's colour, the web composer's.
+    private static func dot(_ severity: String) -> Color {
+        switch severity {
+        case Severity.blocker: return Palette.danger
+        case Severity.major: return Color(red: 0xd9 / 255, green: 0x9a / 255, blue: 0x1e / 255)
+        case Severity.minor: return Color(red: 0x2f / 255, green: 0x6f / 255, blue: 0xde / 255)
+        default: return Color(red: 0x9a / 255, green: 0x9a / 255, blue: 0x9a / 255)
         }
     }
 }

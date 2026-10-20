@@ -145,10 +145,31 @@ class _ComposerState extends State<Composer> {
                 decoration: fieldDecoration(context, 'What should change?'),
               ),
               const SizedBox(height: 12),
-              Chips(options: _intents, value: _intent, onChanged: (v) => setState(() => _intent = v)),
-              const SizedBox(height: 8),
-              Chips(options: _severities, value: _severity, onChanged: (v) => setState(() => _severity = v)),
+              _Group(
+                title: 'Feedback type',
+                child: Chips(options: _intents, value: _intent, onChanged: (v) => setState(() => _intent = v)),
+              ),
               const SizedBox(height: 12),
+              _Group(
+                title: 'Severity',
+                child: Chips(
+                  options: _severities,
+                  value: _severity,
+                  onChanged: (v) => setState(() => _severity = v),
+                  // The severity's colours, the web composer's.
+                  dots: const {
+                    'blocker': Color(0xFFD6453D),
+                    'major': Color(0xFFD99A1E),
+                    'minor': Color(0xFF2F6FDE),
+                    'nit': Color(0xFF9A9A9A),
+                  },
+                ),
+              ),
+              const SizedBox(height: 12),
+              Divider(height: 1, thickness: 1, color: p.line),
+              const SizedBox(height: 10),
+              Text('Visibility', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: p.text)),
+              const SizedBox(height: 6),
               FlagToggle(
                 title: 'Share with project',
                 hint: 'Project members can see this feedback.',
@@ -207,6 +228,26 @@ class _ComposerState extends State<Composer> {
           ),
         ),
       ),
+    );
+  }
+}
+
+/// A small heading over a group of controls, as the web composer has them.
+class _Group extends StatelessWidget {
+  const _Group({required this.title, required this.child});
+  final String title;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final p = Palette.of(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(title, style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: p.text)),
+        const SizedBox(height: 7),
+        child,
+      ],
     );
   }
 }

@@ -4,6 +4,7 @@ import android.annotation.SuppressLint
 import android.text.Editable
 import android.text.TextWatcher
 import android.view.Gravity
+import android.view.View
 import android.view.inputmethod.InputMethodManager
 import android.widget.FrameLayout
 import android.widget.LinearLayout
@@ -32,7 +33,11 @@ internal class ComposerSheet(
     private val subtitleView = ui.text(subtitle, 12f, ui.cardMuted, maxLines = 2)
     val comment = ui.field("What should change?", lines = 3).apply { contentDescription = "NotatoComment" }
     private val intents = ui.Chips(listOf(NoteIntent.FIX to "Fix", NoteIntent.CHANGE to "Change", NoteIntent.QUESTION to "Question", NoteIntent.APPROVE to "Approve"))
-    private val severities = ui.Chips(listOf(Severity.BLOCKER to "Blocker", Severity.MAJOR to "Major", Severity.MINOR to "Minor", Severity.NIT to "Nit"))
+    private val severities = ui.Chips(
+        listOf(Severity.BLOCKER to "Blocker", Severity.MAJOR to "Major", Severity.MINOR to "Minor", Severity.NIT to "Nit"),
+        // The severity's colours, the web composer's.
+        dots = mapOf(Severity.BLOCKER to Ui.DANGER, Severity.MAJOR to 0xFFD99A1E.toInt(), Severity.MINOR to 0xFF2F6FDE.toInt(), Severity.NIT to 0xFF9A9A9A.toInt())
+    )
     private val shared = ui.toggleRow("Share with project", "Project members can see this feedback.").also { it.second.isChecked = sharedByDefault }
     private val peopleOnly = ui.toggleRow(PEOPLE_ONLY, PEOPLE_ONLY_HINT)
     private val error = ui.text(null, 12f, Ui.DANGER).apply { visibility = GONE }
@@ -74,7 +79,18 @@ internal class ComposerSheet(
             override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
             override fun afterTextChanged(s: Editable?) = update()
         })
-        addView(ui.card(ui.column(12, header, comment, intents.view, severities.view, shared.first, peopleOnly.first, error, footer)))
+        // A small heading over each group of controls, and a rule over the sharing switches, as the web composer has them.
+        val rule = View(context).apply { setBackgroundColor(ui.cardLine) }
+        val visibility = ui.own(LinearLayout(context)).apply {
+            orientation = LinearLayout.VERTICAL
+            addView(rule, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, ui.dp(1)))
+            addView(ui.text("Visibility", 13f, weight = 600), LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { topMargin = ui.dp(10) })
+            addView(shared.first, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { topMargin = ui.dp(10) })
+            addView(peopleOnly.first, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { topMargin = ui.dp(10) })
+        }
+        val intentGroup = ui.column(7, ui.text("Feedback type", 13f, weight = 600), intents.view)
+        val severityGroup = ui.column(7, ui.text("Severity", 13f, weight = 600), severities.view)
+        addView(ui.card(ui.column(12, header, comment, intentGroup, severityGroup, visibility, error, footer)))
         update()
     }
 
