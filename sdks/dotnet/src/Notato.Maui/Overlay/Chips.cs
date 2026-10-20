@@ -29,7 +29,10 @@ internal sealed class ChipRow : Grid
                 BoxView dot = new() { Color = dotColor, WidthRequest = 7, HeightRequest = 7, CornerRadius = 3.5, VerticalOptions = LayoutOptions.Center };
                 content = new HorizontalStackLayout { Spacing = 5, HorizontalOptions = LayoutOptions.Center, Children = { dot, text } };
             }
-            else text.HorizontalOptions = LayoutOptions.Center;
+            else
+            {
+                text.HorizontalOptions = LayoutOptions.Center;
+            }
             Border box = Ui.Box(content, Colors.Transparent, 10, new Thickness(4, 0), Ui.CardLine, 1);
             box.HeightRequest = 38;
             box.VerticalOptions = LayoutOptions.Fill;
