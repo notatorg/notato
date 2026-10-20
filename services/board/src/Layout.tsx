@@ -1,5 +1,11 @@
 import { type ReactNode, type RefObject, useEffect } from "react";
 
+/** Keep saved links working when a page moves to its own scope. */
+export function PageRedirect({ to }: { to: string }) {
+    useEffect(() => window.location.replace(to), [to]);
+    return <p className="center muted">Opening settings…</p>;
+}
+
 /** One block of a settings-style page: what it is on the left, its controls and content on the right. */
 export function Section({
     title,

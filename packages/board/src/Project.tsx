@@ -283,6 +283,9 @@ export function Project(props: Props) {
             return (
                 <ReviewSessions
                     project={project}
+                    projectName={name}
+                    me={me}
+                    selection={selected}
                     actor={me.username ?? "local"}
                     annotations={all ?? []}
                 />

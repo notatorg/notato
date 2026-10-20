@@ -1,6 +1,7 @@
 import { type BoardExtension, Login, useRoute } from "@notato/board";
 import { type ReactNode, useEffect, useState } from "react";
-import { AccountPage } from "./AccountPage.tsx";
+import { AccountMenu } from "./AccountMenu.tsx";
+import { Administration, administrationTabs } from "./Administration.tsx";
 import {
     canManageProjects,
     getMe,
@@ -10,24 +11,20 @@ import {
     selectWorkspace,
     setRecoveryHandler,
 } from "./api.ts";
-import {
-    BetaAdminMoved,
-    BetaInvitation,
-    type BetaStatus,
-    BetaWaitlist,
-    betaStatus,
-} from "./Beta.tsx";
+import { BetaInvitation, type BetaStatus, BetaWaitlist, betaStatus } from "./Beta.tsx";
 import { Billing } from "./Billing.tsx";
 import { BrowserOrigins } from "./BrowserOrigins.tsx";
 import { EmailWelcome, useEmailPreferences } from "./EmailPreferences.tsx";
 import { GetStarted } from "./GetStarted.tsx";
 import { forgetIdentitySession, HostedLogin } from "./HostedLogin.tsx";
-import { InstanceAdmin } from "./InstanceAdmin.tsx";
+import { PageRedirect } from "./Layout.tsx";
+import { LegacyReviews } from "./LegacyReviews.tsx";
 import { BootstrapPasswordNotice } from "./PasswordSettings.tsx";
+import { PersonalSettings } from "./PersonalSettings.tsx";
 import { Plugins } from "./Plugins.tsx";
 import { AccountRefreshContext } from "./ProfileSettings.tsx";
 import { ProjectCollaboration } from "./ProjectCollaboration.tsx";
-import { PullRequestReviews } from "./PullRequestReviews.tsx";
+import { loadProjectPullRequestReviews, PullRequestReviews } from "./PullRequestReviews.tsx";
 import { whoIs } from "./Role.tsx";
 import { JoinWorkspace, Workspace } from "./Workspace.tsx";
 import { WorkspaceRecovery } from "./WorkspaceRecovery.tsx";
@@ -147,7 +144,7 @@ function CloudFrame({ me, refresh, children }: { me: Me; refresh(): void; childr
             <AccountRefreshContext.Provider value={refresh}>
                 {children}
             </AccountRefreshContext.Provider>
-            {route.page === "project" && route.selected && (
+            {route.page === "project" && route.tab === "inbox" && route.selected && (
                 <a
                     className="plugin-shortcut"
                     href={`#/x/plugins/${encodeURIComponent(route.selected)}`}
@@ -234,10 +231,13 @@ export const cloudExtension: BoardExtension = {
     HomeTop: ({ me, projects, onNewProject }) => (
         <GetStarted me={me as Me} projects={projects} onNewProject={onNewProject} />
     ),
-    // Settings → Account: the signed-in person's sessions, email choices and account deletion.
-    settingsTabs: [
-        { id: "account", label: "Account", Page: ({ me }) => <AccountPage me={me as Me} /> },
-    ],
+    AccountMenu: ({ me, onSignOut }) => <AccountMenu me={me as Me} onSignOut={onSignOut} />,
+    SettingsPage: PersonalSettings,
+    projectReviews: {
+        available: (me) => Boolean((me as Me).workspace) && !whoIs(me as Me).guest,
+        load: loadProjectPullRequestReviews,
+        Page: PullRequestReviews,
+    },
     // Server-wide settings (webhooks, the agents switch) are the operator's, not a workspace owner's.
     canAdminServer: (me) => Boolean((me as Me).isAdmin),
     SidebarTop: ({ me }) =>
@@ -258,41 +258,33 @@ export const cloudExtension: BoardExtension = {
         </>
     ),
     nav: [
-        {
-            label: "Admissions",
-            page: "beta-admin",
-            icon: "grid",
-            show: (me) => (me as Me).betaAdmin === true,
-        },
-        {
-            label: "Instance",
-            page: "instance",
-            icon: "grid",
-            show: (me) => (me as Me).instanceAdmin === true,
-        },
         // A guest of one project has no workspace pages, so they are not offered.
-        {
-            label: "Pull request reviews",
-            page: "pr-reviews",
-            icon: "file",
-            show: (me) => !whoIs(me as Me).guest,
-        },
         {
             label: "Integrations",
             page: "plugins",
             icon: "plug",
-            show: (me) => !whoIs(me as Me).guest,
+            placement: "workspace",
+            show: (me) => Boolean((me as Me).workspace) && !whoIs(me as Me).guest,
         },
         {
-            label: "Workspace",
+            label: "Workspace settings",
             page: "workspace",
-            icon: "grid",
-            show: (me) => !whoIs(me as Me).guest,
+            icon: "sliders",
+            show: (me) => Boolean((me as Me).workspace) && !whoIs(me as Me).guest,
+        },
+        {
+            label: "Administration",
+            page: "administration",
+            icon: "gear",
+            show: (me) => administrationTabs(me as Me).length > 0,
         },
     ],
     pages: {
-        instance: ({ me }) => <InstanceAdmin me={me as Me} />,
-        "pr-reviews": ({ me, rest }) => <PullRequestReviews me={me as Me} selected={rest} />,
+        administration: ({ me, rest, projects }) => (
+            <Administration me={me as Me} tab={rest} projects={projects} />
+        ),
+        instance: () => <PageRedirect to="#/x/administration" />,
+        "pr-reviews": ({ rest, projects }) => <LegacyReviews selected={rest} projects={projects} />,
         plugins: ({ me, projects, rest }) => (
             <Plugins
                 key={(me as Me).workspace?.id}
@@ -307,15 +299,15 @@ export const cloudExtension: BoardExtension = {
             ) : (
                 <BetaWaitlist signedIn />
             ),
-        "beta-admin": ({ me }) =>
-            (me as Me).betaAdmin ? (
-                <BetaAdminMoved />
-            ) : (
-                <p className="center error">Beta administrator access required.</p>
-            ),
-        workspace: ({ me }) =>
+        "beta-admin": () => <PageRedirect to="#/x/administration/admissions" />,
+        workspace: ({ me, rest, projects }) =>
             (me as Me).workspace ? (
-                <Workspace me={me as Me} onChanged={() => window.location.reload()} />
+                <Workspace
+                    me={me as Me}
+                    tab={rest}
+                    projects={projects}
+                    onChanged={() => window.location.reload()}
+                />
             ) : (
                 <p className="center muted">There is no workspace for this account.</p>
             ),

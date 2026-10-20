@@ -35,8 +35,8 @@ Providers only send from addresses and domains you have verified with them. Set 
 
 ## Check it works
 
-Under **Instance → Invitations**, invite an address you control. The message should arrive within seconds. The server logs say why when it does not: `docker compose logs server`.
+Under **Administration → Invite an account**, invite an address you control. The message should arrive within seconds. The server logs say why when it does not: `docker compose logs server`.
 
 ## Running without real email
 
-Invitations, address verification for public sign-up and **Forgot password** all need email. For a one-person instance you can keep the bundled Mailpit and read the links yourself at `http://localhost:8026`; it listens on this machine only. You can still change your own password under **Settings → Account → Password**. Once other people use the instance, switch to real email.
+Invitations, address verification for public sign-up and **Forgot password** all need email. For a one-person instance you can keep the bundled Mailpit and read the links yourself at `http://localhost:8026`; it listens on this machine only. You can still change your own password under **your account menu → Account → Password**. Once other people use the instance, switch to real email.

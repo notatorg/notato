@@ -247,7 +247,7 @@ export function Contexts({
                     <span>
                         <strong>Most teams do not need this page.</strong> Everyone connects with
                         their own tokens on the project's Connect page, what you capture while
-                        building stays yours, and Review sessions already group shared feedback. Use
+                        building stays yours, and Reviews already groups shared feedback. Use
                         assignments when a particular developer's agent should take a shared review,
                         such as a pull request.
                     </span>

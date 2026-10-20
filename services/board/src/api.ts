@@ -12,6 +12,8 @@ export * from "@notato/board";
 export type Me = CoreMe & {
     isAdmin?: boolean;
     instanceAdmin?: boolean;
+    /** A hosted deployment can name the same permission-controlled area for its platform operators. */
+    administration?: { title: string };
     /** The instance administrator still signs in with the generated password from the settings file. */
     bootstrapPasswordInUse?: boolean;
     billingEnabled?: boolean;

@@ -458,6 +458,52 @@ it("pins feedback to a PR commit, previews outbound content, deduplicates and re
     ).json()) as { found: boolean };
     expect(checked.found).toBe(true);
 });
+it("scopes PR catalogs to the selected project and refuses inaccessible project filters", async () => {
+    const s = await setup();
+    const original = await s.createPR();
+    await s.rt.store.createProject({
+        id: "marketing",
+        name: "Marketing",
+        workspaceId: s.workspace,
+        createdAt: new Date().toISOString(),
+    });
+    const second = await s.api("/pull-request-reviews", "POST", {
+        projectId: "marketing",
+        connectionId: s.connection.id,
+        url: "https://github.com/example/shop/pull/42",
+    });
+    expect(second.status).toBe(201);
+    const scoped = await s.api("/pull-request-reviews?project=shop");
+    expect(scoped.status).toBe(200);
+    const catalog = await scoped.json();
+    expect(catalog.items.map((work: WorkRecord) => work.id)).toEqual([original.id]);
+    expect(catalog.projects.map((p: { id: string }) => p.id)).toEqual(["shop"]);
+    expect((await s.api("/pull-request-reviews?project=inaccessible")).status).toBe(403);
+    const member = s.sessions.get("qa");
+    if (!member) throw new Error("Missing test member");
+    await s.rt.store.setMembership({
+        workspaceId: s.workspace,
+        username: member.username,
+        role: "member",
+        projectOnly: true,
+        createdAt: new Date().toISOString(),
+    });
+    const db = s.rt.store.plugins?.db;
+    if (!db) throw new Error("Missing test database");
+    await db.query(
+        "UPDATE notato.memberships SET project_only=TRUE WHERE workspace_id=$1 AND username=$2",
+        [s.workspace, member.username]
+    );
+    const guest = await s.api("/pull-request-reviews", "GET", undefined, "qa");
+    expect(guest.status).toBe(200);
+    const restricted = await guest.json();
+    expect(restricted.projects).toEqual([]);
+    expect(restricted.items).toEqual([]);
+    expect((await s.api("/pull-request-reviews?project=shop", "GET", undefined, "qa")).status).toBe(
+        403
+    );
+});
+
 it("lets Free try an existing project, a checkout pair and PR capture within six keys", async () => {
     const s = await setup(),
         owner = s.sessions.get("alice")!;

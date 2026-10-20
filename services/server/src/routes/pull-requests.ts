@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import {
     assertAccess,
     assertBoard,
+    canAccessProject,
     json,
     RequestError,
     readJson,
@@ -67,7 +68,18 @@ const routes: CloudRoutes = async ({ req, path, method, principal, match }, app)
     };
     if (path === "/pull-request-reviews") {
         if (method === "GET") {
-            const projects = await app.backend.store.listProjects(workspace);
+            const projectId = new URL(req.url).searchParams.get("project");
+            const accessible = (await app.backend.store.listProjects(workspace)).filter((project) =>
+                canAccessProject(principal, project.id)
+            );
+            if (projectId) {
+                assertAccess(principal, projectId);
+                if (!accessible.some((project) => project.id === projectId))
+                    throw new RequestError("Project not found.", 404);
+            }
+            const projects = projectId
+                ? accessible.filter((project) => project.id === projectId)
+                : accessible;
             const works = (await Promise.all(projects.map((p) => teams.records.list(p.id, "work"))))
                 .flat()
                 .filter((w): w is WorkRecord => "pullRequest" in w && !!w.pullRequest);

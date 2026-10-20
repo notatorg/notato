@@ -10,6 +10,8 @@ import type { HostedLimits } from "./storage.ts";
 
 /** What Notato Cloud's deployment settings add to the server's own options. */
 export interface CloudOptions {
+    /** The deployment can name its global operator area without changing workspace navigation. */
+    administration?: { title: string };
     plugins?: import("./plugins/service.ts").PluginOptions;
     billing?: StripeBilling;
     beta?: BetaPolicy;

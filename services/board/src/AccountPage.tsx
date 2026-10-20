@@ -8,8 +8,8 @@ import { PasswordSettings } from "./PasswordSettings.tsx";
 import { ProfileSettings } from "./ProfileSettings.tsx";
 
 /**
- * Settings → Account: what belongs to the person, whichever workspace is open. The board supplies the page around
- * it (the Settings title and tabs), so this is only its sections.
+ * Account menu → Account: what belongs to the person, whichever workspace is open. The personal settings page supplies the title and tabs around
+ * it, so this is only its sections.
  */
 export function AccountPage({ me }: { me: Me }) {
     usePageTitle("Account settings");

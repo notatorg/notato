@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 //   #/p/<project>/activity   what happened, newest first
 //   #/p/<project>/overview   the numbers
 //   #/p/<project>/connect    how to connect an app to it
+//   #/p/<project>/reviews    testing sessions and pull-request reviews; /sessions remains an alias
 //   #/p/<project>/settings   its name, tokens, and deleting it (admin)
 //   #/settings               settings and webhooks (admin), and this browser's preferences
 //   #/settings/tokens        tokens (serve mode, admin): a tab of Settings; #/tokens still opens it
@@ -43,6 +44,19 @@ export function parseRoute(hash: string): Route {
     if (project?.[1]) {
         const name = decode(project[1]);
         const rest = project[2] ?? "";
+        const review = /^(?:reviews|sessions)\/(session|pull-request|new)\/([^/]+)$/.exec(rest);
+        if (
+            review?.[1] &&
+            review[2] &&
+            (review[1] !== "new" || ["session", "pull-request"].includes(review[2]))
+        )
+            return {
+                page: "project",
+                project: name,
+                tab: "sessions",
+                selected: `${review[1]}/${decode(review[2])}`,
+            };
+        if (rest === "reviews") return { page: "project", project: name, tab: "sessions" };
         const selected = /^a\/([^/]+)$/.exec(rest)?.[1];
         if (selected)
             return { page: "project", project: name, tab: "inbox", selected: decode(selected) };
@@ -66,6 +80,10 @@ export function href(route: Route): string {
             return `#/x/${encodeURIComponent(route.name)}${route.rest ? `/${route.rest}` : ""}`;
         case "project": {
             const base = `#/p/${encodeURIComponent(route.project)}`;
+            if (route.tab === "sessions") {
+                const path = route.selected?.split("/").map(encodeURIComponent).join("/");
+                return `${base}/reviews${path ? `/${path}` : ""}`;
+            }
             if (route.selected) return `${base}/a/${encodeURIComponent(route.selected)}`;
             return route.tab === "inbox" ? base : `${base}/${route.tab}`;
         }

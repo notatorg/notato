@@ -9,7 +9,7 @@ import { Icon, type IconName, Modal, ProjectMark } from "./ui.tsx";
 /** A project's pages, under the project's name at the top of the sidebar. */
 const VIEWS: Array<{ tab: Tab; label: string; icon: IconName; admin?: boolean }> = [
     { tab: "inbox", label: "Inbox", icon: "inbox" },
-    { tab: "sessions", label: "Review sessions", icon: "chat" },
+    { tab: "sessions", label: "Reviews", icon: "chat" },
     { tab: "activity", label: "Activity", icon: "activity" },
     { tab: "overview", label: "Overview", icon: "chart" },
     { tab: "settings", label: "Project settings", icon: "sliders", admin: true },
@@ -18,7 +18,7 @@ const VIEWS: Array<{ tab: Tab; label: string; icon: IconName; admin?: boolean }>
 
 /**
  * Assignments are optional, so the link appears once a project has a dev setup (and stays while its page is open);
- * until then it is reached from Review sessions.
+ * until then it is reached from Reviews.
  */
 function useAssignmentsInUse(project: string | null, tab: string) {
     const [inUse, setInUse] = useState(false);

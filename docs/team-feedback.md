@@ -14,7 +14,7 @@ All SDK composers offer **Share with project**. Its initial state follows Dev/Te
 | --- | --- |
 | Solo developer | Use the local server with no account, or Cloud with personal credentials. Capture in Dev; the agent’s Mine queue contains only that person’s personal feedback. |
 | Developer in a team | Use the same project ID as colleagues, authenticate independently, and share particular notes when ready. Personal exploration stays private. |
-| Tester | Use Test for a shared testing pass. The live session groups its feedback immediately; name it and describe the focus in Review sessions. Offline packaging remains available. |
+| Tester | Use Test for a shared testing pass. The live session groups its feedback immediately; open it under the project's Reviews page to name it and describe the focus. Offline packaging remains available. |
 | Developer picking up QA results | Open a shared session or make a manual review group, then use Copy agent handoff. The agent reads that session’s focus, conversation and accessible notes. |
 | Team lead collecting related work | Add accessible feedback from several testing runs to a review session. This creates links; original testing sessions and note ownership stay intact. |
 
@@ -24,7 +24,9 @@ The board offers **All accessible**, **Mine** and **Shared**. Mine means persona
 
 Review sessions have independent personal/shared visibility and their own conversations. A private session can contain a shared annotation. Someone who can read that annotation still cannot read the private session, its description, conversation or other annotations. Sharing a session exposes its own description and conversation, and only annotations the viewer is separately allowed to read. Raw membership lists never disclose the IDs of inaccessible personal notes.
 
-Use **Review sessions** to create a manual group, add existing accessible feedback, and describe the task. Feedback can appear in its original testing run and in additional manual groups. Each annotation retains its own status and thread. The existing grouped-review composer is also useful when several selected targets should receive one consistent UI change.
+Use **Reviews → New review → Testing session** to create a manual group, add existing accessible feedback, and describe the task. On the lightweight server, New review opens the session form directly. Feedback can appear in its original testing run and in additional manual groups. Each annotation retains its own status and thread. The existing grouped-review composer is also useful when several selected targets should receive one consistent UI change.
+
+The full server's project Reviews page also lists GitHub pull-request reviews, with type labels and filters. GitHub configuration stays under the workspace's Integrations page. See the [Reviews guide](reviews.md) for both workflows, visibility filters and saved links.
 
 Withdrawing a shared note removes it from teammates’ live boards. Sharing an older personal note deliberately wakes the shared agent queue even if the agent already passed that note’s original sequence number. Visibility changes are recorded in the note’s thread.
 
@@ -64,7 +66,9 @@ Existing projects without explicit membership records retain their previous work
 
 ## Self-hosted teams and local-only feedback
 
-The account-free loopback server remains a single-person local workflow. A self-hosted shared server supports independent accounts: its administrator creates member accounts in **Settings → Server accounts**, then adds each person to the relevant projects. Members log in normally, create their own App/Agent credentials, and can change their own password. Password changes revoke existing browser sessions.
+The account-free loopback server remains a single-person local workflow. For the full self-hosted server, the administrator uses **Administration → Invite an account**, then collaborators join the relevant workspace or projects. Members sign in independently and create their own App/Agent credentials. They manage their profile, password and devices through **their account menu → Account**. Password changes offer signing out other devices. See [self-hosting](../deploy/self-hosted/README.md) for invitation and SMTP setup.
+
+The lightweight shared server's local-account mode remains available separately: its administrator creates member accounts in **Settings → Server accounts**. Password changes in that mode revoke existing browser sessions.
 
 For feedback that must stay on this computer, choose **Keep feedback local to this computer** in the browser toolbar’s settings. The toolbar switches to the loopback development server, drops Cloud credentials, disables external delivery sinks and marks new notes local-only. The local MCP server reads that feedback. Choosing the configured server again affects future capture; earlier local-only feedback stays on the local server. The choice lasts for the browser tab’s session.
 
@@ -76,6 +80,6 @@ Deploy the updated server alongside these SDKs before relying on personal visibi
 
 Project-level webhooks and automatic Cloud workflows receive Shared feedback only. A creator can explicitly send their own private note to a plugin using a manual action. Turning a note back to personal prevents pending automatic deliveries from disclosing it; previously completed external deliveries cannot be recalled.
 
-## Developing both repositories
+## Developing the server and board
 
-Shared code belongs in the public repository first. Until that commit is published and the hosted submodule can be advanced, run `bun scripts/verify-local-core.ts` from the hosted repository. It copies the current public and hosted sources into a disposable validation checkout, reuses installed dependencies, and runs typechecking and Cloud tests without changing the pinned `core/` checkout. `--types-only` and `--test=cloud/server/test/project-collaboration.test.ts` support focused checks.
+The full MIT server and board live in this public repository's `services/` directory. Shared board components and the lightweight SQLite server remain under `packages/`. Run package and Git commands here; new product work does not require the private legacy deployment repository or its pinned `core/` checkout. See [server architecture](../services/README.md).

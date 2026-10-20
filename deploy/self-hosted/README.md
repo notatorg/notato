@@ -41,7 +41,7 @@ docker compose -f deploy/self-hosted/compose.yml --env-file deploy/self-hosted/.
 
 Do not add `--volumes` unless you intend to delete that instance's data.
 
-**Then:** change the generated administrator password under Settings → Account → Password, [connect an app and an agent](docs/connect-an-app.md), and when you want other people or real email, read [Send real email](docs/email.md) and [Put Notato on the internet](docs/reverse-proxy.md).
+**Then:** change the generated administrator password under your account menu → Account → Password, [connect an app and an agent](docs/connect-an-app.md), and when you want other people or real email, read [Send real email](docs/email.md) and [Put Notato on the internet](docs/reverse-proxy.md).
 
 ## Accounts and registration
 
@@ -49,11 +49,11 @@ Better Auth runs inside Notato, with identity tables in the same Postgres databa
 
 On the first startup, `NOTATO_ADMIN_EMAIL` and `NOTATO_ADMIN_PASSWORD` create the protected instance administrator. Set `NOTATO_ADMIN_NAME` for its initial display name; the default is `Instance administrator`. Its identity is pinned by ID in Postgres and cannot be deleted, demoted or suspended through Notato. It also owns an ordinary workspace and can use the whole product. Subsequent startups preserve the account, name and password; changing bootstrap settings does not reset an existing account.
 
-The generated password sits in plain text in `.env`, so **change it after your first sign-in** under **Settings → Account → Password**. Until you do, the board shows the administrator a reminder; it disappears once the password no longer matches the one in `.env`. Afterwards `NOTATO_ADMIN_PASSWORD` is only used if the database is created again, and you can remove it from the file. If you forget the password, use **Forgot password** on the sign-in page, which needs working SMTP.
+The generated password sits in plain text in `.env`, so **change it after your first sign-in** under **your account menu → Account → Password**. Until you do, the board shows the administrator a reminder; it disappears once the password no longer matches the one in `.env`. Afterwards `NOTATO_ADMIN_PASSWORD` is only used if the database is created again, and you can remove it from the file. If you forget the password, use **Forgot password** on the sign-in page, which needs working SMTP.
 
-Every account can change its own password under **Settings → Account → Password** with the current one (12–256 characters), with no email involved. "Sign out my other devices" is on by default. Every account, including the protected administrator, can change its display name under **Settings → Account → Profile**. Changes appear on the board and in collaborator lists. Names must contain 1–100 characters. Changing a name leaves the account ID, administrator role and workspace names unchanged.
+Every account can change its own password under **your account menu → Account → Password** with the current one (12–256 characters), with no email involved. "Sign out my other devices" is on by default. Every account, including the protected administrator, can change its display name under **your account menu → Account → Profile**. Changes appear on the board and in collaborator lists. Names must contain 1–100 characters. Changing a name leaves the account ID, administrator role and workspace names unchanged.
 
-Instance → Invitations sends account invitations through SMTP. Registered users can invite collaborators to workspaces and projects. Each invitation is bound to an email address and expiry; recipients choose a password and verify their address.
+Administration → Invite an account sends account invitations through SMTP. Registered users can invite collaborators to workspaces and projects. Each invitation is bound to an email address and expiry; recipients choose a password and verify their address.
 
 `NOTATO_SIGNUP_MODE` controls uninvited registration:
 
@@ -65,7 +65,24 @@ Instance → Invitations sends account invitations through SMTP. Registered user
 
 The root administrator exists in every mode. Ordinary accounts cannot grant themselves an administrator role. Instance administrators can suspend and restore accounts; suspension immediately prevents personal token use as well as browser access. Users can revoke devices, reset passwords, and delete their own accounts using their current password, subject to workspace ownership checks. The protected administrator's deletion control is disabled.
 
-Two-factor authentication is **optional per account** under Settings → Account. TOTP enrollment requires the current password and a valid authenticator code before activation. Save the recovery codes; each works once. Once enabled, future sign-ins must complete the second factor. Enabling public registration does not make MFA compulsory.
+Two-factor authentication is **optional per account** under your account menu → Account. TOTP enrollment requires the current password and a valid authenticator code before activation. Save the recovery codes; each works once. Once enabled, future sign-ins must complete the second factor. Enabling public registration does not make MFA compulsory.
+
+## Navigation and permissions
+
+Each project has one Reviews page for testing sessions and pull-request feedback. New review offers a testing
+session or a GitHub pull request; filters show either type or both. Personal sessions stay private, and a PR review
+keeps its existing preview, commit, assignment and publication workflow. GitHub setup stays under Integrations,
+which belongs to the selected workspace and appears beneath its switcher. Existing session and PR links still work.
+See the [Reviews guide](../../docs/reviews.md) for the workflows, filters and privacy rules. Workspace settings
+contains members, invitations, access tokens, retention and security activity. Your avatar opens Account,
+Appearance and Sign out. It also includes Support Notato, a disabled Buy Me a Coffee placeholder marked Coming soon;
+no donation link or payment flow is active yet. Saved Settings → Account links still work; saved token links open Workspace settings.
+
+Administration is separate from workspace membership. Only explicit instance, server or admissions permissions
+make it available; owning a workspace does not grant global access. Self-hosted deployments call this area
+Instance administration. A managed deployment can supply `administration: { title: "Platform administration" }`
+to `runCloud` without changing the workspace navigation or granting additional permissions. Billing appears only
+when configured. Older Instance and Admissions links continue to open the corresponding administration pages.
 
 ## Settings
 

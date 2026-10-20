@@ -649,6 +649,55 @@ button.workspace-choice {
     min-width: 0;
     overflow-wrap: anywhere;
 }
+.instance-accounts .member-text {
+    flex-basis: 160px;
+}
+.account-menu {
+    position: relative;
+}
+.account-menu > summary {
+    cursor: pointer;
+    list-style: none;
+}
+.account-menu > summary::-webkit-details-marker {
+    display: none;
+}
+.account-menu > summary:hover,
+.account-menu[open] > summary {
+    background: var(--hover);
+}
+.account-menu .name-text {
+    flex: 1;
+    gap: 3px;
+}
+.account-menu-caption {
+    color: var(--muted);
+    font-size: 12px;
+}
+.account-menu-items {
+    inset: auto 0 calc(100% + 8px);
+    min-width: 0;
+}
+.account-menu-items > p {
+    padding: 8px 10px;
+    overflow-wrap: anywhere;
+}
+.account-menu-items > .support-notato {
+    height: auto;
+    padding: 8px 10px;
+    color: var(--muted);
+    opacity: 1;
+    white-space: normal;
+}
+.support-notato-label {
+    display: grid;
+    gap: 3px;
+}
+.support-notato-label small {
+    font-size: 11px;
+    font-weight: 400;
+    line-height: 1.4;
+}
 .member-actions {
     display: flex;
     align-items: center;

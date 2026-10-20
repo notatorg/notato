@@ -184,6 +184,13 @@
     flex-direction: column;
     gap: 6px;
 }
+.workspace-links {
+    display: grid;
+    gap: 2px;
+    margin-bottom: 14px;
+    padding-bottom: 14px;
+    border-bottom: 1px solid var(--line);
+}
 .name-card {
     display: flex;
     align-items: center;

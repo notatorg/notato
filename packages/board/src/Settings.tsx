@@ -39,6 +39,8 @@ export function Settings({
     accountName,
     onSignOut,
     tabs = null,
+    title = "Settings",
+    personal = true,
 }: {
     /** The tab strip, shown under the title when Settings has more than one page. */
     tabs?: ReactNode;
@@ -47,6 +49,9 @@ export function Settings({
     manageServer?: boolean;
     accountName?: string;
     onSignOut?: () => Promise<void>;
+    title?: string;
+    /** Server administration has its own scope in the full service. */
+    personal?: boolean;
 }) {
     const [view, setView] = useState<SettingsView | null>(null);
     const [status, setStatus] = useState<ServerStatus | null>(null);
@@ -102,7 +107,7 @@ export function Settings({
     const head = (
         <header className="sheet-head">
             <div>
-                <h1>Settings</h1>
+                <h1>{title}</h1>
                 {view ? (
                     <p>
                         {view.file ? (
@@ -159,7 +164,7 @@ export function Settings({
             <div className="sheet-inner settings">
                 {head}
                 {tabs}
-                <LocalPassword />
+                {personal && <LocalPassword />}
                 <LocalUsers />
 
                 {view.error ? (
@@ -216,8 +221,8 @@ export function Settings({
                     onDelete={(w) => change(`delete-${w.index}`, () => deleteWebhook(w))}
                 />
 
-                <BrowserPreferences accountName={accountName} />
-                <AccountSection name={accountName} onSignOut={onSignOut} />
+                {personal && <BrowserPreferences accountName={accountName} />}
+                {personal && <AccountSection name={accountName} onSignOut={onSignOut} />}
 
                 {status ? <ServerSection status={status} /> : null}
             </div>
@@ -424,7 +429,7 @@ function WebhooksSection({
 }
 
 /** Kept in this browser only: the name on replies, how much a Markdown copy says, and the theme. */
-function BrowserPreferences({ accountName }: { accountName?: string }) {
+export function BrowserPreferences({ accountName }: { accountName?: string }) {
     const saved = useBoardName();
     const [name, setName] = useState(saved);
     const [flash, setFlash] = useState(false);
@@ -588,6 +593,15 @@ function AccountSection({ name, onSignOut }: { name?: string; onSignOut?: () => 
  * Settings and the pages that sit with it: this browser's preferences and the server's settings (General), whatever an
  * extension adds for the signed-in person (an account page), and Tokens. With only General there is no tab strip.
  */
+export interface SettingsPageProps {
+    me: Me;
+    tab?: string;
+    projects: ProjectSummary[] | null;
+    manageServer: boolean;
+    accountName?: string;
+    onSignOut?: () => Promise<void>;
+}
+
 export function SettingsPage({
     me,
     tab,
@@ -595,14 +609,7 @@ export function SettingsPage({
     manageServer,
     accountName,
     onSignOut,
-}: {
-    me: Me;
-    tab?: string;
-    projects: ProjectSummary[] | null;
-    manageServer: boolean;
-    accountName?: string;
-    onSignOut?: () => Promise<void>;
-}) {
+}: SettingsPageProps) {
     const extension = useBoardExtension();
     const added = extension?.settingsTabs ?? [];
     const tokens = Boolean(me.authRequired && canManageTokens(me));

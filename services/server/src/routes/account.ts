@@ -150,7 +150,7 @@ export function hostedTokenRules(accounts: Authenticator): TokenRules {
  */
 export function aboutCaller(
     accounts: Authenticator,
-    options: Pick<CloudOptions, "beta" | "emailPreferences" | "billing">
+    options: Pick<CloudOptions, "beta" | "emailPreferences" | "billing" | "administration">
 ) {
     return async (principal: Principal | null): Promise<Record<string, unknown>> => ({
         accountDeletionAvailable:
@@ -159,6 +159,7 @@ export function aboutCaller(
                 ? false
                 : !accounts.managed || Boolean(accounts.managed.deleteUser),
         instanceAdmin: principal?.kind === "member" && principal.instanceAdmin === true,
+        administration: options.administration ?? { title: "Instance administration" },
         ...(principal?.kind === "member" &&
         principal.instanceAdmin &&
         principal.email &&

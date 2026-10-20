@@ -3,7 +3,6 @@ import { StrictMode, useCallback, useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import {
     type CreatedProject,
-    canManageTokens,
     getMe,
     isAdmin,
     isServerAdmin,
@@ -261,6 +260,10 @@ function Shell({ me, route, onSignedOut }: { me: Me; route: Route; onSignedOut()
             : ([...projects].sort(byActivity)[0]?.id ?? null));
 
     const admin = isAdmin(me);
+    const Settings = extension?.SettingsPage ?? SettingsPage;
+    const signOut = me.authRequired
+        ? () => (extension?.signOut ?? logout)().then(onSignedOut)
+        : undefined;
     const newProject = admin ? (id?: string) => setCreating({ id }) : undefined;
 
     const created = (made: CreatedProject) => {
@@ -302,20 +305,17 @@ function Shell({ me, route, onSignedOut }: { me: Me; route: Route; onSignedOut()
                 current={current}
                 projects={projects}
                 onNewProject={newProject}
+                onSignOut={signOut}
             />
             <main className="content">
                 {route.page === "settings" ? (
-                    <SettingsPage
+                    <Settings
                         me={me}
                         tab={route.tab}
                         projects={projects}
                         manageServer={isServerAdmin(me)}
                         accountName={accountNameOf(me, extension)}
-                        onSignOut={
-                            me.authRequired
-                                ? () => (extension?.signOut ?? logout)().then(onSignedOut)
-                                : undefined
-                        }
+                        onSignOut={signOut}
                     />
                 ) : route.page === "ext" && extension?.pages?.[route.name] ? (
                     (() => {

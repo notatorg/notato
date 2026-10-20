@@ -10,7 +10,7 @@ type Overview = {
     active: number;
     invited: number;
 };
-export function BetaAdmin() {
+export function BetaAdmin({ embedded = false }: { embedded?: boolean }) {
     usePageTitle("Admissions");
     const [overview, setOverview] = useState<Overview | null>(null);
     const [items, setItems] = useState<Entry[]>([]);
@@ -42,7 +42,7 @@ export function BetaAdmin() {
     };
     return (
         <div className="cloud-page">
-            <h1>Admissions</h1>
+            {!embedded && <h1>Admissions</h1>}
             {error && (
                 <p className="error" role="alert">
                     {error}

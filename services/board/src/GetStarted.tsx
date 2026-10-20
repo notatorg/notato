@@ -95,7 +95,7 @@ export function stepsFor(input: {
             done: false,
             optional: true,
             action: first
-                ? { label: "Open Review sessions", href: projectHref(first.id, "sessions") }
+                ? { label: "Open Reviews", href: projectHref(first.id, "sessions") }
                 : undefined,
         });
     return steps;

@@ -6,6 +6,7 @@ import {
     Modal,
     onLive,
     projectHref,
+    type ReviewListItem,
     type ReviewWork,
     StatusPill,
     teamRequest,
@@ -21,6 +22,7 @@ type PRWork = ReviewWork & {
     publication?: { status: "sending" | "sent" | "uncertain"; url?: string; error?: string };
     pullRequest: NonNullable<ReviewWork["pullRequest"]> & {
         connectionId: string;
+        creator?: string;
         latestHeadSha?: string;
         checkedAt: string;
         /** Set when the preview address was found from a CI deployment rather than typed in. */
@@ -51,16 +53,54 @@ interface Preview {
     excluded: number;
     commit: string;
 }
-export function PullRequestReviews({ me, selected = "" }: { me: Me; selected?: string }) {
+export async function loadProjectPullRequestReviews(project: string): Promise<ReviewListItem[]> {
+    const catalog = await teamRequest<Catalog>(
+        `/pull-request-reviews?project=${encodeURIComponent(project)}`
+    );
+    return catalog.items
+        .filter((work) => work.projectId === project)
+        .map((work) => ({
+            id: work.id,
+            projectId: work.projectId,
+            kind: "pull-request",
+            name: work.pullRequest.title,
+            createdAt: work.createdAt,
+            createdBy: work.pullRequest.creator,
+            visibility: "shared",
+            closed: work.pullRequest.merged || work.pullRequest.state === "closed",
+            status: work.pullRequest.merged
+                ? "Merged"
+                : work.pullRequest.state === "closed"
+                  ? "Closed"
+                  : "Open",
+            context: `${work.pullRequest.repository} #${work.pullRequest.number}`,
+            description: `Reviewed commit ${work.pullRequest.headSha.slice(0, 8)} · ${work.contextId ? "Assigned dev setup" : "Waiting for assignment"}`,
+        }));
+}
+
+const reviewHref = (work: Pick<PRWork, "id" | "projectId">) =>
+    projectHref(work.projectId, "sessions", `pull-request/${work.id}`);
+
+export function PullRequestReviews({
+    me,
+    selected = "",
+    projectId,
+    startNew = false,
+}: {
+    me: Me;
+    selected?: string;
+    projectId?: string;
+    startNew?: boolean;
+}) {
     usePageTitle("Pull request reviews");
     const who = whoIs(me);
     const [catalog, setCatalog] = useState<Catalog | null>(null),
         [detail, setDetail] = useState<Detail | null>(null),
-        [project, setProject] = useState(""),
+        [project, setProject] = useState(projectId ?? ""),
         [connection, setConnection] = useState(""),
         [url, setUrl] = useState(""),
         [previewUrl, setPreviewUrl] = useState(""),
-        [creating, setCreating] = useState(false),
+        [creating, setCreating] = useState(startNew),
         [busy, setBusy] = useState(false),
         [error, setError] = useState(""),
         [notice, setNotice] = useState("");
@@ -74,18 +114,22 @@ export function PullRequestReviews({ me, selected = "" }: { me: Me; selected?: s
             expiresAt: string;
         } | null>(null);
     const load = useCallback(async () => {
-        const c = await teamRequest<Catalog>("/pull-request-reviews");
+        const c = await teamRequest<Catalog>(
+            `/pull-request-reviews${projectId ? `?project=${encodeURIComponent(projectId)}` : ""}`
+        );
         setCatalog(c);
-        setProject((p) => p || c.projects[0]?.id || "");
+        setProject((p) => projectId ?? (p || c.projects[0]?.id || ""));
         setConnection((v) => v || c.connections[0]?.id || "");
         if (selected) {
             const d = await teamRequest<Detail>(
                 `/pull-request-reviews/${encodeURIComponent(selected)}`
             );
+            if (projectId && d.work.projectId !== projectId)
+                throw new Error("This pull-request review belongs to another project.");
             setDetail(d);
             setAssignment(d.work.contextId ?? "");
         } else setDetail(null);
-    }, [selected]);
+    }, [selected, projectId]);
     useEffect(() => {
         void load().catch((e) => setError(e.message));
     }, [load]);
@@ -117,6 +161,7 @@ export function PullRequestReviews({ me, selected = "" }: { me: Me; selected?: s
     };
     const action = (name: string, method = "POST", body: unknown = {}) =>
         teamRequest(`/pull-request-reviews/${encodeURIComponent(selected)}/${name}`, method, body);
+    const back = projectId ? projectHref(projectId, "sessions") : "#/x/pr-reviews";
     const pr = detail?.work.pullRequest,
         changed = pr && pr.latestHeadSha && pr.latestHeadSha !== pr.headSha;
     if (who.guest) return <GuestNotice what="Pull request reviews" />;
@@ -125,7 +170,7 @@ export function PullRequestReviews({ me, selected = "" }: { me: Me; selected?: s
             <div className="sheet-inner wide pr-page">
                 <header className="sheet-head">
                     <div>
-                        <h1>{pr ? pr.title : "Pull request reviews"}</h1>
+                        <h1>{pr ? pr.title : "New pull-request review"}</h1>
                         <p>
                             {pr
                                 ? `${pr.repository} · PR #${pr.number}`
@@ -133,16 +178,18 @@ export function PullRequestReviews({ me, selected = "" }: { me: Me; selected?: s
                         </p>
                     </div>
                     <div className="work-actions">
-                        {selected ? (
-                            <a className="button tonal" href="#/x/pr-reviews">
+                        {selected || projectId ? (
+                            <a className="button-link" href={back}>
                                 <Icon name="back" size={15} />
                                 All reviews
                             </a>
                         ) : null}
-                        <button type="button" onClick={() => setCreating(true)}>
-                            <Icon name="plus" size={15} />
-                            New PR review
-                        </button>
+                        {!projectId && (
+                            <button type="button" onClick={() => setCreating(true)}>
+                                <Icon name="plus" size={15} />
+                                New PR review
+                            </button>
+                        )}
                     </div>
                 </header>
                 {!selected ? (
@@ -270,7 +317,7 @@ export function PullRequestReviews({ me, selected = "" }: { me: Me; selected?: s
                                                             previewUrl: pr.latestPreview?.url,
                                                         }
                                                     );
-                                                    window.location.hash = `#/x/pr-reviews/${w.id}`;
+                                                    window.location.hash = reviewHref(w);
                                                 })
                                             }
                                         >
@@ -492,14 +539,10 @@ export function PullRequestReviews({ me, selected = "" }: { me: Me; selected?: s
                         ) : null}
                     </>
                 ) : null}
-                {!selected && catalog?.items.length ? (
+                {!projectId && !selected && catalog?.items.length ? (
                     <div className="pr-list">
                         {catalog.items.map((w) => (
-                            <a
-                                key={w.id}
-                                className="pr-review-card"
-                                href={`#/x/pr-reviews/${encodeURIComponent(w.id)}`}
-                            >
+                            <a key={w.id} className="pr-review-card" href={reviewHref(w)}>
                                 <div className="work-heading">
                                     <Icon name="file" />
                                     <strong>
@@ -522,7 +565,7 @@ export function PullRequestReviews({ me, selected = "" }: { me: Me; selected?: s
                             </a>
                         ))}
                     </div>
-                ) : !selected && catalog?.connections.length ? (
+                ) : !projectId && !selected && catalog?.connections.length ? (
                     <div className="pr-empty">
                         <Icon name="file" />
                         <h2>Your next PR can start here</h2>
@@ -532,8 +575,14 @@ export function PullRequestReviews({ me, selected = "" }: { me: Me; selected?: s
                         </p>
                     </div>
                 ) : null}
-                {creating ? (
-                    <Modal title="Start a pull request review" onClose={() => setCreating(false)}>
+                {creating && catalog?.connections.length ? (
+                    <Modal
+                        title="Start a pull request review"
+                        onClose={() => {
+                            setCreating(false);
+                            if (startNew) window.location.hash = back;
+                        }}
+                    >
                         <form
                             className="modal-body pr-form"
                             onSubmit={(e) => {
@@ -550,7 +599,7 @@ export function PullRequestReviews({ me, selected = "" }: { me: Me; selected?: s
                                         }
                                     );
                                     setCreating(false);
-                                    window.location.hash = `#/x/pr-reviews/${w.id}`;
+                                    window.location.hash = reviewHref(w);
                                 });
                             }}
                         >
@@ -558,20 +607,22 @@ export function PullRequestReviews({ me, selected = "" }: { me: Me; selected?: s
                                 Notato reads the PR and keeps a review round tied to its current
                                 head commit.
                             </p>
-                            <label>
-                                Notato project
-                                <select
-                                    required
-                                    value={project}
-                                    onChange={(e) => setProject(e.target.value)}
-                                >
-                                    {catalog?.projects.map((p) => (
-                                        <option key={p.id} value={p.id}>
-                                            {p.name}
-                                        </option>
-                                    ))}
-                                </select>
-                            </label>
+                            {!projectId && (
+                                <label>
+                                    Notato project
+                                    <select
+                                        required
+                                        value={project}
+                                        onChange={(e) => setProject(e.target.value)}
+                                    >
+                                        {catalog?.projects.map((p) => (
+                                            <option key={p.id} value={p.id}>
+                                                {p.name}
+                                            </option>
+                                        ))}
+                                    </select>
+                                </label>
+                            )}
                             <label>
                                 GitHub connection
                                 <select

@@ -1,6 +1,8 @@
 import { type ComponentType, createContext, type ReactNode, useContext } from "react";
 import type { Me, ProjectSummary, TokenInfo } from "./api.ts";
+import type { ReviewListItem } from "./ReviewsList.tsx";
 import type { Route } from "./route.ts";
+import type { SettingsPageProps } from "./Settings.tsx";
 import type { IconName } from "./ui.tsx";
 
 /**
@@ -23,9 +25,21 @@ export interface BoardExtension {
         label: string;
         page: string;
         icon?: IconName;
+        /** Workspace tools appear below the workspace switcher. Default: footer utility. */
+        placement?: "workspace" | "footer";
         /** Hides the link for people it is no use to (a guest with no workspace pages). Default: shown. */
         show?: (me: Me) => boolean;
     }>;
+    /** Replaces the browser-name card and Settings link with the service's personal account controls. */
+    AccountMenu?: ComponentType<{ me: Me; onSignOut?: () => Promise<void> }>;
+    /** Personal settings can have their own layout while workspace and server settings live in their own scopes. */
+    SettingsPage?: ComponentType<SettingsPageProps>;
+    /** Optional pull-request workflow in a project's Reviews page; ordinary sessions work without it. */
+    projectReviews?: {
+        available?: (me: Me) => boolean;
+        load(project: string): Promise<ReviewListItem[]>;
+        Page: ComponentType<{ me: Me; projectId: string; selected?: string; startNew?: boolean }>;
+    };
     /**
      * Replaces the sidebar's list of projects, and the open project's pages above it: a deployment with many projects
      * (and workspaces to hold them) may prefer a switcher.

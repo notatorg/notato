@@ -68,6 +68,8 @@ import {
 
 /** What Notato Cloud is set up with: the environment fills in what is not given, and tests give what they need. */
 export interface CloudServeOptions {
+    /** For example, "Platform administration" on a managed service. Permissions stay independent. */
+    administration?: { title: string };
     resourceLimits?: import("./storage.ts").HostedLimits;
     plugins?: import("./plugins/service.ts").PluginOptions;
     /** Extra browser origins that may call the API, beyond each project's own list. */
@@ -193,6 +195,7 @@ export function cloudSetup(options: CloudServeOptions = {}): CloudSetup {
         resourceLimitsFromEnv() ??
         (billing || testPlans || workspacePlans ? HOSTED_LIMITS : undefined);
     const cloudOptions: CloudOptions = {
+        administration: options.administration,
         plugins: options.plugins,
         beta,
 

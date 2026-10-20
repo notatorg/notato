@@ -115,7 +115,7 @@ export function Billing({ onChanged }: { onChanged?(): void }) {
                     </>
                 ) : null}
             </Section>
-            {info ? (
+            {info && (info.enabled || info.selfServicePlans || info.workspacePlans) ? (
                 <Section
                     title="Plan"
                     about="What this workspace can hold and do. Plans change what you can store and automate, not what the toolbar can do."
