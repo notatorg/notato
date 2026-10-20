@@ -32,6 +32,8 @@ export interface ServerLinks {
 export interface SettingsPanelOptions {
     layer: HTMLElement;
     settings: SettingsStore;
+    localOnly?: boolean;
+    onLocalOnly?(enabled: boolean): void;
     /** Where the toolbar's settings button is: the panel sits above it, or below it when the toolbar is near the top. */
     anchor(): { left: number; top: number; width: number; height?: number };
     /** Present when there is a server to show. */
@@ -40,6 +42,12 @@ export interface SettingsPanelOptions {
     serverScreenshots(): boolean;
     /** Hides Notato until the page is reloaded. */
     onHide(): void;
+    hiddenNotes?: {
+        count(): number;
+        completedCount(): number;
+        hideCompleted(): void;
+        restore(): void;
+    };
     /** The panel opened or closed, however it happened (the toolbar shows its button pressed while it is open). */
     onToggle?(open: boolean): void;
     /** The button that opens and closes the panel: a press on it is left to its click, which closes the panel. */
@@ -50,6 +58,7 @@ export interface SettingsPanel {
     open(): void;
     close(): void;
     toggle(): void;
+    refresh(): void;
     readonly isOpen: boolean;
     destroy(): void;
 }
@@ -72,11 +81,13 @@ export function createSettingsPanel(options: SettingsPanelOptions): SettingsPane
     let off: (() => void) | undefined;
     /** Saves a name typed but not yet saved: the panel can close, or move on, without the field being left first. */
     let commitName: (() => void) | undefined;
+    let refreshHiddenActions: (() => void) | undefined;
 
     const close = () => {
         const was = el !== null;
         commitName?.();
         commitName = undefined;
+        refreshHiddenActions = undefined;
         off?.();
         off = undefined;
         if (el) {
@@ -122,6 +133,7 @@ export function createSettingsPanel(options: SettingsPanelOptions): SettingsPane
         sw.addEventListener("click", () => {
             settings.set({ [key]: !on() });
             refresh();
+            refreshHiddenActions?.();
         });
         refresh();
         return {
@@ -161,6 +173,7 @@ export function createSettingsPanel(options: SettingsPanelOptions): SettingsPane
             if (name.value === settings.get().name) return;
             settings.set({ name: name.value });
             mine.refresh(); // the switch for "only my notes" needs a name to mean anything
+            refreshHiddenActions?.();
         };
         name.addEventListener("change", saveName);
         commitName = saveName;
@@ -226,7 +239,31 @@ export function createSettingsPanel(options: SettingsPanelOptions): SettingsPane
             options.onHide();
         });
 
+        const localToggle = h(
+            "button",
+            {
+                type: "button",
+                class: "slink",
+                "aria-pressed": String(Boolean(options.localOnly)),
+                onclick: () => options.onLocalOnly?.(!options.localOnly),
+            },
+            options.localOnly ? "Use configured server" : "Keep feedback local to this computer"
+        );
         const rows: HTMLElement[] = [
+            ...(options.onLocalOnly
+                ? [
+                      h(
+                          "div",
+                          { class: "sfield" },
+                          h(
+                              "div",
+                              { class: "slabel" },
+                              options.localOnly ? "Local only" : "Cloud / configured server"
+                          ),
+                          localToggle
+                      ),
+                  ]
+                : []),
             h(
                 "div",
                 { class: "sfield" },
@@ -260,7 +297,7 @@ export function createSettingsPanel(options: SettingsPanelOptions): SettingsPane
                 toggle("Screenshots", "Take a screenshot with each note.", "screenshots", () =>
                     options.serverScreenshots()
                         ? undefined
-                        : "The server has screenshots turned off."
+                        : "Screenshots are unavailable until the server allows them."
                 ).row,
                 mine.row
             ),
@@ -284,6 +321,34 @@ export function createSettingsPanel(options: SettingsPanelOptions): SettingsPane
             });
             rows.push(go);
         }
+        const hiddenNotes = options.hiddenNotes;
+        if (hiddenNotes) {
+            const hideCompleted = h("button", {
+                class: "slink",
+                type: "button",
+                title: "Across this app, in this browser; keep them in the dashboard",
+                onclick: () => {
+                    close();
+                    hiddenNotes.hideCompleted();
+                },
+            });
+            const restore = h("button", {
+                class: "slink",
+                type: "button",
+                onclick: () => {
+                    close();
+                    hiddenNotes.restore();
+                },
+            });
+            refreshHiddenActions = () => {
+                const count = hiddenNotes.completedCount();
+                hideCompleted.textContent = `Hide completed annotations (${count})`;
+                hideCompleted.disabled = count === 0;
+                restore.textContent = `Restore hidden annotations (${hiddenNotes.count()})`;
+            };
+            refreshHiddenActions();
+            rows.push(hideCompleted, restore);
+        }
         rows.push(hide);
         return rows;
     }
@@ -302,16 +367,21 @@ export function createSettingsPanel(options: SettingsPanelOptions): SettingsPane
 
         void server.status().then((info) => {
             if (!el || view !== "server") return;
-            status.textContent = info
-                ? [
-                      info.version ? `Notato ${info.version}` : "",
-                      info.mode ? `${info.mode} mode` : "",
-                      info.pages !== undefined ? `${plural(info.pages, "page")} connected` : "",
-                      info.screenshots ? `screenshots ${info.screenshots}` : "",
-                  ]
-                      .filter(Boolean)
-                      .join(" · ")
-                : "The server did not answer.";
+            status.textContent =
+                info?.mode === "capture"
+                    ? "Upload only. Review submitted feedback in the Notato dashboard."
+                    : info
+                      ? [
+                            info.version ? `Notato ${info.version}` : "",
+                            info.mode ? `${info.mode} mode` : "",
+                            info.pages !== undefined
+                                ? `${plural(info.pages, "page")} connected`
+                                : "",
+                            info.screenshots ? `screenshots ${info.screenshots}` : "",
+                        ]
+                            .filter(Boolean)
+                            .join(" · ")
+                      : "The server did not answer.";
             showAgent(info?.agent);
         });
 
@@ -343,7 +413,7 @@ export function createSettingsPanel(options: SettingsPanelOptions): SettingsPane
                     h(
                         "div",
                         { class: "shelp" },
-                        "Everything you write reaches it. Mark a note People only, or send a reply as an aside, to keep it between people."
+                        "Mine is private by default. Select Shared or All to include project feedback. People only notes and asides stay between people."
                     )
                 );
                 return;
@@ -378,6 +448,7 @@ export function createSettingsPanel(options: SettingsPanelOptions): SettingsPane
     }
 
     function render() {
+        refreshHiddenActions = undefined;
         if (!el) return;
         commitName?.();
         commitName = undefined;
@@ -446,6 +517,9 @@ export function createSettingsPanel(options: SettingsPanelOptions): SettingsPane
         toggle() {
             if (el) close();
             else this.open();
+        },
+        refresh() {
+            refreshHiddenActions?.();
         },
         destroy() {
             close();

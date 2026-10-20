@@ -1,5 +1,7 @@
 # Notato website
 
+The source of notato.dev. It lives here, with the code it describes, so the docs it publishes are made from this repository's READMEs at build time and cannot drift from them: fix a docs page by fixing the README.
+
 The promotional site for Notato: one static page with an animated demo of the loop, interactive tiles for each feature, and a button that loads the real toolbar onto the page.
 
 ```bash
@@ -7,7 +9,7 @@ bun run site           # build into site/dist, serve it on http://localhost:4810
 bun run build:site     # build once
 ```
 
-`site/dist` is plain static files (`index.html` and its CSS and scripts, `live.js`, `notato.png` and `docs/`), so any static host serves it: GitHub Pages, Netlify, an S3 bucket, `npx serve site/dist`.
+`site/dist` is plain static files (`index.html` and its CSS and scripts, `live.js`, `notato.png` and `docs/`), so any static host serves it, or `npx serve site/dist`.
 
 ## What is in it
 
@@ -31,11 +33,72 @@ Rename a README heading and update `PAGES` to match. `bun run site` rebuilds the
 
 ## Publishing
 
-The release workflow builds the site from each release tag, so the docs describe what that release installs, and deploys it to GitHub Pages once `PUBLISH_SITE` is on (see [RELEASING.md](../RELEASING.md)). Until the packages are on npm, the quick start's `npm i -D notato @notato/react` does not work yet.
+Cloudflare Workers Builds publishes this site from GitHub using the root [`wrangler.json`](../wrangler.json).
+The site is static assets; it needs no Worker script, database or application server. Wrangler is pinned in
+the root `package.json` and `bun.lock`. Both addresses are on notato.dev; nothing is published on `workers.dev`.
+
+| Git branch | Result | Command after the build |
+| --- | --- | --- |
+| `develop` | Updates the preview at `preview.notato.dev` (Worker `notato-site-preview`) | `bun run preview:site` |
+| `main` | Publishes the production website at `notato.dev` (Worker `notato-site`) | `bun run deploy:site` |
+| any other branch | Not built by Cloudflare (CI still builds and tests it) | |
+
+Open feature and fix pull requests against `develop`. After checking the preview, open a release pull request
+from `develop` into `main`. Merging into `main` publishes the website. Publishing SDK packages, container images
+and GitHub releases still requires the explicit tagged-release process in [RELEASING.md](../RELEASING.md).
+
+### Cloudflare build settings
+
+Two Workers are connected to the `notatorg/notato` repository, each with its own Workers Builds connection.
+Workers Builds requires the name in `wrangler.json` to match the Worker it builds, which is why the preview is
+a separate Worker and not an environment of the production one.
+
+| Setting | `notato-site` (production) | `notato-site-preview` |
+| --- | --- | --- |
+| Production branch | `main` | `develop` |
+| Root directory | `/` | `/` |
+| Build command | `bun run build:site` | `bun run build:site` |
+| Deploy command | `bun run deploy:site` (`wrangler deploy`) | `bun run preview:site` (`wrangler deploy --env preview`) |
+| Builds for preview branches | Off | Off |
+| Build variable | `BUN_VERSION=1.4.3`, matching CI | `BUN_VERSION=1.4.3` |
+| Address | `notato.dev` | `preview.notato.dev` |
+
+The preview Worker is the `env.preview` block of `wrangler.json`; its custom domain never touches production, and
+it needs `notato.dev` to be a zone in the same Cloudflare account. `site/deploy-preview.ts` publishes only
+`develop`, so no other branch can replace the shared preview.
+
+Cloudflare installs dependencies from `bun.lock` before building. `WORKERS_CI_BRANCH`, supplied by Cloudflare,
+determines the build mode automatically: `main` is production, and other branches are previews. Remove any old
+`NOTATO_SITE_ENV` dashboard override. For local checks, use `NOTATO_SITE_ENV=preview bun run build:site` or
+`NOTATO_SITE_ENV=production bun run build:site`.
+
+Preview builds have an `X-Robots-Tag: noindex, nofollow` header. Production builds omit it.
+
+### Analytics
+
+Enable Automatic setup for `notato.dev` in Cloudflare Web Analytics once the custom domain is served through
+Cloudflare. No analytics token is needed in GitHub Actions for that setup. If manually installing the beacon
+instead, set `NOTATO_SITE_ANALYTICS_TOKEN` as a production build variable in Cloudflare and disable automatic
+injection to avoid duplicates. The build only embeds this public identifier in production; previews and local
+builds ignore it even if the variable is present.
+
+### Initial migration
+
+Update the Worker's build settings as above, then build `develop` first and check `preview.notato.dev`.
+Keep the existing website serving while doing so. `main` must contain the root Wrangler file and
+build scripts before its first Cloudflare production build; do not retry a build of an older `main` commit.
+
+The first production deployment attaches `notato.dev` through the custom domain in `wrangler.json`. Replace any
+conflicting GitHub Pages CNAME as part of that cutover. After the Cloudflare site is verified, disable the old
+GitHub Pages publisher. The separate GitHub Actions Website deploy workflow and the two per-target Wrangler
+files are not used. GitHub Actions continues to build and test the website as part of CI on pull requests and
+pushes to `develop` and `main`.
+
+`site/src/_headers` sets the security headers for every page.
 
 ## Notes
 
 - Motion respects `prefers-reduced-motion`: the demo jumps to the end of each story instead of playing it, and nothing loops.
 - The demo pauses while it is off screen or the tab is hidden, and has its own pause button.
 - Light and dark follow the system setting. The demo app, the terminal and the sticky notes keep their own colours in both.
-- CI builds the site on every pull request, so a README heading the docs need cannot go missing unnoticed.
+- CI builds the site on every push and pull request, so renaming a README heading that a docs page uses fails the build until `PAGES` in `docs.ts` is updated.

@@ -67,6 +67,7 @@ internal class Controller(
     /** Where the app reads Notato's state (`Notato.state`): written here whenever something it shows changes. */
     private val published: MutableStateFlow<NotatoState>,
 ) : Application.ActivityLifecycleCallbacks {
+    private var reviewSessionId = "review_" + Ulid.make()
     var config: NotatoConfig = config
         private set
 
@@ -82,8 +83,11 @@ internal class Controller(
     private var runtime = RuntimeState(app, config.rememberRuntimeState)
     var fold = ToolbarFold(runtime, config.toolbarPosition)
         private set
-    val sync = NoteSync(this, File(app.filesDir, "notato"), config.project)
-    private val screens = ScreenNotes(sync.notes)
+    // Kept out of Auto Backup and device-to-device transfers, which copy filesDir: earlier versions kept notes there, and
+    // they are moved over when the notes are first read.
+    val sync = NoteSync(this, File(app.noBackupFilesDir, "notato"), config.project, formerBase = File(app.filesDir, "notato"))
+    private val hidden = HiddenAnnotations()
+    private val screens = ScreenNotes(sync.notes, hidden)
     private val shake = ShakeDetector(app) { setToolbar(!toolbarVisible) }
 
     private val sessions = mutableMapOf<Activity, Session>()
@@ -112,11 +116,13 @@ internal class Controller(
 
     val mode get() = config.mode
     val server: String? get() = runtime.server ?: config.resolvedServer
-    val hasServer get() = server != null && mode != NotatoMode.TEST
+    val hasServer get() = server != null
     val authorName get() = runtime.author ?: config.author
     val serverOverride get() = runtime.server
     val screenshotsWanted get() = runtime.screenshots ?: config.screenshots
-    private val screenshotsOn get() = screenshotsWanted && sync.serverScreenshots
+
+    /** Wanted, and the server has said it takes them (with no server there is no one to ask). */
+    private val screenshotsOn get() = screenshotsWanted && sync.serverScreenshots == true
     val pinsVisible get() = runtime.pinsVisible ?: true
     val shakeAvailable get() = config.shakeToToggle && shake.isListening
 
@@ -155,6 +161,7 @@ internal class Controller(
 
     fun reconfigure(next: NotatoConfig) {
         setEnabled(false, remember = false)
+        reviewSessionId = "review_" + Ulid.make()
         if (next.project != config.project) sync.switchProject(next.project)
         config = next
         runtime = RuntimeState(app, next.rememberRuntimeState)
@@ -364,7 +371,41 @@ internal class Controller(
     val pendingCount: Int get() = screens.pending
 
     /** The notes on the session's screen, oldest first, numbered as their pins are. */
-    fun recordsOnRoute(session: Session): List<Pair<Int, NoteRecord>> = screens.on(session.route.ifEmpty { session.currentRoute() })
+    fun recordsOnRoute(session: Session): List<Pair<Int, NoteRecord>> {
+        syncHidden()
+        return screens.on(session.route.ifEmpty { session.currentRoute() })
+    }
+
+    private fun syncHidden() {
+        if (hidden.select(listOf(server, config.project, mode.name, server?.let { config.tokenFor(it) }, authorName), runtime.hiddenAnnotations)) sync.notes.changed()
+    }
+
+    val hiddenCount: Int get() { syncHidden(); return hidden.ids.size }
+    val completedCount: Int get() { syncHidden(); return sync.notes.all.count { HiddenAnnotations.isCompleted(it.annotation.status) && !hidden.contains(it.annotation) } }
+    val visibleCount: Int get() { syncHidden(); return sync.notes.all.count { !hidden.contains(it.annotation) } }
+
+    fun hideAnnotation(id: String) {
+        syncHidden()
+        val a = sync.notes[id]?.annotation ?: return
+        if (hidden.hide(listOf(a))) saveHidden()
+    }
+
+    fun hideCompleted() {
+        syncHidden()
+        if (hidden.hide(sync.notes.all.map { it.annotation })) saveHidden()
+    }
+
+    fun restoreHidden() {
+        syncHidden()
+        hidden.clear()
+        saveHidden()
+    }
+
+    private fun saveHidden() {
+        runtime.hiddenAnnotations = hidden.encoded
+        sync.notes.changed()
+        publish()
+    }
 
     /** The ids of the notes on the session's screen that have a pin (see [pinned]). */
     fun pinnedOn(session: Session): Set<String> = pinned(recordsOnRoute(session)).mapTo(HashSet()) { it.second.annotation.id }
@@ -420,9 +461,21 @@ internal class Controller(
         }
     }
 
-    /** A picture of the session's window for a note, when screenshots are on (and [wanted]). */
-    private suspend fun picture(session: Session, root: View, wanted: Boolean = true): CapturedScreen? =
-        if (wanted && screenshotsOn) Windows.capture(session.activity, root, session.overlay) else null
+    /**
+     * A picture of the session's window for a note, when screenshots are on (and [wanted]): the server is asked first
+     * when what it said is more than a few seconds old. Never of a window the app marked secure, unless it opted in.
+     */
+    private suspend fun picture(session: Session, root: View, wanted: Boolean = true): CapturedScreen? {
+        if (!wanted || !screenshotsWanted) return null
+        if (secure(session, root)) {
+            Log.i(TAG, "Notato took no screenshot: the window is marked secure (FLAG_SECURE).")
+            return null
+        }
+        return if (sync.screenshotsAllowed()) Windows.capture(session.activity, root, session.overlay) else null
+    }
+
+    /** Whether [root]'s window is one the app said must never be captured (`FLAG_SECURE`), and it has not opted in. */
+    private fun secure(session: Session, root: View): Boolean = !config.captureSecureWindows && Windows.isSecure(session.activity, root)
 
     private fun select(session: Session, selection: Selection) {
         // Another picture than the one this selection keeps (a selection made from code over a tap's): its memory goes back.
@@ -444,10 +497,11 @@ internal class Controller(
             val atTop = root != null && e.bounds.top + e.bounds.height / 2 > root.height / 2
             session.overlay.showSheet(
                 ComposerSheet(
-                    session.overlay.ui, drawing.title, subtitle, screenshotsOff = !screenshotsOn,
+                    session.overlay.ui, drawing.title, subtitle, screenshotsOff = !screenshotsOn || (root != null && secure(session, root)),
+                    sharedByDefault = mode == NotatoMode.TEST,
                     onParent = { selectParent(session) },
                     onCancel = { session.overlay.closeSheet() },
-                    onSend = { comment, intent, severity, peopleOnly -> submit(session, comment, intent, severity, peopleOnly) },
+                    onSend = { comment, intent, severity, peopleOnly, shared -> submit(session, comment, intent, severity, peopleOnly, shared) },
                     launch = { block -> scope.launch { block() } },
                 ),
                 dim = false, atTop = atTop,
@@ -486,9 +540,9 @@ internal class Controller(
     // ---- making notes --------------------------------------------------------------------------------------------
 
     /** The composer's Send: makes the note about what is selected and sends it. Returns what is wrong, or null. */
-    suspend fun submit(session: Session, comment: String, intent: String?, severity: String?, peopleOnly: Boolean): String? {
+    suspend fun submit(session: Session, comment: String, intent: String?, severity: String?, peopleOnly: Boolean, shared: Boolean): String? {
         val selection = session.selection ?: return "Select something first."
-        val record = create(session, selection, comment, intent, severity, Author.human(authorName), mode.name.lowercase(), null, peopleOnly)
+        val record = create(session, selection, comment, intent, severity, Author.human(authorName), mode.name.lowercase(), null, peopleOnly, if (shared) "shared" else "personal")
         session.selection = null
         session.overlay.showSelection(null)
         session.overlay.closeSheet()
@@ -506,9 +560,10 @@ internal class Controller(
     private suspend fun create(
         session: Session, selection: Selection, comment: String, intent: String?, severity: String?, author: Author, mode: String, steps: List<AgentStep>?,
         peopleOnly: Boolean = false,
+        visibility: String? = null,
     ): NoteRecord {
         try {
-            return make(session, selection, comment, intent, severity, author, mode, steps, peopleOnly)
+            return make(session, selection, comment, intent, severity, author, mode, steps, peopleOnly, visibility)
         } finally {
             // Several megabytes at full resolution: back now, not when the collector gets round to it.
             selection.shot.release()
@@ -518,6 +573,7 @@ internal class Controller(
     private suspend fun make(
         session: Session, selection: Selection, comment: String, intent: String?, severity: String?, author: Author, mode: String, steps: List<AgentStep>?,
         peopleOnly: Boolean,
+        visibility: String? = null,
     ): NoteRecord {
         // Taken just after the composer opened: almost always there long before Send is.
         val shot = selection.shot.await()
@@ -525,18 +581,21 @@ internal class Controller(
         val density = root?.resources?.displayMetrics?.density ?: 1f
         val element = selection.element
         val route = session.currentRoute()
-        val pin = screens.on(route).size + 1
+        val pin = sync.notes.all.count { it.annotation.route == route } + 1
         val masks = selection.masks(shot.all, config.resolvedMaskInputs)
         val shots = shot.screen?.takeIf { screenshotsOn }?.let { screen ->
             screen.use {
                 withContext(Dispatchers.Default) {
-                    ScreenshotComposer.compose(screen, listOf(element.bounds), pin, masks, config.maxScreenshotScale)
+                    ScreenshotComposer.compose(screen, listOf(element.bounds), pin, masks, config.maxScreenshotScale, sync.serverDerivedScreenshots && hasServer)
                 }
             }
         }
         val context = linkedMapOf<String, JsonElement>(
             "android" to NotatoJson.encodeToJsonElement(AndroidContext.serializer(), DeviceInfo.context(session.activity, element)),
-            "screenshot" to buildJsonObject { put("pin", pin) },
+            "screenshot" to buildJsonObject {
+                put("pin", pin)
+                shots?.cropRect?.let { rect -> put("cropRect", buildJsonObject { rect.forEach { (key, value) -> put(key, value) } }) }
+            },
         )
         if (config.captureLogs) {
             val logs = withContext(Dispatchers.IO) { LogRecorder.recent(config.logLimit, startedAt) }
@@ -576,6 +635,8 @@ internal class Controller(
             context = context,
             status = Status.OPEN,
             peopleOnly = peopleOnly.takeIf { it },
+            visibility = visibility ?: if (mode == "test") "shared" else "personal",
+            sessionId = reviewSessionId.takeIf { mode == "test" },
         )
         // On the device before anything else: the screenshots are written out and only their files are kept.
         val store = sync.store
@@ -645,8 +706,15 @@ internal class Controller(
         val root = session.root ?: throw IllegalStateException("The activity has no window yet.")
         checkNote(comment, options)
         val (screen, all) = captureThenScan({ picture(session, root, options.screenshot) }) { ViewInspector.elements(root, config.resolvedMaskInputs) }
-        return annotate(session, ViewInspector.describe(view, config.resolvedMaskInputs), all, screen, comment, options)
+        return annotate(session, described(view, all), all, screen, comment, options)
     }
+
+    /**
+     * [view] as the reading [all] describes it, else described on its own. The reading also knows what is private
+     * around a View embedded in a composable (`AndroidView`), which the View cannot say by itself.
+     */
+    private fun described(view: View, all: List<ScreenElement>): ScreenElement =
+        all.firstOrNull { it.ref?.get() === view } ?: ViewInspector.describe(view, config.resolvedMaskInputs)
 
     /** The session whose window [view] is in, else the one showing. */
     private fun sessionOf(view: View): Session? = sessions.values.firstOrNull { it.root === view.rootView } ?: currentSession()
@@ -698,7 +766,7 @@ internal class Controller(
     /** Selects [view], as a tap would, and opens the composer on it. */
     fun select(view: View) {
         val session = sessionOf(view) ?: throw IllegalStateException("Notato is off.")
-        selectElement(session, null) { ViewInspector.describe(view, config.resolvedMaskInputs) }
+        selectElement(session, null) { all -> described(view, all) }
     }
 
     /**
@@ -727,11 +795,20 @@ internal class Controller(
 
     // ---- test mode: a bundle zip ----------------------------------------------------------------------------------------
 
-    /** The notes on this device as a bundle zip, uploaded to the server when there is one and [upload] is true. */
+    /**
+     * The notes on this device as a bundle zip, uploaded to the server when there is one and [upload] is true: not with
+     * a capture-only token, which can send notes one at a time and nothing else.
+     */
     suspend fun packageNotes(upload: Boolean): File {
         val file = makePackage()
         val url = server
-        if (upload && url != null) NotatoClient(url, config.tokenFor(url)).uploadBundle(config.project, file)
+        if (upload && url != null) {
+            if (sync.captureOnly) {
+                Log.w(TAG, "Notato did not upload the package: this app's token can only send notes. Share the zip instead.")
+            } else {
+                NotatoClient(url, config.tokenFor(url)).uploadBundle(config.project, file)
+            }
+        }
         return file
     }
 
@@ -739,7 +816,10 @@ internal class Controller(
     private suspend fun makePackage(): File {
         val mine = sync.notes.all.filter { it.pending || (mode == NotatoMode.TEST && it.mine) }
         check(mine.isNotEmpty()) { "Nothing to package yet: make at least one note." }
-        val items = mine.map { LocalAnnotation(it.annotation, it.assets ?: emptyMap()) }
+        // A server that has screenshots off (or has not said it takes them) gets none in a package, and neither does
+        // anyone the zip is shared with: the server drops only the copy uploaded to it.
+        val shots = sync.screenshotsAllowed()
+        val items = mine.map { LocalAnnotation(it.annotation, it.assets ?: emptyMap()).let { item -> if (shots) item else item.withoutScreenshots() } }
         val project = config.project
         val author = authorName
         val name = appName()
@@ -759,7 +839,9 @@ internal class Controller(
             return
         }
         var problem: String? = null
-        server?.let { url ->
+        // A package submits new notes under the same permissions as individual captures.
+        val uploadTo = server
+        uploadTo?.let { url ->
             try {
                 NotatoClient(url, config.tokenFor(url)).uploadBundle(config.project, file)
             } catch (error: NotatoServerException) {
@@ -773,7 +855,7 @@ internal class Controller(
             session.overlay.toast("Packaged as ${file.name}, but it could not be shared: ${error.message}")
             return
         }
-        session.overlay.toast(problem?.let { "Packaged, but not uploaded: $it" } ?: if (server == null) "Packaged. Send the zip to the developer." else "Packaged and uploaded.")
+        session.overlay.toast(problem?.let { "Packaged, but not uploaded: $it" } ?: if (uploadTo == null) "Packaged. Send the zip to the developer." else "Packaged and uploaded.")
     }
 
     // ---- state for the app and the overlay ----------------------------------------------------------------------------
@@ -782,7 +864,11 @@ internal class Controller(
     fun describeConnection(): String {
         val host = serverHost
         return when (sync.connection) {
-            NotatoConnection.CONNECTED -> "Connected to ${host ?: "the server"}"
+            NotatoConnection.CONNECTED -> if (sync.captureOnly) {
+                "Sending notes to ${host ?: "the server"}. This app's token can only send them: read and answer them on the board"
+            } else {
+                "Connected to ${host ?: "the server"}"
+            }
             NotatoConnection.CONNECTING -> "Connecting to ${host ?: "the server"}…"
             NotatoConnection.OFFLINE -> sync.connectionDetail ?: "Cannot reach ${host ?: "the server"}"
             NotatoConnection.REFUSED -> sync.connectionDetail ?: "${host ?: "The server"} refused this app"
@@ -806,6 +892,7 @@ internal class Controller(
 
     /** Draws the overlays again: for what only they show (the toolbar's place and fold, the pins shown or hidden). */
     private fun render() {
+        syncHidden()
         for (session in sessions.values) session.overlay.render()
         // The notes or what is shown may have changed: the pins are placed again.
         wake()
@@ -837,10 +924,10 @@ internal class Controller(
 
     /**
      * Keeps a request the app recorded, from any thread, for the `network` context of the next notes. As the web SDK
-     * records them, without the query string or fragment: they routinely carry tokens.
+     * records them, without the query string or fragment, nor a `user:password@`: they routinely carry tokens.
      */
     fun recordRequest(entry: NetworkEntry) {
-        val kept = entry.copy(url = entry.url.substringBefore('#').substringBefore('?'))
+        val kept = entry.copy(url = recordedUrl(entry.url))
         handler.post {
             network.addLast(kept)
             while (network.size > MAX_REQUESTS) network.removeFirst()

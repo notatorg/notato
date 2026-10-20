@@ -52,7 +52,7 @@ internal static partial class Ui
 
     public static string StatusHex(string status) => status switch
     {
-        Statuses.Acknowledged => "#d99a1e",
+        Statuses.AwaitingResponse or Statuses.Acknowledged => "#d99a1e",
         Statuses.Resolved => "#2e9a5b",
         Statuses.RevertRequested => "#8b5cf6",
         Statuses.VariantChosen => "#0891b2",
@@ -75,7 +75,7 @@ internal static partial class Ui
         Color? color = value switch
         {
             Severities.Blocker => Danger,
-            Statuses.Open or Statuses.Acknowledged or Statuses.Resolved or Statuses.RevertRequested or Statuses.Reverted
+            Statuses.Open or Statuses.Acknowledged or Statuses.AwaitingResponse or Statuses.Resolved or Statuses.RevertRequested or Statuses.Reverted
                 or Statuses.VariantChosen or Statuses.Dismissed => StatusColor(value),
             _ => null,
         };

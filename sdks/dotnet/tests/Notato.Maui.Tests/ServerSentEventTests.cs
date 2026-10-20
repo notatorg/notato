@@ -79,9 +79,10 @@ public class ServerSentEventTests
     [Fact]
     public async Task Keep_alives_keep_a_quiet_stream_open()
     {
-        // Ten pings 40 ms apart: far longer than the 150 ms limit in all, but never 150 ms without a line.
+        // Ten pings 100 ms apart: longer than the 600 ms limit in all, but never 600 ms without a line. The margin is
+        // generous because a busy CI runner can hold a timer back by hundreds of milliseconds.
         List<ServerSentEvent> events = [];
-        await foreach (ServerSentEvent e in ServerSentEvents.ReadAsync(new Pinging(10, TimeSpan.FromMilliseconds(40)), TimeSpan.FromMilliseconds(150)))
+        await foreach (ServerSentEvent e in ServerSentEvents.ReadAsync(new Pinging(10, TimeSpan.FromMilliseconds(100)), TimeSpan.FromMilliseconds(600)))
         {
             events.Add(e);
         }

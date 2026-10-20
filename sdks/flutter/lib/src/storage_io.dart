@@ -10,11 +10,30 @@ import 'storage.dart';
 Future<NotatoStorage?> openStorage(String project) async {
   try {
     final base = await getApplicationSupportDirectory();
-    final root = Directory('${base.path}/notato/${projectFolder(project)}');
+    final root = Directory('${notesFolder(base).path}/${projectFolder(project)}');
     Directory('${root.path}/shots').createSync(recursive: true);
     return FileStorage(root);
   } catch (_) {
     return null;
+  }
+}
+
+/// Where the notes go: `notato` in the support folder, except on Android, where that folder (the app's files) is in
+/// Google's backups and a tester's screenshots must not be. There it is the no-backup folder beside it, the app's data
+/// folder's `no_backup` (`Context.getNoBackupFilesDir()`), and notes an earlier version kept move there.
+Directory notesFolder(Directory support) {
+  final kept = Directory('${support.path}/notato');
+  if (!Platform.isAndroid || !support.path.endsWith('/files')) return kept;
+  final noBackup = Directory('${support.parent.path}/no_backup/notato');
+  try {
+    if (kept.existsSync() && !noBackup.existsSync()) {
+      noBackup.parent.createSync(recursive: true);
+      kept.renameSync(noBackup.path);
+    }
+    return noBackup;
+  } catch (_) {
+    // Left where they were: kept, if backed up.
+    return kept;
   }
 }
 
@@ -27,7 +46,8 @@ class FileStorage implements NotatoStorage {
   final Directory root;
 
   File _file(String name) => File('${root.path}/$name');
-  File? _shot(String id) => safeId.hasMatch(id) ? File('${root.path}/shots/$id.png') : null;
+  File? _shot(String id, [String suffix = 'png']) =>
+      safeId.hasMatch(id) ? File('${root.path}/shots/$id.$suffix') : null;
   _Writer _writer(String name) => _Writer.of(_file(name));
 
   Object? _readJson(String name) {
@@ -55,17 +75,28 @@ class FileStorage implements NotatoStorage {
 
   @override
   List<int>? loadAsset(String id) {
-    final f = _shot(id);
-    return f != null && f.existsSync() ? f.readAsBytesSync() : null;
+    for (final suffix in ['webp', 'png']) {
+      final f = _shot(id, suffix);
+      if (f != null && f.existsSync()) return f.readAsBytesSync();
+    }
+    return null;
   }
 
   @override
-  void saveAsset(String id, List<int> bytes) => _shot(id)?.writeAsBytesSync(bytes, flush: true);
+  void saveAsset(String id, List<int> bytes) {
+    final webp =
+        bytes.length >= 12 &&
+        String.fromCharCodes(bytes.sublist(0, 4)) == 'RIFF' &&
+        String.fromCharCodes(bytes.sublist(8, 12)) == 'WEBP';
+    _shot(id, webp ? 'webp' : 'png')?.writeAsBytesSync(bytes, flush: true);
+  }
 
   @override
   void deleteAsset(String id) {
-    final f = _shot(id);
-    if (f != null && f.existsSync()) f.deleteSync();
+    for (final suffix in ['webp', 'png']) {
+      final f = _shot(id, suffix);
+      if (f != null && f.existsSync()) f.deleteSync();
+    }
   }
 
   @override

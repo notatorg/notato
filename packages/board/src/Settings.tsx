@@ -1,10 +1,12 @@
 import { DETAILS } from "@notato/core";
-import { useEffect, useState } from "react";
+import { type ReactNode, useEffect, useState } from "react";
 import { AgentsSection, agentsText } from "./Agents.tsx";
 import {
+    canManageTokens,
     deleteWebhook,
     getSettings,
     getStatus,
+    type Me,
     type OnOff,
     type ProjectSummary,
     type ServerStatus,
@@ -13,9 +15,13 @@ import {
     setSetting,
     type WebhookView,
 } from "./api.ts";
+import { useBoardExtension } from "./extension.tsx";
+import { LocalPassword, LocalUsers } from "./LocalUsers.tsx";
 import { capitalise, duration, plural } from "./model.ts";
+import { go, href } from "./route.ts";
 import { KEYS, setBoardName, useBoardName, useRemembered } from "./storage.ts";
 import { TestDialog } from "./TestPanel.tsx";
+import { Tokens } from "./Tokens.tsx";
 import { FLASH_MS, Icon, Segmented, ThemeSwitch, Toggle } from "./ui.tsx";
 import { WebhookEditor } from "./WebhookEditor.tsx";
 import { eventsSummary, formatLabel } from "./webhook-form.ts";
@@ -27,7 +33,26 @@ const settingLabel = (name: string) => SETTING_LABELS[name] ?? name;
 const POLL_MS = 5000;
 
 /** The server's settings (the same file `notato config` edits), its webhooks, and this browser's own preferences. */
-export function Settings({ projects }: { projects: ProjectSummary[] | null }) {
+export function Settings({
+    projects,
+    manageServer = true,
+    accountName,
+    onSignOut,
+    tabs = null,
+    title = "Settings",
+    personal = true,
+}: {
+    /** The tab strip, shown under the title when Settings has more than one page. */
+    tabs?: ReactNode;
+    projects: ProjectSummary[] | null;
+    /** False for someone who may not see or change the server's own settings: they get this browser's preferences. */
+    manageServer?: boolean;
+    accountName?: string;
+    onSignOut?: () => Promise<void>;
+    title?: string;
+    /** Server administration has its own scope in the full service. */
+    personal?: boolean;
+}) {
     const [view, setView] = useState<SettingsView | null>(null);
     const [status, setStatus] = useState<ServerStatus | null>(null);
     const [error, setError] = useState<string | null>(null);
@@ -39,6 +64,7 @@ export function Settings({ projects }: { projects: ProjectSummary[] | null }) {
     const [testing, setTesting] = useState<WebhookView | null>(null);
 
     useEffect(() => {
+        if (!manageServer) return;
         getSettings().then(
             (v) => {
                 setView(v);
@@ -53,7 +79,7 @@ export function Settings({ projects }: { projects: ProjectSummary[] | null }) {
             getSettings().then(setView, () => {});
         }, POLL_MS);
         return () => clearInterval(timer);
-    }, []);
+    }, [manageServer]);
 
     /** Runs a change and shows the settings it answers with; a refusal (a stale copy, a broken file) is shown instead. */
     const change = async (key: string, fn: () => Promise<SettingsView>) => {
@@ -81,7 +107,7 @@ export function Settings({ projects }: { projects: ProjectSummary[] | null }) {
     const head = (
         <header className="sheet-head">
             <div>
-                <h1>Settings</h1>
+                <h1>{title}</h1>
                 {view ? (
                     <p>
                         {view.file ? (
@@ -99,12 +125,33 @@ export function Settings({ projects }: { projects: ProjectSummary[] | null }) {
         </header>
     );
 
+    if (!manageServer) {
+        return (
+            <div className="sheet">
+                <div className="sheet-inner settings">
+                    <header className="sheet-head">
+                        <div>
+                            <h1>Settings</h1>
+                            <p>Preferences for this browser.</p>
+                        </div>
+                    </header>
+                    {tabs}
+                    <LocalPassword />
+                    <BrowserPreferences accountName={accountName} />
+                    <AccountSection name={accountName} onSignOut={onSignOut} />
+                </div>
+            </div>
+        );
+    }
+
     if (!view) {
         return (
             <div className="sheet">
                 <div className="sheet-inner settings">
                     {head}
+                    {tabs}
                     {error ? <p className="error">{error}</p> : <p className="muted">Loading…</p>}
+                    <AccountSection name={accountName} onSignOut={onSignOut} />
                 </div>
             </div>
         );
@@ -116,6 +163,9 @@ export function Settings({ projects }: { projects: ProjectSummary[] | null }) {
         <div className="sheet">
             <div className="sheet-inner settings">
                 {head}
+                {tabs}
+                {personal && <LocalPassword />}
+                <LocalUsers />
 
                 {view.error ? (
                     <div className="banner bad" role="alert">
@@ -171,7 +221,8 @@ export function Settings({ projects }: { projects: ProjectSummary[] | null }) {
                     onDelete={(w) => change(`delete-${w.index}`, () => deleteWebhook(w))}
                 />
 
-                <BrowserPreferences />
+                {personal && <BrowserPreferences accountName={accountName} />}
+                {personal && <AccountSection name={accountName} onSignOut={onSignOut} />}
 
                 {status ? <ServerSection status={status} /> : null}
             </div>
@@ -378,7 +429,7 @@ function WebhooksSection({
 }
 
 /** Kept in this browser only: the name on replies, how much a Markdown copy says, and the theme. */
-function BrowserPreferences() {
+export function BrowserPreferences({ accountName }: { accountName?: string }) {
     const saved = useBoardName();
     const [name, setName] = useState(saved);
     const [flash, setFlash] = useState(false);
@@ -392,32 +443,34 @@ function BrowserPreferences() {
                 <p>Stored here only. Other people and browsers have their own.</p>
             </div>
             <div className="set-body">
-                <form
-                    className="setting-row"
-                    onSubmit={(e) => {
-                        e.preventDefault();
-                        setBoardName(name);
-                        setFlash(true);
-                        setTimeout(() => setFlash(false), FLASH_MS);
-                    }}
-                >
-                    <label className="setting-text" htmlFor="pref-name">
-                        <strong>Your name on replies</strong>
-                        <span className="muted small">Shown next to what you write.</span>
-                    </label>
-                    <div className="inline-field">
-                        <input
-                            id="pref-name"
-                            value={name}
-                            onChange={(e) => setName(e.target.value)}
-                            placeholder="Anonymous"
-                            maxLength={80}
-                        />
-                        <button type="submit" className="primary">
-                            {flash ? "Saved" : "Save"}
-                        </button>
-                    </div>
-                </form>
+                {accountName === undefined ? (
+                    <form
+                        className="setting-row"
+                        onSubmit={(e) => {
+                            e.preventDefault();
+                            setBoardName(name);
+                            setFlash(true);
+                            setTimeout(() => setFlash(false), FLASH_MS);
+                        }}
+                    >
+                        <label className="setting-text" htmlFor="pref-name">
+                            <strong>Your name on replies</strong>
+                            <span className="muted small">Shown next to what you write.</span>
+                        </label>
+                        <div className="inline-field">
+                            <input
+                                id="pref-name"
+                                value={name}
+                                onChange={(e) => setName(e.target.value)}
+                                placeholder="Anonymous"
+                                maxLength={80}
+                            />
+                            <button type="submit" className="primary">
+                                {flash ? "Saved" : "Save"}
+                            </button>
+                        </div>
+                    </form>
+                ) : null}
                 <div className="setting-row">
                     <div className="setting-text">
                         <strong>Markdown detail</strong>
@@ -435,7 +488,9 @@ function BrowserPreferences() {
                 <div className="setting-row">
                     <div className="setting-text">
                         <strong>Appearance</strong>
-                        <span className="muted small">Also at the bottom of the sidebar.</span>
+                        <span className="muted small">
+                            Choose a light or dark theme for this browser.
+                        </span>
                     </div>
                     <ThemeSwitch />
                 </div>
@@ -483,5 +538,128 @@ function ServerSection({ status }: { status: ServerStatus }) {
                 ) : null}
             </dl>
         </section>
+    );
+}
+
+/** Session controls belong to Settings and remain separate from server-wide administration. */
+function AccountSection({ name, onSignOut }: { name?: string; onSignOut?: () => Promise<void> }) {
+    const [busy, setBusy] = useState(false);
+    const [error, setError] = useState<string | null>(null);
+    if (!onSignOut) return null;
+    return (
+        <section className="set-section">
+            <div className="set-label">
+                <h2>Account</h2>
+                <p>Your signed-in account.</p>
+            </div>
+            <div className="set-body">
+                <div className="setting-row">
+                    <div className="setting-text">
+                        <strong>Your name on replies</strong>
+                        <span className="muted small">Provided by your signed-in account.</span>
+                    </div>
+                    <span className="account-name">{name}</span>
+                </div>
+                <button
+                    type="button"
+                    disabled={busy}
+                    onClick={async () => {
+                        setBusy(true);
+                        setError(null);
+                        try {
+                            await onSignOut();
+                        } catch (reason) {
+                            setError(
+                                reason instanceof Error ? reason.message : "Could not sign out."
+                            );
+                        } finally {
+                            setBusy(false);
+                        }
+                    }}
+                >
+                    {busy ? "Signing out…" : "Sign out"}
+                </button>
+                {error ? (
+                    <p className="error" role="alert">
+                        {error}
+                    </p>
+                ) : null}
+            </div>
+        </section>
+    );
+}
+
+/**
+ * Settings and the pages that sit with it: this browser's preferences and the server's settings (General), whatever an
+ * extension adds for the signed-in person (an account page), and Tokens. With only General there is no tab strip.
+ */
+export interface SettingsPageProps {
+    me: Me;
+    tab?: string;
+    projects: ProjectSummary[] | null;
+    manageServer: boolean;
+    accountName?: string;
+    onSignOut?: () => Promise<void>;
+}
+
+export function SettingsPage({
+    me,
+    tab,
+    projects,
+    manageServer,
+    accountName,
+    onSignOut,
+}: SettingsPageProps) {
+    const extension = useBoardExtension();
+    const added = extension?.settingsTabs ?? [];
+    const tokens = Boolean(me.authRequired && canManageTokens(me));
+    const pages = [
+        { id: "general", label: "General" },
+        ...added.map((t) => ({ id: t.id, label: t.label })),
+        ...(tokens ? [{ id: "tokens", label: "Tokens" }] : []),
+    ];
+    const current = pages.some((p) => p.id === tab) ? (tab as string) : "general";
+    const strip =
+        pages.length > 1 ? (
+            <Segmented
+                className="settings-tabs"
+                label="Settings pages"
+                value={current}
+                options={pages.map((p) => ({ id: p.id, label: p.label }))}
+                onChange={(id) => go(href({ page: "settings", tab: id }))}
+            />
+        ) : null;
+    if (current === "general")
+        return (
+            <Settings
+                projects={projects}
+                manageServer={manageServer}
+                accountName={accountName}
+                onSignOut={onSignOut}
+                tabs={strip}
+            />
+        );
+    const Added = added.find((t) => t.id === current)?.Page;
+    return (
+        <div className="sheet">
+            <div className="sheet-inner settings">
+                <header className="sheet-head">
+                    <div>
+                        <h1>Settings</h1>
+                        <p>
+                            {current === "tokens"
+                                ? "Keys that let apps and coding agents talk to this server."
+                                : "Your account."}
+                        </p>
+                    </div>
+                </header>
+                {strip}
+                {current === "tokens" ? (
+                    <Tokens me={me} projects={projects} embedded />
+                ) : Added ? (
+                    <Added me={me} />
+                ) : null}
+            </div>
+        </div>
     );
 }

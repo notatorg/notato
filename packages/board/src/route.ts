@@ -6,17 +6,21 @@ import { useEffect, useState } from "react";
 //   #/p/<project>/activity   what happened, newest first
 //   #/p/<project>/overview   the numbers
 //   #/p/<project>/connect    how to connect an app to it
+//   #/p/<project>/reviews    testing sessions and pull-request reviews; /sessions remains an alias
 //   #/p/<project>/settings   its name, tokens, and deleting it (admin)
-//   #/tokens                 tokens (serve mode, admin)
-//   #/settings               settings and webhooks (admin)
+//   #/settings               settings and webhooks (admin), and this browser's preferences
+//   #/settings/tokens        tokens (serve mode, admin): a tab of Settings; #/tokens still opens it
+//   #/settings/<tab>         a tab an extension adds to Settings
+//   #/x/<page>[/<rest>]      a page an extension adds
 
-export type Tab = "inbox" | "activity" | "overview" | "connect" | "settings";
-const TABS: readonly string[] = ["activity", "overview", "connect", "settings"];
+export type Tab = "inbox" | "activity" | "overview" | "connect" | "settings" | "team" | "sessions";
+const TABS: readonly string[] = ["activity", "overview", "connect", "settings", "team", "sessions"];
 
 export type Route =
     | { page: "home" }
-    | { page: "tokens" }
-    | { page: "settings" }
+    | { page: "not-found" }
+    | { page: "settings"; tab?: string }
+    | { page: "ext"; name: string; rest: string }
     | { page: "project"; project: string; tab: Tab; selected?: string };
 
 const decode = (s: string) => {
@@ -29,31 +33,57 @@ const decode = (s: string) => {
 
 export function parseRoute(hash: string): Route {
     const path = hash.replace(/^#/, "").replace(/\/+$/, "") || "/";
-    if (path === "/tokens") return { page: "tokens" };
+    if (path === "/") return { page: "home" };
+    if (path === "/tokens") return { page: "settings", tab: "tokens" };
     if (path === "/settings") return { page: "settings" };
+    const tab = /^\/settings\/([^/]+)$/.exec(path)?.[1];
+    if (tab) return { page: "settings", tab: decode(tab) };
+    const ext = /^\/x\/([^/]+)(?:\/(.*))?$/.exec(path);
+    if (ext?.[1]) return { page: "ext", name: decode(ext[1]), rest: decode(ext[2] ?? "") };
     const project = /^\/p\/([^/]+)(?:\/(.*))?$/.exec(path);
     if (project?.[1]) {
         const name = decode(project[1]);
         const rest = project[2] ?? "";
+        const review = /^(?:reviews|sessions)\/(session|pull-request|new)\/([^/]+)$/.exec(rest);
+        if (
+            review?.[1] &&
+            review[2] &&
+            (review[1] !== "new" || ["session", "pull-request"].includes(review[2]))
+        )
+            return {
+                page: "project",
+                project: name,
+                tab: "sessions",
+                selected: `${review[1]}/${decode(review[2])}`,
+            };
+        if (rest === "reviews") return { page: "project", project: name, tab: "sessions" };
         const selected = /^a\/([^/]+)$/.exec(rest)?.[1];
         if (selected)
             return { page: "project", project: name, tab: "inbox", selected: decode(selected) };
         if (TABS.includes(rest)) return { page: "project", project: name, tab: rest as Tab };
-        return { page: "project", project: name, tab: "inbox" };
+        if (!rest) return { page: "project", project: name, tab: "inbox" };
     }
-    return { page: "home" };
+    return { page: "not-found" };
 }
 
 export function href(route: Route): string {
     switch (route.page) {
         case "home":
             return "#/";
-        case "tokens":
-            return "#/tokens";
+        case "not-found":
+            return "#/404";
         case "settings":
-            return "#/settings";
+            return route.tab && route.tab !== "general"
+                ? `#/settings/${encodeURIComponent(route.tab)}`
+                : "#/settings";
+        case "ext":
+            return `#/x/${encodeURIComponent(route.name)}${route.rest ? `/${route.rest}` : ""}`;
         case "project": {
             const base = `#/p/${encodeURIComponent(route.project)}`;
+            if (route.tab === "sessions") {
+                const path = route.selected?.split("/").map(encodeURIComponent).join("/");
+                return `${base}/reviews${path ? `/${path}` : ""}`;
+            }
             if (route.selected) return `${base}/a/${encodeURIComponent(route.selected)}`;
             return route.tab === "inbox" ? base : `${base}/${route.tab}`;
         }

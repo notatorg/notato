@@ -1,0 +1,7 @@
+{$NOTATO_DOMAIN} {
+	encode zstd gzip
+	# Streamed responses (MCP over HTTP) must not be held back.
+	reverse_proxy server:4799 {
+		flush_interval -1
+	}
+}

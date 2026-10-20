@@ -5,6 +5,7 @@ import 'package:flutter/material.dart' hide Badge;
 import '../annotation.dart';
 import '../config.dart';
 import '../controller.dart';
+import '../hidden.dart';
 import '../note_book.dart';
 import '../runtime.dart';
 import 'parts.dart';
@@ -212,7 +213,7 @@ class MenuSheet extends StatelessWidget {
                 MenuRow(
                   tile: const SheetTile.icon('list'),
                   title: 'Notes',
-                  detail: '$here on this screen · ${runtime.notes.length} in all',
+                  detail: '$here on this screen · ${runtime.visibleCount} in all',
                   opens: true,
                   onTap: () => open(const ListSheetKind()),
                 ),
@@ -277,7 +278,7 @@ class NotesSheet extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final p = Palette.of(context);
-    final others = runtime.notes.length - list.length;
+    final others = runtime.visibleCount - list.length;
     final footer = others <= 0 ? 0 : 1;
     return Column(
       mainAxisSize: MainAxisSize.min,
@@ -285,7 +286,7 @@ class NotesSheet extends StatelessWidget {
       children: [
         SheetHeader(
           title: 'Notes',
-          subtitle: '${list.length} on this screen · ${runtime.notes.length} in all',
+          subtitle: '${list.length} on this screen · ${runtime.visibleCount} in all',
           leading: HeaderButton.back(onPressed: () => open(const MenuSheetKind())),
           trailing: HeaderButton.close(onPressed: () => open(null)),
         ),
@@ -330,8 +331,8 @@ class NotesSheet extends StatelessWidget {
                 title: '${record.annotation['comment'] ?? ''}',
                 titleLines: 2,
                 detail: [
-                  record.status.replaceAll('_', ' '),
-                  if (record.peopleOnly) PeopleOnlyCopy.title,
+                  statusLabel(record.status),
+                  if (record.peopleOnly) 'Hidden from agent',
                   ?ago(record.createdAt),
                 ].join(' · '),
                 opens: true,
@@ -423,9 +424,31 @@ class _SettingsSheetState extends State<SettingsSheet> {
                   title: 'Screenshots',
                   hint: runtime.serverScreenshots
                       ? 'Each note takes one of the screen'
-                      : 'The server has them turned off',
+                      : 'Off until the server says it takes them',
                   value: _screenshots,
                   onChanged: (v) => setState(() => _screenshots = v),
+                ),
+                SheetButton(
+                  'Hide completed annotations (${runtime.completedCount})',
+                  key: const ValueKey('NotatoHideCompleted'),
+                  onPressed: runtime.completedCount == 0
+                      ? null
+                      : () {
+                          widget.open(null);
+                          runtime.hideCompleted();
+                        },
+                ),
+                Text(
+                  'Across this app, on this device. Kept in the dashboard.',
+                  style: TextStyle(fontSize: 12.5, color: p.muted),
+                ),
+                SheetButton(
+                  'Restore hidden annotations (${runtime.hiddenCount})',
+                  key: const ValueKey('NotatoRestoreHidden'),
+                  onPressed: () {
+                    widget.open(null);
+                    runtime.restoreHidden();
+                  },
                 ),
               ],
             ),
@@ -547,7 +570,7 @@ class _ThreadEntry extends StatelessWidget {
     }
     final aside = reply['aside'] == true;
     return Semantics(
-      label: aside ? 'Aside, kept from the agent' : null,
+      label: aside ? 'Hidden from agent' : null,
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
         decoration: BoxDecoration(
@@ -560,7 +583,7 @@ class _ThreadEntry extends StatelessWidget {
           children: [
             if (aside)
               Text(
-                PeopleOnlyCopy.aside,
+                'Hidden from agent',
                 style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: p.muted),
               ),
             Text.rich(
@@ -583,6 +606,9 @@ class _ThreadEntry extends StatelessWidget {
 }
 
 const _keptHere = 'Kept on this device. Package it from the menu to share it.';
+
+/// A note sent with a capture-only token, which this app can neither read back nor change.
+const _sentOnly = 'Sent. Its replies and status are on the Notato board.';
 
 /// A note's card: its status, comment and thread; People only, a reply or an aside; revert, cancel or delete.
 class NoteCard extends StatefulWidget {
@@ -609,6 +635,8 @@ class NoteCard extends StatefulWidget {
 class _NoteCardState extends State<NoteCard> {
   final _reply = TextEditingController();
   var _aside = false;
+  var _optionsOpen = false;
+  var _deleteArmed = false;
   String? _problem;
   var _busy = false;
   bool? _asked;
@@ -661,7 +689,9 @@ class _NoteCardState extends State<NoteCard> {
     final record = widget.record;
     final a = record.annotation;
     final status = record.status;
-    final live = runtime.hasServer && !record.pending;
+    // Sent with a capture-only token: the server took it, and replying, reverting and deleting are the board's.
+    final sentOnly = runtime.captureOnly && !record.pending;
+    final live = runtime.hasServer && !record.pending && !sentOnly;
     final author = a['author'] as Map? ?? const {};
     final byline = [
       author['name'] as String? ?? (author['kind'] == 'agent' ? 'An agent' : null),
@@ -678,27 +708,19 @@ class _NoteCardState extends State<NoteCard> {
     final thread = ((a['thread'] as List?) ?? const []).whereType<Map>().map((m) => m.cast<String, Object?>()).toList();
     final intent = a['intent'] as String?;
     final severity = a['severity'] as String?;
+    final canRevert = live && status == 'resolved' && intent != 'question' && intent != 'approve';
+    final canDelete = !sentOnly && (!live || (record.mine && status == 'open'));
     final actions = <Widget>[
-      if (live) ...[
-        if (status == 'resolved')
-          SheetButton(
-            'Ask the agent to revert',
-            onPressed: () => _run(
-              () => runtime.requestRevert(record.id, reason: _reply.text),
-              'Asked the agent to undo that change',
-            ),
-          ),
-        if (status == 'revert_requested')
-          SheetButton(
-            'Cancel request',
-            onPressed: () => _run(() => runtime.cancelRevert(record.id), 'Revert request taken back'),
-          ),
-        if (record.mine && status == 'open')
-          SheetButton(
-            'Delete',
-            kind: ButtonKind.danger,
-            onPressed: () => _run(() => runtime.delete(record.id), 'Note deleted'),
-          ),
+      if (!sentOnly || HiddenAnnotations.isCompleted(status))
+        SheetButton(
+          _optionsOpen ? 'Close options' : 'More options',
+          key: const ValueKey('NotatoMoreOptions'),
+          onPressed: () => setState(() {
+            _optionsOpen = !_optionsOpen;
+            _deleteArmed = false;
+          }),
+        ),
+      if (live)
         SheetButton(
           'Reply',
           key: const ValueKey('NotatoSendReply'),
@@ -714,15 +736,9 @@ class _NoteCardState extends State<NoteCard> {
               _run(() async {
                 await runtime.reply(record.id, text, aside: aside);
                 if (mounted) setState(() => _aside = false);
-              }, aside ? 'Aside sent' : 'Reply sent'),
+              }, aside ? 'Reply hidden from agent' : 'Reply sent'),
             );
           },
-        ),
-      ] else
-        SheetButton(
-          'Delete',
-          kind: ButtonKind.danger,
-          onPressed: () => _run(() => runtime.delete(record.id), 'Note deleted'),
         ),
     ];
     return Column(
@@ -776,14 +792,11 @@ class _NoteCardState extends State<NoteCard> {
                     style: TextStyle(fontSize: 12.5, color: runtime.hasServer ? statusColor('acknowledged') : p.muted),
                   ),
                 ],
+                if (sentOnly) ...[
+                  const SizedBox(height: 8),
+                  Text(_sentOnly, style: TextStyle(fontSize: 12.5, color: p.muted)),
+                ],
                 const SizedBox(height: 12),
-                FlagToggle(
-                  key: const ValueKey('NotatoNotePeopleOnly'),
-                  title: PeopleOnlyCopy.title,
-                  hint: PeopleOnlyCopy.hint,
-                  value: _asked ?? record.peopleOnly,
-                  onChanged: _asked == null ? _setPeopleOnly : null,
-                ),
                 for (final reply in thread.length > 4 ? thread.sublist(thread.length - 4) : thread) ...[
                   const SizedBox(height: 8),
                   _ThreadEntry(reply),
@@ -808,31 +821,80 @@ class _NoteCardState extends State<NoteCard> {
             decoration: fieldDecoration(context, status == 'resolved' ? 'Reply, or say what was wrong' : 'Reply'),
           ),
           const SizedBox(height: 8),
-          FlagToggle(
-            key: const ValueKey('NotatoAside'),
-            title: PeopleOnlyCopy.aside,
-            hint: PeopleOnlyCopy.asideHint,
-            value: _aside,
-            onChanged: (v) => setState(() => _aside = v),
-          ),
+          if (_aside) Text('Next reply hidden from agent', style: TextStyle(fontSize: 12, color: p.muted)),
         ],
-        const SizedBox(height: 12),
-        if (actions.length > 1)
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              for (final (i, button) in actions.indexed) ...[if (i > 0) const SizedBox(height: 8), button],
-            ],
-          )
-        else
-          Row(
-            children: [
-              for (final (i, button) in actions.indexed) ...[
-                if (i > 0) const SizedBox(width: 10),
-                Expanded(child: button),
-              ],
-            ],
+        if (_optionsOpen && (!sentOnly || HiddenAnnotations.isCompleted(status)))
+          Flexible(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxHeight: 240),
+              child: SingleChildScrollView(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    FlagToggle(
+                      key: const ValueKey('NotatoNotePeopleOnly'),
+                      title: PeopleOnlyCopy.title,
+                      hint: PeopleOnlyCopy.hint,
+                      value: _asked ?? record.peopleOnly,
+                      onChanged: _asked == null && !sentOnly ? _setPeopleOnly : null,
+                    ),
+                    if (live) ...[
+                      FlagToggle(
+                        key: const ValueKey('NotatoAside'),
+                        title: PeopleOnlyCopy.aside,
+                        hint: PeopleOnlyCopy.asideHint,
+                        value: _aside,
+                        onChanged: (v) => setState(() => _aside = v),
+                      ),
+                    ],
+                    if (canRevert)
+                      SheetButton(
+                        'Revert this change…',
+                        onPressed: () => _run(
+                          () => runtime.requestRevert(record.id, reason: _reply.text),
+                          'Asked the agent to undo that change',
+                        ),
+                      ),
+                    if (live && status == 'revert_requested')
+                      SheetButton(
+                        'Cancel revert request',
+                        onPressed: () => _run(() => runtime.cancelRevert(record.id), 'Revert request taken back'),
+                      ),
+                    if (HiddenAnnotations.isCompleted(status))
+                      SheetButton(
+                        'Hide from this app',
+                        key: const ValueKey('NotatoHideAnnotation'),
+                        onPressed: () {
+                          widget.open(null);
+                          runtime.hideAnnotation(record.id);
+                        },
+                      ),
+                    if (canDelete)
+                      SheetButton(
+                        _deleteArmed ? 'Confirm delete' : 'Delete',
+                        kind: ButtonKind.danger,
+                        onPressed: () {
+                          if (!_deleteArmed) {
+                            setState(() => _deleteArmed = true);
+                            return;
+                          }
+                          unawaited(_run(() => runtime.delete(record.id), 'Note deleted'));
+                        },
+                      ),
+                  ],
+                ),
+              ),
+            ),
           ),
+        const SizedBox(height: 12),
+        Row(
+          children: [
+            for (final (i, button) in actions.indexed) ...[
+              if (i > 0) const SizedBox(width: 10),
+              Expanded(child: button),
+            ],
+          ],
+        ),
         if (_problem != null) ...[
           const SizedBox(height: 8),
           Padding(

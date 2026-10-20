@@ -1,5 +1,6 @@
 #if canImport(UIKit)
 import Foundation
+import SwiftUI
 import Testing
 import UIKit
 @testable import Notato
@@ -69,7 +70,7 @@ struct UIKitTests {
         let shot = try #require(ScreenshotTaker.capture(home, elements: [field], privateViews: [card], maskInputs: true))
         #expect(shot.covers == [card, field.frame])
         // Whatever moves before Send, the picture is covered where the card and the field were in it.
-        let composed = ScreenshotComposer.compose(shot, targets: [CGRect(x: 10, y: 600, width: 50, height: 50)], pin: nil, maxScale: 1)
+        let composed = try #require(ScreenshotComposer.compose(shot, targets: [CGRect(x: 10, y: 600, width: 50, height: 50)], pin: nil, maxScale: 1))
         let full = try #require(composed.assets[composed.refs.full.id])
         let grey: [UInt8] = [156, 163, 175]
         #expect(try pixel(full, 200, 140).enumerated().allSatisfy { abs(Int($0.element) - Int(grey[$0.offset])) <= 2 }, "the card")
@@ -121,7 +122,7 @@ struct UIKitTests {
         home.backgroundColor = .white
         let shot = try #require(ScreenshotTaker.capture(home, elements: [], privateViews: [], maskInputs: true, maxScale: 1))
         #expect(shot.picture.scale == 1)
-        let composed = await Task.detached { ScreenshotComposer.compose(shot, targets: [CGRect(x: 10, y: 10, width: 40, height: 40)], pin: 1, maxScale: 2) }.value
+        let composed = try #require(await Task.detached { ScreenshotComposer.compose(shot, targets: [CGRect(x: 10, y: 10, width: 40, height: 40)], pin: 1, maxScale: 2) }.value)
         #expect(composed.refs.full.w == 400 && composed.refs.crop != nil)
     }
 
@@ -139,6 +140,95 @@ struct UIKitTests {
         defer { registry.remove(id: id) }
         #expect(registry.screens(in: home).map(\.name) == ["ProductList"])
         #expect(registry.frame(of: id, in: home) == card)
+    }
+
+    /// A field in `parent` at `frame`, with what is typed in it.
+    @discardableResult
+    private func field(in parent: UIView, _ frame: CGRect, text: String = "", secure: Bool = false) -> UITextField {
+        let field = UITextField(frame: frame)
+        field.text = text
+        field.isSecureTextEntry = secure
+        parent.addSubview(field)
+        return field
+    }
+
+    @Test func fieldsAreFoundInTheViewsWhereverTheAccessibilityTreeLeavesThemOut() {
+        let home = window(0)
+        // The checkout form under an alert: the alert is modal, so VoiceOver (and the tree) has only it.
+        let form = UIView(frame: home.bounds)
+        home.addSubview(form)
+        field(in: form, CGRect(x: 16, y: 100, width: 370, height: 44), text: "4242 4242 4242 4242")
+        field(in: form, CGRect(x: 16, y: 160, width: 370, height: 44), text: "hunter2", secure: true)
+        let notes = UITextView(frame: CGRect(x: 16, y: 220, width: 370, height: 88))
+        notes.text = "Ring twice"
+        form.addSubview(notes)
+        let terms = UITextView(frame: CGRect(x: 16, y: 320, width: 370, height: 40))
+        terms.isEditable = false
+        form.addSubview(terms)
+        // Hidden from VoiceOver, and a container that lists its own elements (without its field).
+        let quiet = UIView(frame: CGRect(x: 0, y: 380, width: 400, height: 60))
+        quiet.accessibilityElementsHidden = true
+        form.addSubview(quiet)
+        field(in: quiet, CGRect(x: 16, y: 8, width: 370, height: 44), text: "Ada Lovelace")
+        let custom = UIView(frame: CGRect(x: 0, y: 450, width: 400, height: 60))
+        custom.accessibilityElements = [UIAccessibilityElement(accessibilityContainer: custom)]
+        form.addSubview(custom)
+        field(in: custom, CGRect(x: 16, y: 8, width: 370, height: 44), text: "1 Infinite Loop")
+        // Not drawn, or not in the window: nothing to cover.
+        field(in: form, CGRect(x: 16, y: 520, width: 370, height: 44), text: "gone").isHidden = true
+        field(in: form, CGRect(x: 16, y: 900, width: 370, height: 44), text: "below")
+        let alert = UIView(frame: CGRect(x: 40, y: 300, width: 320, height: 200))
+        alert.accessibilityViewIsModal = true
+        home.addSubview(alert)
+
+        let found = InputFields.find(in: home)
+        #expect(found.map(\.frame) == [CGRect(x: 16, y: 100, width: 370, height: 44), CGRect(x: 16, y: 160, width: 370, height: 44),
+                                       CGRect(x: 16, y: 220, width: 370, height: 88), CGRect(x: 16, y: 388, width: 370, height: 44),
+                                       CGRect(x: 16, y: 458, width: 370, height: 44)])
+        #expect(found.map(\.isSecure) == [false, true, false, false, false])
+        #expect(found[0].text == "4242 4242 4242 4242" && found[2].text == "Ring twice")
+        #expect(found[1].text == nil, "a secure field's text is never read")
+    }
+
+    @Test func aScreenshotCoversAFieldTheAccessibilityTreeLeftOut() throws {
+        let home = window(0)
+        home.backgroundColor = .white
+        let card = field(in: home, CGRect(x: 16, y: 300, width: 368, height: 44), text: "4242 4242 4242 4242")
+        card.backgroundColor = .white
+        let alert = UIView(frame: CGRect(x: 40, y: 500, width: 320, height: 200))
+        alert.accessibilityViewIsModal = true
+        home.addSubview(alert)
+        // The elements as the tree has them under the alert: none of the form.
+        let shot = try #require(ScreenshotTaker.capture(home, elements: [], privateViews: [], maskInputs: true, maxScale: 1))
+        #expect(shot.covers == [card.frame])
+        let composed = try #require(ScreenshotComposer.compose(shot, targets: [alert.frame], pin: nil, maxScale: 1))
+        let full = try #require(composed.assets[composed.refs.full.id])
+        let grey: [UInt8] = [156, 163, 175]
+        #expect(try pixel(full, 200, 322).enumerated().allSatisfy { abs(Int($0.element) - Int(grey[$0.offset])) <= 2 }, "the field")
+        // In dev mode a plain field shows, a secure one never does; one that opted out shows.
+        #expect(try #require(ScreenshotTaker.capture(home, elements: [], privateViews: [], maskInputs: false, maxScale: 1)).covers.isEmpty)
+        #expect(try #require(ScreenshotTaker.capture(home, elements: [], privateViews: [], optOuts: [card.frame], maskInputs: true, maxScale: 1)).covers.isEmpty)
+        card.isSecureTextEntry = true
+        #expect(try #require(ScreenshotTaker.capture(home, elements: [], privateViews: [], optOuts: [card.frame], maskInputs: false, maxScale: 1)).covers == [card.frame])
+    }
+
+    @Test func swiftUIsFieldsAreFoundInTheViewsUnderneath() async throws {
+        let home = window(0)
+        let host = UIHostingController(rootView: VStack {
+            TextField("Email", text: .constant("dom@example.com"))
+            SecureField("Password", text: .constant("hunter2"))
+            TextField("Note", text: .constant("Ring twice"), axis: .vertical)
+            TextEditor(text: .constant("Leave it by the door"))
+        })
+        host.view.frame = home.bounds
+        home.rootViewController = host
+        host.view.layoutIfNeeded()
+        // SwiftUI makes its platform views as it draws: give it a turn of the run loop or two.
+        for _ in 0..<20 where InputFields.find(in: home).count < 4 { try await Task.sleep(for: .milliseconds(50)) }
+        let found = InputFields.find(in: home)
+        #expect(found.count == 4, "\(found)")
+        #expect(found.filter(\.isSecure).count == 1)
+        #expect(found.compactMap(\.text).contains("dom@example.com"))
     }
 }
 

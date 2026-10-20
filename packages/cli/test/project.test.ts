@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, spyOn } from "bun:test";
-import { existsSync } from "node:fs";
+import { existsSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { Authenticator, runServe, type ServeRuntime, SqliteStore } from "@notato/server";
 import { runProjectCommand } from "../src/commands/project.ts";
@@ -63,6 +63,58 @@ describe("notato project", () => {
         expect(await me.json()).toMatchObject({ authenticated: true, projectId: "checkout-web" });
     });
 
+    it("makes an agent token for the project too, which reaches MCP and nothing else", async () => {
+        const dir = tmp();
+        expect(await runProjectCommand(["create", "web", "--json", "-d", dir])).toBe(0);
+        const made = JSON.parse(out.join("")) as {
+            appToken: string;
+            agentToken: string;
+            mcp: { url: string; header: string };
+        };
+        expect(made.appToken).toMatch(/^notato_/);
+        expect(made.agentToken).toMatch(/^notato_/);
+        expect(made.mcp.url).toContain("/mcp?project=web");
+        expect(made.mcp.header).toBe(`Authorization: Bearer ${made.agentToken}`);
+
+        const rt = await runServe({
+            port: 0,
+            dir,
+            version: "t",
+            adminPassword: "pw",
+            log: () => {},
+        });
+        serves.push(rt);
+        const mcp = (token: string) =>
+            fetch(`http://127.0.0.1:${rt.port}/mcp`, {
+                method: "POST",
+                headers: {
+                    Authorization: `Bearer ${token}`,
+                    "content-type": "application/json",
+                    accept: "application/json, text/event-stream",
+                },
+                body: JSON.stringify({
+                    jsonrpc: "2.0",
+                    id: 1,
+                    method: "initialize",
+                    params: {
+                        protocolVersion: "2025-03-26",
+                        capabilities: {},
+                        clientInfo: { name: "t", version: "1" },
+                    },
+                }),
+            });
+        expect((await mcp(made.appToken)).status).toBe(403);
+        expect((await mcp(made.agentToken)).status).toBe(200);
+    });
+
+    it("makes only an app token with --no-agent", async () => {
+        const dir = tmp();
+        expect(await runProjectCommand(["create", "web", "--no-agent", "--json", "-d", dir])).toBe(
+            0
+        );
+        expect(JSON.parse(out.join(""))).not.toHaveProperty("agentToken");
+    });
+
     it("refuses an id the server would not take, and one that exists", async () => {
         const dir = tmp();
         await expect(runProjectCommand(["create", "..", "-d", dir])).rejects.toThrow("project id");
@@ -117,7 +169,7 @@ describe("notato project", () => {
         });
         expect(no).toBe(1);
         expect(asked[0]).toContain("1 note (1 open)");
-        expect(asked[0]).toContain("its token will stop working");
+        expect(asked[0]).toContain("2 tokens will stop working");
         expect(await inStore(dir, (s) => s.getProject("shop"))).not.toBeNull();
 
         expect(
@@ -170,5 +222,22 @@ describe("notato token", () => {
             'unknown token command "crate"'
         );
         expect(existsSync(dir)).toBe(false);
+    });
+});
+
+// File modes mean nothing on Windows.
+describe.skipIf(process.platform === "win32")("the data directory the CLI makes", () => {
+    const modeOf = (path: string) => statSync(path).mode & 0o777;
+
+    it("is readable by this user only, with its database, whichever command makes it", async () => {
+        const byProject = join(tmp(), "data");
+        expect(await runProjectCommand(["create", "shop", "-d", byProject])).toBe(0);
+        expect(modeOf(byProject)).toBe(0o700);
+        expect(modeOf(join(byProject, "notato.db"))).toBe(0o600);
+
+        const byToken = join(tmp(), "data");
+        expect(await runTokenCommand(["list", "-d", byToken])).toBe(0);
+        expect(modeOf(byToken)).toBe(0o700);
+        expect(modeOf(join(byToken, "notato.db"))).toBe(0o600);
     });
 });

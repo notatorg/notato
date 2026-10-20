@@ -1,4 +1,5 @@
 import type { Rect, Target } from "@notato/schema";
+import { selectionText } from "../plugins/identity-dom.ts";
 import { h, isElement } from "./dom.ts";
 import { createFrames, type FrameJob, type Frames } from "./frame.ts";
 import { type Box, boxToTop, viewportRect, watchFrames } from "./frames.ts";
@@ -409,7 +410,9 @@ export function createPicker(options: PickerOptions): Picker {
 
         const moved = Math.hypot(ev.clientX - start.x, ev.clientY - start.y);
         const selection = win.getSelection();
-        const text = selection && !selection.isCollapsed ? selection.toString().trim() : "";
+        // Only what a note may record of it. With nothing left (all of it private, or typed into), the press is picked
+        // as a drag or a click is.
+        const text = selection && !selection.isCollapsed ? selectionText(selection).trim() : "";
 
         if (text && moved > SELECT_THRESHOLD && start.onText && selection) {
             const range = selection.getRangeAt(0);

@@ -503,6 +503,7 @@ export function Overlay(props: {
                         <Composer
                             key={shownSelection.id}
                             title={shownSelection.title}
+                            sharedByDefault={notato.mode === "test"}
                             subtitle={shownSelection.subtitle}
                             screenshotsOff={!notato.screenshotsOn}
                             canParent={!!shownSelection.picked.element.parent}

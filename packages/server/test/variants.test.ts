@@ -489,6 +489,7 @@ describe("webhooks for variants", () => {
         });
         defer(() => dispatcher.stop());
         const { annotation } = await t.add();
+        await t.backend.update(annotation.id, { visibility: "shared" });
         await t.backend.offerVariants(annotation.id, OFFER);
         await t.backend.chooseVariant(annotation.id, "Stacked");
         await dispatcher.flush();

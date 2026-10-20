@@ -67,7 +67,7 @@ enum SourcePaths {
         var candidate = directory
         var found = ""
         while candidate.count > 1 {
-            if FileManager.default.fileExists(atPath: candidate + "/.git/HEAD") {
+            if FileManager.default.fileExists(atPath: candidate + "/.git") {
                 found = candidate
                 break
             }

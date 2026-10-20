@@ -148,18 +148,22 @@ async function main() {
 
     const save = el("button", { class: "b primary", type: "button" }, "Save");
     save.addEventListener("click", () => void apply(sw.getAttribute("aria-checked") === "true"));
-    const check = el("button", { class: "b", type: "button" }, "Check server");
+    const check = el("button", { class: "b", type: "button" }, "Check connection");
     check.addEventListener("click", async () => {
         say("Checking…");
-        const target = serverOrigin(server.value.trim() || DEFAULT_SERVER);
-        if (!target) return say("That is not a server address.", false);
+        const { server: target, project: projectId, token: projectToken } = current();
+        const base = serverOrigin(target);
+        if (!base || base === "null") return say("That is not a server address.", false);
+        const granted = await chrome.permissions.request({ origins: [`${base}/*`] });
+        if (!granted) return say("Notato needs permission to reach the server.", false);
         const reply = (await chrome.runtime
-            .sendMessage({ kind: "ping", server: target })
+            .sendMessage({ kind: "check", server: target, project: projectId, token: projectToken })
             .catch(() => undefined)) as { ok: boolean; message?: string } | undefined;
-        if (reply?.ok) say("Found a Notato server there.");
+        if (reply?.ok) say(`Feedback can connect to project ${projectId} at ${target}.`);
         else
             say(
-                `Could not reach a Notato server at ${target}. Start one with: npx notato dev`,
+                reply?.message ??
+                    `Could not reach a Notato server at ${target}. Start one with: npx notato dev`,
                 false
             );
     });

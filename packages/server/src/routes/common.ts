@@ -1,9 +1,18 @@
+import type { Annotation } from "@notato/schema";
 import type { z } from "zod";
-import { type Authenticator, canAccessProject, isAdmin, type Principal } from "../auth.ts";
+import {
+    type AuthProvider,
+    accessibleProjects,
+    canAccessProject,
+    isAdmin,
+    type Principal,
+} from "../auth.ts";
 import { type LocalBackend, RequestError } from "../backend.ts";
 import { sameOrigin } from "../cors.ts";
 import type { AppOptions, RequestInfo } from "../http.ts";
-import { type AnnotationFilter, PROJECT_ID } from "../storage.ts";
+import { type AnnotationFilter, PROJECT_ID, type TokenRecord, tokenPurpose } from "../storage.ts";
+import { TeamCoordinator, workId } from "../team.ts";
+import { fromOutside } from "../tunnel.ts";
 import type { EventStreams } from "./events.ts";
 
 // What the route modules share: the context `createApp` makes once, the request as a route sees it, the responses
@@ -13,7 +22,7 @@ import type { EventStreams } from "./events.ts";
 export interface AppContext {
     backend: LocalBackend;
     /** Accounts and tokens. Absent on a server without logins (`notato dev`). */
-    auth?: Authenticator;
+    auth?: AuthProvider;
     options: AppOptions;
     /** The largest upload each kind of request may carry, in bytes. */
     limits: { upload: number; bundle: number };
@@ -61,6 +70,71 @@ export const notFound = () => json({ error: "not found" }, 404);
 
 export const noContent = () => new Response(null, { status: 204 });
 
+/** An agent credential never reads notes that people have kept between themselves. */
+export const isAgentToken = (principal: Principal) =>
+    Boolean(
+        principal.agentSession ||
+            (principal.kind === "token" && tokenPurpose(principal) === "agent")
+    );
+
+export const feedbackActorId = (principal: Principal) =>
+    principal.feedbackActorId ??
+    (principal.kind === "token" ? `token:${principal.tokenId}` : principal.username);
+
+export const forReader = (
+    principal: Principal,
+    filter: AnnotationFilter = {}
+): AnnotationFilter => {
+    const feedbackScope = filter.feedbackScope ?? (isAgentToken(principal) ? "mine" : "all");
+    const feedback = { feedbackScope, feedbackActorId: feedbackActorId(principal) } as const;
+    return principal.developmentContextId
+        ? {
+              ...filter,
+              ...feedback,
+              workContext: principal.developmentContextId,
+              legacyOnly: undefined,
+              ...(isAgentToken(principal) ? { peopleOnly: false as const } : {}),
+          }
+        : isAgentToken(principal)
+          ? { ...filter, ...feedback, workContext: undefined, legacyOnly: true, peopleOnly: false }
+          : { ...filter, ...feedback };
+};
+
+export async function canReadFeedback(
+    principal: Principal,
+    annotation: Annotation,
+    backend: LocalBackend,
+    requestedScope?: AnnotationFilter["feedbackScope"]
+) {
+    if (
+        !canAccessProject(principal, annotation.projectId) ||
+        (isAgentToken(principal) && annotation.peopleOnly) ||
+        (annotation.visibility === "personal" &&
+            annotation.createdBy !== feedbackActorId(principal))
+    )
+        return false;
+    const scope = requestedScope ?? (isAgentToken(principal) ? "mine" : "all");
+    const visibility = annotation.visibility ?? "shared";
+    const actor = feedbackActorId(principal);
+    if (scope === "mine" && (visibility !== "personal" || annotation.createdBy !== actor))
+        return false;
+    if (scope === "shared" && visibility !== "shared") return false;
+    if (scope === "all" && visibility === "personal" && annotation.createdBy !== actor)
+        return false;
+    if (principal.developmentContextId) {
+        const c = await new TeamCoordinator(backend.store).context(principal.developmentContextId);
+        if (!c || c.archived || c.projectId !== annotation.projectId) return false;
+    }
+    const work = backend.store.coordination
+        ? await new TeamCoordinator(backend.store).work(workId(annotation))
+        : null;
+    return principal.developmentContextId
+        ? work?.contextId === principal.developmentContextId
+        : isAgentToken(principal)
+          ? !work?.contextId
+          : true;
+}
+
 /** Markdown as it is served: text, never cached, and never sniffed into something else. */
 export function markdown(body: string): Response {
     return new Response(body, {
@@ -89,14 +163,45 @@ export function zip({
     });
 }
 
+/** The largest JSON body any route reads: notes and bundles come as forms and zips, not JSON. */
+const JSON_MAX = 65536;
+
 /** The body as JSON, checked against `schema`. A body that is not JSON, or not that shape, is a 400 that says why. */
 export async function readJson<T>(req: Request, schema: z.ZodType<T>): Promise<T> {
     let body: unknown;
+    if (Number(req.headers.get("content-length") ?? 0) > JSON_MAX)
+        throw new RequestError("JSON body exceeds 64 KiB", 413);
+    const reader = req.body?.getReader();
+    let source = "";
+    let size = 0;
+    const decoder = new TextDecoder();
+    if (reader) {
+        try {
+            for (;;) {
+                const chunk = await reader.read();
+                if (chunk.done) break;
+                size += chunk.value.byteLength;
+                if (size > JSON_MAX) {
+                    await reader.cancel();
+                    throw new RequestError("JSON body exceeds 64 KiB", 413);
+                }
+                source += decoder.decode(chunk.value, { stream: true });
+            }
+            source += decoder.decode();
+        } finally {
+            reader.releaseLock();
+        }
+    }
     try {
-        body = await req.json();
+        body = JSON.parse(source);
     } catch {
         throw new RequestError("body must be JSON");
     }
+    return checkBody(body, schema);
+}
+
+/** A body already read, checked against `schema` as `readJson` checks one: a 400 that says what is wrong. */
+export function checkBody<T>(body: unknown, schema: z.ZodType<T>): T {
     const parsed = schema.safeParse(body);
     if (!parsed.success) {
         const issue = parsed.error.issues[0];
@@ -104,6 +209,13 @@ export async function readJson<T>(req: Request, schema: z.ZodType<T>): Promise<T
     }
     return parsed.data;
 }
+
+/** A token record as it is shown: everything but the hash of the token. */
+export const shownToken = ({ tokenHash: _hash, ...record }: TokenRecord) => record;
+
+/** A token record as this server shows it, by its `tokenRules` (see `AppOptions`). */
+export const showToken = (app: AppContext, record: TokenRecord): object =>
+    app.options.tokenRules?.shown?.(record) ?? shownToken(record);
 
 // ---- who may do what -------------------------------------------------------------------------------------------
 
@@ -123,6 +235,15 @@ export function assertAdmin(principal: Principal | null): void {
     if (!principal || !isAdmin(principal)) throw new RequestError("admin login required", 403);
 }
 
+/**
+ * Whether the request is from whoever runs the server, who may see how it is set up (where its settings file is, what
+ * is wrong with it): an admin, and on a server without logins someone at this machine, not an app through the dev
+ * tunnel or a proxy.
+ */
+export function isOperator(req: Request, principal: Principal, app: AppContext): boolean {
+    return isAdmin(principal) && (app.auth !== undefined || !fromOutside(req));
+}
+
 /** The one project a token is for; undefined for an admin or a `*` token, which may use them all. */
 export function tokenProject(principal: Principal): string | undefined {
     return principal.kind === "token" && principal.projectId !== "*"
@@ -130,12 +251,31 @@ export function tokenProject(principal: Principal): string | undefined {
         : undefined;
 }
 
-/** A filter a project token cannot widen beyond its own project: naming another is refused. */
+/**
+ * The project a request is for. Asking for one the credential cannot reach is refused; leaving it out means the
+ * credential's only project, and for one that reaches several it must be named. Undefined only for a credential that
+ * reaches them all and was not told.
+ */
+export function onlyProject(principal: Principal, asked?: string): string | undefined {
+    if (asked !== undefined) assertAccess(principal, asked);
+    const reach = accessibleProjects(principal);
+    if (reach === undefined || asked !== undefined) return asked;
+    if (reach.length === 1) return reach[0];
+    throw new RequestError(
+        reach.length
+            ? "name a project: this credential reaches several"
+            : "no project is reachable",
+        403
+    );
+}
+
+/** A filter a credential cannot widen beyond the projects it reaches: naming another is refused. */
 export function withinReach(principal: Principal, filter: AnnotationFilter): AnnotationFilter {
-    const own = tokenProject(principal);
-    if (own === undefined) return filter;
-    for (const asked of [filter.projectId ?? []].flat()) assertAccess(principal, asked);
-    return { ...filter, projectId: own };
+    const reach = accessibleProjects(principal);
+    if (reach === undefined) return filter;
+    const asked = [filter.projectId ?? []].flat();
+    for (const id of asked) assertAccess(principal, id);
+    return { ...filter, projectId: asked.length ? asked : reach };
 }
 
 /**

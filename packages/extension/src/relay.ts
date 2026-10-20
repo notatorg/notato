@@ -2,7 +2,6 @@ import {
     type BackgroundReply,
     CHANNEL,
     type PageConfig,
-    type SiteConfig,
     type StreamEvent,
     type StreamStart,
     type ToBackground,
@@ -12,9 +11,6 @@ import {
 
 /** A message without the envelope every one carries, for each kind of message on its own (a plain Omit would merge them). */
 type WithoutEnvelope<T> = T extends unknown ? Omit<T, "channel" | "to"> : never;
-
-/** What the page is told of its settings: all but the token, which only the background worker uses. */
-const forPage = ({ token: _token, ...config }: SiteConfig): PageConfig => config;
 
 /** A long-lived connection to the background worker, as much of `chrome.runtime.Port` as is used. */
 export interface RelayPort {
@@ -32,8 +28,11 @@ export interface RelayOptions {
     ask(message: ToBackground): Promise<BackgroundReply | undefined>;
     /** Opens a stream through the background worker. */
     connect(): RelayPort;
-    /** This site's settings, from the extension's storage. */
-    loadConfig(): Promise<SiteConfig | null>;
+    /**
+     * This site's settings, as the page may know them, from the background worker: a content script cannot read the
+     * extension's storage (every site's token is there), so the relay never holds a token at all.
+     */
+    loadConfig(): Promise<PageConfig | null>;
 }
 
 /**
@@ -48,8 +47,7 @@ export function createRelay(options: RelayOptions): { stop(): void } {
     const stop = options.fromPage((message) => {
         if (message.kind === "hello") {
             void options.loadConfig().then(
-                (config) =>
-                    say({ kind: "config", config: config?.enabled ? forPage(config) : null }),
+                (config) => say({ kind: "config", config: config?.enabled ? config : null }),
                 () => say({ kind: "config", config: null })
             );
         } else if (message.kind === "fetch") {

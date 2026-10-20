@@ -106,8 +106,9 @@ struct Ring<Element> {
     var inOrder: [Element] { Array(items[start...] + items[..<start]) }
 }
 
-/// Records the app's HTTP requests (method, URL without its query, status, duration) for `context.network`.
-/// Add it to a session the app makes: `configuration.protocolClasses = [NotatoNetworkRecorder.self] + (configuration.protocolClasses ?? [])`.
+/// Records the app's HTTP requests (method, URL without its query or a user name and password, status, duration) for
+/// `context.network`. Add it to a session the app makes:
+/// `configuration.protocolClasses = [NotatoNetworkRecorder.self] + (configuration.protocolClasses ?? [])`.
 ///
 /// A request it records is made again through Notato's own session, which hands each part back to the app's session
 /// as it comes: the response, the body a piece at a time (nothing is held back until the end), each redirect, which
@@ -116,10 +117,12 @@ struct Ring<Element> {
 /// was given, a stream included.
 ///
 /// What cannot be carried over: the app's session configuration itself, as a protocol is never told which session it
-/// serves. Notato's session has the system's defaults (the shared cookie store, cache and credential store), with
-/// each request's own headers, timeout and cache policy. Upload tasks (`upload(for:from:)`, `upload(for:fromFile:)`),
-/// whose body a protocol cannot read, and stream and web socket tasks are not recorded: they go to the network as they
-/// would without it.
+/// serves. Notato's session is ephemeral, so nothing it loads is cached on disk and no credential is kept, whatever
+/// the app's session would have done; it uses the system's shared cookie store, as a session of the system's defaults
+/// does (a session adds no cookie of its own to a request a protocol loads, nor keeps one it sets). Each request keeps
+/// its own headers, timeout and cache policy. Upload tasks (`upload(for:from:)`, `upload(for:fromFile:)`), whose body
+/// a protocol cannot read, and stream and web socket tasks are not recorded: they go to the network as they would
+/// without it.
 public final class NotatoNetworkRecorder: URLProtocol, @unchecked Sendable {
     /// The most requests kept: the latest.
     static let limit = 50
@@ -132,10 +135,30 @@ public final class NotatoNetworkRecorder: URLProtocol, @unchecked Sendable {
     static var relay: Relay {
         lock.withLock {
             if let current { return current }
-            let made = Relay(configuration: .default)
+            let made = Relay(configuration: relayConfiguration())
             current = made
             return made
         }
+    }
+
+    /// Ephemeral: what a request brings back is cached in memory only, and a credential the app's delegate answers a
+    /// challenge with is not kept, so recording a session the app keeps off the disk does not put its traffic there.
+    /// Cookies are the system's shared store's, which only Notato's session can apply to a request it loads.
+    static func relayConfiguration() -> URLSessionConfiguration {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.httpCookieStorage = .shared
+        return configuration
+    }
+
+    /// A request's URL as notes carry it: without its query and fragment, which hold tokens and search terms, nor a
+    /// user name and password written into it. One that cannot be taken apart is recorded by its path alone.
+    static func shown(_ url: URL) -> String {
+        guard var parts = URLComponents(url: url, resolvingAgainstBaseURL: false) else { return url.path }
+        parts.query = nil
+        parts.fragment = nil
+        parts.user = nil
+        parts.password = nil
+        return parts.string ?? url.path
     }
 
     static func useRelay(_ relay: Relay) { lock.withLock { current = relay } }
@@ -246,12 +269,7 @@ public final class NotatoNetworkRecorder: URLProtocol, @unchecked Sendable {
             return (self.started, !recorded)
         }
         guard first else { return }
-        let url = request.url.map { url -> String in
-            var parts = URLComponents(url: url, resolvingAgainstBaseURL: false)
-            parts?.query = nil
-            parts?.fragment = nil
-            return parts?.string ?? url.absoluteString
-        } ?? ""
+        let url = request.url.map(Self.shown) ?? ""
         Self.add(NetworkEntry(method: request.httpMethod ?? "GET", url: url, status: failed ? 0 : status,
                               durationMs: Int(Date().timeIntervalSince(started) * 1000), at: NotatoJSON.timestamp(started)))
     }

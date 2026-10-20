@@ -13,6 +13,10 @@ export function filterFromQuery(
     { whole = false }: { whole?: boolean } = {}
 ): AnnotationFilter {
     const filter: AnnotationFilter = {};
+    if (q.get("workSession")) filter.workSession = q.get("workSession")!.slice(0, 100);
+    if (q.get("work")) filter.workId = q.get("work")!.slice(0, 400);
+    if (q.get("context")) filter.workContext = q.get("context")!.slice(0, 200);
+    if (q.get("legacy") === "1") filter.legacyOnly = true;
     // Repeated for several (`?project=web&project=admin`): an agent can work on more than one.
     const projects = projectId ? [projectId] : q.getAll("project").filter(Boolean).slice(0, 50);
     if (projects.length) filter.projectId = projects.length === 1 ? projects[0] : projects;
@@ -23,6 +27,8 @@ export function filterFromQuery(
         if (parsed.some((p) => !p.success)) throw new RequestError(`invalid status "${status}"`);
         filter.status = parsed.map((p) => (p as { data: z.infer<typeof Status> }).data);
     }
+    const review = q.get("review");
+    if (review) filter.reviewId = review.slice(0, 128);
     const route = q.get("route");
     if (route) filter.route = route;
     const severity = q.get("severity");
@@ -55,6 +61,13 @@ export function filterFromQuery(
     if (q.get("lastReply") === "human") filter.lastReplyBy = "human";
     if (q.get("diagnostic") === "0") filter.diagnostic = false;
     if (q.get("peopleOnly") === "0") filter.peopleOnly = false;
+    if (q.get("sessionId")) filter.sessionId = q.get("sessionId")!;
+    const feedbackScope = q.get("scope");
+    if (feedbackScope) {
+        if (feedbackScope !== "mine" && feedbackScope !== "shared" && feedbackScope !== "all")
+            throw new RequestError(`invalid feedback scope "${feedbackScope}"`);
+        filter.feedbackScope = feedbackScope;
+    }
     if (q.get("unhanded") === "1") filter.unhanded = true;
     const exclude = q.get("exclude");
     if (exclude) filter.excludeIds = exclude.split(",").filter(Boolean).slice(0, 200);
@@ -72,10 +85,15 @@ export function filterFromQuery(
 /** The inverse of `filterFromQuery`, for clients that talk to the HTTP API. */
 export function filterToQuery(filter: AnnotationFilter): URLSearchParams {
     const q = new URLSearchParams();
+    if (filter.workSession) q.set("workSession", filter.workSession);
+    if (filter.workId) q.set("work", filter.workId);
+    if (filter.workContext) q.set("context", filter.workContext);
+    if (filter.legacyOnly) q.set("legacy", "1");
     if (filter.projectId !== undefined)
         for (const p of [filter.projectId].flat()) q.append("project", p);
     if (filter.status !== undefined)
         q.set("status", (Array.isArray(filter.status) ? filter.status : [filter.status]).join(","));
+    if (filter.reviewId !== undefined) q.set("review", filter.reviewId);
     if (filter.route !== undefined) q.set("route", filter.route);
     if (filter.severity !== undefined) q.set("severity", filter.severity);
     if (filter.intent !== undefined)
@@ -90,6 +108,8 @@ export function filterToQuery(filter: AnnotationFilter): URLSearchParams {
     if (filter.lastReplyBy) q.set("lastReply", filter.lastReplyBy);
     if (filter.diagnostic === false) q.set("diagnostic", "0");
     if (filter.peopleOnly === false) q.set("peopleOnly", "0");
+    if (filter.sessionId) q.set("sessionId", filter.sessionId);
+    if (filter.feedbackScope) q.set("scope", filter.feedbackScope);
     if (filter.unhanded) q.set("unhanded", "1");
     if (filter.limit !== undefined) q.set("limit", String(filter.limit));
     return q;

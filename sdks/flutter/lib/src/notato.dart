@@ -87,6 +87,7 @@ class Notato extends StatefulWidget {
     this.mode = NotatoMode.dev,
     this.server,
     this.token,
+    this.allowTokenInRelease = false,
     this.appName,
     this.appVersion,
     this.author,
@@ -120,8 +121,14 @@ class Notato extends StatefulWidget {
   /// declares (`--dart-define=NOTATO_SERVER=…`) wins over it.
   final String? server;
 
-  /// A project token (`notato_…`), for a shared server (`notato serve`).
+  /// A project token (`notato_…`), for a shared server (`notato serve`). Sent from debug builds only, unless
+  /// [allowTokenInRelease] says otherwise.
   final String? token;
+
+  /// Send [token] from a profile or release build too. Only for a capture-only project token, which sends notes and
+  /// reads nothing back (`notato token create shop --purpose app --capture-only`): whoever has the app has the token. A
+  /// dev tunnel's device token, and any token for a dev tunnel, is never sent from such a build.
+  final bool allowTokenInRelease;
 
   /// The app's name, recorded on every note. Default: `Flutter app`.
   final String? appName;
@@ -147,7 +154,9 @@ class Notato extends StatefulWidget {
   /// The corner the toolbar starts in. People can drag it; where they leave it is remembered.
   final NotatoPosition toolbarPosition;
 
-  /// Take screenshots. A server with screenshots off drops them either way.
+  /// Take screenshots. With a server set (test mode's too), none is taken until it has said it takes them, and a server
+  /// with screenshots off wins either way. Android's `FLAG_SECURE` cannot be seen from here: wrap a screen the app
+  /// keeps out of screenshots in `NotatoMask`, which covers it in Notato's.
   final bool screenshots;
 
   /// Cover text fields in screenshots and leave their values out of notes. Default: on in test and agent mode. Password
@@ -265,6 +274,7 @@ class _NotatoState extends State<Notato> with WidgetsBindingObserver implements 
     mode: widget.mode,
     server: readsServer ? declarations.server ?? widget.server : widget.server,
     token: widget.token,
+    allowTokenInRelease: widget.allowTokenInRelease,
     appName: widget.appName,
     appVersion: widget.appVersion,
     author: widget.author,
@@ -405,7 +415,7 @@ class _NotatoState extends State<Notato> with WidgetsBindingObserver implements 
 
   /// The screenshots for a note: the widget on its own (masked), then the screen as the person saw it, outlined and
   /// numbered. [plainTaken] is told once the first is taken, for the outline (and the composer) to be shown: the
-  /// outlined one is taken under them. The two pictures of the whole screen are let go of as soon as the PNGs are made.
+  /// outlined one is taken under them. The two pictures of the whole screen are let go of as soon as the encoded images are made.
   Future<_Shots> _photograph(Picked picked, int pin, String id, {VoidCallback? plainTaken}) async {
     var told = false;
     void tell() {
@@ -414,9 +424,11 @@ class _NotatoState extends State<Notato> with WidgetsBindingObserver implements 
       plainTaken?.call();
     }
 
+    // Whether the server takes them, asked again first when its last answer is a few seconds old.
+    final allowed = await runtime.screenshotsAllowed();
     final boundary = _shotKey.currentContext?.findRenderObject();
     final app = _appBox;
-    if (!mounted || !runtime.screenshotsOn || boundary is! RenderRepaintBoundary || app == null) {
+    if (!mounted || !allowed || boundary is! RenderRepaintBoundary || app == null) {
       tell();
       return (full: null, crop: null);
     }
@@ -427,6 +439,31 @@ class _NotatoState extends State<Notato> with WidgetsBindingObserver implements 
     ui.Image? plain;
     ui.Image? outlined;
     try {
+      if (runtime.derivedScreenshots) {
+        setState(() => _capturing = (rect: rect, pin: pin, covers: covers));
+        await WidgetsBinding.instance.endOfFrame;
+        final captured = grab(boundary, ratio);
+        tell();
+        outlined = await captured;
+        if (!mounted || outlined == null) return (full: null, crop: null);
+        final area = Rect.fromLTRB(
+          rect.left * ratio,
+          rect.top * ratio,
+          rect.right * ratio,
+          rect.bottom * ratio,
+        ).inflate(2 * ratio).intersect(Rect.fromLTWH(0, 0, outlined.width.toDouble(), outlined.height.toDouble()));
+        Map<String, int>? cropRect;
+        if (!area.isEmpty) {
+          final x = area.left.floor(), y = area.top.floor();
+          cropRect = {
+            'x': x,
+            'y': y,
+            'w': math.min(outlined.width - x, math.max(1, area.width.round())),
+            'h': math.min(outlined.height - y, math.max(1, area.height.round())),
+          };
+        }
+        return (full: await pngOf(outlined, '$id-full', cropRect: cropRect), crop: null);
+      }
       // The screen as it is already drawn will do, unless covers or an outline must come off it first.
       final redraw = covers.isNotEmpty || _selection != null || !kDebugMode || boundary.debugNeedsPaint;
       setState(() => _capturing = (rect: Rect.zero, pin: pin, covers: covers));
@@ -548,6 +585,7 @@ class _NotatoState extends State<Notato> with WidgetsBindingObserver implements 
         intent: draft.intent,
         severity: draft.severity,
         peopleOnly: draft.peopleOnly,
+        visibility: draft.visibility,
         id: chosen.id,
         pin: chosen.pin,
         full: shots.full,
@@ -914,6 +952,7 @@ class _NotatoState extends State<Notato> with WidgetsBindingObserver implements 
                         title: _title(selection.picked),
                         subtitle: _subtitle(selection.picked),
                         screenshotsOff: !runtime.screenshotsOn,
+                        sharedByDefault: runtime.mode == NotatoMode.test,
                         onParent: _parent,
                         onCancel: _cancel,
                         onSend: _send,

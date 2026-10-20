@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
@@ -9,9 +10,49 @@ import 'package:notato/src/serial.dart';
 import 'package:notato/src/tree.dart';
 
 import 'harness.dart';
+import 'helpers.dart';
 import 'shop.dart';
 
 void main() {
+  test('compression keeps only smaller WebP at the original dimensions, with a safe PNG fallback', () async {
+    final png = Uint8List(100);
+    final webp = Uint8List(40);
+    webp.setRange(0, 4, 'RIFF'.codeUnits);
+    webp.setRange(8, 16, 'WEBPVP8X'.codeUnits);
+    final view = ByteData.sublistView(webp);
+    view.setUint32(4, 32, Endian.little);
+    view.setUint32(16, 10, Endian.little);
+    view.setUint32(24, 319, Endian.little);
+    webp[27] = 479 & 255;
+    webp[28] = 479 >> 8;
+    final encoded = await compressScreenshot(png, 320, 480, encoder: (_, _, _) async => webp);
+    expect(encoded.mime, 'image/webp');
+    expect(encoded.bytes, webp);
+    expect(
+      (await compressScreenshot(png, 320, 480, encoder: (_, _, _) async => throw UnsupportedError('No encoder'))).bytes,
+      same(png),
+    );
+    expect((await compressScreenshot(png, 160, 240, encoder: (_, _, _) async => webp)).mime, 'image/png');
+    expect((await compressScreenshot(png, 320, 480, encoder: (_, _, _) async => Uint8List(200))).mime, 'image/png');
+  });
+  testWidgets('a capable server gets one masked capture and crop coordinates', (tester) async {
+    final server = FakeServer()..derivedScreenshots = true;
+    await tester.pumpWidget(app(server, screenshots: true));
+    await settle(tester);
+    server.hello();
+    await settle(tester);
+    final note = await drive(tester, notato.annotate('#add-to-basket', 'One image'));
+    final shots = note['screenshots'] as Map;
+    expect(shots.containsKey('crop'), isFalse);
+    expect(server.files, hasLength(1));
+    final crop = ((note['context'] as Map)['screenshot'] as Map)['cropRect'] as Map;
+    expect(crop['w'], greaterThan(0));
+    expect(crop['h'], greaterThan(0));
+    final validation = await tester.runAsync(() => validate('annotation', note));
+    expect(validation?.ok, isTrue, reason: validation?.output);
+    await unmount(tester);
+  });
+
   testWidgets('photographs the app, and a part of it', (tester) async {
     final key = GlobalKey();
     await tester.pumpWidget(

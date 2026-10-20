@@ -6,6 +6,7 @@ import type {
     Bundle,
     ElementIdentity,
     Environment,
+    FeedbackVisibility,
     Intent,
     Mode,
     Rect,
@@ -20,6 +21,9 @@ export interface DraftAnnotation {
     number: number;
     projectId: string;
     mode: Mode;
+    visibility?: FeedbackVisibility;
+    sessionId?: string;
+    localOnly?: boolean;
     author: Author;
     createdAt: string;
     url: string;
@@ -92,6 +96,13 @@ export interface CreateInput {
     intent?: Intent;
     /** People only: the note and its thread are between people, and never reach the agent. */
     peopleOnly?: boolean;
+    /** Defaults to personal in Dev and shared in Test. */
+    visibility?: FeedbackVisibility;
+    sessionId?: string;
+    localOnly?: boolean;
+    review?: Annotation["review"];
+    /** Already normalised PNG/WebP references. Explicit uploads fail the note if they cannot be attached. */
+    references?: Array<{ blob: Blob; name: string; w: number; h: number }>;
     steps?: AgentStep[];
     /** Real pixels of the viewport from a driver; see `DraftAnnotation.screenshot`. */
     screenshot?: Blob;

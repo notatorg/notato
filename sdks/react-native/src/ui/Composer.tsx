@@ -27,11 +27,13 @@ export interface Draft {
     intent?: Intent;
     severity?: Severity;
     peopleOnly: boolean;
+    visibility: "personal" | "shared";
 }
 
 /** The note being written: a floating card, away from what it is about. */
 export function Composer(props: {
     title: string;
+    sharedByDefault?: boolean;
     subtitle?: string;
     screenshotsOff: boolean;
     /** Whether there is a view around the selection for Parent to select. */
@@ -44,6 +46,7 @@ export function Composer(props: {
     const [comment, setComment] = useState("");
     const [intent, setIntent] = useState<Intent>();
     const [severity, setSeverity] = useState<Severity>();
+    const [shared, setShared] = useState(Boolean(props.sharedByDefault));
     const [peopleOnly, setPeopleOnly] = useState(false);
     const input = useRef<TextInput>(null);
     // autoFocus is unreliable while the card animates in: focus once it is laid out.
@@ -94,6 +97,13 @@ export function Composer(props: {
             <Chips<Intent> options={INTENTS} value={intent} onChange={setIntent} />
             <Chips<Severity> options={SEVERITIES} value={severity} onChange={setSeverity} />
             <FlagToggle
+                title="Share with project"
+                hint="Project members can see this feedback."
+                value={shared}
+                onChange={setShared}
+                testID="NotatoShared"
+            />
+            <FlagToggle
                 title={PEOPLE_ONLY.title}
                 hint={PEOPLE_ONLY.hint}
                 value={peopleOnly}
@@ -112,7 +122,13 @@ export function Composer(props: {
                     accessibilityState={{ disabled: !ready }}
                     disabled={!ready}
                     onPress={() =>
-                        props.onSend({ comment: comment.trim(), intent, severity, peopleOnly })
+                        props.onSend({
+                            comment: comment.trim(),
+                            intent,
+                            severity,
+                            peopleOnly,
+                            visibility: shared ? "shared" : "personal",
+                        })
                     }
                     style={({ pressed }) => [
                         styles.send,

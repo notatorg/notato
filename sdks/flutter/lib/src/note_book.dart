@@ -1,5 +1,6 @@
 import 'annotation.dart';
 import 'controller.dart';
+import 'hidden.dart';
 
 /// A screen's notes, numbered as their pins are.
 typedef ScreenNotes = List<({int number, NoteRecord record})>;
@@ -13,6 +14,14 @@ int _madeOrder(NoteRecord a, NoteRecord b) {
 /// Every note Notato knows of, in the order it came to know them, found by id and by screen. The list is replaced whole
 /// on each change (the app reads it), never changed in place.
 class NoteBook {
+  Set<String> _hidden = {};
+
+  void setHidden(Set<String> ids) {
+    if (identical(ids, _hidden)) return;
+    _hidden = ids;
+    _screens.clear();
+  }
+
   List<NoteRecord> _records = const [];
 
   /// Where each note is in [_records], by id.
@@ -72,7 +81,11 @@ class NoteBook {
       final here = _records.where((r) => r.route == key).toList()..sort(_madeOrder);
       return here.isEmpty
           ? const <({int number, NoteRecord record})>[]
-          : [for (final (i, r) in here.indexed) (number: i + 1, record: r)];
+          : [
+              for (final (i, r) in here.indexed)
+                if (!(HiddenAnnotations.isCompleted(r.annotation['status']) && _hidden.contains(r.id)))
+                  (number: i + 1, record: r),
+            ];
     }();
   }
 

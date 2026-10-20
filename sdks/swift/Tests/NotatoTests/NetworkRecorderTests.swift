@@ -57,6 +57,19 @@ struct NetworkRecorderTests {
         #expect(task.state == .running, "still going")
     }
 
+    @Test func aRecordedURLCarriesNoQueryNorAUserNameAndPassword() {
+        #expect(NotatoNetworkRecorder.shown(URL(string: "https://dom:secret@api.example.com:8443/v1/orders?token=abc#top")!)
+            == "https://api.example.com:8443/v1/orders")
+        #expect(NotatoNetworkRecorder.shown(URL(string: "http://app.test/stream?secret=1")!) == "http://app.test/stream")
+    }
+
+    @Test func notatosOwnSessionKeepsNothingOnDiskButUsesTheSharedCookies() {
+        let configuration = NotatoNetworkRecorder.relayConfiguration()
+        #expect(configuration.urlCache?.diskCapacity == 0, "cached in memory only")
+        #expect(configuration.urlCredentialStorage !== URLCredentialStorage.shared, "no credential kept")
+        #expect(configuration.httpCookieStorage === HTTPCookieStorage.shared, "as the app's own default session's")
+    }
+
     @Test func uploadTasksAndSocketsAreLeftToTheNetwork() {
         let session = URLSession(configuration: .ephemeral)
         defer { session.invalidateAndCancel() }

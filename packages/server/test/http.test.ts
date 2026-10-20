@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from "bun:test";
+import { networkInterfaces } from "node:os";
 import { Annotation } from "@notato/schema";
-import { hostAllowed, isPrivateHost, originAllowed } from "../src/index.ts";
+import { hostAllowed, isOwnAddress, isPrivateHost, originAllowed } from "../src/index.ts";
 import { annotationFixture, ingest, makeApp, multipart } from "./helpers.ts";
 
 let ctx: ReturnType<typeof makeApp>;
@@ -287,7 +288,7 @@ describe("reading, updating and deleting", () => {
         const early = await patch({ status: "revert_requested", note: "undo" });
         expect(early.status).toBe(409);
         expect(((await early.json()) as { error: string }).error).toContain(
-            "only a resolved annotation"
+            "only a resolved change"
         );
 
         await patch({
@@ -381,17 +382,60 @@ describe("reading, updating and deleting", () => {
     });
 });
 
+/** This machine's own IPv4 address on a network, if it is on one. */
+const ownAddress = Object.values(networkInterfaces())
+    .flat()
+    .find((a) => a && a.family === "IPv4" && !a.internal)?.address;
+
+/** A private-network address that is some other device's, not this machine's. */
+const otherDevice =
+    ["192.168.231.77", "10.231.77.5", "172.29.77.5", "100.99.77.5"].find((a) => !isOwnAddress(a)) ??
+    "192.168.231.77";
+
 describe("origin, CORS and host protection", () => {
-    it("allows loopback and private-network origins, and exposes private-network preflight", async () => {
+    it("trusts pages this machine serves without logins, and answers their private-network preflight", async () => {
         ctx = makeApp();
-        const res = await ctx.call("/health", { headers: { origin: "http://192.168.1.20:5173" } });
-        expect(res.headers.get("access-control-allow-origin")).toBe("http://192.168.1.20:5173");
+        const pages = [
+            "http://localhost:5173",
+            "http://app.localhost:3000",
+            "http://127.0.0.1:8080",
+        ];
+        if (ownAddress) pages.push(`http://${ownAddress}:5173`);
+        for (const origin of pages) {
+            const res = await ctx.call("/health", { headers: { origin } });
+            expect(res.headers.get("access-control-allow-origin"), origin).toBe(origin);
+        }
         const preflight = await ctx.call("/projects/p/annotations", {
             method: "OPTIONS",
             headers: { origin: "http://localhost:5173" },
         });
         expect(preflight.status).toBe(204);
         expect(preflight.headers.get("access-control-allow-private-network")).toBe("true");
+    });
+
+    it("does not trust another device's page on the network without logins, unless it is listed", async () => {
+        ctx = makeApp();
+        const origin = `http://${otherDevice}:5173`;
+        const read = await ctx.call("/annotations", { headers: { origin } });
+        expect(read.headers.get("access-control-allow-origin")).toBeNull();
+        const preflight = await ctx.call("/projects/p/annotations", {
+            method: "OPTIONS",
+            headers: { origin },
+        });
+        expect(preflight.headers.get("access-control-allow-private-network")).toBeNull();
+        const a = annotationFixture();
+        const write = await ctx.call(`/projects/${a.projectId}/annotations`, {
+            method: "POST",
+            body: multipart(a),
+            headers: { origin },
+        });
+        expect(write.status).toBe(403);
+        expect(await ctx.backend.list({})).toEqual([]);
+        ctx.cleanup();
+
+        ctx = makeApp({ corsOrigins: [origin] });
+        const listed = await ctx.call("/health", { headers: { origin } });
+        expect(listed.headers.get("access-control-allow-origin")).toBe(origin);
     });
 
     it("sends no CORS headers to other origins", async () => {
@@ -451,6 +495,14 @@ describe("origin, CORS and host protection", () => {
             expect(isPrivateHost(h)).toBe(false);
         expect(originAllowed("not a url", [])).toBe(false);
         expect(originAllowed("https://x.dev", ["*"])).toBe(true);
+        // Another device on the network: trusted where every request needs a credential, not where none does.
+        const lan = `http://${otherDevice}:5173`;
+        expect(originAllowed(lan, [], "network")).toBe(true);
+        expect(originAllowed(lan, [], "machine")).toBe(false);
+        expect(originAllowed(lan, [])).toBe(false);
+        expect(originAllowed("http://localhost:5173", [], "listed")).toBe(false);
+        expect(isOwnAddress("example.com")).toBe(false);
+        if (ownAddress) expect(isOwnAddress(ownAddress)).toBe(true);
         expect(
             hostAllowed(new Request("http://x", { headers: { host: "myhost" } }), ["myhost"])
         ).toBe(true);

@@ -2,10 +2,14 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { NotatoError } from "../../src/client.ts";
 import { NotatoController } from "../../src/controller.ts";
 import { memoryStorage } from "../../src/storage.ts";
-import { fakeHost, fakeServer, start } from "./harness.ts";
+import { fakeHost, fakeServer, settle, start } from "./harness.ts";
+
+/** React Native's flag for a development build: tests run as a release build unless they set it. */
+const dev = globalThis as { __DEV__?: boolean };
 
 afterEach(() => {
     vi.restoreAllMocks();
+    delete dev.__DEV__;
 });
 
 describe("runtime choices", () => {
@@ -33,7 +37,7 @@ describe("runtime choices", () => {
         expect(second.getState().author).toBeUndefined();
     });
 
-    it("leave Notato off when a server is typed in while it is off", () => {
+    it("leave Notato off when a server is typed in while it is off", async () => {
         const { notato, server } = start({ project: "shop" });
         notato.disable();
         const follows = vi.mocked(server.transport.follow).mock.calls.length;
@@ -43,8 +47,10 @@ describe("runtime choices", () => {
             connection: "disabled",
             server: "http://localhost:4798",
         });
+        await settle();
         expect(server.transport.follow).toHaveBeenCalledTimes(follows);
         notato.enable();
+        await settle();
         expect(vi.mocked(server.transport.follow).mock.calls.at(-1)?.[0].server).toBe(
             "http://localhost:4798"
         );
@@ -91,20 +97,79 @@ describe("configuration", () => {
 });
 
 describe("the token", () => {
-    it("goes only to the configured server, never to one typed into the settings", () => {
+    it("goes only to the configured server, never to one typed into the settings", async () => {
+        dev.__DEV__ = true;
         const server = fakeServer();
         const { notato } = start(
             { project: "shop", server: "http://localhost:4799", token: "notato_secret" },
             server
         );
+        await settle();
         const follow = vi.mocked(server.transport.follow);
         expect(follow.mock.calls.at(-1)?.[0]).toMatchObject({
             server: "http://localhost:4799",
             token: "notato_secret",
         });
         notato.saveSettings({ name: "", screenshots: true, server: "http://evil.example.com" });
+        await settle();
         expect(follow.mock.calls.at(-1)?.[0].server).toBe("http://evil.example.com");
         expect(follow.mock.calls.at(-1)?.[0].token).toBeUndefined();
+    });
+
+    it("is not sent from a release build unless the app says so", async () => {
+        const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+        const server = fakeServer();
+        start(
+            { project: "shop", server: "https://notato.example.com", token: "notato_app" },
+            server
+        );
+        await settle();
+        expect(vi.mocked(server.transport.config).mock.calls.at(-1)?.[0].token).toBeUndefined();
+        expect(vi.mocked(server.transport.follow).mock.calls.at(-1)?.[0].token).toBeUndefined();
+        expect(warn).toHaveBeenCalledWith(expect.stringMatching(/does not send `token`/));
+
+        const allowed = fakeServer();
+        start(
+            {
+                project: "shop",
+                server: "https://notato.example.com",
+                token: "notato_capture",
+                allowTokenInRelease: true,
+            },
+            allowed
+        );
+        await settle();
+        expect(vi.mocked(allowed.transport.config).mock.calls.at(-1)?.[0].token).toBe(
+            "notato_capture"
+        );
+    });
+
+    it("never sends a dev tunnel's device token from a release build, even when allowed", async () => {
+        vi.spyOn(console, "warn").mockImplementation(() => undefined);
+        for (const [server, token] of [
+            ["https://abc123-4747.uks1.devtunnels.ms", "notato_project_token"],
+            ["https://notato.example.com", "notato_device_abc"],
+        ]) {
+            const fake = fakeServer();
+            start({ project: "shop", server, token, allowTokenInRelease: true }, fake);
+            await settle();
+            expect(vi.mocked(fake.transport.config).mock.calls.at(-1)?.[0].token).toBeUndefined();
+        }
+        // A development build is the developer's own: the device token is what reaches the tunnel.
+        dev.__DEV__ = true;
+        const fake = fakeServer();
+        start(
+            {
+                project: "shop",
+                server: "https://abc123-4747.uks1.devtunnels.ms",
+                token: "notato_device_abc",
+            },
+            fake
+        );
+        await settle();
+        expect(vi.mocked(fake.transport.config).mock.calls.at(-1)?.[0].token).toBe(
+            "notato_device_abc"
+        );
     });
 });
 

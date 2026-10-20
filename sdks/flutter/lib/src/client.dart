@@ -121,7 +121,13 @@ class NotatoClient {
         ..headers.addAll(_auth)
         ..fields['annotation'] = jsonEncode(annotation);
       for (final shot in shots) {
-        request.files.add(http.MultipartFile.fromBytes('asset:${shot.id}', shot.bytes, filename: '${shot.id}.png'));
+        request.files.add(
+          http.MultipartFile.fromBytes(
+            'asset:${shot.id}',
+            shot.bytes,
+            filename: '${shot.id}.${shot.mime == 'image/webp' ? 'webp' : 'png'}',
+          ),
+        );
       }
       return request;
     }, const Duration(seconds: 60)),
@@ -188,13 +194,17 @@ class NotatoClient {
       _call('POST', '$server/relay/${_segment(requestId)}/result', json: result);
 
   /// What the server says before anything is captured: whether it takes screenshots.
-  Future<bool?> screenshots() async {
+  Future<Map<String, Object?>> capabilities() async {
     final body = await _call(
       'GET',
       '$server/config?project=${_segment(project)}',
       timeout: const Duration(seconds: 10),
     );
-    final value = body is Map ? body['screenshots'] : null;
+    return body is Map ? body.cast<String, Object?>() : const {};
+  }
+
+  Future<bool?> screenshots() async {
+    final value = (await capabilities())['screenshots'];
     return value is bool ? value : null;
   }
 
@@ -260,8 +270,10 @@ class EventFollower {
 
     watch();
     try {
-      final request = http.Request('GET', Uri.parse('${_client._projectUrl}/events${_agent ? '?agent=1' : ''}'))
-        ..headers.addAll({..._client._auth, 'Accept': 'text/event-stream'});
+      final request = http.Request(
+        'GET',
+        Uri.parse('${_client._projectUrl}/events?fields=summary${_agent ? '&agent=1' : ''}'),
+      )..headers.addAll({..._client._auth, 'Accept': 'text/event-stream'});
       final res = await connection.send(request);
       if (res.statusCode == 200) {
         _wait = const Duration(seconds: 1);

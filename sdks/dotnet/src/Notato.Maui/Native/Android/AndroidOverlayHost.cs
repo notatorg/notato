@@ -175,6 +175,12 @@ internal sealed class AndroidOverlayHost : IOverlayHost, IElementGeometry
 
     public double KeyboardHeight => _keyboard;
 
+    public bool SecureWindow => IsSecure(_topWindow) || IsSecure(_activity.Window);
+
+    /// <summary>Whether a window has <c>FLAG_SECURE</c>: the system leaves it out of screenshots, and so does Notato.</summary>
+    private static bool IsSecure(AWindow? window) =>
+        window?.Attributes is { } attributes && attributes.Flags.HasFlag(WindowManagerFlags.Secure);
+
     public Size Size => _frame is null || _frame.Width == 0
         ? Size.Zero
         : new Size(_frame.Width / Density, _frame.Height / Density);

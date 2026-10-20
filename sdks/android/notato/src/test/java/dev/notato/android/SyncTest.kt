@@ -2,6 +2,7 @@ package dev.notato.android
 
 import dev.notato.android.internal.NoteRecord
 import dev.notato.android.internal.SendOutcome
+import dev.notato.android.internal.ServerPolicy
 import dev.notato.android.internal.SyncEvent
 import dev.notato.android.internal.captureThenScan
 import dev.notato.android.internal.decodeEvent
@@ -9,6 +10,7 @@ import dev.notato.android.internal.mergeList
 import dev.notato.android.internal.outcomeOf
 import dev.notato.android.internal.sendQueue
 import dev.notato.android.model.NotatoJson
+import dev.notato.android.model.ServerConfig
 import dev.notato.android.model.ServerEventData
 import dev.notato.android.net.NotatoServerException
 import dev.notato.android.net.ServerSentEvent
@@ -16,8 +18,10 @@ import dev.notato.android.net.ServerSentEventParser
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.yield
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertSame
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /** Sending the queue, reading the server's event stream, and matching the notes here to its list. */
@@ -119,6 +123,31 @@ class SyncTest {
         assertEquals("picture" to listOf("elements"), picture to reading)
         // No picture (screenshots off): the screen is still read.
         assertEquals(null to 1, captureThenScan({ null }) { 1 })
+    }
+
+    @Test
+    fun screenshotsWaitForTheServerToSayItTakesThem() {
+        val policy = ServerPolicy()
+        assertNull(policy.screenshots)
+        assertFalse(policy.captureOnly)
+        assertTrue(policy.stale(now = 0))
+        // No answer: still not known (so no screenshots), and not asked again for a few seconds.
+        policy.unanswered(at = 1_000)
+        assertNull(policy.screenshots)
+        assertFalse(policy.stale(now = 2_000))
+        assertTrue(policy.stale(now = 7_000))
+        policy.answered(ServerConfig(screenshots = true), at = 8_000)
+        assertEquals(true, policy.screenshots)
+        // An answer that does not say leaves what was said; one that does wins.
+        policy.answered(ServerConfig(), at = 9_000)
+        assertEquals(true, policy.screenshots)
+        policy.answered(ServerConfig(screenshots = false, captureOnly = true), at = 10_000)
+        assertEquals(false, policy.screenshots)
+        assertTrue(policy.captureOnly)
+        // A server that stops answering keeps what it said last.
+        policy.unanswered(at = 20_000)
+        assertEquals(false, policy.screenshots)
+        assertTrue(policy.captureOnly)
     }
 
     @Test

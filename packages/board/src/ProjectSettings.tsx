@@ -7,10 +7,12 @@ import {
     type ProjectSummary,
     renameProject,
 } from "./api.ts";
+import { useBoardExtension } from "./extension.tsx";
 import { plural, projectName } from "./model.ts";
+import { ProjectMembers } from "./ProjectMembers.tsx";
 import { projectHref } from "./route.ts";
 import { TokenManager } from "./Tokens.tsx";
-import { FLASH_MS, Icon } from "./ui.tsx";
+import { copyText, FLASH_MS, Icon } from "./ui.tsx";
 
 interface Props {
     me: Me;
@@ -33,6 +35,7 @@ export function ProjectSettings({
     onDeleted,
 }: Props) {
     const name = projectName(summary, project);
+    const extension = useBoardExtension();
     return (
         <div className="sheet">
             <div className="sheet-inner settings">
@@ -41,12 +44,6 @@ export function ProjectSettings({
                         <h1>Project settings</h1>
                         <p>
                             {name}
-                            {name !== project ? (
-                                <>
-                                    {" "}
-                                    · <code>{project}</code>
-                                </>
-                            ) : null}
                             {summary?.createdAt
                                 ? ` · made ${new Date(summary.createdAt).toLocaleDateString(undefined, { dateStyle: "medium" })}`
                                 : ""}
@@ -55,6 +52,7 @@ export function ProjectSettings({
                     <div className="sheet-tools">{menu}</div>
                 </header>
 
+                <ProjectMembers project={project} />
                 <Rename project={project} name={name} onRenamed={onRenamed} />
 
                 <section className="set-section">
@@ -91,9 +89,13 @@ export function ProjectSettings({
                             </p>
                         </div>
                         <div className="set-body">
-                            <TokenManager projects={projects} projectId={project} />
+                            <TokenManager me={me} projects={projects} projectId={project} />
                         </div>
                     </section>
+                ) : null}
+
+                {extension?.ProjectSettingsExtra ? (
+                    <extension.ProjectSettingsExtra me={me} projectId={project} />
                 ) : null}
 
                 <DeleteProject
@@ -122,6 +124,7 @@ function Rename({
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [saved, setSaved] = useState(false);
+    const [copied, setCopied] = useState(false);
     // A rename elsewhere (another tab) shows here too.
     useEffect(() => setDraft(name), [name]);
 
@@ -143,8 +146,8 @@ function Rename({
     return (
         <section className="set-section">
             <div className="set-label">
-                <h2>Project</h2>
-                <p>What the board calls it. Apps keep sending to its id, which never changes.</p>
+                <h2>Project name</h2>
+                <p>A friendly name shown in the sidebar and integrations.</p>
             </div>
             <div className="set-body">
                 <form
@@ -156,9 +159,7 @@ function Rename({
                 >
                     <label className="setting-text" htmlFor={`${id}-name`}>
                         <strong>Name</strong>
-                        <span className="muted small">
-                            Its id is <code>{project}</code>.
-                        </span>
+                        <span className="muted small">Choose a name your team will recognise.</span>
                     </label>
                     <div className="inline-field">
                         <input
@@ -176,6 +177,32 @@ function Rename({
                         </button>
                     </div>
                 </form>
+                <details>
+                    <summary>Project ID for app and agent connections</summary>
+                    <div className="project-identifier">
+                        <div className="setting-row">
+                            <code>{project}</code>
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    void copyText(project).then(
+                                        () => {
+                                            setCopied(true);
+                                            setTimeout(() => setCopied(false), FLASH_MS);
+                                        },
+                                        () => setError("Could not copy the project ID.")
+                                    );
+                                }}
+                            >
+                                {copied ? "Copied" : "Copy project ID"}
+                            </button>
+                        </div>
+                        <p className="muted small">
+                            Use this exact ID when connecting an app or agent. Renaming the project
+                            keeps its connections working.
+                        </p>
+                    </div>
+                </details>
                 {error ? (
                     <p className="error small" role="alert">
                         {error}

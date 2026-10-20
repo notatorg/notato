@@ -5,7 +5,7 @@ import 'parts.dart';
 import 'theme.dart';
 
 /// What a person wrote.
-typedef Draft = ({String comment, String? intent, String? severity, bool peopleOnly});
+typedef Draft = ({String comment, String? intent, String? severity, bool peopleOnly, String visibility});
 
 /// The note being written: a floating card, away from what it is about.
 class Composer extends StatefulWidget {
@@ -13,6 +13,7 @@ class Composer extends StatefulWidget {
     super.key,
     required this.title,
     this.subtitle,
+    this.sharedByDefault = false,
     required this.screenshotsOff,
     required this.onParent,
     required this.onCancel,
@@ -20,6 +21,7 @@ class Composer extends StatefulWidget {
   });
   final String title;
   final String? subtitle;
+  final bool sharedByDefault;
   final bool screenshotsOff;
 
   /// Selects the widget around this one.
@@ -37,6 +39,7 @@ class _ComposerState extends State<Composer> {
   String? _intent;
   String? _severity;
   var _peopleOnly = false;
+  var _shared = false;
 
   static const _intents = {'fix': 'Fix', 'change': 'Change', 'question': 'Question', 'approve': 'Approve'};
   static const _severities = {'blocker': 'Blocker', 'major': 'Major', 'minor': 'Minor', 'nit': 'Nit'};
@@ -44,6 +47,7 @@ class _ComposerState extends State<Composer> {
   @override
   void initState() {
     super.initState();
+    _shared = widget.sharedByDefault;
     _text.addListener(() => setState(() {}));
     // Not `autofocus`: the app's own focus scope already has focus, and autofocus only takes it from nobody.
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -146,6 +150,12 @@ class _ComposerState extends State<Composer> {
               Chips(options: _severities, value: _severity, onChanged: (v) => setState(() => _severity = v)),
               const SizedBox(height: 12),
               FlagToggle(
+                title: 'Share with project',
+                hint: 'Project members can see this feedback.',
+                value: _shared,
+                onChanged: (value) => setState(() => _shared = value),
+              ),
+              FlagToggle(
                 key: const ValueKey('NotatoPeopleOnly'),
                 title: PeopleOnlyCopy.title,
                 hint: PeopleOnlyCopy.hint,
@@ -178,6 +188,7 @@ class _ComposerState extends State<Composer> {
                                 intent: _intent,
                                 severity: _severity,
                                 peopleOnly: _peopleOnly,
+                                visibility: _shared ? 'shared' : 'personal',
                               ))
                             : null,
                         child: const Padding(

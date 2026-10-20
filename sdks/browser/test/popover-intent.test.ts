@@ -50,7 +50,7 @@ const note = (text: string) => {
 };
 const save = () => {
     const button = [...layer.querySelectorAll("button")].find(
-        (b) => b.textContent === "Save"
+        (b) => b.textContent === "Save note"
     ) as HTMLButtonElement;
     button.click();
 };
@@ -116,6 +116,7 @@ describe("saving", () => {
         save();
         expect(onSave).toHaveBeenCalledOnce();
         expect(saved()).toEqual({
+            visibility: "personal",
             comment: "The button is cut off",
             severity: "major",
             intent: "fix",
@@ -184,6 +185,18 @@ describe("starting a new annotation", () => {
 });
 
 describe("updating an open popover", () => {
+    it("keeps screenshot-off status neutral and separate from animation warnings", () => {
+        open({ screenshotsOff: true, hint: "Animating: pulse. Pause first to annotate a frame." });
+        const screenshot = layer.querySelector(".screenshot-state") as HTMLElement;
+        expect(screenshot.textContent).toBe("Screenshots off");
+        expect(screenshot.style.display).not.toBe("none");
+        expect(screenshot.classList.contains("warn")).toBe(false);
+        expect(hintLine().classList.contains("warn")).toBe(true);
+        popover.update({ screenshotsOff: false, hint: "Cmd/Ctrl-click adds or removes elements." });
+        expect(screenshot.style.display).toBe("none");
+        expect(hintLine().classList.contains("warn")).toBe(false);
+    });
+
     it("keeps the chosen intent and the typed comment while the targets change", () => {
         open();
         intentChip("change").click();
@@ -193,7 +206,11 @@ describe("updating an open popover", () => {
         expect(layer.querySelectorAll(".targets li")).toHaveLength(2);
         expect(pressedIntents()).toEqual(["change"]);
         save();
-        expect(saved()).toMatchObject({ comment: "Wider, please", intent: "change" });
+        expect(saved()).toMatchObject({
+            comment: "Wider, please",
+            visibility: "personal",
+            intent: "change",
+        });
     });
 
     it("shows a hint it is given, and takes the line away when there is none", () => {

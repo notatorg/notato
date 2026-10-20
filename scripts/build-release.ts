@@ -323,7 +323,11 @@ async function buildLibrary(lib: Library, libs: Library[], version: string) {
     const dir = packageDir(lib.name);
     mkdirSync(dir, { recursive: true });
     cpSync(dist, join(dir, "dist"), { recursive: true });
-    for (const file of extraFiles) cpSync(join(src, file), join(dir, file));
+    for (const file of extraFiles) {
+        const target = join(dir, file);
+        mkdirSync(dirname(target), { recursive: true });
+        cpSync(join(src, file), target, { recursive: true });
+    }
     writeJson(join(dir, "package.json"), {
         name: lib.name,
         description: lib.pkg.description,
@@ -334,6 +338,7 @@ async function buildLibrary(lib: Library, libs: Library[], version: string) {
         main: "./dist/index.js",
         types: "./dist/index.d.ts",
         exports: {
+            "./package.json": "./package.json",
             ...Object.fromEntries(
                 entryPoints(lib).map((e) => [
                     e.key,

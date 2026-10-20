@@ -164,7 +164,7 @@ describe("the server view", () => {
             expect(claude().querySelector(".shelp.ok")?.textContent).toBe(
                 "Connected, and watching for notes."
             );
-            expect(claude().textContent).toContain("Everything you write reaches it.");
+            expect(claude().textContent).toContain("Mine is private by default.");
             expect(claude().textContent).toContain("People only");
             expect(claude().textContent).not.toContain("@agent");
             expect(claude().textContent).not.toContain("npx notato init");
@@ -181,7 +181,7 @@ describe("the server view", () => {
             expect(claude().textContent).toContain(
                 "Ask it to watch Notato, or use the notato skill."
             );
-            expect(claude().textContent).toContain("Everything you write reaches it.");
+            expect(claude().textContent).toContain("Mine is private by default.");
         });
 
         it("shows how to register it when no agent is connected, or the server did not answer", async () => {
@@ -189,7 +189,7 @@ describe("the server view", () => {
                 status: async () => info({ agent: { connected: false, watching: false } }),
             });
             expect(claude().textContent).toContain("npx notato init");
-            expect(claude().textContent).not.toContain("Everything you write reaches it.");
+            expect(claude().textContent).not.toContain("Mine is private by default.");
             panel.destroy();
             settings.destroy();
             await openServer({ status: async () => null });

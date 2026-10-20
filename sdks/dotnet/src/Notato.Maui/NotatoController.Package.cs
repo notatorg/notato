@@ -13,8 +13,8 @@ internal sealed partial class NotatoController
 {
     public async Task<string> PackageAsync(bool upload = true, CancellationToken cancellationToken = default)
     {
-        string path = await PackageToFileAsync(cancellationToken);
-        if (upload && Server is not null)
+        (string path, _) = await PackageToFileAsync(cancellationToken);
+        if (upload && Uploads)
         {
             await UploadPackageAsync(path, cancellationToken);
         }
@@ -22,14 +22,17 @@ internal sealed partial class NotatoController
         return path;
     }
 
+    /// <summary>Whether a package goes to the configured server, including with a capture-only token.</summary>
+    private bool Uploads => Server is not null;
+
     /// <summary>The menu's Package and share: packaged, uploaded when there is a server, then the share sheet.</summary>
     internal async Task PackageFromMenuAsync(OverlaySession session)
     {
         try
         {
             string? uploadProblem = null;
-            string path = await PackageToFileAsync(CancellationToken.None);
-            if (Server is not null)
+            (string path, bool screenshots) = await PackageToFileAsync(CancellationToken.None);
+            if (Uploads)
             {
                 try
                 {
@@ -43,9 +46,10 @@ internal sealed partial class NotatoController
             }
 
             await Share.Default.RequestAsync(new ShareFileRequest { Title = "Notato feedback", File = new ShareFile(path, "application/zip") });
-            session.View.Toast(uploadProblem is null
-                ? Server is null ? "Packaged. Send the zip to the developer." : "Packaged and uploaded."
-                : $"Packaged, but not uploaded: {uploadProblem}");
+            string done = uploadProblem is null
+                ? Uploads ? "Packaged and uploaded." : "Packaged. Send the zip to the developer."
+                : $"Packaged, but not uploaded: {uploadProblem}";
+            session.View.Toast(screenshots ? done : done + " Without screenshots: the server does not take them.");
         }
         catch (Exception error)
         {
@@ -65,19 +69,29 @@ internal sealed partial class NotatoController
         RaiseChanged();
     }
 
-    /// <summary>Writes this device's notes to a bundle zip in the app's cache, off the main thread, and returns its path.</summary>
-    private async Task<string> PackageToFileAsync(CancellationToken ct)
+    /// <summary>
+    /// Writes this device's notes to a bundle zip in the app's cache, off the main thread, and returns its path. With a
+    /// server set, the screenshots go in only when it says it takes them: they may have been taken while it did, but a
+    /// package is shared by hand, so it follows what the server says now.
+    /// </summary>
+    private async Task<(string Path, bool Screenshots)> PackageToFileAsync(CancellationToken ct)
     {
-        List<LocalAnnotation> mine = await MainThread.InvokeOnMainThreadAsync(() => _records
-            .Where(r => r.Pending || (Mode == NotatoMode.Test && r.Mine))
-            .Select(r => new LocalAnnotation(r.Annotation, r.Assets ?? new Dictionary<string, string>()))
-            .ToList());
+        await AskBrieflyAsync();
+        (List<LocalAnnotation> mine, bool screenshots) = await MainThread.InvokeOnMainThreadAsync(() =>
+        {
+            bool screenshots = Server is null || _serverScreenshots == true;
+            return (_records
+                .Where(r => r.Pending || (Mode == NotatoMode.Test && r.Mine))
+                .Select(r => new LocalAnnotation(r.Annotation, (screenshots ? r.Assets : null) ?? new Dictionary<string, string>()))
+                .ToList(), screenshots);
+        });
         if (mine.Count == 0)
         {
             throw new InvalidOperationException("Nothing to package yet: make at least one note.");
         }
 
-        return await BundleWriter.WriteAsync(mine, Options.Project, AuthorName, AppContextInfo.AppName(Options), AppContextInfo.AppVersion(Options), FileSystem.Current.CacheDirectory, ct);
+        string path = await BundleWriter.WriteAsync(mine, Options.Project, AuthorName, AppContextInfo.AppName(Options), AppContextInfo.AppVersion(Options), FileSystem.Current.CacheDirectory, ct);
+        return (path, screenshots);
     }
 
     /// <summary>

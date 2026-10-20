@@ -1,10 +1,20 @@
-import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, watch, writeFileSync } from "node:fs";
+import {
+    appendFileSync,
+    cpSync,
+    existsSync,
+    mkdirSync,
+    readFileSync,
+    rmSync,
+    watch,
+    writeFileSync,
+} from "node:fs";
 import { dirname, extname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { DETAILS, renderAnnotation } from "../packages/core/src/index.ts";
 import { Annotation, sampleAnnotation } from "../packages/schema/src/index.ts";
 import { currentVersion } from "../scripts/version.ts";
 import { buildDocs, SOURCES } from "./docs.ts";
+import { siteEnvironment } from "./environment.ts";
 
 // Builds the website into site/dist: the hand-written page from site/src, the real Notato toolbar bundled as
 // live.js (the "Try it here" button loads it), the Markdown samples rendered by the real renderer, and the docs.
@@ -121,9 +131,13 @@ function markdownSamples(): Record<string, string> {
 
 async function build() {
     const started = performance.now();
+    const environment = siteEnvironment(process.env);
     rmSync(dist, { recursive: true, force: true });
     mkdirSync(dist, { recursive: true });
     cpSync(src, dist, { recursive: true, filter: (path) => !path.endsWith(".ts") });
+    // A preview deployment must never be indexed; production keeps only the headers in src/_headers.
+    if (environment === "preview")
+        appendFileSync(join(dist, "_headers"), "/*\n  X-Robots-Tag: noindex, nofollow\n");
 
     // The Markdown samples go into the page itself, so it needs no request to show them. A function replacement, so a
     // `$` in a sample is not read as a pattern. `{{version}}` in the page (a dependency line) is the release's version.
@@ -152,6 +166,24 @@ async function build() {
 
     // The docs pages, made from the READMEs.
     const docs = buildDocs(dist);
+
+    // Cloudflare Web Analytics counts page views without cookies or fingerprinting. The token is a public identifier,
+    // not a secret, and is set only for the production deploy so that previews and local builds are not counted.
+    const analytics =
+        environment === "production" ? (process.env.NOTATO_SITE_ANALYTICS_TOKEN ?? "") : "";
+    if (analytics) {
+        if (!/^[A-Za-z0-9]{16,64}$/.test(analytics))
+            throw new Error("NOTATO_SITE_ANALYTICS_TOKEN must be the Web Analytics site token");
+        const beacon = `<script defer src="https://static.cloudflareinsights.com/beacon.min.js" data-cf-beacon='{"token": "${analytics}"}'></script>`;
+        const pages = new Bun.Glob("**/*.html").scanSync({ cwd: dist });
+        for (const name of pages) {
+            const file = join(dist, name);
+            writeFileSync(
+                file,
+                readFileSync(file, "utf8").replace("</body>", () => `${beacon}\n</body>`)
+            );
+        }
+    }
 
     if (flag("--artifact")) {
         // For a host that wraps the page in a document of its own: keep only what goes inside head and body.
@@ -204,5 +236,5 @@ if (flag("--serve")) {
     };
     watch(src, { recursive: true }, rebuild);
     // The docs are made from these, so a change to one rebuilds them too.
-    for (const readme of SOURCES) watch(join(root, "..", readme), rebuild);
+    for (const readme of SOURCES) watch(join(root, "..", "core", readme), rebuild);
 }

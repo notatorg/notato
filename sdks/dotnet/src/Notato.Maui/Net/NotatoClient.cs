@@ -185,7 +185,7 @@ internal sealed class NotatoClient
     /// </summary>
     public async IAsyncEnumerable<ServerSentEvent> EventsAsync(string project, bool agent, [EnumeratorCancellation] CancellationToken ct = default)
     {
-        using HttpRequestMessage request = Request(HttpMethod.Get, $"/projects/{Segment(project)}/events{(agent ? "?agent=1" : "")}");
+        using HttpRequestMessage request = Request(HttpMethod.Get, $"/projects/{Segment(project)}/events?fields=summary{(agent ? "&agent=1" : "")}");
         request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("text/event-stream"));
         using HttpResponseMessage response = await SendAsync(request, ct).ConfigureAwait(false);
         await using Stream stream = await response.Content.ReadAsStreamAsync(ct).ConfigureAwait(false);

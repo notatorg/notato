@@ -2,7 +2,7 @@ name: Android SDK
 
 on:
     push:
-        branches: [main]
+        branches: [main, develop]
         paths: ["sdks/android/**", "packages/schema/**", ".github/workflows/sdk-android.yml"]
     pull_request:
         paths: ["sdks/android/**", "packages/schema/**", ".github/workflows/sdk-android.yml"]
@@ -27,6 +27,8 @@ jobs:
             - uses: gradle/actions/setup-gradle@748248ddd2a24f49513d8f472f81c3a07d4d50e1 # v4.4.4
             # The contract tests run the server's Zod schema over the library's JSON.
             - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+              with:
+                  bun-version: 1.4.3
             - run: bun install --frozen-lockfile
             - name: Unit tests
               working-directory: sdks/android

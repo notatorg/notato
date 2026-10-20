@@ -6,6 +6,7 @@ import {
     type Me,
     type ProjectSummary,
 } from "./api.ts";
+import { useBoardExtension } from "./extension.tsx";
 import { projectIdProblem, suggestProjectId } from "./model.ts";
 import { markMadeHere } from "./storage.ts";
 import { Modal } from "./ui.tsx";
@@ -24,12 +25,16 @@ interface Props {
 /** Name a project and choose its id, which apps send to. The id follows the name until it is edited. */
 export function NewProject({ me, projects, initialId, onClose, onCreated, onTaken }: Props) {
     const id = useId();
+    /** The server makes the id (a workspace's projects are told apart from other workspaces' by it). */
+    const automaticId = Boolean(useBoardExtension()?.automaticProjectIds && !initialId);
     const [name, setName] = useState("");
     const [projectId, setProjectId] = useState(initialId ?? "");
     /** The id was typed (or given), so the name no longer suggests one. */
     const [ownId, setOwnId] = useState(Boolean(initialId));
     const [tried, setTried] = useState(false);
     const [busy, setBusy] = useState(false);
+    /** Also a token for the coding agent, for this project only: most people connect one straight away. */
+    const [agent, setAgent] = useState(true);
     /** The server's refusal of this id (it is taken), kept until the id changes. */
     const [taken, setTaken] = useState<string | null>(null);
     const [error, setError] = useState<string | null>(null);
@@ -37,9 +42,12 @@ export function NewProject({ me, projects, initialId, onClose, onCreated, onTake
     useEffect(() => first.current?.focus(), []);
 
     const exists = projects.some((p) => p.id === projectId);
-    const problem =
-        projectIdProblem(projectId) ??
-        (exists || taken === projectId ? `There is already a project “${projectId}”.` : null);
+    const problem = automaticId
+        ? name.trim()
+            ? null
+            : "Give your project a name."
+        : (projectIdProblem(projectId) ??
+          (exists || taken === projectId ? `There is already a project “${projectId}”.` : null));
     // A wrong character is worth saying at once; an empty box only once they try to go on.
     const shownProblem = problem && (tried || projectId) ? problem : null;
 
@@ -50,7 +58,11 @@ export function NewProject({ me, projects, initialId, onClose, onCreated, onTake
         setBusy(true);
         setError(null);
         try {
-            const made = await createProject(projectId, name.trim() || undefined);
+            const made = await createProject(
+                automaticId ? undefined : projectId,
+                name.trim() || undefined,
+                agent
+            );
             markMadeHere(made.project.id);
             onCreated(made);
         } catch (e) {
@@ -84,36 +96,57 @@ export function NewProject({ me, projects, initialId, onClose, onCreated, onTake
                         maxLength={200}
                         autoComplete="off"
                     />
-                    <span className="field-hint">What people call it on this board.</span>
-                </div>
-                <div className="field">
-                    <label htmlFor={`${id}-id`}>Id</label>
-                    <input
-                        id={`${id}-id`}
-                        value={projectId}
-                        onChange={(e) => {
-                            setProjectId(e.target.value);
-                            // Emptied, it follows the name again from the next change to that.
-                            setOwnId(e.target.value !== "");
-                        }}
-                        placeholder="checkout-web"
-                        maxLength={128}
-                        autoComplete="off"
-                        autoCapitalize="off"
-                        spellCheck={false}
-                        className="mono"
-                        aria-invalid={shownProblem ? true : undefined}
-                        aria-describedby={`${id}-id-hint`}
-                    />
                     <span
-                        id={`${id}-id-hint`}
-                        className={shownProblem ? "field-hint bad" : "field-hint"}
-                        role={shownProblem ? "alert" : undefined}
+                        className={automaticId && shownProblem ? "field-hint bad" : "field-hint"}
+                        role={automaticId && shownProblem ? "alert" : undefined}
                     >
-                        {shownProblem ??
-                            "What apps send to, as their project setting. Letters, digits and _ . @ -. It cannot be changed later."}
+                        {automaticId && shownProblem
+                            ? shownProblem
+                            : "What people call it on this board."}
                     </span>
                 </div>
+                {automaticId ? null : (
+                    <div className="field">
+                        <label htmlFor={`${id}-id`}>Id</label>
+                        <input
+                            id={`${id}-id`}
+                            value={projectId}
+                            onChange={(e) => {
+                                setProjectId(e.target.value);
+                                // Emptied, it follows the name again from the next change to that.
+                                setOwnId(e.target.value !== "");
+                            }}
+                            placeholder="checkout-web"
+                            maxLength={128}
+                            autoComplete="off"
+                            autoCapitalize="off"
+                            spellCheck={false}
+                            className="mono"
+                            aria-invalid={shownProblem ? true : undefined}
+                            aria-describedby={`${id}-id-hint`}
+                        />
+                        <span
+                            id={`${id}-id-hint`}
+                            className={shownProblem ? "field-hint bad" : "field-hint"}
+                            role={shownProblem ? "alert" : undefined}
+                        >
+                            {shownProblem ??
+                                "What apps send to, as their project setting. Letters, digits and _ . @ -. It cannot be changed later."}
+                        </span>
+                    </div>
+                )}
+                {me.authRequired ? (
+                    <label className="check" htmlFor={`${id}-agent`}>
+                        <input
+                            id={`${id}-agent`}
+                            type="checkbox"
+                            checked={agent}
+                            onChange={(e) => setAgent(e.target.checked)}
+                        />
+                        Also make a token for my coding agent (this project only), so it can be
+                        connected at once
+                    </label>
+                ) : null}
             </div>
             {error ? (
                 <div className="modal-status">

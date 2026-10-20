@@ -2,7 +2,7 @@ import { z } from "zod";
 import { RequestError } from "../backend.ts";
 import { RelayArgs, RelayError } from "../relay.ts";
 import { PROJECT_ID } from "../storage.ts";
-import { assertAccess, json, type Routes, readJson, tokenProject } from "./common.ts";
+import { assertAccess, json, onlyProject, type Routes, readJson } from "./common.ts";
 
 const RelayBody = RelayArgs.extend({
     projectId: z.string().regex(PROJECT_ID).optional(),
@@ -30,12 +30,12 @@ export const relayRoutes: Routes = async ({ req, path, method, principal, match 
         const { projectId, timeoutMs, ...args } = await readJson(req, RelayBody);
         // A project token can only ever reach a page of its own project: naming another one is refused, and leaving
         // it out means its own.
-        if (projectId) assertAccess(principal, projectId);
+        const project = onlyProject(principal, projectId);
         try {
             return json(
                 await backend.requestAnnotation(
-                    tokenProject(principal) ?? projectId,
-                    args,
+                    project,
+                    { ...args, developmentContextId: principal.developmentContextId },
                     timeoutMs
                 )
             );
@@ -50,6 +50,8 @@ export const relayRoutes: Routes = async ({ req, path, method, principal, match 
         const requestId = result[0] ?? "";
         const owner = backend.relay.projectOf(requestId);
         if (owner) assertAccess(principal, owner);
+        if (backend.relay.contextOf(requestId) !== principal.developmentContextId)
+            throw new RequestError("Relay belongs to another checkout.", 403);
         const outcome = await readJson(req, RelayResultBody);
         return backend.relay.complete(requestId, outcome)
             ? json({ ok: true })

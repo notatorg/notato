@@ -1,6 +1,5 @@
-import { CHANNEL, type ToRelay } from "./protocol.ts";
+import { CHANNEL, type ConfigRequest, type ToRelay } from "./protocol.ts";
 import { createRelay } from "./relay.ts";
-import { loadSites } from "./sites.ts";
 
 // The content script in the extension's own world: the only part in the page that may talk to the extension.
 const flag = "__notatoRelay";
@@ -21,6 +20,8 @@ if (!holder[flag]) {
         toPage: (message) => window.postMessage(message, window.location.origin),
         ask: (message) => chrome.runtime.sendMessage(message),
         connect: () => chrome.runtime.connect({ name: "events" }),
-        loadConfig: async () => (await loadSites())[window.location.origin] ?? null,
+        // Asked of the background worker, which answers for the site the browser says this is: the extension's storage
+        // is closed to content scripts.
+        loadConfig: () => chrome.runtime.sendMessage({ kind: "config" } satisfies ConfigRequest),
     });
 }

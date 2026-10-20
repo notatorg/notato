@@ -237,3 +237,27 @@ button.menu-shade:hover:not(:disabled) {
 .brand-title .wordmark {
     font-size: 28px;
 }
+
+.onboarding-steps {
+    text-align: left;
+    max-width: 380px;
+    margin: 18px auto;
+    padding-left: 24px;
+}
+
+.connect-checks {
+    margin-top: 24px;
+    border-top: 1px solid var(--line);
+    padding-top: 16px;
+}
+.connect-checks summary {
+    cursor: pointer;
+    font-weight: 600;
+}
+.connect-checks li {
+    margin: 8px 0;
+}
+
+.onboarding-steps li + li {
+    margin-top: 8px;
+}

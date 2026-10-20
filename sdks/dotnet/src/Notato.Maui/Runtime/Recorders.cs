@@ -140,13 +140,18 @@ public sealed class NotatoNetworkHandler : DelegatingHandler
     {
     }
 
+    /// <summary>
+    /// A request's address as recorded: scheme, host, port and path. Query strings routinely carry tokens, and a user
+    /// name and password can sit in front of the host.
+    /// </summary>
+    internal static string Recorded(Uri uri) => uri.GetComponents(UriComponents.SchemeAndServer | UriComponents.Path, UriFormat.UriEscaped);
+
     /// <summary>Sends the request on, and records it whatever the outcome.</summary>
     protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
     {
         long started = Stopwatch.GetTimestamp();
         string at = DateTimeOffset.UtcNow.ToString("O");
-        // Query strings routinely carry tokens: origin and path only.
-        string url = request.RequestUri is { } uri ? uri.GetLeftPart(UriPartial.Path) : "";
+        string url = request.RequestUri is { } uri ? Recorded(uri) : "";
         try
         {
             HttpResponseMessage response = await base.SendAsync(request, cancellationToken).ConfigureAwait(false);

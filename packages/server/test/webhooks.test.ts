@@ -12,15 +12,20 @@ import {
     parseConfig,
     parseWebhooks,
     readWebhooks,
+    redactUrl,
     secretOf,
     sendDelivery,
     signature,
     startWebhooks,
+    urlOf,
     type Webhook,
     writeSetting,
     writeWebhooks,
 } from "../src/index.ts";
-import { annotationFixture, filesFor, makeBackend } from "./helpers.ts";
+import { annotationFixture as feedbackFixture, filesFor, makeBackend } from "./helpers.ts";
+
+const annotationFixture = (over: Parameters<typeof feedbackFixture>[0] = {}) =>
+    feedbackFixture({ visibility: "shared", ...over });
 
 const dirs: string[] = [];
 const servers: Array<{ stop(force?: boolean): void }> = [];
@@ -109,6 +114,14 @@ describe("parseWebhooks", () => {
         expect(err([{ url: "https://x.test/" }, { url: "https://x.test/", secret: 5 }])).toContain(
             "webhooks[1].secret"
         );
+        expect(err([{ url: "env:" }])).toContain("name of an environment variable");
+        expect(err([{ url: "env:NOT A NAME" }])).toContain("name of an environment variable");
+    });
+
+    it("keeps a URL written as env:NAME as it is, so it is read where the server runs", () => {
+        expect(parseWebhooks([{ url: "env:SLACK_WEBHOOK_URL", format: "slack" }])).toEqual({
+            webhooks: [{ url: "env:SLACK_WEBHOOK_URL", format: "slack" }],
+        });
     });
 });
 
@@ -147,6 +160,16 @@ describe("the config file", () => {
         expect(() => writeWebhooks(file, () => [hook({ url: "not a url" })])).toThrow("not a URL");
     });
 
+    it("writes a URL read from the environment back as env:NAME, never as what it holds", () => {
+        const file = join(tmp(), "notato.config.json");
+        writeWebhooks(file, () => [hook({ url: "env:HOOK_URL" })]);
+        writeWebhooks(file, (list) => [...list, hook({ url: "https://y.test/in" })]);
+        expect(JSON.parse(readFileSync(file, "utf8")).webhooks[0]).toEqual({
+            url: "env:HOOK_URL",
+            format: "json",
+        });
+    });
+
     it("the running server notices a webhook added to the file", () => {
         const file = join(tmp(), "notato.config.json");
         const config = createConfigSource({ file, env: {} });
@@ -162,6 +185,28 @@ describe("secrets", () => {
         expect(secretOf(hook({ secret: "plain" }), {})).toBe("plain");
         expect(secretOf(hook({ secret: "env:HOOK" }), { HOOK: "from-env" })).toBe("from-env");
         expect(secretOf(hook({ secret: "env:HOOK" }), {})).toBeNull();
+    });
+});
+
+describe("URLs", () => {
+    it("is written as it is, or read from the environment with env:NAME, and must be http or https", () => {
+        expect(urlOf(hook({ url: "https://x.test/in" }), {})).toBe("https://x.test/in");
+        expect(urlOf(hook({ url: "env:HOOK_URL" }), { HOOK_URL: "https://x.test/in" })).toBe(
+            "https://x.test/in"
+        );
+        expect(urlOf(hook({ url: "env:HOOK_URL" }), {})).toBeNull();
+        expect(urlOf(hook({ url: "env:HOOK_URL" }), { HOOK_URL: "file:///etc/passwd" })).toBeNull();
+        expect(urlOf(hook({ url: "env:HOOK_URL" }), { HOOK_URL: "not a url" })).toBeNull();
+    });
+
+    it("are shown by host only: the path and the query are what make many of them work", () => {
+        expect(redactUrl("https://hooks.slack.com/services/T000/B000/XXXX")).toBe(
+            "https://hooks.slack.com/••••"
+        );
+        expect(redactUrl("https://x.test/?key=abc")).toBe("https://x.test/••••");
+        expect(redactUrl("https://user:pass@x.test:8443/in")).toBe("https://x.test:8443/••••");
+        expect(redactUrl("https://x.test/")).toBe("https://x.test/");
+        expect(redactUrl("env:HOOK_URL")).toBe("env:HOOK_URL");
     });
 });
 
@@ -271,6 +316,24 @@ describe("sendDelivery", () => {
             })
         ).toBe(false);
         expect(log.join()).toContain("gave up");
+    });
+
+    it("sends to a URL read from the environment, and to nowhere when it is not set", async () => {
+        const r = receiver();
+        const env = { HOOK_URL: r.url };
+        expect(await sendDelivery(hook({ url: "env:HOOK_URL" }), delivery, { ...fast, env })).toBe(
+            true
+        );
+        expect(r.got).toHaveLength(1);
+        const log: string[] = [];
+        expect(
+            await sendDelivery(hook({ url: "env:HOOK_URL" }), delivery, {
+                ...fast,
+                env: {},
+                log: (m) => log.push(m),
+            })
+        ).toBe(false);
+        expect(log.join()).toContain("$HOOK_URL is not set");
     });
 
     it("does not follow a redirect to somewhere else", async () => {
@@ -494,6 +557,48 @@ describe("startWebhooks, from the events of a real backend", () => {
         await t.dispatcher.flush();
         expect(r.got).toHaveLength(0);
         expect(t.log.filter((m) => m.includes("HOOK_SECRET"))).toHaveLength(1);
+        t.close();
+    });
+
+    it("sends to a URL read from the environment, and skips one that is not set, saying so once", async () => {
+        const r = receiver();
+        const t = setup(
+            () => [hook({ url: "env:HOOK_URL" }), hook({ url: "env:OTHER_URL", name: "other" })],
+            { HOOK_URL: r.url }
+        );
+        await t.backend.ingest(annotationFixture(), filesFor());
+        await t.backend.ingest(annotationFixture(), filesFor());
+        await t.dispatcher.flush();
+        expect(r.got).toHaveLength(2);
+        expect(t.log.filter((m) => m.includes("$OTHER_URL is not set"))).toEqual([
+            "webhook other: $OTHER_URL is not set to an http or https URL, so nothing is sent to it",
+        ]);
+        t.close();
+    });
+
+    it("says where annotation events go when it starts and when that changes, by host only", async () => {
+        const r = receiver();
+        let list: Webhook[] = [
+            hook({ url: "https://hooks.slack.com/services/T000/B000/XXXX", name: "team" }),
+        ];
+        const t = setup(() => list);
+        expect(t.log).toEqual(["annotation events go to 1 webhook: team (hooks.slack.com)"]);
+        list = [hook({ url: r.url }), hook({ url: "env:HOOK_URL" })];
+        await t.backend.ingest(annotationFixture(), filesFor());
+        list = [];
+        await t.backend.ingest(annotationFixture(), filesFor());
+        await t.dispatcher.flush();
+        expect(t.log).toContain(
+            `annotation events go to 2 webhooks: ${new URL(r.url).host}, $HOOK_URL, which is not set to a URL here`
+        );
+        expect(t.log.at(-1)).toBe("annotation events no longer go to any webhook");
+        expect(t.log.join("\n")).not.toContain("XXXX");
+        t.close();
+    });
+
+    it("says nothing about where events go when there are no webhooks", () => {
+        const t = setup(() => []);
+        expect(t.log).toEqual([]);
         t.close();
     });
 

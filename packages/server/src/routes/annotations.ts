@@ -1,13 +1,33 @@
 import { DETAILS, parseDetail, renderAnnotation, renderAnnotations } from "@notato/core";
-import { Author, SafeId, Severity, Status, Variants } from "@notato/schema";
+import {
+    Annotation,
+    Author,
+    annotationAssets,
+    SafeId,
+    Severity,
+    Status,
+    Variants,
+} from "@notato/schema";
 import { z } from "zod";
-import { canAccessProject, type Principal } from "../auth.ts";
+import { Authenticator, canAccessProject, type Principal, samePrincipal } from "../auth.ts";
 import { type LocalBackend, RequestError, TEXT_MAX } from "../backend.ts";
+import { captureReceipt, captureScope } from "../capture-receipt.ts";
+import { canReadSession, ReviewSessions } from "../collaboration.ts";
 import { filterFromQuery } from "../query.ts";
-import type { AnnotationFilter, StoredAnnotation } from "../storage.ts";
+import {
+    type AnnotationFilter,
+    type AuthStore,
+    type StoredAnnotation,
+    tokenPurpose,
+} from "../storage.ts";
+import { currentWorkPermit, TeamCoordinator } from "../team.ts";
 import {
     type AppContext,
     assertAccess,
+    canReadFeedback,
+    feedbackActorId,
+    forReader,
+    isAgentToken,
     json,
     markdown,
     noContent,
@@ -29,6 +49,7 @@ const PatchBody = z
         note: Text.optional(),
         /** People only on or off: only a person can change it, and the change is recorded in the thread. */
         peopleOnly: z.boolean().optional(),
+        visibility: z.enum(["personal", "shared"]).optional(),
         author: Author.optional(),
     })
     .strict();
@@ -38,6 +59,13 @@ const ReplyBody = z.object({
     author: Author.optional(),
     /** A remark for the people on the thread, kept from the agent. */
     aside: z.boolean().optional(),
+});
+
+const LinkBody = z.object({
+    plugin: z.string().regex(/^[a-z][\w-]{0,31}$/),
+    url: z.string().max(2000),
+    ref: z.string().max(200).optional(),
+    title: z.string().max(300).optional(),
 });
 
 const OfferBody = z
@@ -87,7 +115,9 @@ async function page(
     filter: AnnotationFilter,
     query: URLSearchParams
 ): Promise<{ items: StoredAnnotation[]; next?: number }> {
-    const listed = await backend.list(filter);
+    const listed = await backend.list(
+        query.get("fields") === "summary" ? { ...filter, summary: true } : filter
+    );
     const last = listed.at(-1);
     const items = query.get("fields") === "summary" ? listed.map(summary) : listed;
     return filter.limit !== undefined && listed.length >= filter.limit && last
@@ -106,7 +136,12 @@ function detailFrom(query: URLSearchParams) {
  * `POST /projects/:id/annotations`: a note as an SDK sends it, multipart with the annotation as JSON in `annotation`
  * and each screenshot's bytes as a file named `asset:<id>`.
  */
-async function ingest(req: Request, projectId: string, app: AppContext): Promise<Response> {
+async function ingest(
+    req: Request,
+    projectId: string,
+    app: AppContext,
+    principal: Principal
+): Promise<Response> {
     const max = app.limits.upload;
     if (!(req.headers.get("content-type") ?? "").startsWith("multipart/form-data")) {
         throw new RequestError(
@@ -137,7 +172,106 @@ async function ingest(req: Request, projectId: string, app: AppContext): Promise
             files.set(key.slice("asset:".length), new Uint8Array(await entry.arrayBuffer()));
         }
     }
-    const { stored, created } = await app.backend.ingest(parsed, files, { projectId });
+    if (principal.kind === "member") {
+        // Signed in, a person is who the account says, whatever the note claims.
+        const checked = Annotation.safeParse(parsed);
+        if (checked.success)
+            parsed = {
+                ...checked.data,
+                author: { kind: "human", name: principal.name ?? principal.username },
+            };
+    }
+    const captureOnly = principal.kind === "token" && principal.permission === "capture";
+    const checkedCapture = captureOnly ? Annotation.safeParse(parsed) : undefined;
+    if (checkedCapture && !checkedCapture.success) throw new RequestError("invalid annotation");
+    const receipt =
+        checkedCapture?.success && principal.kind === "token"
+            ? await captureReceipt(
+                  checkedCapture.data,
+                  files,
+                  await captureScope(principal.tokenId, projectId, principal.scope)
+              )
+            : undefined;
+    if (principal.kind === "token" && tokenPurpose(principal) === "app") {
+        // A page cannot say it is an agent, and a capture-only page cannot say much else about itself.
+        const checked = Annotation.safeParse(parsed);
+        if (!checked.success) throw new RequestError("invalid annotation");
+        parsed = {
+            ...checked.data,
+            author: {
+                ...checked.data.author,
+                kind: "human",
+                ...(principal.authorName ? { name: principal.authorName } : {}),
+            },
+            ...(captureOnly
+                ? {
+                      context: {
+                          ...checked.data.context,
+                          notatoCaptureSource: "unverified app feedback",
+                      },
+                  }
+                : {}),
+        };
+        if (captureOnly) {
+            for (const ref of annotationAssets(checked.data))
+                if (ref && !files.has(ref.id))
+                    throw new RequestError("capture tokens must supply screenshot bytes");
+        }
+    }
+    const checked = Annotation.safeParse(parsed);
+    if (checked.success) {
+        const { createdBy: _untrustedCreator, ...clientAnnotation } = checked.data;
+        if (clientAnnotation.localOnly && app.options.mode !== "dev")
+            throw new RequestError(
+                "Local-only feedback must stay on your local development server.",
+                400
+            );
+        parsed = {
+            ...clientAnnotation,
+            workId: principal.captureWorkId,
+            createdBy: feedbackActorId(principal),
+            visibility:
+                clientAnnotation.visibility ??
+                (clientAnnotation.mode === "test" ? "shared" : "personal"),
+        };
+        if (
+            principal.developmentContextId ||
+            principal.captureWorkId ||
+            (app.backend.store.coordination &&
+                (await new TeamCoordinator(app.backend.store).records.list(projectId, "context"))
+                    .length > 0)
+        )
+            await new TeamCoordinator(app.backend.store).route(
+                Annotation.parse(parsed),
+                principal.developmentContextId,
+                principal.captureWorkId
+            );
+    }
+    const { stored, created } = await app.backend.ingest(parsed, files, {
+        projectId,
+        receipt,
+        feedbackActorId: feedbackActorId(principal),
+    });
+    if (captureOnly) {
+        // Echo the submission, never the saved report: a retry cannot disclose later replies or edits.
+        const submitted = Annotation.parse(parsed);
+        return json(
+            {
+                seq: 0,
+                annotation: {
+                    ...submitted,
+                    bundleId: null,
+                    status: "open",
+                    awaitingResponse: undefined,
+                    thread: [],
+                    links: undefined,
+                    variants: undefined,
+                },
+                accepted: true,
+            },
+            created ? 201 : 200
+        );
+    }
     return json(stored, created ? 201 : 200);
 }
 
@@ -149,11 +283,56 @@ export const annotationRoutes: Routes = async (route, app) => {
     const { req, url, path, method, principal, match } = route;
     const { backend } = app;
     const query = url.searchParams;
+    if (query.get("sessionId") && backend.store.coordination) {
+        const session = await new ReviewSessions(backend.store.coordination).get(
+            query.get("sessionId")!
+        );
+        if (!session || !canReadSession(session, feedbackActorId(principal))) return notFound();
+        assertAccess(principal, session.projectId);
+    }
+    /** An app's token vouches for a person, never for an agent: whatever a page says, its replies are human. */
+    const author = (supplied?: Author): Author | undefined =>
+        principal.kind === "member"
+            ? { kind: "human", name: principal.name ?? principal.username }
+            : principal.kind === "token" && tokenPurpose(principal) === "app"
+              ? ({
+                    ...supplied,
+                    kind: "human",
+                    ...(principal.authorName ? { name: principal.authorName } : {}),
+                } as Author)
+              : supplied;
 
     /** The note with this id, once the credential is known to reach its project; null when there is none. */
     const annotation = async (id: string | undefined) => {
         const existing = await backend.get(id ?? "");
         if (existing) assertAccess(principal, existing.annotation.projectId);
+        if (
+            !existing ||
+            !(await canReadFeedback(
+                principal,
+                existing.annotation,
+                backend,
+                filterFromQuery(query).feedbackScope
+            ))
+        )
+            return null;
+        if (
+            method !== "GET" &&
+            isAgentToken(principal) &&
+            principal.developmentContextId &&
+            !currentWorkPermit()
+        )
+            throw new RequestError(
+                "Claim the review and include its work permit before changing feedback.",
+                409
+            );
+        if (
+            method === "DELETE" &&
+            isAgentToken(principal) &&
+            principal.developmentContextId &&
+            !existing.annotation.context.notatoDiagnostic
+        )
+            throw new RequestError("Only people can delete feedback.", 403);
         return existing;
     };
 
@@ -161,9 +340,11 @@ export const annotationRoutes: Routes = async (route, app) => {
     if (inProject) {
         const projectId = projectIdFrom(inProject[0]);
         assertAccess(principal, projectId);
-        if (method === "POST") return ingest(req, projectId, app);
+        if (method === "POST") return ingest(req, projectId, app, principal);
         if (method === "GET")
-            return json(await page(backend, filterFromQuery(query, projectId), query));
+            return json(
+                await page(backend, forReader(principal, filterFromQuery(query, projectId)), query)
+            );
     }
 
     // ---- the same notes as Markdown, for pasting into any agent or issue ---------------------------------------
@@ -172,7 +353,9 @@ export const annotationRoutes: Routes = async (route, app) => {
         const projectId = projectIdFrom(projectMarkdown[0]);
         assertAccess(principal, projectId);
         const detail = detailFrom(query);
-        const items = await backend.list(filterFromQuery(query, projectId, { whole: true }));
+        const items = await backend.list(
+            forReader(principal, filterFromQuery(query, projectId, { whole: true }))
+        );
         return markdown(
             renderAnnotations(
                 items.map((i) => i.annotation),
@@ -188,14 +371,20 @@ export const annotationRoutes: Routes = async (route, app) => {
     }
 
     if (path === "/annotations" && method === "GET")
-        return json(await page(backend, withinReach(principal, filterFromQuery(query)), query));
+        return json(
+            await page(
+                backend,
+                forReader(principal, withinReach(principal, filterFromQuery(query))),
+                query
+            )
+        );
 
     // What an attached agent was handed, so another session (or a restart) is not handed it again.
     if (path === "/annotations/handed" && method === "POST") {
         const { items } = await readJson(req, HandedBody);
         const reachable = [];
         for (const item of items) {
-            const stored = await backend.get(item.id);
+            const stored = await annotation(item.id);
             if (stored && canAccessProject(principal, stored.annotation.projectId))
                 reachable.push(item);
         }
@@ -204,12 +393,39 @@ export const annotationRoutes: Routes = async (route, app) => {
     }
 
     if (path === "/annotations/wait" && method === "GET") {
-        const filter = withinReach(principal, filterFromQuery(query));
+        const filter = forReader(principal, withinReach(principal, filterFromQuery(query)));
         const asked = Number(query.get("timeoutMs") ?? WAIT_DEFAULT_MS);
         const timeout = Number.isFinite(asked)
             ? Math.min(Math.max(0, asked), WAIT_MAX_MS)
             : WAIT_DEFAULT_MS;
-        return json({ ready: await backend.waitForNew(filter, timeout, req.signal) });
+        // Pages say an agent is watching only for an agent's wait: an app's token or a member may wait for notes too,
+        // but never speaks for an agent.
+        const watching =
+            principal.kind === "admin" ||
+            (principal.kind === "token" && tokenPurpose(principal) === "agent");
+        const ready = await backend.waitForNew(filter, timeout, req.signal, { watching });
+        const currentAuth =
+            app.auth ??
+            (principal.kind === "token"
+                ? new Authenticator(backend.store as typeof backend.store & AuthStore)
+                : undefined);
+        if (currentAuth) {
+            // A wait can outlast a token or a membership: ask again before saying there is something to read.
+            const current = await currentAuth.identify(req, url);
+            if (!current || !samePrincipal(principal, current))
+                throw new RequestError("authentication required", 401);
+            return json({
+                ready:
+                    ready &&
+                    (
+                        await backend.list({
+                            ...forReader(current, withinReach(current, filterFromQuery(query))),
+                            limit: 1,
+                        })
+                    ).length > 0,
+            });
+        }
+        return json({ ready });
     }
 
     const one = match(/^\/annotations\/([^/]+)$/);
@@ -220,6 +436,18 @@ export const annotationRoutes: Routes = async (route, app) => {
         if (method === "PATCH") {
             const change = await readJson(req, PatchBody);
             if (!existing) return notFound();
+            if (change.peopleOnly !== undefined && isAgentToken(principal))
+                throw new RequestError("only people can change note visibility", 403);
+            if (
+                change.visibility !== undefined &&
+                existing.annotation.createdBy !== feedbackActorId(principal)
+            )
+                throw new RequestError(
+                    "only the person who created this feedback can change its visibility",
+                    403
+                );
+            if (change.visibility !== undefined && isAgentToken(principal))
+                throw new RequestError("only a person can change feedback visibility", 403);
             // One update: a refused status change must not leave the severity or comment changed behind it.
             const updated = await backend.update(
                 id,
@@ -229,8 +457,9 @@ export const annotationRoutes: Routes = async (route, app) => {
                     comment: change.comment,
                     note: change.status ? change.note : undefined,
                     peopleOnly: change.peopleOnly,
+                    visibility: change.visibility,
                 },
-                change.author
+                author(change.author)
             );
             return updated ? json(updated) : notFound();
         }
@@ -244,7 +473,7 @@ export const annotationRoutes: Routes = async (route, app) => {
         const existing = await annotation(id);
         const body = await readJson(req, ReplyBody);
         const updated = existing
-            ? await backend.reply(id, body.body, body.author, { aside: body.aside })
+            ? await backend.reply(id, body.body, author(body.author), { aside: body.aside })
             : null;
         return updated ? json(updated, 201) : notFound();
     }
@@ -254,8 +483,8 @@ export const annotationRoutes: Routes = async (route, app) => {
     if (variants && method === "PUT") {
         const id = variants[0] ?? "";
         const existing = await annotation(id);
-        const { author, ...offer } = await readJson(req, OfferBody);
-        const updated = existing ? await backend.offerVariants(id, offer, author) : null;
+        const { author: supplied, ...offer } = await readJson(req, OfferBody);
+        const updated = existing ? await backend.offerVariants(id, offer, author(supplied)) : null;
         return updated ? json(updated) : notFound();
     }
     const choose = match(/^\/annotations\/([^/]+)\/variants\/choose$/);
@@ -264,20 +493,69 @@ export const annotationRoutes: Routes = async (route, app) => {
         const existing = await annotation(id);
         const body = await readJson(req, ChooseBody);
         const updated = existing
-            ? await backend.chooseVariant(id, body.name, body.note, body.author)
+            ? await backend.chooseVariant(id, body.name, body.note, author(body.author))
             : null;
         return updated ? json(updated) : notFound();
     }
 
+    // Where the note went in another system: for an integration or an agent to say, never for an app's own token.
+    const links = match(/^\/annotations\/([^/]+)\/links$/);
+    if (links && method === "POST") {
+        if (principal.kind === "token" && tokenPurpose(principal) === "app")
+            throw new RequestError(
+                "an agent token or a signed-in person is required to add a link",
+                403
+            );
+        const id = links[0] ?? "";
+        const existing = await annotation(id);
+        const body = await readJson(req, LinkBody);
+        const updated = existing ? await backend.addLink(id, body) : null;
+        return updated ? json(updated, 201) : notFound();
+    }
+
+    const view = match(/^\/annotations\/([^/]+)\/screenshot$/);
+    if (view && method === "GET") {
+        const kind = query.get("view");
+        if (kind !== "crop" && kind !== "thumbnail")
+            throw new RequestError("unknown screenshot view");
+        const stored = await annotation(view[0]);
+        if (!stored) return notFound();
+        try {
+            const image = await backend.screenshot(stored.annotation.id, kind);
+            if (!image) return notFound();
+            return new Response(image.bytes as BodyInit, {
+                headers: {
+                    "Content-Type": image.mime,
+                    "Cache-Control": "private, no-store",
+                    "X-Content-Type-Options": "nosniff",
+                    "Content-Security-Policy": "default-src 'none'",
+                },
+            });
+        } catch {
+            throw new RequestError("screenshot view temporarily unavailable", 503);
+        }
+    }
+
     const asset = match(/^\/assets\/([^/]+)$/);
-    if (asset && method === "GET") return screenshot(asset[0] ?? "", principal, app);
+    if (asset && method === "GET")
+        return screenshot(asset[0] ?? "", principal, app, filterFromQuery(query).feedbackScope);
 
     return null;
 };
 
 /** `GET /assets/:id`: a screenshot, for whoever may read a note that shows it, and for nobody once no note does. */
-async function screenshot(id: string, principal: Principal, app: AppContext): Promise<Response> {
-    const owners = await app.backend.projectsWithAsset(id);
+async function screenshot(
+    id: string,
+    principal: Principal,
+    app: AppContext,
+    feedbackScope?: AnnotationFilter["feedbackScope"]
+): Promise<Response> {
+    if (principal.developmentContextId || isAgentToken(principal)) {
+        const items = await app.backend.list(forReader(principal, { feedbackScope }));
+        if (!items.some(({ annotation }) => annotationAssets(annotation).some((r) => r?.id === id)))
+            return notFound();
+    }
+    const owners = await app.backend.projectsWithAsset(id, forReader(principal, { feedbackScope }));
     if (!owners.some((p) => canAccessProject(principal, p))) return notFound();
     const asset = await app.backend.asset(id);
     if (!asset) return notFound();
@@ -285,7 +563,8 @@ async function screenshot(id: string, principal: Principal, app: AppContext): Pr
         headers: {
             "Content-Type": asset.mime,
             // Private behind a login: the ids are unguessable hashes, but the image is still someone's.
-            "Cache-Control": `${app.auth ? "private" : "public"}, max-age=31536000, immutable`,
+            // Behind a login the browser does not keep it: signing out must leave nothing readable on the machine.
+            "Cache-Control": app.auth ? "private, no-store" : "public, max-age=31536000, immutable",
             "X-Content-Type-Options": "nosniff",
             "Content-Security-Policy": "default-src 'none'",
         },

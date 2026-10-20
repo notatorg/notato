@@ -1,6 +1,7 @@
 import { type KnownAgent, knownAgent } from "@notato/core";
 import type { Status } from "@notato/schema";
 import { type FormEvent, type ReactNode, useEffect, useId, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { authorName, initial, statusLabel } from "./model.ts";
 import logo from "./notato.png";
 import { setTheme, useTheme } from "./theme.ts";
@@ -14,8 +15,10 @@ const paths = {
     trash: "M3 6h18M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2",
     more: "M5 12h.01M12 12h.01M19 12h.01",
     back: "M15 18l-6-6 6-6",
+    chevrons: "M8 9l4-4 4 4M8 15l4 4 4-4",
     menu: "M4 6h16M4 12h16M4 18h16",
     chat: "M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12Z",
+    coffee: "M18 8h1a3 3 0 1 1 0 6h-1M3 8h15v9a4 4 0 0 1-4 4H7a4 4 0 0 1-4-4ZM6 2v3m4-3v3m4-3v3",
     external: "M14 4h6v6m0-6-9 9M19 14v6H4V5h6",
     close: "M6 6l12 12M18 6 6 18",
     inbox: "M22 12h-6l-2 3h-4l-2-3H2M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11Z",
@@ -28,6 +31,7 @@ const paths = {
     download: "M12 4v12m-5-5 5 5 5-5M4 20h16",
     upload: "M12 20V8m-5 5 5-5 5 5M4 4h16",
     sparkle: "M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z",
+    users: "M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M16 3a4 4 0 0 1 0 8M22 21v-2a4 4 0 0 0-3-3.87M13 7a4 4 0 1 1-8 0 4 4 0 0 1 8 0",
     sliders: "M4 7h9m4 0h3M4 17h3m4 0h9M15 5v4M9 15v4",
     page: "M4 5h16v14H4zM4 9h16",
     gear: "M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0ZM12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2Z",
@@ -413,7 +417,45 @@ export function Modal({
 }) {
     const id = useId();
     useEscape(onClose);
+    const panel = useRef<HTMLFormElement & HTMLDivElement>(null);
+    useEffect(() => {
+        const previous = document.activeElement;
+        const element = panel.current;
+        const controls = () =>
+            Array.from(
+                element?.querySelectorAll<HTMLElement>(
+                    'button:not(:disabled), a[href], input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex="0"]'
+                ) ?? []
+            ).filter((item) => item.getClientRects().length > 0);
+        (controls().find((item) => item.tagName === "INPUT") ?? controls()[0] ?? element)?.focus();
+        const trap = (event: KeyboardEvent) => {
+            if (event.key !== "Tab") return;
+            const items = controls();
+            const first = items[0];
+            const last = items.at(-1);
+            if (
+                event.shiftKey &&
+                (document.activeElement === first || !element?.contains(document.activeElement))
+            ) {
+                event.preventDefault();
+                last?.focus();
+            } else if (
+                !event.shiftKey &&
+                (document.activeElement === last || !element?.contains(document.activeElement))
+            ) {
+                event.preventDefault();
+                first?.focus();
+            }
+        };
+        element?.addEventListener("keydown", trap);
+        return () => {
+            element?.removeEventListener("keydown", trap);
+            if (previous instanceof HTMLElement && previous.isConnected) previous.focus();
+        };
+    }, []);
     const dialog = {
+        ref: panel,
+        tabIndex: -1,
         className: size ? `modal ${size}` : "modal",
         role: "dialog",
         "aria-modal": true,
@@ -430,7 +472,7 @@ export function Modal({
             {children}
         </>
     );
-    return (
+    return createPortal(
         <div className="modal-layer">
             <button type="button" className="modal-shade" aria-label="Close" onClick={onClose} />
             {onSubmit ? (
@@ -440,6 +482,7 @@ export function Modal({
             ) : (
                 <div {...dialog}>{content}</div>
             )}
-        </div>
+        </div>,
+        document.body
     );
 }

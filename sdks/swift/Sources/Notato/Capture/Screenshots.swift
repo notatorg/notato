@@ -8,14 +8,17 @@ typealias CapturedScreen = Captured<UIImage>
 struct ComposedScreenshots: Sendable {
     let refs: Screenshots
     let assets: [String: Data]
+    let cropRect: PageRect?
 }
 
 @MainActor
 enum ScreenshotTaker {
-    /// The window now, and what to cover in it now: `elements` (scanned just before) and the private views. Drawn at
-    /// no more than `maxScale`, the most the note's pictures are drawn at: a 3x screen is not drawn at 3x to be shrunk.
-    static func capture(_ window: UIWindow, elements: [ScreenElement], privateViews: [CGRect], maskInputs: Bool,
-                        maxScale: Double = 4) -> CapturedScreen? {
+    /// The window now, and what to cover in it now: `elements` (scanned just before), the private views, and the text
+    /// fields in the window's views (`InputFields`), which the accessibility tree may have left out; `optOuts` are the
+    /// `.notatoMask(false)` views. Drawn at no more than `maxScale`, the most the note's pictures are drawn at: a 3x
+    /// screen is not drawn at 3x to be shrunk.
+    static func capture(_ window: UIWindow, elements: [ScreenElement], privateViews: [CGRect], optOuts: [CGRect] = [],
+                        maskInputs: Bool, maxScale: Double = 4) -> CapturedScreen? {
         let bounds = window.bounds
         guard bounds.width > 0, bounds.height > 0 else { return nil }
         let format = UIGraphicsImageRendererFormat()
@@ -25,7 +28,8 @@ enum ScreenshotTaker {
         let image = UIGraphicsImageRenderer(bounds: bounds, format: format).image { _ in
             _ = window.drawHierarchy(in: bounds, afterScreenUpdates: false)
         }
-        return CapturedScreen(image, size: bounds.size, elements: elements, privateViews: privateViews, maskInputs: maskInputs)
+        return CapturedScreen(image, size: bounds.size, elements: elements, privateViews: privateViews,
+                              fields: InputFields.find(in: window), optOuts: optOuts, maskInputs: maskInputs)
     }
 }
 
@@ -38,7 +42,7 @@ enum ScreenshotComposer {
     private static let cropPadding: CGFloat = 24
 
     /// The two pictures, covered where `screen` says: what was private when it was taken.
-    static func compose(_ screen: CapturedScreen, targets: [CGRect], pin: Int?, maxScale: Double) -> ComposedScreenshots {
+    static func compose(_ screen: CapturedScreen, targets: [CGRect], pin: Int?, maxScale: Double, derivedCrops: Bool = false) -> ComposedScreenshots? {
         let masks = screen.covers
         let scale = max(1, min(screen.picture.scale, CGFloat(maxScale)))
         let format = UIGraphicsImageRendererFormat()
@@ -55,26 +59,36 @@ enum ScreenshotComposer {
             for target in targets { context.stroke(target.offsetBy(dx: -offset.x, dy: -offset.y).insetBy(dx: 1, dy: 1)) }
         }
 
-        let full = UIGraphicsImageRenderer(bounds: bounds, format: format).pngData { renderer in
+        let fullImage = UIGraphicsImageRenderer(bounds: bounds, format: format).image { renderer in
             draw(renderer.cgContext, offset: .zero)
             if let pin, let first = targets.first { drawPin(pin, at: first) }
         }
-        var refs = Screenshots(full: AssetRef(id: Hash.sha256(full), mime: "image/png",
+        guard let image = fullImage.cgImage, let full = ScreenshotEncoding.encode(image) else { return nil }
+        var refs = Screenshots(full: AssetRef(id: Hash.sha256(full.bytes), mime: full.mime,
                                               w: Int((screen.size.width * scale).rounded()), h: Int((screen.size.height * scale).rounded())))
-        var assets = [refs.full.id: full]
+        var assets = [refs.full.id: full.bytes]
+        var cropRect: PageRect?
 
         if let union = targets.dropFirst().reduce(targets.first, { $0?.union($1) }) {
             let area = union.insetBy(dx: -cropPadding, dy: -cropPadding).intersection(bounds)
             if area.width >= 4, area.height >= 4 {
-                let crop = UIGraphicsImageRenderer(size: area.size, format: format).pngData { renderer in
+                if derivedCrops {
+                    let x = max(0, Int((area.minX * scale).rounded(.down)))
+                    let y = max(0, Int((area.minY * scale).rounded(.down)))
+                    cropRect = PageRect(x: Double(x), y: Double(y), w: Double(min(image.width - x, max(1, Int((area.width * scale).rounded())))), h: Double(min(image.height - y, max(1, Int((area.height * scale).rounded())))))
+                } else {
+                let cropImage = UIGraphicsImageRenderer(size: area.size, format: format).image { renderer in
                     draw(renderer.cgContext, offset: area.origin)
                 }
-                let ref = AssetRef(id: Hash.sha256(crop), mime: "image/png", w: Int((area.width * scale).rounded()), h: Int((area.height * scale).rounded()))
-                refs.crop = ref
-                assets[ref.id] = crop
+                if let image = cropImage.cgImage, let crop = ScreenshotEncoding.encode(image) {
+                    let ref = AssetRef(id: Hash.sha256(crop.bytes), mime: crop.mime, w: Int((area.width * scale).rounded()), h: Int((area.height * scale).rounded()))
+                    refs.crop = ref
+                    assets[ref.id] = crop.bytes
+                }
+                }
             }
         }
-        return ComposedScreenshots(refs: refs, assets: assets)
+        return ComposedScreenshots(refs: refs, assets: assets, cropRect: cropRect)
     }
 
     private static func drawPin(_ number: Int, at target: CGRect) {

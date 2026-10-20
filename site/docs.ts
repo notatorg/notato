@@ -6,6 +6,7 @@ import { REPO_URL } from "../scripts/repo.ts";
 // The docs pages, made from the READMEs so they never say something the READMEs do not: the main README is cut into
 // pages by its headings, and each SDK's README is a page of its own. Links between them are pointed at the right page.
 
+/** This repository: the docs are made from its READMEs. */
 const repo = join(dirname(fileURLToPath(import.meta.url)), "..");
 
 /** A section of a README by its heading; `intro` keeps only what comes before its first subheading. */
@@ -55,7 +56,7 @@ export const PAGES: Page[] = [
         slug: "swiftui",
         group: "Mobile apps",
         title: "SwiftUI",
-        summary: "iOS 17 and later, as a Swift package with no dependencies.",
+        summary: "iOS 17 and later, as a Swift package with native WebP compression.",
         file: "sdks/swift/README.md",
     },
     {
@@ -115,7 +116,7 @@ export const PAGES: Page[] = [
     {
         slug: "aspire",
         group: "Agents and teams",
-        title: ".NET Aspire",
+        title: "Aspire",
         summary:
             "AddNotato() in an Aspire app host runs the board and MCP with your apps, and switches Notato on in each of them.",
         file: "sdks/dotnet/src/Notato.Aspire/README.md",
@@ -125,7 +126,7 @@ export const PAGES: Page[] = [
         group: "Agents and teams",
         title: "Testers, servers and webhooks",
         summary:
-            "Testers send a zip or post to a shared server, and webhooks tell Slack, Discord or Teams.",
+            "Dev feedback stays private by default, while named Test sessions share focused feedback with a team.",
         file: "README.md",
         sections: [
             "Test mode: testers send you a zip",
@@ -143,10 +144,29 @@ export const PAGES: Page[] = [
         sections: [
             "What you can say, and what the agent gets",
             "Variants: compare versions in the page",
+            "Reviewing related feedback",
+            "Team feedback and checkout queues",
             "The board: every project in one place",
             "Copy as Markdown, and export",
+            "Screenshot size",
             "Screenshots: on or off",
         ],
+    },
+    {
+        slug: "self-hosting",
+        group: "Agents and teams",
+        title: "Self-hosting",
+        summary:
+            "Run the full server with Docker Compose, or on your own Postgres, storage and email.",
+        file: "deploy/self-hosted/README.md",
+    },
+    {
+        slug: "extensions",
+        group: "Reference",
+        title: "Building on Notato",
+        summary: "Extend the server and board with your own storage, accounts and screens.",
+        file: "README.md",
+        sections: ["Building on Notato"],
     },
     {
         slug: "limits",
@@ -170,7 +190,14 @@ export const SOURCES = [...new Set(PAGES.map((p) => p.file))];
  * Sections of a README that are not docs for people using Notato: how to work on it, and what only the repository's
  * front page needs (the docs home has a card for each SDK).
  */
-const LEFT_OUT = ["Development", "Add it to your app", "Contributing", "Licence"];
+const LEFT_OUT = [
+    "Development",
+    "Development and verification",
+    "Full self-hosted server",
+    "Add it to your app",
+    "Contributing",
+    "Licence",
+];
 
 // ---- Markdown, by heading --------------------------------------------------------------------------------------
 
@@ -415,7 +442,7 @@ function layout(options: {
   <div class="wrap foot-in">
     <span class="brand"><img src="../notato.png" alt="" width="28" height="28"><span>Notato</span></span>
     <p>Made from the READMEs in the repository, so it says what the code does.</p>
-    <p class="foot-links"><a href="${REPO_URL}">Source on GitHub</a><a href="../index.html">Home</a></p>
+    <p class="foot-links"><a href="${REPO_URL}">Source on GitHub</a><a href="https://buymeacoffee.com/notato" target="_blank" rel="noopener noreferrer">Support Notato</a><a href="../index.html">Home</a></p>
   </div>
 </footer>
 </body>

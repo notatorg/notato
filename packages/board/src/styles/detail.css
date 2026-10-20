@@ -19,6 +19,8 @@
 .note-num {
     font-size: 13px;
     color: var(--muted);
+    flex: none;
+    white-space: nowrap;
 }
 .sev-select {
     height: 26px;
@@ -44,6 +46,18 @@
     box-shadow: none;
     background: var(--warn-bg);
     color: var(--warn);
+}
+.detail-head .pill,
+.detail-head .tag,
+.detail-head .sev-select {
+    display: inline-flex;
+    align-items: center;
+    height: 30px;
+    padding: 0 10px;
+    border-radius: 9px;
+    font-size: 12px;
+    line-height: 1;
+    white-space: nowrap;
 }
 .flash {
     font-size: 12.5px;
@@ -472,4 +486,52 @@ dialog.lightbox {
 .icon-button.lightbox-close:hover:not(:disabled) {
     background: rgb(255 255 255 / 0.14);
     color: #fff;
+}
+
+.answer-needed {
+    margin: 12px 20px;
+    padding: 12px;
+    border-radius: 8px;
+    background: var(--warn-bg);
+    color: var(--warn);
+}
+
+.reference-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+    gap: 12px;
+}
+.reference-grid .shot {
+    display: flex;
+    flex-direction: column;
+    height: auto;
+    overflow: hidden;
+}
+.reference-grid img {
+    width: 100%;
+    height: 120px;
+    object-fit: contain;
+}
+.reference-grid span {
+    padding: 8px;
+    overflow-wrap: anywhere;
+}
+.reference-full {
+    max-width: 100%;
+    max-height: 70vh;
+    object-fit: contain;
+}
+.review-summary {
+    padding: 16px;
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    margin: 16px 0;
+}
+.review-summary p {
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+.review-summary li {
+    margin: 6px 0;
+    overflow-wrap: anywhere;
 }

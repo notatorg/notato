@@ -116,7 +116,7 @@ function connect(
             worker.stream(origin, workerSide);
             return relaySide;
         },
-        loadConfig: async () => site,
+        loadConfig: () => worker.pageConfig(origin),
     });
     return { bus, transport: createPageTransport(bus, { retryMs: RETRY_MS }), worker };
 }
@@ -247,6 +247,34 @@ describe("a page's requests, carried by the extension to a real Notato server", 
             },
         ]);
         expect(JSON.stringify(said)).not.toContain("notato_site");
+    });
+
+    it("a script on the page cannot pass for an agent: not by its headers, nor by opening the agent's stream", async () => {
+        const server = await realServer();
+        const { transport } = connect(ORIGIN, siteFor(server));
+        const res = await transport.fetch(`${server}/config?project=shop`, {
+            headers: {
+                "X-Notato-Agent": "agent-1",
+                "X-Notato-Agent-Name": "Claude Code",
+                "X-Notato-Agent-Projects": "shop",
+            },
+        });
+        expect(res.status).toBe(200);
+        const stream = transport.events(`${server}/projects/shop/events?agent=1`);
+        let hello = false;
+        stream.addEventListener("hello", () => {
+            hello = true;
+        });
+        await until(() => hello);
+        // Asked of the server directly: no agent is there, and no page is waiting for an agent's notes.
+        const status = (await (await fetch(`${server}/status`)).json()) as {
+            agents: { connected: boolean; names: string[] };
+            agentProjects: string[];
+        };
+        expect(status.agents.connected).toBe(false);
+        expect(status.agents.names).toEqual([]);
+        expect(status.agentProjects).toEqual([]);
+        stream.close();
     });
 
     it("a redirect fails the request with a message, rather than leaving it waiting", async () => {

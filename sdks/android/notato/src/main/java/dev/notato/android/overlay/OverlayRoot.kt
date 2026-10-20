@@ -372,7 +372,7 @@ internal class OverlayRoot(context: Context, private val actions: OverlayActions
             if (held.number != pin.number) view.text = pin.number.toString()
             if (held.status != pin.status || held.pending != pin.pending) view.background = pinLook(pin.status, pin.pending)
             if (held.number != pin.number || held.status != pin.status) {
-                view.contentDescription = "Note ${pin.number}, ${pin.status.replace('_', ' ')}"
+                view.contentDescription = "Note ${pin.number}, ${dev.notato.android.model.Status.label(pin.status)}"
             }
             held.number = pin.number
             held.status = pin.status

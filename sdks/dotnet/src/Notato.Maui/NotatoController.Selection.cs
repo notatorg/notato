@@ -70,7 +70,8 @@ internal sealed partial class NotatoController
         SelectionState selection = new([element], null);
         Select(session, selection);
         Task arrived = session.View.SheetArrived;
-        if (!ScreenshotsOn)
+        // Whether the server takes them is asked as the picture is taken (see CaptureAsync).
+        if (!ScreenshotsWanted)
         {
             await arrived;
             FocusComment();
@@ -114,12 +115,19 @@ internal sealed partial class NotatoController
 
     /// <summary>
     /// A picture of the window, when screenshots are on, with what to cover in it measured in the same moment: every
-    /// private element on every page the picture shows. Without its covers there is no picture.
+    /// private element on every page the picture shows. Without its covers there is no picture. None of a window the
+    /// app keeps out of screenshots (Android's <c>FLAG_SECURE</c>), unless <see cref="NotatoOptions.CaptureSecureWindows"/>.
     /// </summary>
     private async Task<CapturedScreen?> CaptureAsync(OverlaySession session)
     {
-        if (!ScreenshotsOn)
+        if (!await ScreenshotsAllowedAsync())
         {
+            return null;
+        }
+
+        if (session.Host.SecureWindow && !Options.CaptureSecureWindows)
+        {
+            _logger.LogInformation("Notato took no screenshot: the app keeps this screen out of screenshots");
             return null;
         }
 

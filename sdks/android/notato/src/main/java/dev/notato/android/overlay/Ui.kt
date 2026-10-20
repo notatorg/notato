@@ -70,6 +70,7 @@ internal class Ui(val context: Context) {
 
         /** Each status's colour, read once: pins ask for it every time they are drawn. */
         private val STATUS_COLORS = mapOf(
+            Status.AWAITING_RESPONSE to "#d99a1e",
             Status.ACKNOWLEDGED to "#d99a1e",
             Status.RESOLVED to "#2e9a5b",
             Status.REVERT_REQUESTED to "#8b5cf6",

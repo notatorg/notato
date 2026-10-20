@@ -3,6 +3,7 @@ package dev.notato.android.internal
 import dev.notato.android.model.AnnotateRequest
 import dev.notato.android.model.Annotation
 import dev.notato.android.model.NotatoJson
+import dev.notato.android.model.ServerConfig
 import dev.notato.android.model.ServerEventData
 import dev.notato.android.net.NotatoServerException
 import dev.notato.android.net.ServerSentEvent
@@ -19,6 +20,46 @@ internal enum class SendOutcome {
 }
 
 internal fun outcomeOf(error: NotatoServerException): SendOutcome = if (error.refused) SendOutcome.REFUSED else SendOutcome.HELD
+
+/**
+ * What the server allows, as it last said (`/config`). Screenshots are off until it has said it takes them: a server
+ * that cannot be asked may have them off, and a picture taken here can still leave the device in a package. A server
+ * that does not answer leaves what it said last.
+ */
+internal class ServerPolicy {
+    /** Whether the server takes screenshots; null until it has said. */
+    var screenshots: Boolean? = null
+        private set
+
+    var derivedScreenshots = false
+        private set
+
+    /** This app's token can send notes and nothing else (a capture-only token): it reads nothing back. */
+    var captureOnly = false
+        private set
+
+    /** When the server was last asked, answered or not (uptime milliseconds); null when it never has been. */
+    private var askedAt: Long? = null
+
+    fun answered(config: ServerConfig, at: Long) {
+        config.screenshots?.let { screenshots = it }
+        derivedScreenshots = config.derivedScreenshots
+        captureOnly = config.captureOnly
+        askedAt = at
+    }
+
+    fun unanswered(at: Long) {
+        askedAt = at
+    }
+
+    /** Whether it is time to ask again: never asked, or not for more than a few seconds. */
+    fun stale(now: Long): Boolean = askedAt.let { it == null || now - it > FRESH_MS }
+
+    private companion object {
+        /** How long an answer is taken as it stands before a screenshot asks again (as the browser SDK does). */
+        const val FRESH_MS = 5_000L
+    }
+}
 
 /** Sends [queue] in order. A note refused for good never blocks the ones after it; anything else stops the run. */
 internal suspend fun <T> sendQueue(queue: List<T>, send: suspend (T) -> SendOutcome) {

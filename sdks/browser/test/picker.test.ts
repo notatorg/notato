@@ -274,6 +274,64 @@ describe("what is under the pointer", () => {
     });
 });
 
+describe("selecting text to pin a note to", () => {
+    let block: HTMLElement;
+    beforeEach(() => {
+        block = document.createElement("div");
+        document.body.append(block);
+        // happy-dom lays nothing out: the press starts over text, as it would in a browser.
+        Object.defineProperty(document, "caretRangeFromPoint", {
+            configurable: true,
+            value: () => {
+                const range = document.createRange();
+                range.setStart(block.querySelector("p, div")?.firstChild ?? block, 0);
+                return range;
+            },
+        });
+        vi.spyOn(Range.prototype, "getClientRects").mockReturnValue([
+            { left: 0, top: 0, right: 200, bottom: 50 },
+        ] as unknown as DOMRectList);
+    });
+    afterEach(() => {
+        Reflect.deleteProperty(document, "caretRangeFromPoint");
+        vi.restoreAllMocks();
+        window.getSelection()?.removeAllRanges();
+        block.remove();
+    });
+    /** Presses on `el`, selects as a drag across text would, and lets go further along. */
+    const drag = (el: Element, from: Node, offset: number, to: Node, end: number) => {
+        fire(el, "mousedown");
+        const range = document.createRange();
+        range.setStart(from, offset);
+        range.setEnd(to, end);
+        window.getSelection()?.removeAllRanges();
+        window.getSelection()?.addRange(range);
+        fire(el, "mouseup", { clientX: 60 });
+    };
+
+    it("records the text selected, without what is marked private in it", () => {
+        block.innerHTML = `<p>Card <span data-notato-mask>4242 4242 4242 4242</span> was declined</p>`;
+        const p = block.querySelector("p") as HTMLElement;
+        drag(p, p.firstChild as Node, 0, p.lastChild as Node, 13);
+        expect(picks).toHaveLength(1);
+        expect(picks[0]?.kind).toBe("text");
+        expect(picks[0]?.selectedText).toBe("Card was declined");
+        expect(window.getSelection()?.rangeCount).toBe(0);
+    });
+
+    it("with nothing it may record (text typed into an editor), picks the element and keeps no text", () => {
+        block.innerHTML = `<div contenteditable="true">my secret draft</div>`;
+        const editor = block.querySelector("div") as HTMLElement;
+        const typed = editor.firstChild as Node;
+        drag(editor, typed, 3, typed, 9);
+        expect(picks).toHaveLength(1);
+        expect(picks[0]?.kind).toBe("element");
+        expect(picks[0]?.elements).toEqual([editor]);
+        expect(picks[0]?.selectedText).toBeUndefined();
+        expect(window.getSelection()?.rangeCount).toBe(0);
+    });
+});
+
 describe("following the page as it scrolls", () => {
     it("is done only while annotating or with a draft open, and once a frame however many scrolls", async () => {
         picker.setActive(false);

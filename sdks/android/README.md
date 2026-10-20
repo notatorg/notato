@@ -7,6 +7,8 @@ Android 7 (API 24) and later, for apps built with Views, Jetpack Compose, or bot
 - `dev.notato:notato-android`: the overlay, the client and View inspection. Kotlin, no UI dependencies beyond AndroidX core.
 - `dev.notato:notato-compose`: Compose support. With it on the classpath, Notato reads composables through their semantics and finds where each is written from Compose's inspection data, as Android Studio's Layout Inspector does.
 
+**Screenshot size.** New captures prefer WebP at quality 85 when it is smaller than PNG, after privacy masking and at the same dimensions. PNG remains a fallback, and existing queues and bundles stay readable. See [screenshot storage](../../docs/screenshot-storage.md).
+
 ## Quick start
 
 ```bash
@@ -18,7 +20,7 @@ Add the artifacts from Maven Central to debug builds only, so release builds shi
 
 ```kotlin
 dependencies {
-    debugImplementation("dev.notato:notato-compose:0.2.0")   // or notato-android for a Views-only app
+    debugImplementation("dev.notato:notato-compose:0.3.0")   // or notato-android for a Views-only app
 }
 ```
 
@@ -68,25 +70,26 @@ Nothing to mark:
 
 ## Configuration
 
-In code (`NotatoConfig`), or as `<meta-data android:name="notato.<key>">` in the manifest, with `debug.notato.<key>` system properties over either, so a build can be pointed elsewhere without rebuilding it (`adb shell setprop debug.notato.server http://localhost:4790`, then restart the app):
+In code (`NotatoConfig`), or as `<meta-data android:name="notato.<key>">` in the manifest, with `debug.notato.<key>` system properties over either, so a build can be pointed elsewhere without rebuilding it (`adb shell setprop debug.notato.server http://localhost:4790`, then restart the app). System properties count only in a debuggable build: anyone with adb can set them, so a release build that ships Notato ignores them, and they never start it there.
 
-| Key                              | Default                                     |                                                                                                                                                            |
-| -------------------------------- | ------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `project`                        | (required)                                  | Project id on the server. Letters, digits and `. _ - @`, not only dots                                                                                     |
-| `mode`                           | `dev`                                       | `dev`, `test` or `agent` (see below)                                                                                                                       |
-| `server`                         | `http://localhost:4747` (none in test mode) | An empty value (`none` as a system property) means no server                                                                                               |
-| `token`                          |                                             | A project token (`notato_…`) for a shared `notato serve`. Sent only to the configured server (its scheme, host and port), never to one typed into Settings |
-| `enabled`                        | `true`                                      | Whether Notato is on at launch. The app can switch it at runtime                                                                                           |
-| `showToolbar`, `toolbarPosition` | `true`, `BOTTOM_END`                        | The floating toolbar and the corner it starts in. People can drag it; where they leave it is remembered                                                    |
-| `shakeToToggle`                  | `true`                                      | Shaking the device shows or hides the toolbar (listened for only while the app is in the foreground)                                                       |
-| `author`                         |                                             | The name on this person's notes. They can change it in the toolbar's settings                                                                              |
-| `screenshots`                    | `true`                                      | A server that has screenshots off wins either way                                                                                                          |
-| `maskInputs`                     | on in test and agent mode                   | Cover text fields in screenshots and leave their values out of notes (password fields always are). See [What is never recorded](#what-is-never-recorded)   |
-| `rememberRuntimeState`           | `true`                                      | Keep runtime choices (on or off, toolbar, name, a server typed in, the toolbar's place) across launches                                                    |
-| `captureLogs`, `logLimit`        | `true`, `50`                                | Attach the app's own warnings and errors from logcat                                                                                                       |
-| `composeSourceInfo`              | `true`                                      | Turn on Compose's inspection data (file and line for composables)                                                                                          |
-| `appName`, `appVersion`          | the app's label and version                 | Recorded on every note                                                                                                                                     |
-| `maxScreenshotScale`             | `2`                                         | Pixels per dp screenshots are kept at. Phones are 2.6x to 3.5x; 2x is plenty                                                                               |
+| Key                              | Default                                     |                                                                                                                                                                                                                                    |
+| -------------------------------- | ------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `project`                        | (required)                                  | Project id on the server. Letters, digits and `. _ - @`, not only dots                                                                                                                                                             |
+| `mode`                           | `dev`                                       | `dev`, `test` or `agent` (see below)                                                                                                                                                                                               |
+| `server`                         | `http://localhost:4747` (none in test mode) | An empty value (`none` as a system property) means no server                                                                                                                                                                       |
+| `token`                          |                                             | A project token (`notato_…`) for a shared `notato serve`. Sent only to the configured server (its scheme, host and port), never to one typed into Settings. For a build you hand out, make it capture-only (see [Tokens](#tokens)) |
+| `enabled`                        | `true`                                      | Whether Notato is on at launch. The app can switch it at runtime                                                                                                                                                                   |
+| `showToolbar`, `toolbarPosition` | `true`, `BOTTOM_END`                        | The floating toolbar and the corner it starts in. People can drag it; where they leave it is remembered                                                                                                                            |
+| `shakeToToggle`                  | `true`                                      | Shaking the device shows or hides the toolbar (listened for only while the app is in the foreground)                                                                                                                               |
+| `author`                         |                                             | The name on this person's notes. They can change it in the toolbar's settings                                                                                                                                                      |
+| `screenshots`                    | `true`                                      | A server that has screenshots off wins either way. With a server (test mode too), none are taken until it has said it takes them                                                                                                   |
+| `maskInputs`                     | on in test and agent mode                   | Cover text fields in screenshots and leave their values out of notes (password fields always are). See [What is never recorded](#what-is-never-recorded)                                                                           |
+| `rememberRuntimeState`           | `true`                                      | Keep runtime choices (on or off, toolbar, name, a server typed in, the toolbar's place) across launches                                                                                                                            |
+| `captureLogs`, `logLimit`        | `true`, `50`                                | Attach the app's own warnings and errors from logcat                                                                                                                                                                               |
+| `composeSourceInfo`              | `true`                                      | Turn on Compose's inspection data (file and line for composables)                                                                                                                                                                  |
+| `appName`, `appVersion`          | the app's label and version                 | Recorded on every note                                                                                                                                                                                                             |
+| `maxScreenshotScale`             | `2`                                         | Pixels per dp screenshots are kept at. Phones are 2.6x to 3.5x; 2x is plenty                                                                                                                                                       |
+| `captureSecureWindows`           | `false`                                     | Take screenshots of windows the app marked secure (`FLAG_SECURE`) too. See [What is never recorded](#what-is-never-recorded)                                                                                                       |
 
 ## At runtime: `Notato`
 
@@ -98,9 +101,9 @@ In code (`NotatoConfig`), or as `<meta-data android:name="notato.<key>">` in the
 | `startAnnotating()`, `stopAnnotating()`  | The next tap selects what is under it                                                                                                                                                                         |
 | `select(view)`, `select("#save")`        | Select an element as if it had been tapped, and open the note for it                                                                                                                                          |
 | `annotate("#save", comment, options)`    | Make a note with no UI (a suspend function), as a person or (with `agentName`) an agent. `peopleOnly = true` keeps a person's note from the agent                                                             |
-| `packageNotes(upload)`                   | Test mode: the device's notes as a bundle zip                                                                                                                                                                 |
+| `packageNotes(upload)`                   | Test mode: the device's notes as a bundle zip, uploaded to the configured server, including with capture-only tokens. Without their screenshots when the server has them off                                                              |
 | `mask(view, true / false / null)`        | Mark a view private (covered in screenshots, none of its text recorded), not private (a field recorded even with `maskInputs`), or back to the default. See [What is never recorded](#what-is-never-recorded) |
-| `recordRequest(entry)`                   | Add an HTTP request to the `network` context of later notes, from any thread. Its address is kept without the query string, which routinely carries tokens                                                    |
+| `recordRequest(entry)`                   | Add an HTTP request to the `network` context of later notes, from any thread. Its address is kept without the query string or a `user:password@`, which routinely carry credentials                           |
 
 ```kotlin
 val state by Notato.state.collectAsState()
@@ -115,15 +118,16 @@ The same schema as the other SDKs (`environment.platform` is `android`):
 
 - **Which element**: for a composable, its semantics (role, text, content description, test tag as the test id); for a View, its class, resource id, text and content description. Plus its size, and for Views the colours, text size, padding and margins it has. None of the text of anything private (below).
 - **Where it is in the code**, as above.
-- **What was on screen**: the window with the element outlined and the pin's number drawn on, and a crop around it. Notato's overlay is hidden while the window is copied.
+- **What was on screen**: the window with the element outlined and the pin's number drawn on, and a crop around it. Notato's overlay is hidden while the window is copied. With a server set (in test mode too), Notato asks it first (`/config`, again when its answer is more than a few seconds old) and takes none until it says it takes them; a test-mode package leaves them out when it says no.
 - **Context** (`context.android`): the screen, Activity and Fragments, the device, Android version and API level, emulator or not, orientation, dark mode, font scale, density and locale.
-- **The app's log** (`context.console`, the web SDK's shape): this process's warnings and errors from logcat since Notato started.
+- **The app's log** (`context.console`, the web SDK's shape): this process's warnings and errors from logcat since Notato started, with the values of `Authorization` and `Cookie` headers and of bearer tokens blanked out.
 - **Network** (`context.network`) when the app calls `Notato.recordRequest` (from an OkHttp interceptor, say).
 
 ### What is never recorded
 
 - **Password fields**, always: covered in screenshots, and their value is never recorded.
 - **Text fields** when `maskInputs` is on (by default in test and agent mode): covered, and their value left out. Their hint or label is still recorded, so a note can say which field it is.
+- **Windows the app marked secure** (`FLAG_SECURE`, for a one-time code or card entry): no screenshot is taken of them, and a note made on one goes without. `captureSecureWindows = true` opts in.
 - **Anything marked private, and everything inside it**: covered in screenshots, and none of its text is recorded anywhere. Not as its text, label or content description, not in the text of a container around it, and not in its selector, which is its id or test tag, else its role and place (`text:nth(3)`), never `:text("…")`. A selector cannot find it by its text either. For a composable, what it is set to (on or off, selected, progress) is left out too.
 
 ```kotlin
@@ -137,6 +141,8 @@ Text(user.email, Modifier.notatoMask())
 Column(Modifier.notatoMask()) { /* everything in it */ }
 OutlinedTextField(query, onQueryChange, Modifier.notatoMask(false))
 ```
+
+Views embedded in Compose with `AndroidView` are read as Views: `Notato.mask` on one counts, and their text and password fields are covered as anywhere else. One inside a composable marked `notatoMask()` is private too; Notato can only tell that from where they are on screen, so an embedded View that anything marked private overlaps is taken as private.
 
 `false` opts a text field out of `maskInputs` (on a container, the fields in it). Password fields stay masked whatever the mark, and a private view or composable around a field marked `false` wins over it: what is inside something private is always private. `Modifier.notatoMask` only adds a semantics property, as `testTag` does, so TalkBack reads the same. This is the web SDK's `data-notato-mask`.
 
@@ -155,17 +161,27 @@ What a note's selector looks like, and what an agent passes to `notato_annotate`
 ## Modes
 
 - **dev**: notes go live to `notato dev`, pins turn amber when the agent acknowledges them and green when it resolves them, and replies arrive in the pin's card. On a resolved pin, **Ask the agent to revert** asks for the change to be undone. A note made while the server is down is kept on the device and sent when it comes back.
-- **test**: notes stay on the device (they survive a restart). **Package and share** in the toolbar's menu makes the bundle zip `notato_import_bundle` reads, opens the share sheet, and uploads it when a server is set.
+- **test**: feedback defaults to shared and, when a server is configured, is sent live into a review session. Notes also stay on the device for **Package and share**, which exports the bundle zip `notato_import_bundle` reads and uploads it when requested. Without a server, testing stays offline.
 - **agent**: like dev, and the app also takes `notato_annotate` requests: `notato_annotate { target: "#add_to_basket", comment: "…" }` is relayed to the app, which finds the element, takes the screenshot and files the note as the agent.
+
+## Tokens
+
+On your own machine, `notato dev` needs no token. For a shared `notato serve`, the app needs a project token, and whoever has a build can pull it out of the app. So for a build that leaves your hands (testers, a store, anyone outside the team), make it **capture-only**:
+
+```bash
+npx notato token create shop-android --purpose app --capture-only --expires 30
+```
+
+A capture-only token sends new notes and nothing else: someone who extracts it cannot read, change or delete the project's notes and screenshots. With one, Notato sends each note (and the ones queued while offline) as it is made, and does not follow the project live: the menu says it is sending, a sent note's card says to read and answer it on the board, and replies, revert and delete are on the board. A test-mode package uploads its captured notes when a server is configured too. Keep capture-and-feedback tokens for builds that stay with the team.
 
 ## People only and asides
 
-Everything people write reaches the agent: new notes and every reply. Two switches keep something between people instead:
+Replies reach the agent within its active feedback scope. Dev feedback is private to its creator by default; Test feedback is Shared. Change a note's visibility in the board to share it with the project. People only and Aside are additional ways to keep feedback between people:
 
 - **People only**, for a whole note. In the composer, the **People only** switch (_"Keep this between people: the agent won't see it."_, off by default) keeps the note and its whole thread from the agent. The note's card shows a **People only** chip, and the same switch there turns it on or off at any time, for anyone on the thread. Each change is recorded in the thread as an automatic entry (_"Made this people only: the agent won't see it."_ or _"Shared this with the agent."_); turning it off hands the note to the agent. From code: `AnnotateOptions(peopleOnly = true)`.
 - **Aside**, for one reply. Under the reply field, the **Aside** switch (_"Just for people: the agent won't see this reply."_) keeps that reply from the agent; it is off again for the next one. Asides show in the thread muted and outlined, labelled **Aside**.
 
-A note the server has is changed through the server, which records the change. A note still on the device (test mode, or one made while the server was down) is changed on the device, with the same entry added to its thread, so a package carries the history. If the switch is flipped while such a note is on its way to the server, the server is told once it has the note.
+A note the server has is changed through the server, which records the change. A note not yet sent to the server is changed on the device, with the same entry added to its thread, so a package carries the history. If the switch is flipped while such a note is on its way to the server, the server is told once it has the note.
 
 ## Pins
 
@@ -173,7 +189,7 @@ Each note made on Android has a pin on its screen, on the element it is about: t
 
 Pins cost nothing on a still screen: they are placed again only after the window has drawn (a scroll, a layout, a recomposition) or a note has changed, and the screen is read at most twice a second. The route (which Activity, Fragment and screen composable shows) is worked out again the same way. When the app connects, it reads the project's notes as summaries (`fields=summary`: without each note's `context` and `steps`, which are most of a note's size and which only the board and the agent use) and matches them by id, so a project with thousands of notes stays quick; a server that does not know `fields` sends them whole.
 
-Notes made here are kept on the device, their screenshots as files, until the server has them: nothing is held in memory but the note, and a test-mode package is written to its file as it goes. Each file is written whole or not at all, and a note that cannot be read back is said in the log and skipped, never the others.
+Notes made here are kept on the device, their screenshots as files, until the server has them: nothing is held in memory but the note, and a test-mode package is written to its file as it goes. They are kept in the app's `noBackupFilesDir`, so Auto Backup and device transfers never copy them; notes an earlier version kept in `filesDir` are moved there the first time Notato reads them. Each file is written whole or not at all, and a note that cannot be read back is said in the log and skipped, never the others.
 
 ## How the overlay works
 
@@ -188,6 +204,18 @@ Notato's UI is plain Views in a layer added to the top window of the resumed Act
 - WebViews are one element: what is inside them is not inspected.
 - Verified on a Pixel 7 emulator (Android 16, API 36) against `notato dev`, with real taps through `adb shell input`: Compose and View screens, a full-screen Compose dialog, a second Activity with a Fragment, live status over SSE, reply and revert, agent relay, test-mode packaging and sharing, on and off at runtime, and the toolbar dragged and remembered. Not yet run: a physical device, API levels below 34, a `notato serve` server with a token. How it copes with large projects (pins, the summary list, screenshots kept as files) is covered by the unit tests, not yet on a device.
 
+## Hiding completed annotations
+
+On a resolved or reverted note, open **More options → Hide from this app** to hide
+its pin and card on this device. In **Settings**, **Hide completed annotations**
+hides completed notes across every screen at once, including notes beyond the
+150 drawn pins. **Restore hidden annotations** brings them back.
+
+Hiding keeps the feedback, screenshots and thread in the dashboard and exports.
+It never changes the note on the server. Reopened tasks and new agent questions
+remain visible. The preference is scoped to the server, project, mode, credential
+and name, and survives app restarts when runtime preferences are remembered.
+
 ## Development
 
 ```bash
@@ -199,3 +227,9 @@ adb reverse tcp:4747 tcp:4747
 ```
 
 The contract tests run the server's own Zod schema over the JSON this library writes (`scripts/validate.ts`), and are skipped when `bun` is not installed.
+
+Capture-only uploads and retries follow the [shared capture contract](../../docs/capture-contract.md). With a server configured, screenshots require an explicit `screenshots: true` policy; unknown or unavailable initial policy means text-only capture. Local-only capture continues without a policy request.
+
+### Feedback ownership and review sessions
+
+Dev feedback defaults to personal; Test defaults to shared. The composer’s **Share with project** switch overrides the default for that note. **People only** separately keeps agents out. With a server configured, Test feedback is sent live and grouped into a review session from the start of the run; without one, device storage and zip packaging still work. Use the board’s **Review sessions** to name a run, set its focus and discuss it. Each developer uses their own credentials with the same project ID. See the [team feedback guide](../../docs/team-feedback.md).

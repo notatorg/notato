@@ -206,7 +206,11 @@ internal sealed partial class NotatoController
     private string RouteOf(OverlaySession session) => session.Route.Length > 0 ? session.Route : SafeRoute(session.Window);
 
     /// <summary>The notes on the session's screen, oldest first, numbered as their pins are.</summary>
-    internal IReadOnlyList<(int Number, NoteRecord Record)> RecordsOnRoute(OverlaySession session) => _records.On(RouteOf(session));
+    internal IReadOnlyList<(int Number, NoteRecord Record)> RecordsOnRoute(OverlaySession session)
+    {
+        SyncHidden();
+        return _records.On(RouteOf(session));
+    }
 
     internal int CountOnRoute(OverlaySession session) => RecordsOnRoute(session).Count;
 

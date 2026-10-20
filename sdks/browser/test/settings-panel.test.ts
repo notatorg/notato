@@ -375,7 +375,9 @@ describe("the switches", () => {
         panel.open();
         expect(sw("Screenshots").disabled).toBe(true);
         expect(sw("Screenshots").getAttribute("aria-checked")).toBe("false");
-        expect(note("Screenshots")).toBe("The server has screenshots turned off.");
+        expect(note("Screenshots")).toBe(
+            "Screenshots are unavailable until the server allows them."
+        );
     });
 
     it("Screenshots cannot be changed while it is locked, and what the person chose is kept for later", () => {

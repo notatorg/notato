@@ -43,7 +43,7 @@ public sealed class NotatoOptions
     /// nothing at all, leave <c>UseNotato</c> out of the build (for example behind <c>#if DEBUG</c>).
     /// <para>
     /// The <c>NOTATO_ENABLED</c> environment variable (<c>true</c> or <c>false</c>), when the app is launched with it,
-    /// decides instead: over this, and over the choice remembered on the device. .NET Aspire sets it.
+    /// decides instead: over this, and over the choice remembered on the device. Aspire sets it.
     /// </para>
     /// </summary>
     public bool Enabled { get; set; } = true;
@@ -65,7 +65,7 @@ public sealed class NotatoOptions
     /// <para>
     /// The <c>NOTATO_SERVER</c> environment variable, when the app is launched with it, is used in place of this. A
     /// phone or emulator that cannot reach this machine's localhost reaches a localhost server through the dev tunnel the
-    /// build recorded for it, so <c>http://localhost:4747</c> from .NET Aspire works on one too.
+    /// build recorded for it, so <c>http://localhost:4747</c> from Aspire works on one too.
     /// </para>
     /// </summary>
     public string? Server { get; set; }
@@ -73,7 +73,8 @@ public sealed class NotatoOptions
     /// <summary>
     /// A project token (<c>notato_…</c>) for a shared server (<c>notato serve</c>). Not needed for <c>notato dev</c>. It is
     /// only ever sent to the server configured here (its scheme, host and port), never to one typed into the settings
-    /// sheet.
+    /// sheet. A build handed to others carries it for anyone to read out: give such a build a capture-only token
+    /// (<c>notato token create &lt;project&gt; --purpose app --capture-only</c>), which can send notes and nothing else.
     /// </summary>
     public string? Token { get; set; }
 
@@ -86,8 +87,17 @@ public sealed class NotatoOptions
     /// <summary>The name written on this person's notes and replies. They can change it in the settings sheet.</summary>
     public string? Author { get; set; }
 
-    /// <summary>Take screenshots. A server that has them turned off wins either way.</summary>
+    /// <summary>
+    /// Take screenshots. With a server set (test mode's too), none is taken until it has said it takes them, and a server
+    /// that has them turned off wins either way.
+    /// </summary>
     public bool Screenshots { get; set; } = true;
+
+    /// <summary>
+    /// Take screenshots of an Android screen the app keeps out of them (<c>FLAG_SECURE</c>: a one-time code, a card's
+    /// number) too. Off by default: a note made on one goes without a screenshot.
+    /// </summary>
+    public bool CaptureSecureWindows { get; set; }
 
     /// <summary>
     /// Cover inputs (Entry, Editor, SearchBar) in screenshots and leave what is typed in them out of notes. Defaults to on

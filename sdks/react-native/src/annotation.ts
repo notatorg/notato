@@ -53,6 +53,8 @@ export interface NoteInput {
     intent?: Intent;
     severity?: Severity;
     peopleOnly?: boolean;
+    visibility?: "personal" | "shared";
+    sessionId?: string;
     steps?: AgentStep[];
     /** The number on the pin, also drawn on the screenshot. */
     pin: number;
@@ -72,9 +74,9 @@ const round2 = (n: number) => Math.round(n * 100) / 100;
 
 /** The words every Notato SDK uses for keeping things from the agent. */
 export const PEOPLE_ONLY = {
-    title: "People only",
+    title: "Hide from agent",
     hint: "Keep this between people: the agent won't see it.",
-    aside: "Aside",
+    aside: "Hide reply from agent",
     asideHint: "Just for people: the agent won't see this reply.",
     on: "Made this people only: the agent won't see it.",
     off: "Shared this with the agent.",
@@ -121,6 +123,8 @@ export function buildAnnotation(input: NoteInput): Annotation {
         bundleId: null,
         author,
         mode: input.mode ?? "dev",
+        visibility: input.visibility ?? (input.mode === "test" ? "shared" : "personal"),
+        sessionId: input.sessionId,
         createdAt: (input.now ?? new Date()).toISOString(),
         url: appUrl(input.appName, input.route),
         route: input.route,
@@ -156,7 +160,13 @@ export function buildAnnotation(input: NoteInput): Annotation {
             : {}),
         ...(input.steps?.length ? { steps: input.steps } : {}),
         context: {
-            screenshot: { method: "native", pin: input.pin },
+            screenshot: {
+                method: "native",
+                pin: input.pin,
+                ...(input.screenshots?.full.cropRect
+                    ? { cropRect: input.screenshots.full.cropRect }
+                    : {}),
+            },
             reactNative: {
                 os: device.os,
                 osVersion: device.osVersion,

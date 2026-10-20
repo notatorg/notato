@@ -17,6 +17,9 @@
     <_NotatoDeviceFile Condition="'$(NotatoDataDirectory)' != ''">$([MSBuild]::EnsureTrailingSlash('$(NotatoDataDirectory)'))device.json</_NotatoDeviceFile>
     <_NotatoRecordDevice>false</_NotatoRecordDevice>
     <_NotatoRecordDevice Condition="'$(NotatoDeviceAccess)' == 'true' or ('$(NotatoDeviceAccess)' != 'false' and '$(Configuration)' == 'Debug')">true</_NotatoRecordDevice>
+    <!-- The same for where the project sits: the repository's absolute path names this machine and its user. -->
+    <_NotatoRecordSource>false</_NotatoRecordSource>
+    <_NotatoRecordSource Condition="'$(NotatoSourceInfo)' == 'true' or ('$(NotatoSourceInfo)' != 'false' and '$(Configuration)' == 'Debug')">true</_NotatoRecordSource>
   </PropertyGroup>
 
   <!-- Visual Studio's fast up-to-date check: a new tunnel URL or token means a new build. -->
@@ -26,11 +29,12 @@
 
   <!--
     Records where this project sits in its repository, so Notato can give XAML file paths from the repository root
-    ("src/MyApp/Views/LoginPage.xaml:42") the way Claude Code sees the code. Off with <NotatoSourceInfo>false</NotatoSourceInfo>.
+    ("src/MyApp/Views/LoginPage.xaml:42") the way Claude Code sees the code. Recorded into debug builds only, like the
+    device access above: off with <NotatoSourceInfo>false</NotatoSourceInfo>, on in any configuration with true.
   -->
   <Target Name="_NotatoRecordProjectPath"
           BeforeTargets="GetAssemblyAttributes"
-          Condition="'$(NotatoSourceInfo)' != 'false' and '$(GenerateAssemblyInfo)' != 'false' and '$(_NotatoRepositoryRoot)' != ''">
+          Condition="'$(_NotatoRecordSource)' == 'true' and '$(GenerateAssemblyInfo)' != 'false' and '$(_NotatoRepositoryRoot)' != ''">
     <PropertyGroup>
       <_NotatoProjectPath>$([MSBuild]::MakeRelative('$([MSBuild]::EnsureTrailingSlash($(_NotatoRepositoryRoot)))', '$(MSBuildProjectDirectory)').Replace('\', '/'))</_NotatoProjectPath>
     </PropertyGroup>

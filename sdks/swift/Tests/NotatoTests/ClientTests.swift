@@ -144,7 +144,6 @@ extension ClientTests {
         notato.client = StubServer.client { request in
             switch (request.httpMethod ?? "GET", request.url!.path) {
             case ("POST", _): return (201, Self.stored(Fixture.note(7)))
-            case ("GET", "/config"): return (200, Data("{}".utf8))
             default:
                 var summary = listed
                 summary.context = [:]
@@ -152,9 +151,9 @@ extension ClientTests {
                                                                                   StoredAnnotation(seq: 2, annotation: summary)], next: nil)))
             }
         }
+        // What the server allows was asked before the stream was opened, not on `hello`.
         await notato.handle(ServerSentEvent(event: "hello", data: "{}"), client: notato.client!)
-        #expect(StubServer.received.map { "\($0.method) \($0.url.path)\($0.url.query.map { "?\($0)" } ?? "")" } == [
-            "GET /config",
+        #expect(Self.seen() == [
             "POST /projects/swift-sample/annotations",
             "GET /projects/swift-sample/annotations?limit=500&fields=summary",
         ])
@@ -214,5 +213,155 @@ extension ClientTests {
         #expect(NotatoClient.isCancellation(URLError(.cancelled)))
         #expect(NotatoClient.isCancellation(CancellationError()))
         #expect(!NotatoClient.isCancellation(URLError(.cannotConnectToHost)))
+    }
+}
+
+/// What the server allows (`/config`), asked before anything is captured or sent: in this suite, as `StubServer` is one
+/// for all.
+extension ClientTests {
+    /// The requests the stub has had, as `GET /path?query`.
+    static func seen() -> [String] {
+        StubServer.received.map { "\($0.method) \($0.url.path)\($0.url.query.map { "?\($0)" } ?? "")" }
+    }
+
+    /// A stub that answers `/config` with `config` and takes every note.
+    static func server(config: @escaping @Sendable () -> (Int, String)) -> NotatoClient {
+        StubServer.client { request in
+            if request.url?.path == "/config" {
+                let (status, body) = config()
+                return (status, Data(body.utf8))
+            }
+            return (201, Self.stored(Fixture.note(7)))
+        }
+    }
+
+    @Test @MainActor func noScreenshotIsTakenUntilTheServerHasSaidItTakesThem() async throws {
+        let notato = Fixture.notato()
+        #expect(!notato.screenshotsOn, "not asked yet")
+        let answer = Answer("{\"screenshots\":true,\"derivedScreenshots\":true}")
+        notato.client = Self.server { answer.now }
+        try await notato.readPolicy(notato.client!)
+        #expect(Self.seen() == ["GET /config?project=swift-sample"], "asked for the project")
+        #expect(notato.screenshotsOn && notato.serverDerivedScreenshots && !notato.captureOnly)
+
+        // It cannot be asked again: what it said no longer counts.
+        answer.now = (503, "{\"error\":\"busy\"}")
+        await #expect(throws: NotatoServerError.self) { try await notato.readPolicy(notato.client!) }
+        #expect(!notato.screenshotsOn && notato.serverPolicy?.screenshots == nil)
+        answer.now = (200, "{\"screenshots\":false}")
+        try await notato.readPolicy(notato.client!)
+        #expect(!notato.screenshotsOn && notato.serverPolicy?.screenshots == false)
+        answer.now = (200, "{}")
+        try await notato.readPolicy(notato.client!)
+        #expect(!notato.screenshotsOn, "an answer that does not say so is not a yes")
+
+        // What one server said says nothing of another, typed into Settings.
+        answer.now = (200, "{\"screenshots\":true}")
+        try await notato.readPolicy(notato.client!)
+        notato.state.server = "http://typed.test"
+        #expect(notato.serverPolicy == nil && !notato.screenshotsOn)
+    }
+
+    @Test @MainActor func testModeAsksTooAndWithNoServerNothingStopsScreenshots() async throws {
+        let tester = Notato(configuration: NotatoConfiguration(project: "swift-sample", mode: .test, server: URL(string: "http://stub.test")))
+        #expect(tester.hasServer && !tester.screenshotsOn, "a configured Test server receives the live testing session and decides about screenshots too")
+        tester.client = Self.server { (200, "{\"screenshots\":true}") }
+        await tester.refreshPolicy()
+        #expect(tester.screenshotsOn)
+        #expect(Notato(configuration: NotatoConfiguration(project: "swift-sample", mode: .test)).screenshotsOn, "no server")
+        var offline = NotatoConfiguration(project: "swift-sample")
+        offline.noServer = true
+        #expect(Notato(configuration: offline).screenshotsOn)
+    }
+
+    @Test @MainActor func theServerIsAskedOnceForABurstOfPictures() async {
+        let notato = Fixture.notato()
+        notato.client = Self.server { (200, "{\"screenshots\":true}") }
+        for _ in 0..<3 { await notato.refreshPolicy() }
+        #expect(Self.seen() == ["GET /config?project=swift-sample"])
+        #expect(notato.screenshotsOn)
+    }
+
+    @Test @MainActor func aCaptureOnlyTokenSendsWhatWaitsAndReadsNothingBack() async throws {
+        let notato = Fixture.notato()
+        let waiting = NoteRecord(Fixture.note(7), pending: true, mine: true)
+        notato.insert([waiting])
+        notato.client = Self.server { (200, "{\"screenshots\":true,\"captureOnly\":true}") }
+        try await notato.readPolicy(notato.client!)
+        #expect(notato.captureOnly)
+        let sending = Task { try await notato.sendOnly(every: .seconds(60)) }
+        for _ in 0..<100 where waiting.pending { try await Task.sleep(for: .milliseconds(20)) }
+        sending.cancel()
+        await #expect(throws: CancellationError.self) { try await sending.value }
+        #expect(!waiting.pending)
+        #expect(Self.seen() == ["GET /config?project=swift-sample", "POST /projects/swift-sample/annotations"], "no stream, no list")
+    }
+
+    @Test @MainActor func aCaptureOnlyTokensHeldNoteStopsItAsAStreamDroppingWould() async throws {
+        let notato = Fixture.notato()
+        let waiting = NoteRecord(Fixture.note(7), pending: true, mine: true)
+        notato.insert([waiting])
+        notato.client = StubServer.client { request in
+            request.url?.path == "/config" ? (200, Data("{\"captureOnly\":true}".utf8)) : (503, Data("{\"error\":\"busy\"}".utf8))
+        }
+        try await notato.readPolicy(notato.client!)
+        await #expect(throws: NotatoServerError(message: "busy", status: 503)) { try await notato.sendOnly() }
+        #expect(waiting.pending && waiting.error == nil, "still queued, not refused")
+    }
+
+    @Test @MainActor func aCaptureOnlyTokenKeepsAConflictWithoutAssumingDelivery() async throws {
+        let notato = Fixture.notato()
+        let resent = NoteRecord(Fixture.note(7), pending: true, mine: true)
+        notato.insert([resent])
+        notato.client = StubServer.client { request in
+            request.url?.path == "/config" ? (200, Data("{\"captureOnly\":true}".utf8)) : (409, Data("{\"error\":\"annotation id already exists\"}".utf8))
+        }
+        try await notato.readPolicy(notato.client!)
+        #expect(await notato.send(resent) == .refused("annotation id already exists"))
+        #expect(resent.pending && resent.error != nil)
+
+        // With any other token the server sends its copy back for an id it has: a 409 is a refusal.
+        let other = NoteRecord(Fixture.note(8), pending: true, mine: true)
+        notato.insert([other])
+        notato.policy?.captureOnly = false
+        #expect(await notato.send(other) == .refused("annotation id already exists"))
+    }
+
+    @Test @MainActor func aPackageLeavesScreenshotsOutUnlessTheServerTakesThem() async throws {
+        let tester = Notato(configuration: NotatoConfiguration(project: "swift-sample", mode: .test, server: URL(string: "http://stub.test")))
+        let shot = String(repeating: "a", count: 64)
+        tester.insert([NoteRecord(Fixture.note(7), pending: true, mine: true, assets: [shot: .bytes(Data([137, 80, 78, 71]))])])
+        let answer = Answer("{\"screenshots\":false}")
+        tester.client = Self.server { answer.now }
+        // Stored uncompressed, so the names and the JSON can be looked for in the zip's bytes.
+        let off = try await tester.writePackage()
+        let without = try Data(contentsOf: off)
+        try? FileManager.default.removeItem(at: off)
+        #expect(without.range(of: Data("shots/".utf8)) == nil && without.range(of: Data("\"screenshots\"".utf8)) == nil)
+
+        answer.now = (200, "{\"screenshots\":true}")
+        tester.policyAsked = nil
+        let on = try await tester.writePackage()
+        defer { try? FileManager.default.removeItem(at: on) }
+        #expect(try Data(contentsOf: on).range(of: Data("shots/01-full.png".utf8)) != nil)
+
+        // A capture-only token may send the captured notes as a package too.
+        answer.now = (200, "{\"screenshots\":true,\"captureOnly\":true}")
+        tester.policyAsked = nil
+        #expect(try await tester.uploadPackage(on) == true)
+        #expect(Self.seen().contains { $0.hasPrefix("POST") }, "\(Self.seen())")
+    }
+}
+
+/// A stub's answer, changed as a test goes on.
+final class Answer: @unchecked Sendable {
+    private let lock = NSLock()
+    private var answer: (Int, String)
+
+    init(_ body: String) { answer = (200, body) }
+
+    var now: (Int, String) {
+        get { lock.withLock { answer } }
+        set { lock.withLock { answer = newValue } }
     }
 }

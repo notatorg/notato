@@ -1,6 +1,6 @@
 {
     "name": "@notato/browser",
-    "version": "0.2.0",
+    "version": "0.3.0",
     "description": "Notato for any web page: the toolbar, element capture and screenshots, with no framework. @notato/react and the script tag are built on it.",
     "keywords": [
         "notato",
@@ -23,6 +23,7 @@
         "src"
     ],
     "dependencies": {
+        "@noble/hashes": "^2.4.0",
         "@notato/core": "workspace:*",
         "@notato/schema": "workspace:*",
         "fflate": "^0.8.2",

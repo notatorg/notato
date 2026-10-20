@@ -142,6 +142,34 @@ describe("projects on a shared server", () => {
         expect(foreign.status).toBe(403);
         expect(await s.rt.store.getProject("shop")).toBeNull();
     });
+
+    it("answer a connection probe with nothing stored, and refuse a probe that carries anything", async () => {
+        const s = await shared();
+        await s.call(
+            "/projects",
+            s.asAdmin({ method: "POST", body: JSON.stringify({ id: "shop" }) })
+        );
+        const probe = (body?: string) =>
+            s.call("/projects/shop/connection", s.asAdmin({ method: "POST", body }));
+        for (const body of [undefined, "{}"]) {
+            const answer = await probe(body);
+            expect(answer.status).toBe(200);
+            expect(await answer.json()).toEqual({
+                ok: true,
+                projectId: "shop",
+                captureOnly: false,
+                screenshots: true,
+            });
+        }
+        expect((await probe(JSON.stringify({ note: "x" }))).status).toBe(400);
+        expect((await probe(JSON.stringify({ note: "x".repeat(65536) }))).status).toBe(413);
+        const missing = await s.call(
+            "/projects/gone/connection",
+            s.asAdmin({ method: "POST", body: "{}" })
+        );
+        expect(missing.status).toBe(404);
+        expect(await s.rt.backend.list()).toEqual([]);
+    });
 });
 
 describe("projects on a local dev server", () => {

@@ -43,7 +43,7 @@ const note = (text: string) => {
 };
 const save = () => {
     const button = [...layer.querySelectorAll("button")].find(
-        (b) => b.textContent === "Save"
+        (b) => b.textContent === "Save note"
     ) as HTMLButtonElement;
     button.click();
 };
@@ -104,6 +104,7 @@ describe("the Variants chip", () => {
         save();
         expect(onSave).toHaveBeenCalledOnce();
         expect(saved()).toEqual({
+            visibility: "personal",
             comment: "Three layouts for this header",
             severity: undefined,
             intent: "variants",
@@ -193,6 +194,7 @@ describe("the Variants chip", () => {
             note("Wider, please");
             save();
             expect(saved()).toEqual({
+                visibility: "personal",
                 comment: "Wider, please",
                 severity: "major",
                 intent: "change",

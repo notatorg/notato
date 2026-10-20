@@ -4,6 +4,8 @@ import { z } from "zod";
 export const SCHEMA_VERSION = 1 as const;
 
 export const Mode = z.enum(["dev", "test", "agent"]);
+/** Who can read feedback inside a project. Missing visibility on older records means shared. */
+export const FeedbackVisibility = z.enum(["personal", "shared"]);
 export const Severity = z.enum(["blocker", "major", "minor", "nit"]);
 /**
  * What the person wants done. `fix`: something is broken. `change`: it works but should be different. `question`:
@@ -20,6 +22,7 @@ export const Intent = z.enum(["fix", "change", "question", "approve", "variants"
 export const Status = z.enum([
     "open",
     "acknowledged",
+    "awaiting_response",
     "variant_chosen",
     "resolved",
     "revert_requested",
@@ -124,6 +127,8 @@ export const Reply = z.object({
      * Carried here, rather than read from the text, so the server can tell what happened.
      */
     peopleOnly: z.boolean().optional(),
+    /** Automatic audit entry for an explicit feedback visibility change. */
+    visibility: z.enum(["personal", "shared"]).optional(),
 });
 
 /**
@@ -191,10 +196,47 @@ export const Variants = z.object({
     chosenAt: z.string().optional(),
 });
 
+/**
+ * Where a note went in another system: an issue in GitHub, a work item in Azure DevOps. Made by an integration (or
+ * an agent), never by the app that sent the note.
+ */
+export const ExternalLink = z.object({
+    /** The integration that made it, as a short name: `github`, `azure-devops`. */
+    plugin: z.string().regex(/^[a-z][\w-]{0,31}$/),
+    /** Where it lives. Always an http or https address. */
+    url: z
+        .string()
+        .max(2000)
+        .refine((u) => /^https?:\/\/[^\s]+$/i.test(u), "must be an http or https address"),
+    /** What that system calls it, as people say it: `#123`, `ABC-45`. */
+    ref: z.string().max(200).optional(),
+    title: z.string().max(300).optional(),
+    /** ISO 8601 */
+    createdAt: z.string(),
+});
+
 export const Annotation = z.object({
     /** ULID */
     id: SafeId,
     projectId: z.string(),
+    /** Server-owned work grouping; capture clients cannot choose it. */
+    workId: z.string().max(400).optional(),
+    /** Personal feedback belongs to its server-authenticated creator; shared feedback is visible to project members. */
+    visibility: FeedbackVisibility.optional(),
+    /** A persistent review session; its content has its own access checks. */
+    sessionId: SafeId.optional(),
+    /** Kept on a loopback development server and never accepted by a shared/cloud server. */
+    localOnly: z.literal(true).optional(),
+    /** Set by the server from the authenticated principal, never trusted from a capture client. */
+    createdBy: z.string().max(200).optional(),
+    /** The test-mode bundle this note belongs to, including the tester's session focus. */
+    feedbackSession: z
+        .object({
+            id: SafeId,
+            name: z.string().trim().min(1).max(120),
+            description: z.string().trim().max(4000).optional(),
+        })
+        .optional(),
     /** null in dev mode */
     bundleId: z.string().nullable(),
     author: Author,
@@ -218,9 +260,26 @@ export const Annotation = z.object({
     /** Set by the agent when it has put the versions in the code for the person to compare. */
     variants: Variants.optional(),
 
+    /** Related targets in one review. Drafts stay on the client until the person sends the review. */
+    review: z
+        .object({
+            id: SafeId,
+            instruction: z.string().trim().min(1).max(8000),
+            total: z.number().int().min(1).max(50).optional(),
+            draft: z.boolean().optional(),
+        })
+        .optional(),
+
     // evidence
+    /** Explicitly attached design references; independent of automatic screenshot capture. */
+    references: z
+        .array(AssetRef.extend({ name: z.string().min(1).max(120) }))
+        .max(3)
+        .optional(),
     /** `full` has the target outlined. Absent when screenshots are turned off (see `notato config`). */
-    screenshots: z.object({ full: AssetRef, crop: AssetRef.optional() }).optional(),
+    screenshots: z
+        .object({ full: AssetRef, crop: AssetRef.optional(), thumbnail: AssetRef.optional() })
+        .optional(),
     /** Agent mode only. */
     steps: z.array(AgentStep).optional(),
     /** Keyed by plugin id, e.g. { console: [...], network: [...] }. The core never interprets it. */
@@ -228,26 +287,45 @@ export const Annotation = z.object({
 
     // lifecycle
     status: Status,
+    /** Server-owned: the task resumes here after the person answers the agent's question. */
+    awaitingResponse: z
+        .object({ resumeStatus: z.enum(["acknowledged", "variant_chosen", "revert_requested"]) })
+        .optional(),
     thread: z.array(Reply),
     /**
      * People only: the note and its whole thread are between people, and never reach the agent. Anyone on the thread can
      * turn it on or off; each change is recorded in the thread (a reply with `peopleOnly`).
      */
     peopleOnly: z.boolean().optional(),
+    /** Where this note went in other systems. Set by integrations; an SDK never sends it. */
+    links: z.array(ExternalLink).max(20).optional(),
 });
 
+/** The longest name a bundle carries: who it is from, the app and its version. */
+const BUNDLE_NAME_MAX = 200;
+
 export const Bundle = z.object({
-    id: z.string(),
+    /** ULID. A server keeps one record a bundle, under this id, and serves it at `/bundles/<id>`. */
+    id: SafeId,
     projectId: z.string(),
-    createdAt: z.string(),
-    author: z.object({ name: z.string().optional() }),
-    appName: z.string().optional(),
-    appVersion: z.string().optional(),
+    /** ISO 8601: when the tester packaged it. Any precision, but not a fraction of a second that never ends. */
+    createdAt: z.iso.datetime({ offset: true }).max(64),
+    author: z.object({ name: z.string().max(BUNDLE_NAME_MAX).optional() }),
+    /** Test bundles are review sessions: this is a human-readable title and agent focus, not an auth session. */
+    session: z
+        .object({
+            name: z.string().trim().min(1).max(120),
+            description: z.string().trim().max(4000).optional(),
+        })
+        .optional(),
+    appName: z.string().max(BUNDLE_NAME_MAX).optional(),
+    appVersion: z.string().max(BUNDLE_NAME_MAX).optional(),
     annotations: z.array(Annotation),
     schemaVersion: z.literal(SCHEMA_VERSION),
 });
 
 export type Mode = z.infer<typeof Mode>;
+export type FeedbackVisibility = z.infer<typeof FeedbackVisibility>;
 export type Severity = z.infer<typeof Severity>;
 export type Intent = z.infer<typeof Intent>;
 export type VariantOption = z.infer<typeof VariantOption>;
@@ -262,7 +340,16 @@ export type Reply = z.infer<typeof Reply>;
 export type Environment = z.infer<typeof Environment>;
 export type Target = z.infer<typeof Target>;
 export type Annotation = z.infer<typeof Annotation>;
+export type ExternalLink = z.infer<typeof ExternalLink>;
 export type Bundle = z.infer<typeof Bundle>;
+
+/** Every image belonging to a note, for transport, authorisation, quotas and garbage collection. */
+export function annotationAssets(a: Pick<Annotation, "screenshots" | "references">): AssetRef[] {
+    return [
+        ...Object.values(a.screenshots ?? {}).filter((r): r is AssetRef => !!r),
+        ...(a.references ?? []),
+    ];
+}
 
 /** Everything exported into schema.json, keyed by definition name. */
 export const definitions = {

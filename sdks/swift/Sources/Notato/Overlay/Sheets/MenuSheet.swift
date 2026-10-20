@@ -57,11 +57,12 @@ struct MenuSheet: View {
         }
     }
 
-    /// The server's state, when the app keeps a connection to one (not in test mode, which only uploads packages).
+    /// The configured server's state, including live Test review sessions.
     private var pill: (label: String, color: Color)? {
         guard notato.hasServer else { return nil }
         switch notato.connection {
-        case .connected: return ("Connected", Palette.connected)
+        // A capture-only token sends notes and reads nothing back: no live updates to be connected for.
+        case .connected: return (notato.captureOnly ? "Send only" : "Connected", Palette.connected)
         case .connecting: return ("Connecting…", Palette.status(Status.acknowledged))
         case .offline: return ("Offline", Palette.offline)
         case .refused: return ("Refused", Palette.offline)
@@ -125,7 +126,7 @@ struct MenuSheet: View {
                     detail: here == 0 ? "No pins on this screen" : here == 1 ? "1 pin on this screen" : "\(here) pins on this screen") {
                 run { notato.togglePins() }
             }
-            MenuRow(icon: .symbol("list.bullet"), title: "Notes", detail: "\(here) on this screen · \(notato.records.count) in all", opens: true) {
+            MenuRow(icon: .symbol("list.bullet"), title: "Notes", detail: "\(here) on this screen · \(notato.visibleCount) in all", opens: true) {
                 run { model.sheet = .list }
             }
             if notato.mode == .test, pending > 0 {

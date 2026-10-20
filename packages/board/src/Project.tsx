@@ -13,6 +13,8 @@ import {
     uploadBundle,
 } from "./api.ts";
 import { ConnectPage } from "./Connect.tsx";
+import { Contexts } from "./Contexts.tsx";
+import { useBoardExtension } from "./extension.tsx";
 import { Inbox } from "./Inbox.tsx";
 import { lastSeen, markSeen, onLive } from "./live.ts";
 import {
@@ -31,12 +33,14 @@ import {
     SORTS,
     sortAnnotations,
 } from "./model.ts";
+import { NotFound } from "./NotFound.tsx";
 import { Overview } from "./Overview.tsx";
 import { ProjectMenu } from "./ProjectMenu.tsx";
 import { ProjectSettings } from "./ProjectSettings.tsx";
+import { ReviewSessions } from "./ReviewSessions.tsx";
 import { go, projectHref, type Tab } from "./route.ts";
 import { KEYS, remember, remembered, useRemembered } from "./storage.ts";
-import { copyText, Empty, Icon } from "./ui.tsx";
+import { copyText, Icon } from "./ui.tsx";
 
 interface Props {
     me: Me;
@@ -53,6 +57,8 @@ interface Props {
     onNewProject?: (id?: string) => void;
     /** The project list should refresh: something here changed it. */
     onProjectsChanged(): void;
+    /** What the project showed has been on screen: where read state is kept on the server, to save it. */
+    onViewed(project: string, at: string): void;
     onRenamed(): void;
     onDeleted(): void;
 }
@@ -65,7 +71,8 @@ const NOTICE_MS = 6000;
  * so the inbox, Activity and Overview all show the same list.
  */
 export function Project(props: Props) {
-    const { me, project, summary, tab, selected, onProjectsChanged } = props;
+    const { me, project, summary, tab, selected, onProjectsChanged, onViewed } = props;
+    const serverReadState = Boolean(useBoardExtension()?.readState);
     const admin = isAdmin(me);
     const name = projectName(summary, project);
     const [all, setAll] = useState<Annotation[] | null>(null);
@@ -88,7 +95,9 @@ export function Project(props: Props) {
     }));
     const [detail, setDetail] = useRemembered(KEYS.detail, DETAILS, "standard");
     /** When this browser last looked, as of opening the project: anything newer is marked new. */
-    const [since] = useState(() => lastSeen(project));
+    const [since] = useState(() =>
+        serverReadState ? (summary?.readAt ?? null) : lastSeen(project)
+    );
     const [read, setRead] = useState<Set<string>>(() => new Set());
 
     /**
@@ -103,7 +112,7 @@ export function Project(props: Props) {
     const load = useCallback(() => {
         const n = ++loads.current;
         heard.current ??= new Map();
-        listAnnotations(project).then(
+        listAnnotations(project, true).then(
             (items) => {
                 // An earlier load answering late is older than the one still to come.
                 if (n !== loads.current) return;
@@ -113,7 +122,7 @@ export function Project(props: Props) {
                 setAll(merged);
                 setError(null);
                 // Looking at the project is seeing what happened in it, as the server tells it.
-                markSeen(project, newestActivity(merged));
+                if (!serverReadState) markSeen(project, newestActivity(merged));
             },
             (e: Error) => {
                 if (n !== loads.current) return;
@@ -125,7 +134,7 @@ export function Project(props: Props) {
         );
         // The bundles only fill the Source filter, which is left out while they cannot be had.
         listBundles(project).then(setBundles, () => {});
-    }, [project]);
+    }, [project, serverReadState]);
 
     useEffect(() => {
         load();
@@ -134,11 +143,27 @@ export function Project(props: Props) {
             if (e.type === "deleted") heard.current?.set(e.id, null);
             else if (e.annotation) {
                 heard.current?.set(e.id, e.annotation);
-                markSeen(project, lastActivity(e.annotation));
+                if (!serverReadState) markSeen(project, lastActivity(e.annotation));
             }
             setAll((cur) => (cur ? applyChange(cur, e) : cur));
         }, load);
-    }, [project, load]);
+    }, [project, load, serverReadState]);
+
+    // Save only activity actually loaded on a feedback page: settings and setup do not read the inbox.
+    useEffect(() => {
+        if (!serverReadState || !all || (tab !== "inbox" && tab !== "activity")) return;
+        const at = newestActivity(all);
+        if (!at) return;
+        const save = () => {
+            if (document.visibilityState !== "hidden") onViewed(project, at);
+        };
+        const timer = setTimeout(save, 300);
+        document.addEventListener("visibilitychange", save);
+        return () => {
+            clearTimeout(timer);
+            document.removeEventListener("visibilitychange", save);
+        };
+    }, [all, project, tab, onViewed, serverReadState]);
 
     // A notice is a toast: it goes on its own after a while.
     useEffect(() => {
@@ -157,11 +182,13 @@ export function Project(props: Props) {
         () =>
             sortAnnotations(
                 (all ?? []).filter(
-                    (a) => matches(a, state.filters) && matchesSearch(a, state.search)
+                    (a) =>
+                        matches(a, state.filters, me.username ?? "local") &&
+                        matchesSearch(a, state.search)
                 ),
                 state.sort
             ),
-        [all, state]
+        [all, me.username, state]
     );
 
     const replace = useCallback(
@@ -189,7 +216,12 @@ export function Project(props: Props) {
     /** Exactly what the inbox shows, in its order, as the same Markdown `notato export` writes. */
     const copyShown = async () => {
         try {
-            await copyText(renderAnnotations(shown, { detail, title: `Feedback for ${project}` }));
+            const records = detail === "compact" ? shown : await listAnnotations(project);
+            const full = new Map(records.map((a) => [a.id, a]));
+            const selected = shown.map((a) => full.get(a.id) ?? a);
+            await copyText(
+                renderAnnotations(selected, { detail, title: `Feedback for ${project}` })
+            );
             setNotice(`Copied ${plural(shown.length, "annotation")} as Markdown (${detail}).`);
         } catch (e) {
             setNotice(e instanceof Error ? e.message : "Could not copy.");
@@ -234,28 +266,31 @@ export function Project(props: Props) {
         // On a shared server a project has to be made before anything can be sent to it.
         if (props.known === false && me.mode === "serve") {
             return (
-                <Sheet>
-                    <Empty title={`There is no project “${project}” here`}>
-                        <p>Apps can only send notes to a project that exists on this server.</p>
-                        <div className="empty-actions">
-                            {props.onNewProject ? (
-                                <button
-                                    type="button"
-                                    className="primary"
-                                    onClick={() => props.onNewProject?.(project)}
-                                >
-                                    <Icon name="plus" size={14} />
-                                    Create it
-                                </button>
-                            ) : null}
-                            <a className="button-link" href="#/">
-                                All projects
-                            </a>
-                        </div>
-                    </Empty>
-                </Sheet>
+                <NotFound
+                    title="Project not found."
+                    description="This project may have been removed, or you may need to switch accounts to access it."
+                >
+                    {props.onNewProject ? (
+                        <button type="button" onClick={() => props.onNewProject?.(project)}>
+                            <Icon name="plus" size={14} />
+                            Create a project
+                        </button>
+                    ) : null}
+                </NotFound>
             );
         }
+        if (tab === "sessions")
+            return (
+                <ReviewSessions
+                    project={project}
+                    projectName={name}
+                    me={me}
+                    selection={selected}
+                    actor={me.username ?? "local"}
+                    annotations={all ?? []}
+                />
+            );
+        if (tab === "team") return <Contexts project={project} me={me} annotations={all ?? []} />;
         if (tab === "connect" && admin)
             return <ConnectPage me={me} project={project} name={name} menu={menu} />;
         if (tab === "settings" && admin) {
@@ -285,6 +320,15 @@ export function Project(props: Props) {
                 </Sheet>
             );
         }
+        if (selected && !all.some((note) => note.id === selected))
+            return (
+                <NotFound
+                    title="Note not found."
+                    description="This note may have been removed, or the link may belong to another project."
+                    homeHref={projectHref(project)}
+                    homeLabel="Back to project"
+                />
+            );
         if (tab === "activity")
             return <Activity project={project} name={name} all={all} since={since} menu={menu} />;
         if (tab === "overview")
@@ -295,6 +339,7 @@ export function Project(props: Props) {
         return (
             <Inbox
                 project={project}
+                actorId={me.username ?? "local"}
                 name={name}
                 all={all}
                 shown={shown}

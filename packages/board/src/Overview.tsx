@@ -65,6 +65,12 @@ export function Overview({
     const every: Array<{ key: string; label: string; value: number; statuses: Status[] }> = [
         { key: "open", label: "Open", value: s.open, statuses: ["open"] },
         {
+            key: "awaiting_response",
+            label: "Needs your answer",
+            value: s.awaiting_response,
+            statuses: ["awaiting_response"],
+        },
+        {
             key: "acknowledged",
             label: "Acknowledged",
             value: s.acknowledged,

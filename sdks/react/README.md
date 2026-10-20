@@ -21,12 +21,16 @@ A changed prop restarts the toolbar with it: the token, the author, `persist` an
 
 ## On or off from where the app is built
 
-In an app built with Vite, two variables in the environment it is built or served from (the shell, a `.env` file, or [.NET Aspire](https://github.com/notatorg/notato/tree/main/sdks/dotnet/src/Notato.Aspire#readme)) win over the props:
+In an app built with Vite, two variables in the environment it is built or served from (the shell, a `.env` file, or [Aspire](https://github.com/notatorg/notato/tree/main/sdks/dotnet/src/Notato.Aspire#readme)) win over the props:
 
 - `VITE_NOTATO`: `true` (or `1`, `yes`, `on`) starts the toolbar, in a production build too, such as one made with `vite build --watch` and served with `vite preview`. `false` (or `0`, `no`, `off`) keeps it off, in development too. Anything else, or nothing, leaves it to `enabled` and the kind of build.
 - `VITE_NOTATO_SERVER`: the server, over `server`.
 
 `VITE_NOTATO` is also what [`@notato/vite`](https://www.npmjs.com/package/@notato/vite) records source positions under, so one variable turns the lot on. A guard around `<Notato />` decides first: for an app that is built and previewed, write it as `npx notato init` does there, `{(import.meta.env.DEV || import.meta.env.VITE_NOTATO === "true") && <Notato … />}`, and a build without the variable still ships nothing of Notato. Other bundlers do not pass `VITE_` variables to the page; pass `enabled` and `server` from your own there.
+
+## Compatibility
+
+With a shared server that takes tokens (`notato serve`, or a server built on it), use version 0.3.0 or later: 0.2.0 predates authenticated event streams and project-scoped capability requests. Give the SDK an **app/tester** token; **agent** tokens are for MCP. Version 0.3 also works with a 0.2 server.
 
 ## Example
 

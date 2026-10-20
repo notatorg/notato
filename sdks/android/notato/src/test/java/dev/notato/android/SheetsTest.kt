@@ -54,7 +54,7 @@ class SheetsTest {
         assertEquals("2 more here: tap their pins.", SheetCopy.notesFooter(withPins = 2, onBoard = 0, others = 0))
         assertEquals("2 more here: tap their pins. 1 more on other screens.", SheetCopy.notesFooter(withPins = 2, onBoard = 0, others = 1))
         assertEquals("2 more here: tap their pins. 3 more here are on the board.", SheetCopy.notesFooter(withPins = 2, onBoard = 3, others = 0))
-        assertEquals("open · People only · 2h ago", SheetCopy.noteRow("open", peopleOnly = true, ago = "2h ago"))
+        assertEquals("open · Hidden from agent · 2h ago", SheetCopy.noteRow("open", peopleOnly = true, ago = "2h ago"))
         assertEquals("revert requested", SheetCopy.noteRow("revert_requested", peopleOnly = false, ago = null))
     }
 

@@ -3,6 +3,7 @@ package dev.notato.android
 import dev.notato.android.internal.BundleWriter
 import dev.notato.android.internal.LocalAnnotation
 import dev.notato.android.internal.Ulid
+import dev.notato.android.internal.withoutScreenshots
 import dev.notato.android.model.Annotation
 import dev.notato.android.model.FeedbackBundle
 import dev.notato.android.model.NotatoJson
@@ -128,6 +129,18 @@ class ContractTest {
         val body = form(annotation, mapOf(full to File(temp.root, "gone.png")))
         assertFalse(body.contains("asset:$full"))
         assertTrue(body.endsWith("--XYZ--\r\n"))
+    }
+
+    @Test
+    fun aPackageMadeWhileTheServerHasScreenshotsOffHasNoneAndPassesTheServersSchema() {
+        val annotation = Fixture.annotation()
+        val item = LocalAnnotation(annotation, mapOf(annotation.screenshots!!.full.id to shot(byteArrayOf(1, 2, 3))))
+        val (bundle, files) = BundleWriter.build(listOf(item.withoutScreenshots()), "android-sample", "Ada", null, null)
+        assertTrue(files.isEmpty())
+        assertEquals(null, bundle.annotations.single().screenshots)
+        assertFalse(BundleWriter.markdown(bundle).contains("shots/"))
+        val result = Fixture.validate("bundle", NotatoJson.encodeToString(FeedbackBundle.serializer(), bundle)) ?: return
+        assertTrue(result.second, result.first)
     }
 
     @Test

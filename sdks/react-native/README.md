@@ -6,6 +6,8 @@ It is the same client as the Swift, Android, Flutter and .NET MAUI SDKs: the too
 
 React Native 0.76 and later, with the New Architecture, in Expo (Expo Go included) or a bare app.
 
+**Screenshot size.** New captures prefer WebP at quality 85 when it is smaller than PNG, after privacy masking and at the same dimensions. PNG remains a fallback, and existing queues and bundles stay readable. Rebuild the native app (and install iOS pods) to enable the optional encoder; Expo Go and older app binaries continue with PNG. See [screenshot storage](../../docs/screenshot-storage.md).
+
 ## Set up
 
 ```bash
@@ -33,13 +35,31 @@ A small dark toolbar appears in the corner. Drag it anywhere; it stays where you
 
 **Storage.** `storage={expoStorage}` keeps notes not sent yet, test-mode notes, their screenshots and people's choices (on or off, the toolbar's place, a name) in the app's documents folder, and shares a test-mode package through the share sheet. It needs `expo-file-system` and `expo-sharing`, which work in Expo Go and in any app with Expo modules. Without it, all of that lasts until the app restarts. A bare app without Expo modules can pass its own `StorageProvider`: its `open(project)` returns a `NotatoStorage`, and both types are exported.
 
+The documents folder is in the device's backups (iCloud, Android's auto backup), and Expo cannot keep one file out of them, so a tester's screenshots can end up there. To keep them out, exclude the `notato` folder in your Android backup rules (`<exclude domain="file" path="notato/" />` in `dataExtractionRules` and `fullBackupContent`), or pass a `StorageProvider` that writes where backups do not reach.
+
 **Reaching the server.** The default is `http://localhost:4747`. The iOS simulator reaches it as it is. The Android emulator, and a phone plugged in over USB, reach it once the port is forwarded:
 
 ```bash
 adb reverse tcp:4747 tcp:4747
 ```
 
-A phone on Wi-Fi needs the server's [dev tunnel](../../README.md#phones-a-dev-tunnel): pass its URL as `server` and the device token as `token`, from your app's environment (`EXPO_PUBLIC_NOTATO_SERVER` in Expo).
+A phone on Wi-Fi needs the server's [dev tunnel](../../README.md#phones-a-dev-tunnel): pass its URL as `server` and the device token as `token`, in development builds only. The device token opens `notato dev` on your machine to whoever has it, so keep it out of anything you hand to others: never put it in an `EXPO_PUBLIC_` variable (Expo writes those into every bundle, release builds included), and never commit it. Read it from a file your repository ignores, required only in development, which Metro leaves out of a release bundle:
+
+```tsx
+const tunnel = __DEV__ ? require("./notato.local.json") : {}   // { "server": "https://…devtunnels.ms", "token": "notato_device_…" }
+
+<Notato project="shop" server={tunnel.server} token={tunnel.token} storage={expoStorage}>
+```
+
+Notato never sends a token from a release build unless you set `allowTokenInRelease`, and never the device token, or any token to a dev tunnel, whatever you set.
+
+**Builds for testers.** A build you hand out (TestFlight, an internal track, a device farm) holds whatever is in it, and anyone with it can read that out. Give it a shared server (`notato serve`) and a **capture-only** project token, and set `allowTokenInRelease`:
+
+```bash
+npx notato token create shop --purpose app --capture-only --expires 30
+```
+
+A capture-only token can send notes and nothing else: one read out of the app cannot read, change or delete anyone's feedback. Notato asks the server what the token may do before it connects, then sends notes (and those kept on the device) without following the project; replies, status and revert are on the board, and a note's card says so. A test-mode package uploads its captured notes to the configured server too; it grants no access to existing feedback.
 
 ## Props
 
@@ -48,13 +68,15 @@ A phone on Wi-Fi needs the server's [dev tunnel](../../README.md#phones-a-dev-tu
 | `project`                        | (required)                                  | Project id on the server. Letters, digits and `. _ - @`, not only dots                                                                                   |
 | `mode`                           | `dev`                                       | `dev`, `test` or `agent` (see below)                                                                                                                     |
 | `server`                         | `http://localhost:4747` (none in test mode) | `null` for no server: notes stay on the device                                                                                                           |
-| `token`                          |                                             | A project token (`notato_…`) for a shared `notato serve`                                                                                                 |
+| `token`                          |                                             | A project token (`notato_…`) for a shared `notato serve`. Sent from development builds only, unless `allowTokenInRelease`                                |
+| `allowTokenInRelease`            | `false`                                     | Send `token` from a release build too: a capture-only token only. Never a dev tunnel's device token (see [Builds for testers](#set-up))                  |
 | `storage`                        | in memory                                   | `expoStorage`, or your own `StorageProvider`                                                                                                             |
 | `route`                          | `/`                                         | The screen, or a function that says it: notes are filed under it, and its pins shown on it                                                               |
 | `enabled`                        | development builds (`__DEV__`)              | Whether Notato is on at launch. The app can switch it at runtime. Picking a view needs a development build either way                                    |
 | `showToolbar`, `toolbarPosition` | `true`, `bottom-right`                      | The toolbar and the corner it starts in (`bottom-left`, `top-right`, `top-left`). Where people drag it is remembered                                     |
 | `author`                         |                                             | The name on this person's notes. They can change it in the settings                                                                                      |
-| `screenshots`                    | `true`                                      | A server that has screenshots off wins either way                                                                                                        |
+| `screenshots`                    | `true`                                      | With a server set (test mode's too), none is taken until it says it takes them, and its "off" wins either way                                            |
+| `captureSecureScreens`           | `false`                                     | Screenshot Android screens marked `FLAG_SECURE` too. Off, they get none (apps built with the native module; Expo Go cannot tell)                         |
 | `maskInputs`                     | on in test and agent mode                   | Cover text fields in screenshots and leave their values out of notes (password fields always are). See [What is never recorded](#what-is-never-recorded) |
 | `rememberRuntimeState`           | `true`                                      | Keep runtime choices (on or off, toolbar, name, a server typed in, the toolbar's place) across launches, with `storage`                                  |
 | `captureLogs`, `logLimit`        | `true`, `50`                                | Attach the app's recent `console.warn` and `console.error` messages                                                                                      |
@@ -93,12 +115,13 @@ A view is picked the way React Native's own Element Inspector picks one, through
 - **The component**: the innermost component of yours that rendered it, and the ones around it, outermost first. React Native's, React Navigation's and Expo's own components are left out.
 - **Where it is written**: Metro maps the component stack back to your files, so the note gives the file and line of the component the view belongs to. The path is the one on your machine, where the agent works.
 - **Screenshots**: the screen as the person saw it, with the view outlined and numbered, the toolbar left out and private views covered, and a crop of the view.
-- **Context**: the device (the platform `react-native`, OS and version, React Native's version, the window's size and pixel ratio), the app's recent warnings and errors (`context.console`), and requests the app recorded (`context.network`).
+- **Context**: the device (the platform `react-native`, OS and version, React Native's version, the window's size and pixel ratio), the app's recent warnings and errors (`context.console`), and requests the app recorded (`context.network`). Credentials are blanked out of the messages (`Authorization`, cookies, API keys, tokens and passwords in a logged object, and `Bearer …` in text), and a request's address is kept without its query string or a user name and password.
 
 ### What is never recorded
 
 - **Password fields** (`secureTextEntry`), always: covered in screenshots, and their value is never recorded.
 - **Text fields** when `maskInputs` is on (by default in test and agent mode): covered, and their value left out. Their placeholder and label are still recorded, so a note can say which field it is.
+- **Screens Android keeps out of screenshots** (`FLAG_SECURE`: a one-time code, a card's number), unless `captureSecureScreens` is set: the note goes without a screenshot. Only an app built with Notato's native module can tell (a development build or bare app, not Expo Go); elsewhere, wrap such a screen in `<NotatoMask>`.
 - **Anything inside `<NotatoMask>`**: covered in screenshots, and none of its text is recorded anywhere: not as its text or label, and not in its selector. Its `testID` and `nativeID` are left out too (an app may make them of what it shows). A selector cannot find it by its text either. A private `<Text>` inside another `<Text>` has no place of its own on screen, so the `<Text>` around it is covered. A crop that would show any of it is left out.
 
 ```tsx
@@ -126,14 +149,14 @@ What a note's selector looks like, and what an agent passes to `notato_annotate`
 ## Modes
 
 - **dev**: notes go live to `notato dev`, pins turn amber when the agent acknowledges them and green when it resolves them, and replies arrive in the pin's card. On a resolved pin, **Ask the agent to revert** asks for the change to be undone. A note made while the server is down is kept on the device and sent when it comes back; one the server refuses for good (too large, say) is marked failed and kept, and the notes after it still go.
-- **test**: notes stay on the device (with `storage`, they survive a restart). **Package and share** in the toolbar's menu makes the bundle zip `notato_import_bundle` reads, uploads it when a server is set, and opens the share sheet.
+- **test**: feedback defaults to shared and, when a server is configured, is sent live into a review session. Notes also stay on the device for **Package and share**, which exports the bundle zip `notato_import_bundle` reads and uploads it when requested. Without a server, testing stays offline.
 - **agent**: like dev, and the app also takes `notato_annotate` requests: `notato_annotate { target: "#add-to-basket:nth(3)", comment: "…" }` is relayed to the app, which finds the view, takes the screenshot and files the note as the agent. Requests are taken one at a time. The agent hears the note is filed only once the server has it; one kept on the device (the server could not be reached, or would not take it) is reported as not filed, with the reason.
 
 ## People only and asides
 
-Everything people write reaches the agent: new notes and every reply. Two switches keep something between people instead:
+Replies reach the agent within its active feedback scope. Dev feedback is private to its creator by default; Test feedback is Shared. Change a note's visibility in the board to share it with the project. People only and Aside are additional ways to keep feedback between people:
 
-- **People only**, for a whole note: the composer's switch (_"Keep this between people: the agent won't see it."_), and the same switch on the note's card, at any time, for anyone on the thread. Each change is recorded in the thread. A note still on the device (test mode, or not sent yet) is changed on the device, with the same entry, so a package carries the history.
+- **People only**, for a whole note: the composer's switch (_"Keep this between people: the agent won't see it."_), and the same switch on the note's card, at any time, for anyone on the thread. Each change is recorded in the thread. A note not yet sent to the server is changed on the device, with the same entry, so a package carries the history.
 - **Aside**, for one reply: under the reply field (_"Just for people: the agent won't see this reply."_). Asides show in the thread outlined and labelled **Aside**.
 
 ## Known limits
@@ -150,6 +173,18 @@ Everything people write reaches the agent: new notes and every reply. Two switch
 - There is no shake to bring the toolbar back: in a development build a shake opens React Native's developer menu, which has **Notato: show or hide the toolbar**.
 - Verified in Expo Go 57 with React Native 0.86 on the iOS simulator (iPhone 17 Pro, iOS 26.5): picking, masking, both screenshots, the component and its file, the composer, the ⋯ menu, live status, replies and asides, People only, revert, annotating from code, the agent relay through `notato_annotate`, and test mode's package uploaded and shared. Not yet verified at this version on the Android emulator, on a physical device, or in a bare app.
 
+## Hiding completed annotations
+
+On a resolved or reverted note, open **More options → Hide from this app** to hide
+its pin and card on this device. In **Settings**, **Hide completed annotations**
+hides completed notes across every screen at once, including notes beyond the
+150 drawn pins. **Restore hidden annotations** brings them back.
+
+Hiding keeps the feedback, screenshots and thread in the dashboard and exports.
+It never changes the note on the server. Reopened tasks and new agent questions
+remain visible. The preference is scoped to the server, project, mode, credential
+and name, and survives app restarts when runtime preferences are remembered.
+
 ## Development
 
 ```bash
@@ -162,3 +197,9 @@ EXPO_PUBLIC_NOTATO_SERVER=http://localhost:4799 EXPO_PUBLIC_NOTATO_MODE=test npx
 The example is an Expo app outside the repository's Bun workspace (its own `npm install`), so Expo stays out of every other install. Its `metro.config.js` runs the SDK from `../src` and makes the SDK's imports of React, React Native and the Expo modules use the app's own copies.
 
 The toolbar's icons are white PNGs tinted where they are drawn, made from the Android SDK's path data by `swift scripts/icons/render.swift` (macOS 14 or later), which writes them into this SDK and the Flutter one.
+
+Capture-only uploads and retries follow the [shared capture contract](../../docs/capture-contract.md). With a server configured, screenshots require an explicit `screenshots: true` policy; unknown or unavailable initial policy means text-only capture. Local-only capture continues without a policy request.
+
+### Feedback ownership and review sessions
+
+Dev feedback defaults to personal; Test defaults to shared. The composer’s **Share with project** switch overrides the default for that note. **People only** separately keeps agents out. With a server configured, Test feedback is sent live and grouped into a review session from the start of the run; without one, device storage and zip packaging still work. Use the board’s **Review sessions** to name a run, set its focus and discuss it. Each developer uses their own credentials with the same project ID. See the [team feedback guide](../../docs/team-feedback.md).

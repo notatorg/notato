@@ -31,11 +31,5 @@
             "semicolons": "always",
             "trailingCommas": "es5"
         }
-    },
-    "overrides": [
-        {
-            "includes": ["site/src/site.css"],
-            "linter": { "rules": { "style": { "noDescendingSpecificity": "off" } } }
-        }
-    ]
+    }
 }

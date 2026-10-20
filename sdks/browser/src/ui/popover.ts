@@ -1,6 +1,7 @@
-import type { Intent, Severity } from "@notato/schema";
+import type { FeedbackVisibility, Intent, Severity } from "@notato/schema";
+import { referenceThumbnail, validateReferenceFile } from "../reference-image.ts";
 import { capitalize } from "../text.ts";
-import { h } from "./dom.ts";
+import { h, ICONS, icon } from "./dom.ts";
 import { createFrames, type FrameJob, type Frames } from "./frame.ts";
 import { isMac } from "./keys.ts";
 import { animateIn, animateOut, RISE, settle } from "./motion.ts";
@@ -13,17 +14,23 @@ export interface PopoverInit {
     /** Viewport coordinates of the thing being annotated; the popover sits beside it. */
     anchor: { left: number; top: number; width: number; height: number };
     hint?: string;
+    screenshotsOff?: boolean;
     /**
      * Whether a Variants request can be made. It needs an agent on a server to put the versions in the code, so it is
      * left out where there is none (test mode, or no server).
      */
     variants?: boolean;
+    references?: boolean;
+    defaultVisibility?: FeedbackVisibility;
+    reviewInstruction?: string;
     onSave(value: {
         comment: string;
+        references?: File[];
         severity?: Severity;
         intent?: Intent;
         /** Kept between people: the agent never gets it. */
         peopleOnly?: boolean;
+        visibility: FeedbackVisibility;
     }): Promise<void>;
     onCancel(): void;
 }
@@ -32,7 +39,14 @@ export interface Popover {
     readonly isOpen: boolean;
     open(init: PopoverInit): void;
     /** Refresh title, targets and anchor while keeping what the person has typed (multi-select). */
-    update(patch: Partial<Pick<PopoverInit, "title" | "targets" | "anchor" | "hint">>): void;
+    update(
+        patch: Partial<
+            Pick<
+                PopoverInit,
+                "title" | "targets" | "anchor" | "hint" | "screenshotsOff" | "references"
+            >
+        >
+    ): void;
     /** Closes it: it fades away, and is gone for `isOpen` at once. */
     close(): void;
     /** Places it again at the next frame, with the other things over the page (see frame.ts). */
@@ -83,22 +97,29 @@ export function createPopover(layer: HTMLElement, frames: Frames = createFrames(
     let severity: Severity | undefined;
     let intent: Intent | undefined;
     let peopleOnly = false;
+    let visibility: FeedbackVisibility = "personal";
     let textarea: HTMLTextAreaElement;
     let saveBtn: HTMLButtonElement;
     let status: HTMLElement;
     let titleEl: HTMLElement;
     let hintEl: HTMLElement;
+    let screenshotState: HTMLElement;
+    let clearPreviews = () => {};
     /** The line of small print under the targets; empty means no line at all. */
     const showHint = (text: string | undefined) => {
         hintEl.textContent = text ?? "";
         hintEl.style.display = text ? "" : "none";
-        // A warning (something on it is moving, or no screenshot will be taken) is tinted; a tip is not.
-        hintEl.classList.toggle("warn", Boolean(text && /Animating|No screenshot/.test(text)));
+        hintEl.classList.toggle("warn", Boolean(text?.includes("Animating")));
     };
-    /** What the status line says while nothing is happening: how to save and how to back out. */
-    const idle = () => `${isMac() ? "⌘↵" : "Ctrl+↵"} save · Esc cancel`;
     let targetsEl: HTMLElement;
     let saving = false;
+    let files: File[] = [];
+    const attachmentsBusy = (busy: boolean) => {
+        for (const control of el?.querySelectorAll<HTMLInputElement | HTMLButtonElement>(
+            ".reference-picker input, .reference-picker button"
+        ) ?? [])
+            control.disabled = busy;
+    };
 
     /** Where it goes, worked out from its height as last laid out. */
     let height = 0;
@@ -132,7 +153,7 @@ export function createPopover(layer: HTMLElement, frames: Frames = createFrames(
 
     const save = async () => {
         if (!current || saving) return;
-        const comment = textarea.value.trim();
+        const comment = textarea.value.trim() || current.reviewInstruction || "";
         if (!comment) {
             status.textContent = "Write a note first.";
             status.className = "status error";
@@ -141,18 +162,24 @@ export function createPopover(layer: HTMLElement, frames: Frames = createFrames(
         }
         saving = true;
         saveBtn.disabled = true;
+        attachmentsBusy(true);
         status.className = "status";
         status.textContent = "Saving…";
+        const savingPopover = el;
         try {
             await current.onSave({
                 comment,
+                ...(files.length ? { references: [...files] } : {}),
                 severity,
                 intent,
                 ...(peopleOnly ? { peopleOnly } : {}),
+                visibility,
             });
         } catch (error) {
+            if (el !== savingPopover) return;
             saving = false;
             saveBtn.disabled = false;
+            attachmentsBusy(false);
             status.className = "status error";
             status.textContent = error instanceof Error ? error.message : "Could not save.";
         }
@@ -160,6 +187,7 @@ export function createPopover(layer: HTMLElement, frames: Frames = createFrames(
 
     const close = () => {
         frames.cancel(job);
+        clearPreviews();
         if (el) {
             const going = el;
             leaving = going;
@@ -179,6 +207,8 @@ export function createPopover(layer: HTMLElement, frames: Frames = createFrames(
         severity = undefined;
         intent = undefined;
         peopleOnly = false;
+        visibility = "personal";
+        files = [];
         saving = false;
     };
 
@@ -190,6 +220,7 @@ export function createPopover(layer: HTMLElement, frames: Frames = createFrames(
             close();
             if (leaving) settle(leaving);
             current = init;
+            visibility = init.defaultVisibility ?? "personal";
             const intentChips = INTENTS.filter((i) => i !== "variants" || init.variants).map((i) =>
                 h(
                     "button",
@@ -236,25 +267,75 @@ export function createPopover(layer: HTMLElement, frames: Frames = createFrames(
                     capitalize(s)
                 )
             );
-            const peopleChip = h(
-                "button",
-                {
-                    class: "chip people",
-                    type: "button",
-                    "aria-pressed": "false",
-                    title: PEOPLE_ONLY_HINT,
-                    onclick: (ev: Event) => {
-                        peopleOnly = !peopleOnly;
-                        peopleChip.setAttribute("aria-pressed", String(peopleOnly));
-                        ev.stopPropagation();
+            const visibilityDetail = h("p", {});
+            const showVisibility = () => {
+                visibilityDetail.textContent = peopleOnly
+                    ? "Only people can see this note."
+                    : visibility === "shared"
+                      ? "Everyone with access to this project can see this feedback."
+                      : "Only you and your agent can see this feedback.";
+            };
+            showVisibility();
+            const visibilitySwitch = (
+                label: string,
+                iconSvg: string,
+                pressed: boolean,
+                title: string,
+                toggle: () => boolean
+            ) => {
+                const sw: HTMLButtonElement = h(
+                    "button",
+                    {
+                        class: "vis-switch",
+                        type: "button",
+                        "aria-pressed": String(pressed),
+                        title,
+                        onclick: (ev: Event) => {
+                            sw.setAttribute("aria-pressed", String(toggle()));
+                            showVisibility();
+                            ev.stopPropagation();
+                        },
                     },
-                },
-                "People only"
+                    icon(iconSvg),
+                    h("span", { class: "vis-label" }, label),
+                    h("span", { class: "vis-track", "aria-hidden": "true" })
+                );
+                return sw;
+            };
+            const shareChip = visibilitySwitch(
+                "Share with project",
+                ICONS.people,
+                visibility === "shared",
+                "Choose whether this feedback belongs only to you or is shared with the project.",
+                () => {
+                    visibility = visibility === "personal" ? "shared" : "personal";
+                    return visibility === "shared";
+                }
+            );
+            const peopleChip = visibilitySwitch(
+                "Hide from agent",
+                ICONS.lock,
+                false,
+                PEOPLE_ONLY_HINT,
+                () => {
+                    peopleOnly = !peopleOnly;
+                    return peopleOnly;
+                }
             );
             hintEl = h("p", { class: "hint" });
             showHint(init.hint);
             titleEl = h("h2");
             targetsEl = h("ul", { class: "targets" });
+            screenshotState = h(
+                "p",
+                {
+                    class: "screenshot-state",
+                    style: { display: init.screenshotsOff ? "" : "none" },
+                    title: "No screenshot will be taken.",
+                },
+                icon(ICONS.image),
+                "Screenshots off"
+            );
             textarea = h("textarea", {
                 placeholder: PLACEHOLDER,
                 "aria-label": "Annotation comment",
@@ -269,40 +350,282 @@ export function createPopover(layer: HTMLElement, frames: Frames = createFrames(
                     }
                 },
             });
-            status = h("span", { class: "status" }, idle());
+            if (init.reviewInstruction) textarea.placeholder = "Optional detail for this target";
+            const fileList = h("div", { class: "reference-files", "aria-live": "polite" });
+            const previews = new Map<File, { element: HTMLElement; url?: string }>();
+            // Decode one preview at a time; retain only the tiny result, never a URL for the source image.
+            let previewQueue = Promise.resolve();
+            const removePreview = (file: File) => {
+                const preview = previews.get(file);
+                if (preview?.url) URL.revokeObjectURL(preview.url);
+                previews.delete(file);
+            };
+            clearPreviews = () => {
+                for (const file of previews.keys()) removePreview(file);
+            };
+            const previewFor = (file: File) => {
+                const existing = previews.get(file);
+                if (existing) return existing.element;
+                const preview: { element: HTMLElement; url?: string } = {
+                    element: h(
+                        "span",
+                        { class: "reference-preview", "aria-hidden": "true" },
+                        icon(ICONS.image)
+                    ),
+                };
+                previews.set(file, preview);
+                previewQueue = previewQueue.then(async () => {
+                    if (previews.get(file) !== preview) return;
+                    try {
+                        const blob = await referenceThumbnail(file);
+                        // Closing the composer or removing this file while decoding must not leave a URL behind.
+                        if (previews.get(file) !== preview) return;
+                        preview.url = URL.createObjectURL(blob);
+                        preview.element.replaceChildren(h("img", { src: preview.url, alt: "" }));
+                    } catch {
+                        preview.element.title = "Preview unavailable";
+                    }
+                });
+                return preview.element;
+            };
+            const fileCount = h("span", { class: "reference-count" }, "0 / 3");
+            const fileInput = h("input", {
+                type: "file",
+                accept: "image/png,image/jpeg,image/webp",
+                multiple: true,
+                hidden: true,
+                "aria-label": "Attach reference images",
+            });
+            const chooseFiles = h(
+                "button",
+                {
+                    class: "btn reference-choose",
+                    type: "button",
+                    onclick: () => {
+                        if (!saving && current?.references) fileInput.click();
+                    },
+                },
+                "Choose images"
+            );
+            const redraw = () => {
+                fileCount.textContent = `${files.length} / 3`;
+                fileCount.setAttribute("aria-label", `${files.length} of 3 images attached`);
+                fileList.replaceChildren(
+                    ...files.map((f) =>
+                        h(
+                            "div",
+                            { class: "reference-file" },
+                            previewFor(f),
+                            h("span", { class: "reference-name", title: f.name }, f.name),
+                            h(
+                                "button",
+                                {
+                                    class: "btn reference-remove",
+                                    type: "button",
+                                    "aria-label": `Remove ${f.name}`,
+                                    title: `Remove ${f.name}`,
+                                    onclick: () => {
+                                        if (saving) return;
+                                        removePreview(f);
+                                        files = files.filter((item) => item !== f);
+                                        redraw();
+                                    },
+                                },
+                                icon(ICONS.close)
+                            )
+                        )
+                    )
+                );
+                place();
+            };
+            const attach = (selected: File[]) => {
+                if (!current?.references || saving || !selected.length) return;
+                try {
+                    if (files.length + selected.length > 3)
+                        throw new Error("Attach at most three reference images.");
+                    for (const file of selected) validateReferenceFile(file);
+                } catch (error) {
+                    status.className = "status error";
+                    status.textContent = (error as Error).message;
+                    place();
+                    return;
+                }
+                files.push(...selected);
+                status.className = "status";
+                status.textContent = "";
+                redraw();
+            };
+            fileInput.addEventListener("change", () => {
+                attach([...(fileInput.files ?? [])]);
+                fileInput.value = "";
+            });
+            status = h("p", { class: "status", role: "status" });
             saveBtn = h(
                 "button",
                 { class: "btn primary", type: "button", onclick: () => void save() },
-                "Save"
+                init.reviewInstruction ? "Add to review" : "Save note"
             );
             el = h(
                 "div",
-                { class: "popover", role: "dialog", "aria-label": "New annotation" },
-                titleEl,
-                targetsEl,
-                hintEl,
-                textarea,
+                {
+                    class: "popover",
+                    role: "dialog",
+                    "aria-label": "New annotation",
+                    onpaste: (event: ClipboardEvent) => {
+                        const data = event.clipboardData;
+                        if (!current?.references || !data) return;
+                        // Prefer files; some browsers expose images only as items. Do not attach both representations.
+                        const pasted = [...data.files];
+                        const selected = (
+                            pasted.length
+                                ? pasted
+                                : [...data.items]
+                                      .filter((item) => item.kind === "file")
+                                      .map((item) => item.getAsFile())
+                                      .filter((file): file is File => file !== null)
+                        ).filter((file) => file.type.startsWith("image/"));
+                        if (!selected.length) return;
+                        event.stopPropagation();
+                        // Mixed text/image clipboards keep the browser's normal text insertion in the comment.
+                        if (saving || !data.getData("text/plain")) event.preventDefault();
+                        attach(selected);
+                    },
+                },
                 h(
                     "div",
-                    { class: "chips", role: "group", "aria-label": "What should happen" },
-                    ...intentChips
+                    { class: "composer-content" },
+                    titleEl,
+                    targetsEl,
+                    hintEl,
+                    screenshotState,
+                    init.reviewInstruction
+                        ? h(
+                              "p",
+                              { class: "review-instruction" },
+                              "Review: ",
+                              init.reviewInstruction
+                          )
+                        : null,
+                    textarea,
+                    h(
+                        "div",
+                        {
+                            class: "reference-picker",
+                            style: { display: init.references ? "" : "none" },
+                        },
+                        h(
+                            "div",
+                            { class: "reference-heading" },
+                            h(
+                                "span",
+                                {},
+                                "Reference images ",
+                                h("span", { class: "reference-optional" }, "(optional)")
+                            ),
+                            fileCount
+                        ),
+                        fileInput,
+                        h(
+                            "div",
+                            {
+                                class: "reference-attach",
+                                role: "group",
+                                "aria-label": "Add reference images",
+                                onclick: (event: MouseEvent) => {
+                                    if (
+                                        event.target instanceof Element &&
+                                        event.target.closest("button")
+                                    )
+                                        return;
+                                    textarea.focus({ preventScroll: true });
+                                },
+                            },
+                            h(
+                                "span",
+                                { class: "reference-symbol", "aria-hidden": "true" },
+                                icon(ICONS.image)
+                            ),
+                            h(
+                                "div",
+                                { class: "reference-options" },
+                                h(
+                                    "p",
+                                    { class: "reference-paste" },
+                                    "Paste an image ",
+                                    h("kbd", {}, isMac() ? "⌘ V" : "Ctrl V")
+                                ),
+                                h(
+                                    "div",
+                                    { class: "reference-alternative" },
+                                    h("span", {}, "or"),
+                                    chooseFiles
+                                )
+                            )
+                        ),
+                        fileList,
+                        h("p", { class: "reference-help" }, "PNG, JPG or WebP · Up to 16 MB each")
+                    ),
+                    h(
+                        "div",
+                        { class: "composer-options", role: "group", "aria-label": "Feedback type" },
+                        h(
+                            "span",
+                            { class: "composer-label", "aria-hidden": "true" },
+                            "Feedback type"
+                        ),
+                        h(
+                            "div",
+                            {
+                                class: `chips composer-intents${init.variants ? " has-variants" : ""}`,
+                            },
+                            ...intentChips
+                        )
+                    ),
+                    h(
+                        "div",
+                        { class: "composer-options", role: "group", "aria-label": "Severity" },
+                        h("span", { class: "composer-label", "aria-hidden": "true" }, "Severity"),
+                        h("div", { class: "chips composer-severities" }, ...chips)
+                    ),
+                    init.reviewInstruction
+                        ? null
+                        : h(
+                              "div",
+                              {
+                                  class: "composer-visibility",
+                                  role: "group",
+                                  "aria-label": "Visibility",
+                              },
+                              h("span", { class: "composer-label" }, "Visibility"),
+                              shareChip,
+                              peopleChip,
+                              visibilityDetail
+                          )
                 ),
-                h("div", { class: "chips", role: "group", "aria-label": "Severity" }, ...chips),
                 h(
                     "div",
-                    { class: "chips", role: "group", "aria-label": "Who it is for" },
-                    peopleChip
-                ),
-                h(
-                    "div",
-                    { class: "actions" },
+                    { class: "composer-footer" },
                     status,
                     h(
-                        "button",
-                        { class: "btn", type: "button", onclick: () => init.onCancel() },
-                        "Cancel"
-                    ),
-                    saveBtn
+                        "div",
+                        { class: "composer-commands" },
+                        h(
+                            "span",
+                            { class: "composer-shortcuts", title: "Escape to cancel" },
+                            h("kbd", {}, isMac() ? "⌘↵" : "Ctrl+↵"),
+                            " to save"
+                        ),
+                        h(
+                            "div",
+                            { class: "actions" },
+                            h(
+                                "button",
+                                { class: "btn", type: "button", onclick: () => init.onCancel() },
+                                "Cancel"
+                            ),
+                            saveBtn
+                        )
+                    )
                 )
             );
             layer.append(el);
@@ -315,6 +638,12 @@ export function createPopover(layer: HTMLElement, frames: Frames = createFrames(
             if (!current) return;
             current = { ...current, ...patch };
             if ("hint" in patch) showHint(patch.hint);
+            if ("screenshotsOff" in patch)
+                screenshotState.style.display = patch.screenshotsOff ? "" : "none";
+            if ("references" in patch) {
+                const picker = el?.querySelector<HTMLElement>(".reference-picker");
+                if (picker) picker.style.display = patch.references ? "" : "none";
+            }
             renderTargets();
             place();
         },

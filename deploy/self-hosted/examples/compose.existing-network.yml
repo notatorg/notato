@@ -1,0 +1,13 @@
+# Join a Docker network that already exists, so Notato can reach a Postgres, S3 or SMTP container you run elsewhere
+# by its container name (for example NOTATO_DATABASE_URL=postgres://notato:...@my-postgres:5432/notato).
+#
+#   docker compose -f compose.yml -f examples/compose.existing-network.yml --env-file .env up -d
+#
+# Set NOTATO_EXTERNAL_NETWORK in .env to the network's name (`docker network ls`).
+services:
+  server:
+    networks: [default, existing]
+networks:
+  existing:
+    name: ${NOTATO_EXTERNAL_NETWORK:?Set NOTATO_EXTERNAL_NETWORK to the existing Docker network}
+    external: true

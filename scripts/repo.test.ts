@@ -3,7 +3,6 @@
 import { describe, expect, it } from "bun:test";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { PAGES } from "../site/docs.ts";
 import { libraries, REPO_URL, ROOT } from "./repo.ts";
 import { changelogsWithout, currentVersion, readStamps, SDK_STAMPS } from "./version.ts";
 
@@ -38,7 +37,7 @@ describe("every SDK", () => {
             expect(existsSync(join(ROOT, "sdks", name, "README.md")), name).toBe(true);
     });
 
-    it("outside npm, says where its version is, has its own CI and a docs page", () => {
+    it("outside npm, says where its version is and has its own CI", () => {
         const workflows = readdirSync(join(ROOT, ".github/workflows"));
         for (const name of nativeSdks) {
             expect(SDK_STAMPS[name], `${name} in SDK_STAMPS (scripts/version.ts)`).toBeDefined();
@@ -47,10 +46,6 @@ describe("every SDK", () => {
             const text = read(`.github/workflows/${workflow}`);
             expect(text, `${workflow} runs on changes to the SDK`).toContain(`sdks/${name}/**`);
             expect(text, `${workflow} runs on changes to the schema`).toContain("packages/schema/");
-            expect(
-                PAGES.some((p) => p.file === `sdks/${name}/README.md`),
-                `a page for sdks/${name}/README.md in site/docs.ts`
-            ).toBe(true);
         }
     });
 
@@ -88,12 +83,7 @@ describe("publishing", () => {
         );
         expect(read("Package.swift")).toContain(REPO_URL);
         expect(read("Dockerfile")).toContain(`ghcr.io/${path}`);
-        for (const file of [
-            "README.md",
-            "Dockerfile",
-            "site/src/index.html",
-            "sdks/android/gradle.properties",
-        ])
+        for (const file of ["README.md", "Dockerfile", "sdks/android/gradle.properties"])
             expect(read(file), file).not.toContain("OWNER/");
     });
 

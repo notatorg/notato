@@ -14,10 +14,51 @@ afterEach(() => {
 });
 
 describe("createPolicy", () => {
-    it("allows screenshots until the server says otherwise", async () => {
+    it("negotiates status filters and forgets them for servers that do not advertise them", async () => {
+        vi.stubGlobal(
+            "fetch",
+            answer({ annotationStatuses: ["open", "awaiting_response", "future_status", 42] })
+        );
+        const policy = createPolicy({ baseUrl: "http://localhost:4799" });
+        expect(policy.annotationStatusesNow()).toBeUndefined();
+        await policy.refresh();
+        expect(policy.annotationStatusesNow()).toEqual(["open", "awaiting_response"]);
+        vi.stubGlobal("fetch", answer({ screenshots: true }));
+        await policy.refresh();
+        expect(policy.annotationStatusesNow()).toBeUndefined();
+    });
+
+    it("uses derived crops only after explicit capability confirmation", async () => {
+        const fetchMock = answer({ screenshots: true, derivedScreenshots: true });
+        vi.stubGlobal("fetch", fetchMock);
+        const policy = createPolicy({ baseUrl: "http://localhost:4799" });
+        expect(policy.derivedScreenshotsNow()).toBe(false);
+        await policy.refresh();
+        expect(policy.derivedScreenshotsNow()).toBe(true);
+        vi.stubGlobal("fetch", answer({ screenshots: true }));
+        await policy.refresh();
+        expect(policy.derivedScreenshotsNow()).toBe(false);
+    });
+    it("scopes the capability request to its project and keeps credentials in headers", async () => {
+        const fetchMock = answer({ screenshots: false, captureOnly: true });
+        vi.stubGlobal("fetch", fetchMock);
+        const policy = createPolicy({
+            baseUrl: "https://notes.example.com",
+            project: "team@example.com",
+            token: "notato_capture",
+        });
+        await policy.refresh();
+        expect(policy.captureOnlyNow()).toBe(true);
+        expect(fetchMock).toHaveBeenCalledWith(
+            "https://notes.example.com/config?project=team%40example.com",
+            { headers: { Authorization: "Bearer notato_capture" } }
+        );
+    });
+
+    it("takes no screenshot until a configured server explicitly allows it", async () => {
         vi.stubGlobal("fetch", answer({ screenshots: true }));
         const policy = createPolicy({ baseUrl: "http://localhost:4747" });
-        expect(policy.screenshotsNow()).toBe(true);
+        expect(policy.screenshotsNow()).toBe(false);
         expect(await policy.screenshots()).toBe(true);
     });
 
@@ -74,7 +115,21 @@ describe("createPolicy", () => {
         const policy = createPolicy({ baseUrl: "http://localhost:4747" });
         const pending = policy.screenshots();
         await vi.advanceTimersByTimeAsync(2_000);
-        expect(await pending).toBe(true);
+        expect(await pending).toBe(false);
+    });
+
+    it("keeps capture text-only for unreachable or older servers without screenshot policy", async () => {
+        vi.stubGlobal("fetch", answer({}));
+        const policy = createPolicy({ baseUrl: "http://localhost:4799" });
+        expect(await policy.screenshots()).toBe(false);
+        vi.advanceTimersByTime(6_000);
+        vi.stubGlobal(
+            "fetch",
+            vi.fn(async () => {
+                throw new Error("offline");
+            })
+        );
+        expect(await policy.screenshots()).toBe(false);
     });
 
     it("never calls out when there is no server", async () => {

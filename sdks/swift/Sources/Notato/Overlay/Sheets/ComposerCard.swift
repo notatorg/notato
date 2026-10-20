@@ -5,14 +5,16 @@ import SwiftUI
 struct ComposerCard: View {
     let selection: SelectionView?
     let screenshotsOff: Bool
+    var sharedByDefault = false
     let parent: () -> Void
     let cancel: () -> Void
-    let send: (String, String?, String?, Bool) async -> String?
+    let send: (String, String?, String?, Bool, Bool) async -> String?
 
     @State private var comment = ""
     @State private var intent: String?
     @State private var severity: String?
     @State private var peopleOnly = false
+    @State private var sharedOverride: Bool?
     @State private var busy = false
     @State private var problem: String?
     @FocusState private var focused: Bool
@@ -43,6 +45,7 @@ struct ComposerCard: View {
                     .accessibilityIdentifier("NotatoComment")
                 Chips(options: [(Intent.fix, "Fix"), (Intent.change, "Change"), (Intent.question, "Question"), (Intent.approve, "Approve")], selected: $intent)
                 Chips(options: [(Severity.blocker, "Blocker"), (Severity.major, "Major"), (Severity.minor, "Minor"), (Severity.nit, "Nit")], selected: $severity)
+                FlagToggle(title: "Share with project", hint: "Project members can see this feedback.", isOn: Binding(get: { sharedOverride ?? sharedByDefault }, set: { sharedOverride = $0 }))
                 FlagToggle(title: PeopleOnlyCopy.title, hint: PeopleOnlyCopy.hint, isOn: $peopleOnly)
                     .accessibilityIdentifier("NotatoPeopleOnly")
                 if let problem { Text(problem).font(.caption).foregroundStyle(Palette.danger) }
@@ -55,7 +58,7 @@ struct ComposerCard: View {
                         guard !busy, !text.isEmpty else { return }
                         busy = true
                         Task {
-                            problem = await send(text, intent, severity, peopleOnly)
+                            problem = await send(text, intent, severity, peopleOnly, sharedOverride ?? sharedByDefault)
                             busy = false
                         }
                     }

@@ -14,7 +14,8 @@ internal sealed class ComposerCard : ContentView
     private readonly ChipRow _severities;
     private readonly MentionRow _mentions;
     private readonly Switch _peopleOnly;
-    private readonly Func<string, string?, string?, bool, Task<string?>> _onSend;
+    private readonly Switch _shared;
+    private readonly Func<string, string?, string?, bool, bool, Task<string?>> _onSend;
     private readonly Border _send;
     private readonly Label _error;
     private bool _busy;
@@ -25,8 +26,9 @@ internal sealed class ComposerCard : ContentView
     /// <param name="onParent">Parent: widens the selection to the element around it.</param>
     /// <param name="onCancel">Closes the card, and the selection with it.</param>
     /// <param name="onSend">Sends the note (comment, intent, severity, People only); returns what went wrong, or null.</param>
+    /// <param name="sharedByDefault">Test mode starts shared; Dev mode starts personal.</param>
     public ComposerCard(string target, string? detail, bool screenshotsOff,
-        Action onParent, Action onCancel, Func<string, string?, string?, bool, Task<string?>> onSend)
+        Action onParent, Action onCancel, Func<string, string?, string?, bool, bool, Task<string?>> onSend, bool sharedByDefault = false)
     {
         Ui.Plain(this);
         _onSend = onSend;
@@ -75,7 +77,8 @@ internal sealed class ComposerCard : ContentView
         _intents = new ChipRow([(AnnotationIntents.Fix, "Fix"), (AnnotationIntents.Change, "Change"), (AnnotationIntents.Question, "Question"), (AnnotationIntents.Approve, "Approve")]);
         _severities = new ChipRow([(Severities.Blocker, "Blocker"), (Severities.Major, "Major"), (Severities.Minor, "Minor"), (Severities.Nit, "Nit")]);
         _mentions = new MentionRow(_editor);
-        // Everything people write reaches the agent, unless they keep it between themselves.
+        // Visibility defaults are set from Dev/Test mode by the server; this switch is the separate People only control.
+        (Grid sharedRow, _shared) = Ui.SwitchRow("Share with project", "Project members can see this feedback.", sharedByDefault, "NotatoShared");
         (Grid peopleOnlyRow, _peopleOnly) = Ui.SwitchRow(PeopleOnlyToggle.Label, PeopleOnlyToggle.Hint, false, "NotatoPeopleOnly");
 
         _error = Ui.Text(null, 12, Ui.Danger);
@@ -99,6 +102,7 @@ internal sealed class ComposerCard : ContentView
                 Scroll(_mentions),
                 Scroll(_intents),
                 Scroll(_severities),
+                sharedRow,
                 peopleOnlyRow,
                 _error,
                 footer,
@@ -141,7 +145,7 @@ internal sealed class ComposerCard : ContentView
         ((Label)_send.Content!).Text = "Sending…";
         try
         {
-            string? problem = await _onSend(_editor.Text.Trim(), _intents.Selected, _severities.Selected, _peopleOnly.IsToggled);
+            string? problem = await _onSend(_editor.Text.Trim(), _intents.Selected, _severities.Selected, _peopleOnly.IsToggled, _shared.IsToggled);
             if (problem is not null)
             {
                 _error.Text = problem;

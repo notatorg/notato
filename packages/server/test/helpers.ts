@@ -117,6 +117,8 @@ export function annotationFixture(over: Partial<Annotation> = {}): Annotation {
     const id = `01TEST${String(counter).padStart(20, "0")}`;
     return {
         ...sampleAnnotation,
+        createdBy: "local",
+        visibility: (over.mode ?? sampleAnnotation.mode) === "test" ? "shared" : "personal",
         id,
         bundleId: null,
         status: "open",

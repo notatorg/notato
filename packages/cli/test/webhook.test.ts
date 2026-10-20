@@ -23,7 +23,7 @@ describe("notato config webhook", () => {
         expect((await run(dir, [])).stdout).toContain("No webhooks");
         await run(dir, ["add", "https://hooks.example.com/in", "--name", "team", "-e", "resolved"]);
         const listed = (await run(dir, ["list"])).stdout;
-        expect(listed).toContain("team  https://hooks.example.com/in");
+        expect(listed).toContain("team  https://hooks.example.com/••••");
         expect(listed).toContain("resolved");
         expect(listed).toContain("unsigned");
     });
@@ -56,6 +56,63 @@ describe("notato config webhook", () => {
         ]);
         // The variable is not set in this shell, which matters: the server would send nothing.
         expect(added.stdout).toContain("$HOOK_SECRET is not set here");
+    });
+
+    it("refuses a secret written as it is, unless told to keep it in the file", async () => {
+        const dir = tmp();
+        const refused = await run(dir, ["add", "https://hooks.example.com/in", "-s", "hunter2"]);
+        expect(refused.code).toBe(2);
+        expect(refused.stderr).toContain("meant to be committed");
+        expect(refused.stderr).toContain("env:NAME");
+        expect(existsSync(fileOf(dir))).toBe(false);
+        const kept = await run(dir, [
+            "add",
+            "https://hooks.example.com/in",
+            "-s",
+            "hunter2",
+            "--secret-in-file",
+        ]);
+        expect(kept.code).toBe(0);
+        expect(hooksIn(dir)[0].secret).toBe("hunter2");
+        // Shown as being in the file, never the secret itself.
+        const listed = (await run(dir, ["list"])).stdout;
+        expect(listed).toContain("the secret in the file");
+        expect(listed).not.toContain("hunter2");
+    });
+
+    it("takes the URL from an environment variable, so it is never in the file", async () => {
+        const dir = tmp();
+        const slack = "https://hooks.slack.com/services/T000/B000/XXXX";
+        const added = await run(dir, ["add", "env:SLACK_WEBHOOK_URL", "-F", "slack"]);
+        expect(added.code).toBe(0);
+        expect(hooksIn(dir)).toEqual([{ url: "env:SLACK_WEBHOOK_URL", format: "slack" }]);
+        expect(added.stdout).toContain("$SLACK_WEBHOOK_URL is not set here");
+        expect(added.stdout).toContain("test env:SLACK_WEBHOOK_URL");
+        const listed = (await run(dir, ["list"], { SLACK_WEBHOOK_URL: slack })).stdout;
+        expect(listed).toContain("env:SLACK_WEBHOOK_URL");
+        expect(listed).not.toContain("XXXX");
+        expect((await run(dir, ["add", "env:not a name"])).stderr).toContain(
+            "name of an environment variable"
+        );
+    });
+
+    it("shows only the host of a URL in the file, wherever it prints one", async () => {
+        const dir = tmp();
+        const slack = "https://hooks.slack.com/services/T000/B000/XXXX";
+        const added = await run(dir, ["add", slack, "-F", "slack"]);
+        // It says the URL is a credential in a file that may be committed, and how not to put it there.
+        expect(added.stdout).toContain("anyone who has it can post to it");
+        expect(added.stdout).toContain("test hooks.slack.com");
+        await run(dir, ["add", "https://teams.example.com/flow?sig=SIG", "-F", "teams"]);
+        const shown = [
+            added.stdout,
+            (await run(dir, ["list"])).stdout,
+            runConfig([], {}, dir).stdout,
+            (await run(dir, ["remove", "hooks.slack.com"])).stdout,
+        ].join("\n");
+        expect(shown).toContain("https://hooks.slack.com/••••");
+        expect(shown).toContain("https://teams.example.com/••••");
+        for (const secret of ["T000", "XXXX", "SIG", "flow"]) expect(shown).not.toContain(secret);
     });
 
     it("adding the same URL again updates it, rather than sending everything twice", async () => {
@@ -121,7 +178,7 @@ describe("notato config webhook", () => {
     it("notato config shows them, and says plainly when a broken file means none are sent", async () => {
         const dir = tmp();
         await run(dir, ["add", "https://a.example.com/in", "-n", "alpha"]);
-        expect(runConfig([], {}, dir).stdout).toContain("alpha  https://a.example.com/in");
+        expect(runConfig([], {}, dir).stdout).toContain("alpha  https://a.example.com/••••");
         writeFileSync(fileOf(dir), '{ "webhooks": [{}] }');
         const broken = runConfig([], {}, dir);
         expect(broken.code).toBe(1);
@@ -168,6 +225,18 @@ describe("notato config webhook test", () => {
         expect(test.code).toBe(1);
         expect(test.stderr).toContain("did not get through");
         expect(test.stderr).toContain("status 403");
+        expect(r.got).toHaveLength(1);
+    });
+
+    it("sends to a URL read from the environment, and says so when it is not set", async () => {
+        const dir = tmp();
+        const r = receiver();
+        await run(dir, ["add", "env:HOOK_URL", "-n", "local"]);
+        const missing = await run(dir, ["test", "local"]);
+        expect(missing.code).toBe(1);
+        expect(missing.stderr).toContain("$HOOK_URL is not set");
+        const test = await run(dir, ["test", "local"], { HOOK_URL: r.url });
+        expect(test.code).toBe(0);
         expect(r.got).toHaveLength(1);
     });
 

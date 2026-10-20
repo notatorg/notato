@@ -21,7 +21,13 @@ updates:
           bun:
               patterns: ["*"]
 
+    # The Dockerfile pins each image by tag and digest, and this moves both. List the folder of any other Dockerfile
+    # here too, or its pins will never move. Bun's version in the workflows is not something Dependabot can see: move
+    # it with the Dockerfile's oven/bun image.
     - package-ecosystem: docker
-      directory: /
+      directories: ["/"]
       schedule:
           interval: monthly
+      groups:
+          docker:
+              patterns: ["*"]

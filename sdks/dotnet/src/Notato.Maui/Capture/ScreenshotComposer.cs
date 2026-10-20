@@ -8,7 +8,7 @@ using System.Security.Cryptography;
 namespace Notato.Maui.Capture;
 
 /// <summary>The two pictures an annotation carries: the whole window with the target outlined, and a crop around it.</summary>
-internal sealed record ComposedScreenshots(Screenshots Refs, IReadOnlyDictionary<string, byte[]> Assets);
+internal sealed record ComposedScreenshots(Screenshots Refs, IReadOnlyDictionary<string, byte[]> Assets, PageRect? CropRect = null);
 
 /// <summary>Draws the outline, the pin number and the masks onto a captured window, and cuts the crop.</summary>
 internal static class ScreenshotComposer
@@ -24,7 +24,7 @@ internal static class ScreenshotComposer
 
     public static string AssetId(byte[] bytes) => Convert.ToHexStringLower(SHA256.HashData(bytes));
 
-    public static ComposedScreenshots? Compose(CapturedScreen screen, IReadOnlyList<Rect> targets, int? pin, IReadOnlyList<Rect> masks, double maxScale)
+    public static ComposedScreenshots? Compose(CapturedScreen screen, IReadOnlyList<Rect> targets, int? pin, IReadOnlyList<Rect> masks, double maxScale, bool derivedCrops = false)
     {
 #if IOS || MACCATALYST || ANDROID
         double scale = Math.Max(1, Math.Min(screen.Scale, maxScale));
@@ -63,6 +63,7 @@ internal static class ScreenshotComposer
         }
 
         byte[]? crop = null;
+        PageRect? cropRect = null;
         int cropWidth = 0, cropHeight = 0;
         if (targets.Count > 0)
         {
@@ -73,36 +74,47 @@ internal static class ScreenshotComposer
                 Rect px = Px(area);
                 cropWidth = Math.Max(1, (int)Math.Round(px.Width));
                 cropHeight = Math.Max(1, (int)Math.Round(px.Height));
-                using BitmapExportContext context = service.CreateContext(cropWidth, cropHeight, 1);
-                ICanvas canvas = context.Canvas;
-                canvas.DrawImage(screen.Image, (float)-px.X, (float)-px.Y, width, height);
-                canvas.FillColor = Mask;
-                foreach (Rect m in masks)
+                if (derivedCrops)
                 {
-                    canvas.FillRectangle(Px(m).Offset(-px.X, -px.Y));
+                    int x = Math.Max(0, (int)Math.Floor(px.X));
+                    int y = Math.Max(0, (int)Math.Floor(px.Y));
+                    cropRect = new PageRect(x, y, Math.Min(width - x, cropWidth), Math.Min(height - y, cropHeight));
                 }
-
-                canvas.StrokeColor = Outline;
-                canvas.StrokeSize = (float)(2 * scale);
-                foreach (Rect t in targets)
+                else
                 {
-                    canvas.DrawRectangle(Px(t).Offset(-px.X, -px.Y).Inflate(-scale, -scale));
-                }
+                    using BitmapExportContext context = service.CreateContext(cropWidth, cropHeight, 1);
+                    ICanvas canvas = context.Canvas;
+                    canvas.DrawImage(screen.Image, (float)-px.X, (float)-px.Y, width, height);
+                    canvas.FillColor = Mask;
+                    foreach (Rect m in masks)
+                    {
+                        canvas.FillRectangle(Px(m).Offset(-px.X, -px.Y));
+                    }
 
-                crop = Png(context);
+                    canvas.StrokeColor = Outline;
+                    canvas.StrokeSize = (float)(2 * scale);
+                    foreach (Rect t in targets)
+                    {
+                        canvas.DrawRectangle(Px(t).Offset(-px.X, -px.Y).Inflate(-scale, -scale));
+                    }
+
+                    crop = Png(context);
+                }
             }
         }
 
         Dictionary<string, byte[]> assets = [];
-        AssetRef fullRef = new() { Id = AssetId(full), Mime = "image/png", W = width, H = height };
-        assets[fullRef.Id] = full;
+        ScreenshotEncoding.Encoded encodedFull = ScreenshotEncoding.Encode(full);
+        AssetRef fullRef = new() { Id = AssetId(encodedFull.Bytes), Mime = encodedFull.Mime, W = width, H = height };
+        assets[fullRef.Id] = encodedFull.Bytes;
         AssetRef? cropRef = null;
         if (crop is not null)
         {
-            cropRef = new AssetRef { Id = AssetId(crop), Mime = "image/png", W = cropWidth, H = cropHeight };
-            assets[cropRef.Id] = crop;
+            ScreenshotEncoding.Encoded encodedCrop = ScreenshotEncoding.Encode(crop);
+            cropRef = new AssetRef { Id = AssetId(encodedCrop.Bytes), Mime = encodedCrop.Mime, W = cropWidth, H = cropHeight };
+            assets[cropRef.Id] = encodedCrop.Bytes;
         }
-        return new ComposedScreenshots(new Screenshots { Full = fullRef, Crop = cropRef }, assets);
+        return new ComposedScreenshots(new Screenshots { Full = fullRef, Crop = cropRef }, assets, cropRect);
 #else
         return null;
 #endif

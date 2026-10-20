@@ -1,4 +1,5 @@
 import type { Me, ProjectSummary } from "./api.ts";
+import { useBoardExtension } from "./extension.tsx";
 import { hasUnseen, useSeenVersion } from "./live.ts";
 import { ago, byActivity, DONE, plural, projectName, todoOf } from "./model.ts";
 import { projectHref } from "./route.ts";
@@ -18,6 +19,7 @@ export function Home({
     onNewProject?: () => void;
 }) {
     useSeenVersion();
+    const extension = useBoardExtension();
     const todo = (projects ?? []).reduce((n, p) => n + todoOf(p), 0);
     return (
         <div className="sheet">
@@ -45,6 +47,9 @@ export function Home({
                         </div>
                     ) : null}
                 </header>
+                {extension?.HomeTop ? (
+                    <extension.HomeTop me={me} projects={projects} onNewProject={onNewProject} />
+                ) : null}
                 {error ? (
                     <p className="error">{error}</p>
                 ) : !projects ? (
@@ -53,9 +58,18 @@ export function Home({
                     <Empty title="No projects yet">
                         <p>
                             {me.mode === "serve"
-                                ? "Make a project, then connect an app to it with the token it comes with. Apps can only send notes to a project that exists here."
+                                ? onNewProject
+                                    ? "Make a project, then connect an app to it with the token it comes with. Apps can only send notes to a project that exists here."
+                                    : "Ask whoever manages this server to make the first project. Its feedback will appear here."
                                 : "Make one, or just send a note: a project appears here as soon as an app running a Notato SDK pins one. Each app's project setting is the project it files under."}
                         </p>
+                        {me.mode === "serve" && onNewProject ? (
+                            <ol className="onboarding-steps">
+                                <li>Make a project for the app you want feedback on.</li>
+                                <li>Connect the app with its token.</li>
+                                <li>Pin a note in the app, then review it here.</li>
+                            </ol>
+                        ) : null}
                         {onNewProject ? (
                             <div className="empty-actions">
                                 <button
@@ -88,7 +102,7 @@ function ProjectCard({ project: p }: { project: ProjectSummary }) {
     const todo = todoOf(p);
     const st = p.statuses;
     const done = st ? DONE.reduce((n, s) => n + (st[s] ?? 0), 0) : null;
-    const unseen = hasUnseen(p.id, p.lastActivityAt);
+    const unseen = p.unread !== undefined ? p.unread > 0 : hasUnseen(p.id, p.lastActivityAt);
     const name = projectName(p, p.id);
     /** In the order work moves; the rarer states sit with the ones they are closest to. */
     const parts = st

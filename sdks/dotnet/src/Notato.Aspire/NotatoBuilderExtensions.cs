@@ -4,7 +4,7 @@ using Aspire.Hosting.JavaScript;
 
 namespace Aspire.Hosting;
 
-/// <summary>Adds Notato to a .NET Aspire app host, and turns it on in the apps that use it.</summary>
+/// <summary>Adds Notato to an Aspire app host, and turns it on in the apps that use it.</summary>
 public static class NotatoBuilderExtensions
 {
     /// <summary>The port Notato listens on unless told otherwise, as <c>npx notato</c> does.</summary>

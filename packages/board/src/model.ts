@@ -6,6 +6,7 @@ import type { ProjectSummary } from "./api.ts";
 const STATUSES: Status[] = [
     "open",
     "acknowledged",
+    "awaiting_response",
     "variant_chosen",
     "resolved",
     "revert_requested",
@@ -21,7 +22,13 @@ export const INTENTS: Intent[] = ["fix", "change", "question", "approve", "varia
  * count, as they do in `notato_list_open`. (The server's `open` count leaves acknowledged out; the board counts from
  * `statuses` and falls back to `open` only for a server too old to send them.)
  */
-export const TODO: Status[] = ["open", "acknowledged", "variant_chosen", "revert_requested"];
+export const TODO: Status[] = [
+    "open",
+    "acknowledged",
+    "awaiting_response",
+    "variant_chosen",
+    "revert_requested",
+];
 export const DONE: Status[] = ["resolved", "reverted"];
 
 export type View = "todo" | "done" | "dismissed" | "all";
@@ -41,6 +48,8 @@ export interface Filters {
     by: string;
     author: "" | "human" | "agent";
     bundle: string;
+    /** All accessible feedback (default), the current person's private feedback, or project-shared feedback. */
+    scope?: "" | "mine" | "shared";
 }
 
 /**
@@ -57,6 +66,7 @@ export const NO_EXTRA_FILTERS: Omit<Filters, "status"> = {
     by: "",
     author: "",
     bundle: "",
+    scope: "",
 };
 
 /** What the inbox shows when a project opens: what is still to do. */
@@ -70,10 +80,15 @@ export function viewOf(statuses: Status[]): View | null {
 
 /** The filters beyond status that are set, for a "clear" control. */
 export const extraFilterCount = (f: Filters) =>
-    [f.route, f.severity, f.intent, f.by, f.author, f.bundle].filter(Boolean).length;
+    [f.route, f.severity, f.intent, f.by, f.author, f.bundle, f.scope].filter(Boolean).length;
 
-export function matches(a: Annotation, f: Filters): boolean {
+export function matches(a: Annotation, f: Filters, actorId?: string): boolean {
+    const visibility = a.visibility ?? "shared";
     return (
+        (!f.scope ||
+            (f.scope === "mine"
+                ? visibility === "personal" && Boolean(actorId) && a.createdBy === actorId
+                : visibility === "shared")) &&
         (f.status.length === 0 || f.status.includes(a.status)) &&
         (!f.route || a.route === f.route) &&
         (!f.severity || a.severity === f.severity) &&
@@ -103,6 +118,9 @@ export const replyCount = (a: Annotation) => a.thread.filter((r) => !r.automatic
 function haystack(a: Annotation): string {
     const parts: Array<string | undefined> = [
         a.comment,
+        a.review?.instruction,
+        a.review?.id,
+        ...(a.references?.map((r) => r.name) ?? []),
         a.route,
         a.url,
         a.author.name,
@@ -165,10 +183,11 @@ export function sortAnnotations(list: Annotation[], sort: Sort): Annotation[] {
     }
 }
 
-export type Group = "none" | "route" | "status" | "person" | "severity";
+export type Group = "none" | "route" | "status" | "person" | "severity" | "review";
 export const GROUPS: Array<{ id: Group; label: string }> = [
     { id: "none", label: "No grouping" },
     { id: "route", label: "By page" },
+    { id: "review", label: "By review" },
     { id: "status", label: "By status" },
     { id: "person", label: "By person" },
     { id: "severity", label: "By severity" },
@@ -195,6 +214,8 @@ export function groupAnnotations(list: Annotation[], group: Group): AnnotationGr
         switch (group) {
             case "route":
                 return a.route;
+            case "review":
+                return a.review?.id ?? "";
             case "status":
                 return a.status;
             case "person":
@@ -218,6 +239,8 @@ export function groupAnnotations(list: Annotation[], group: Group): AnnotationGr
         return 0;
     };
     const label = (key: string) => {
+        if (group === "review")
+            return key ? (groups.get(key)?.[0]?.review?.instruction ?? key) : "Individual notes";
         if (group === "status") return statusLabel(key as Status);
         if (group === "severity" && !key) return "No severity";
         return key;
@@ -232,6 +255,7 @@ export const statusLabel = (status: Status): string =>
     ({
         open: "Open",
         acknowledged: "Acknowledged",
+        awaiting_response: "Needs your answer",
         variant_chosen: "Version picked",
         resolved: "Resolved",
         revert_requested: "Revert requested",
@@ -515,7 +539,7 @@ export function mergeSnapshot(
 
 /**
  * Whether a change can move a project's counts (how many notes, what is to do), which only a fresh count from the server
- * settles. `before` is the note's status before the change, when it is known. A reply never changes a status.
+ * settles. `before` is the note's status before the change, when it is known. An answer can resume a waiting task.
  */
 export function countsMayChange(change: NoteChange, before: Status | undefined): boolean {
     switch (change.type) {
@@ -523,7 +547,7 @@ export function countsMayChange(change: NoteChange, before: Status | undefined):
         case "deleted":
             return true;
         case "replied":
-            return false;
+            return Boolean(change.annotation && before !== change.annotation.status);
         case "updated":
             return before === undefined || before !== change.annotation?.status;
     }

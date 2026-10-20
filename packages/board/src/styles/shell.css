@@ -184,6 +184,13 @@
     flex-direction: column;
     gap: 6px;
 }
+.workspace-links {
+    display: grid;
+    gap: 2px;
+    margin-bottom: 14px;
+    padding-bottom: 14px;
+    border-bottom: 1px solid var(--line);
+}
 .name-card {
     display: flex;
     align-items: center;
@@ -265,4 +272,64 @@ button.name-change:hover:not(:disabled) {
     padding: 5px;
     border-radius: 8px;
     font-size: 12px;
+}
+
+/* The selected project contains both switching and creation. Its pages follow directly below. */
+.project-context {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    margin: 4px 0 10px;
+    padding: 6px;
+    border: 1px solid var(--line);
+    border-radius: 13px;
+    background: var(--panel);
+}
+button.project-current {
+    flex: 1;
+    min-width: 0;
+    height: auto;
+    padding: 4px;
+    justify-content: flex-start;
+    gap: 9px;
+    background: transparent;
+    text-align: left;
+}
+.project-current-text,
+.project-choice-text {
+    flex: 1;
+    min-width: 0;
+    display: grid;
+    gap: 2px;
+}
+.project-current-text .side-name {
+    font-size: 13px;
+}
+.project-current-meta {
+    font-size: 11px;
+    font-weight: 400;
+    color: var(--muted);
+}
+.project-context .side-add {
+    flex: none;
+    width: 28px;
+    height: 32px;
+}
+.project-choices {
+    display: grid;
+    gap: 4px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+.project-choices .side-project {
+    padding: 10px;
+}
+.project-choices .side-project.active {
+    background: var(--selected);
+    box-shadow: none;
+}
+.project-choices .side-project svg {
+    flex: none;
+    color: var(--accent-text);
 }

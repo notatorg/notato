@@ -20,11 +20,12 @@ Options:
   -d, --dir <path>     Data directory (default ./.notato, or $NOTATO_DIR)
   -c, --config <path>  Settings file (default ./notato.config.json, or $NOTATO_CONFIG); see \`notato config\`
   -t, --tunnel         Also put it behind a Microsoft dev tunnel, so a phone can reach it ($NOTATO_TUNNEL=1).
-                       Needs the devtunnel CLI, signed in once (\`devtunnel user login\`).
+                       Needs the devtunnel CLI, signed in once (\`devtunnel user login\`). An app reaches its
+                       notes through it with the device token; the settings, webhooks and projects it cannot.
       --no-mcp         Refuse coding agents while this runs, whatever the settings say. To switch them off
                        and on as you go, use the board (Settings › Agents) or \`notato config set mcp off\`.
       --attach         If Notato is already running on the port, stay attached to it instead of exiting, and
-                       serve in its place if it stops. For tools that keep a process running, such as .NET Aspire.
+                       serve in its place if it stops. For tools that keep a process running, such as Aspire.
   -h, --help           Show this help`;
 
 /** What `/mcp` on an already running server says about itself, to tell an old server from one with MCP off. */

@@ -41,13 +41,12 @@
   <div class="wrap nav-in">
     <a class="brand" href="#top"><img src="notato.png" alt="" width="34" height="34"><span>Notato</span></a>
     <nav class="nav-links" aria-label="Sections">
-      <a href="#loop">How it works</a>
-      <a href="#showcase">Showcase</a>
-      <a href="#apps">Mobile apps</a>
-      <a href="#agents">Agents</a>
+      <a href="#loop">Product</a>
+      <a href="#self-host">Self-host</a>
+      <a href="#start">Developers</a>
       <a href="docs/index.html">Docs</a>
     </nav>
-    <a class="btn btn-sm btn-tab" href="#try">Try it here</a>
+    <a class="btn btn-sm btn-tab" href="docs/index.html">Get started</a>
   </div>
 </header>
 
@@ -62,16 +61,17 @@
     </div>
     <button class="potato" type="button" aria-label="Poke the potato"><img src="notato.png" alt="" width="240" height="240"></button>
     <div class="hero-side">
-      <p class="lede">Click anything in your running app, in a browser or on a phone, and say what's wrong. Notato hands the note to your coding agent with a screenshot, the component, and the file and line it was written at. The agent makes the change, commits it, and the pin turns green. Or a developer picks it up from the board.</p>
+      <p class="lede">Click anything in your running app, in a browser or on a phone, and say what's wrong. Notato hands the note to your coding agent with a screenshot, the component, and the file and line it was written at. The agent makes the change, commits it, and the pin turns green. Or a developer picks it up from the board. Start locally for free, or run the full server for shared workspaces, tool connections and background workflows.</p>
       <div class="hero-act">
         <div class="cmd">
           <code><span class="cmd-sigil" aria-hidden="true">$</span> npm i -D notato @notato/react</code>
           <button class="copy" type="button" data-copy="npm i -D notato @notato/react" aria-label="Copy the install command"><svg aria-hidden="true"><use href="#i-copy"/></svg></button>
         </div>
         <div class="hero-ctas">
-          <a class="btn btn-tab" href="docs/index.html">Get started</a>
-          <a class="btn btn-ghost" href="#try">Try it on this page</a>
+          <a class="btn btn-tab" href="docs/index.html">Get started locally</a>
+          <a class="btn btn-ghost" href="docs/self-hosting.html">Self-host for your team</a>
         </div>
+        <p class="cloud-optional">Nothing to sign up for: Notato works fully on your machine, and it is all open source. Or <a href="#try">try it on this page</a>.</p>
         <p class="works-with"><span>Works with</span> <a href="#agents">Claude Code</a> <a href="#agents">Codex</a> <a href="#agents">Cursor</a> <a href="#agents">Gemini CLI</a> <a href="#agents">Copilot</a> <a href="#agents">any MCP client</a></p>
         <p class="works-with"><span>Runs in</span> <a href="#everywhere">React</a> <a href="#everywhere">Angular</a> <a href="#everywhere">any web page</a> <a href="#apps">SwiftUI</a> <a href="#apps">Jetpack Compose</a> <a href="#apps">.NET MAUI</a> <a href="#apps">React Native</a> <a href="#apps">Flutter</a></p>
       </div>
@@ -206,6 +206,120 @@
         <li data-s="reverted"><span class="lpin">1</span><b>Reverted</b><span>The agent undid that commit</span></li>
       </ol>
       <p class="life-foot"><span class="lpin small" data-s="variant_chosen">3</span> Cyan means you picked a variant and the agent is tidying up. A struck-through pin was dismissed.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ============================== RUN ============================== -->
+<section class="section" id="run">
+  <div class="wrap">
+    <header class="sec-head">
+      <p class="tag">section#run</p>
+      <h2>Choose how you run Notato</h2>
+      <p class="sec-lede">The same toolbar, board and agent tools everywhere. What changes is where Notato runs and who looks after it.</p>
+    </header>
+    <div class="modes run-cards">
+      <article class="mode run-card">
+        <h3>On your machine</h3>
+        <p class="run-sub">Free and open source</p>
+        <p>Run <code>npx notato</code> next to your app. Notes, the board and your agent's tools stay on your computer. No account to make and no server to look after.</p>
+        <a class="run-link" href="docs/index.html">Get started locally</a>
+      </article>
+      <article class="mode run-card run-cloud">
+        <h3>For a team or testers</h3>
+        <p class="run-sub">Free and open source &middot; Docker Compose</p>
+        <p>Run the full server where other people can reach it: accounts and invitations, shared workspaces, pull request reviews and tool connections. It uses your own Postgres, storage and email, and one command brings it all up.</p>
+        <a class="run-link" href="docs/self-hosting.html">Self-hosting guide</a>
+      </article>
+    </div>
+    <p class="small-print run-note">Only need testers to send you notes, without accounts? <code>npx notato serve</code> is a smaller shared server that uses project tokens. See <a href="docs/teams.html">Testers and servers</a>.</p>
+    <div class="table-wrap">
+      <table class="compare">
+        <caption class="sr-only">How running Notato on your machine compares with running it for a team</caption>
+        <thead><tr><th scope="col">&nbsp;</th><th scope="col">On your machine</th><th scope="col">For a team or testers</th></tr></thead>
+        <tbody>
+          <tr><th scope="row">Best for</th><td>Building and checking your own app</td><td>Several people, or testers outside your team</td></tr>
+          <tr><th scope="row">Who can use it</th><td>Just you</td><td>People you invite, in shared workspaces</td></tr>
+          <tr><th scope="row">Sign-in</th><td>None</td><td>Email and password, with optional two-factor</td></tr>
+          <tr><th scope="row">Where your notes live</th><td>A folder on your computer</td><td>Your own Postgres and storage bucket</td></tr>
+          <tr><th scope="row">What you run</th><td><code>npx notato</code></td><td>One Docker Compose file</td></tr>
+          <tr><th scope="row">Capture, board and agent tools</th><td>Included</td><td>Included</td></tr>
+          <tr><th scope="row">Webhooks to Slack, Discord, Teams or your own service</th><td>Yes, set up with <code>npx notato config webhook</code></td><td>Yes, set up from the board</td></tr>
+          <tr><th scope="row">Connections to GitHub, GitLab, Azure DevOps, Linear, Slack and Teams</th><td>Not available</td><td>Yes, with your own credentials</td></tr>
+          <tr><th scope="row">Pull request reviews</th><td>Not available</td><td>Yes</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="small-print">Every part is MIT licensed: the SDKs, the command line, the servers and the board. Nothing here needs an account with us or a subscription.</p>
+  </div>
+</section>
+
+<!-- ============================== SELF-HOST ============================== -->
+<section class="section" id="self-host">
+  <div class="wrap">
+    <header class="sec-head">
+      <p class="tag">section#self-host</p>
+      <h2>For when more than one person is involved</h2>
+      <p class="sec-lede">The full server is the same open source project: a shared home for the feedback loop that you run yourself. Start it with one command, then swap any part for something you already have.</p>
+    </header>
+    <div class="cloud-grid">
+      <article class="cloud-card">
+        <h3>Shared workspaces</h3>
+        <p>Accounts, workspaces and invitations, with project history everyone on the team can see. Registration is invitation-only by default, and two-factor sign-in is optional.</p>
+      </article>
+      <article class="cloud-card">
+        <h3>Yours, then the team's</h3>
+        <p>Feedback you capture while building stays personal to your checkout and agent. Feedback from testers lands in a shared inbox and is assigned before an agent acts on it.</p>
+      </article>
+      <article class="cloud-card">
+        <h3>Pull request reviews</h3>
+        <p>Open a review for a pull request and its running preview. Feedback is tied to the exact commit, and a summary goes back to GitHub only after you have previewed and confirmed it.</p>
+      </article>
+      <article class="cloud-card">
+        <h3>Your infrastructure</h3>
+        <p>Docker Compose brings up Postgres, private screenshot storage and a test inbox. Use your own Postgres, an S3, R2 or B2 bucket, and your own email provider instead, behind Caddy, nginx or a Cloudflare Tunnel.</p>
+      </article>
+    </div>
+    <div class="cloud-act">
+      <a class="btn btn-tab" href="docs/self-hosting.html">Self-hosting guide</a>
+      <a class="btn btn-ghost" href="https://github.com/notatorg/notato">Source on GitHub</a>
+    </div>
+    <p class="small-print">Tool connections use your own provider credentials. Check each one against the real service before you rely on it.</p>
+  </div>
+</section>
+
+<!-- ============================== START ============================== -->
+<section class="section" id="start">
+  <div class="wrap">
+    <header class="sec-head">
+      <p class="tag">section#start</p>
+      <h2>Four commands to your first green pin</h2>
+      <p class="sec-lede">This is the whole local setup. It needs no account, no subscription and no network service of ours.</p>
+    </header>
+    <ol class="quick">
+      <li><span class="q-n">1</span><div class="cmd"><code>npm i -D notato @notato/react</code><button class="copy" type="button" data-copy="npm i -D notato @notato/react" aria-label="Copy step 1"><svg aria-hidden="true"><use href="#i-copy"/></svg></button></div><p>Install the CLI and the React SDK.</p></li>
+      <li><span class="q-n">2</span><div class="cmd"><code>npx notato init</code><button class="copy" type="button" data-copy="npx notato init" aria-label="Copy step 2"><svg aria-hidden="true"><use href="#i-copy"/></svg></button></div><p>Adds <code>&lt;Notato /&gt;</code> behind a dev-only guard, then sets up your agents: the MCP server and the skills, for Claude Code, Codex, Cursor, Gemini CLI or Copilot. <code>--revert</code> takes it all back out.</p></li>
+      <li><span class="q-n">3</span><div class="cmd"><code>npm run dev</code><button class="copy" type="button" data-copy="npm run dev" aria-label="Copy step 3"><svg aria-hidden="true"><use href="#i-copy"/></svg></button></div><p>Start your app as usual.</p></li>
+      <li><span class="q-n">4</span><div class="cmd"><code>npx notato doctor</code><button class="copy" type="button" data-copy="npx notato doctor" aria-label="Copy step 4"><svg aria-hidden="true"><use href="#i-copy"/></svg></button></div><p>Checks the whole loop, including that a page is connected.</p></li>
+    </ol>
+    <p class="quick-apps">Building a phone app? Run <code>npx notato</code>, then add the <a href="docs/swiftui.html">SwiftUI</a>, <a href="docs/android.html">Android</a> or <a href="docs/maui.html">.NET MAUI</a> SDK with one line at start-up.</p>
+    <div class="guides">
+      <p class="guides-title">Setup guides</p>
+      <div class="guide-cards">
+        <a class="guide-card" href="docs/react.html"><b>React apps</b><span>Vite and Next.js</span></a>
+        <a class="guide-card" href="docs/any-page.html"><b>Any page</b><span>A bookmark, or the Chrome extension</span></a>
+        <a class="guide-card" href="docs/swiftui.html"><b>SwiftUI</b><span>iOS 17 and later</span></a>
+        <a class="guide-card" href="docs/android.html"><b>Android</b><span>Compose and Views</span></a>
+        <a class="guide-card" href="docs/maui.html"><b>.NET MAUI</b><span>iOS, Android, Mac</span></a>
+        <a class="guide-card" href="docs/agents.html"><b>Your agent</b><span>Claude Code, Codex, Cursor and more</span></a>
+        <a class="guide-card" href="docs/teams.html"><b>Testers and servers</b><span>Zips, shared servers, webhooks</span></a>
+        <a class="guide-card" href="docs/index.html"><b>All docs</b><span>Everything Notato does</span></a>
+      </div>
+    </div>
+    <div class="then">
+      <span class="then-label">Then, ask your agent</span>
+      <p class="then-say">“watch Notato and fix what comes in”</p>
+      <button class="copy copy-text" type="button" data-copy="watch Notato and fix what comes in">Copy</button>
     </div>
   </div>
 </section>
@@ -793,41 +907,6 @@ npx notato inject   # prints the bookmark page, a console line and a script tag<
   </div>
 </section>
 
-<!-- ============================== START ============================== -->
-<section class="section" id="start">
-  <div class="wrap">
-    <header class="sec-head">
-      <p class="tag">section#start</p>
-      <h2>Four commands to your first green pin</h2>
-    </header>
-    <ol class="quick">
-      <li><span class="q-n">1</span><div class="cmd"><code>npm i -D notato @notato/react</code><button class="copy" type="button" data-copy="npm i -D notato @notato/react" aria-label="Copy step 1"><svg aria-hidden="true"><use href="#i-copy"/></svg></button></div><p>Install the CLI and the React SDK.</p></li>
-      <li><span class="q-n">2</span><div class="cmd"><code>npx notato init</code><button class="copy" type="button" data-copy="npx notato init" aria-label="Copy step 2"><svg aria-hidden="true"><use href="#i-copy"/></svg></button></div><p>Adds <code>&lt;Notato /&gt;</code> behind a dev-only guard, then sets up your agents: the MCP server and the skills, for Claude Code, Codex, Cursor, Gemini CLI or Copilot. <code>--revert</code> takes it all back out.</p></li>
-      <li><span class="q-n">3</span><div class="cmd"><code>npm run dev</code><button class="copy" type="button" data-copy="npm run dev" aria-label="Copy step 3"><svg aria-hidden="true"><use href="#i-copy"/></svg></button></div><p>Start your app as usual.</p></li>
-      <li><span class="q-n">4</span><div class="cmd"><code>npx notato doctor</code><button class="copy" type="button" data-copy="npx notato doctor" aria-label="Copy step 4"><svg aria-hidden="true"><use href="#i-copy"/></svg></button></div><p>Checks the whole loop, including that a page is connected.</p></li>
-    </ol>
-    <p class="quick-apps">Building a phone app? Run <code>npx notato</code>, then add the <a href="docs/swiftui.html">SwiftUI</a>, <a href="docs/android.html">Android</a> or <a href="docs/maui.html">.NET MAUI</a> SDK with one line at start-up.</p>
-    <div class="guides">
-      <p class="guides-title">Setup guides</p>
-      <div class="guide-cards">
-        <a class="guide-card" href="docs/react.html"><b>React apps</b><span>Vite and Next.js</span></a>
-        <a class="guide-card" href="docs/any-page.html"><b>Any page</b><span>A bookmark, or the Chrome extension</span></a>
-        <a class="guide-card" href="docs/swiftui.html"><b>SwiftUI</b><span>iOS 17 and later</span></a>
-        <a class="guide-card" href="docs/android.html"><b>Android</b><span>Compose and Views</span></a>
-        <a class="guide-card" href="docs/maui.html"><b>.NET MAUI</b><span>iOS, Android, Mac</span></a>
-        <a class="guide-card" href="docs/agents.html"><b>Your agent</b><span>Claude Code, Codex, Cursor and more</span></a>
-        <a class="guide-card" href="docs/teams.html"><b>Testers and servers</b><span>Zips, shared servers, webhooks</span></a>
-        <a class="guide-card" href="docs/index.html"><b>All docs</b><span>Everything Notato does</span></a>
-      </div>
-    </div>
-    <div class="then">
-      <span class="then-label">Then, ask your agent</span>
-      <p class="then-say">“watch Notato and fix what comes in”</p>
-      <button class="copy copy-text" type="button" data-copy="watch Notato and fix what comes in">Copy</button>
-    </div>
-  </div>
-</section>
-
 <!-- ============================== TRY ============================== -->
 <section class="section" id="try">
   <div class="wrap">
@@ -855,13 +934,42 @@ npx notato inject   # prints the bookmark page, a console line and a script tag<
   </div>
 </section>
 
+<!-- ============================== FAQ ============================== -->
+<section class="section" id="faq">
+  <div class="wrap">
+    <header class="sec-head">
+      <p class="tag">section#faq</p>
+      <h2>Questions</h2>
+    </header>
+    <div class="faq">
+      <details><summary>Do I need an account or a server to use Notato?</summary><p>No. The toolbar, the SDKs, your agent's tools and the board all work on your machine. A server is for sharing with testers and teammates.</p></details>
+      <details><summary>Is it all open source?</summary><p>Yes. The SDKs, the command line, both servers and the board are MIT licensed, and the source is on GitHub.</p></details>
+      <details><summary>Is there a hosted version?</summary><p>Not at the moment. You run Notato yourself, locally or on a server, and your notes stay with you.</p></details>
+      <details><summary>Where do my notes and screenshots live?</summary><p>On your machine, or on your server: notes in a local database or your Postgres, screenshots in files or your own S3-compatible bucket. Notato sends nothing anywhere else unless you configure an integration.</p></details>
+      <details><summary>Can I use my own Postgres, storage and email?</summary><p>Yes. The Docker Compose setup runs all three for you, and each can be replaced by what you already run. The self-hosting guide has the settings and examples.</p></details>
+    </div>
+  </div>
+</section>
+
+<!-- ============================== JOIN ============================== -->
+<section class="section" id="join">
+  <div class="wrap join">
+    <h2>Start locally, or run it for your team</h2>
+    <p class="sec-lede">Both use the same toolbar and the same agent tools. Pick where Notato runs.</p>
+    <div class="cloud-act">
+      <a class="btn btn-tab btn-lg" href="docs/index.html">Get started locally</a>
+      <a class="btn btn-ghost btn-lg" href="docs/self-hosting.html">Self-host for your team</a>
+    </div>
+  </div>
+</section>
+
 </main>
 
 <footer class="foot">
   <div class="wrap foot-in">
     <span class="brand"><img src="notato.png" alt="" width="28" height="28"><span>Notato</span></span>
     <p>Figma-style comments for your running app, for coding agents and the people who build with them. MIT licence.</p>
-    <p class="foot-links"><a href="docs/index.html">Docs</a><a href="https://github.com/notatorg/notato">Source on GitHub</a><a href="#top">Back to top</a></p>
+    <p class="foot-links"><a href="docs/index.html">Docs</a><a href="docs/self-hosting.html">Self-hosting</a><a href="https://github.com/notatorg/notato">Source on GitHub</a><a href="https://buymeacoffee.com/notato" target="_blank" rel="noopener noreferrer">Support Notato</a><a href="#top">Back to top</a></p>
   </div>
 </footer>
 

@@ -145,6 +145,42 @@ afterEach(() => {
     vi.restoreAllMocks();
 });
 
+describe("local-only feedback", () => {
+    it("uses loopback without Cloud credentials or external delivery plugins", async () => {
+        const server = fakeServer();
+        const deliver = vi.fn(async () => {});
+        const notato = mount({
+            mode: "dev",
+            server: "https://cloud.example.test",
+            token: "synthetic-cloud-credential",
+            localOnly: true,
+            localServer: SERVER,
+            transport: server.transport,
+            plugins: [{ id: "external-delivery", deliver }],
+        });
+        const annotation = await notato.annotate({
+            target: "#pay",
+            comment: "Stay on this computer",
+        });
+        await until(() => server.posts.length === 1);
+        expect(server.notes.get(annotation.id)?.localOnly).toBe(true);
+        expect(deliver).not.toHaveBeenCalled();
+        for (const [url, init] of server.transport.fetch.mock.calls) {
+            expect(new URL(url).origin).toBe(SERVER);
+            expect(new Headers(init?.headers).get("authorization")).toBeNull();
+        }
+    });
+
+    it("refuses external and credential-bearing destinations before capturing anything", () => {
+        for (const localServer of [
+            "https://cloud.example.test",
+            "http://user:password@localhost:4801",
+            "file:///tmp/feedback",
+        ])
+            expect(() => mount({ localOnly: true, localServer })).toThrow("loopback server");
+    });
+});
+
 describe("pin numbers", () => {
     it("are not handed out twice when an agent asks for two notes at once", async () => {
         // In view, so nothing waits for a scroll and the three really are made at the same time.
@@ -400,7 +436,7 @@ describe("notes not yet sent", () => {
         server.state.up = false;
         const notato = mount({ server: SERVER, transport: server.transport });
         const a = await notato.annotate({ target: "#pay", comment: "never mind" });
-        await settle();
+        await until(() => ui().querySelector(".pin") !== null, "the rendered pin");
         const pin = ui().querySelector(".pin") as HTMLButtonElement;
         pin.click();
         const del = ui().querySelector(".card .delete") as HTMLButtonElement;
@@ -464,6 +500,95 @@ describe("the server's list", () => {
         await settle();
         expect(ui().querySelectorAll(".pin")).toHaveLength(40);
         expect(ui().querySelector(".tb-count")?.textContent).toBe("40");
+    });
+});
+
+describe("hiding completed annotations in bulk", () => {
+    beforeEach(() => {
+        localStorage.clear();
+        reducedMotion();
+    });
+    afterEach(() => localStorage.clear());
+    const button = (label: string) =>
+        [...ui().querySelectorAll<HTMLButtonElement>("button")].find(
+            (b) => b.textContent?.includes(label) || b.title === label
+        ) as HTMLButtonElement;
+    const count = () => ui().querySelector(".tb-count")?.textContent;
+    const add = (
+        server: ReturnType<typeof fakeServer>,
+        id: string,
+        over: Partial<Annotation> = {}
+    ) => {
+        server.notes.set(id, { ...sampleAnnotation, id, route: "/", ...over });
+    };
+
+    it("hides completed notes across pages beyond the pin limit, retains them and restores them", async () => {
+        const server = fakeServer();
+        for (let i = 0; i < 160; i++) add(server, `done-${i}`, { status: "resolved" });
+        add(server, "other-page", { status: "reverted", route: "/other" });
+        add(server, "open", { status: "open" });
+        add(server, "question", { status: "awaiting_response" });
+        const original = structuredClone([...server.notes.values()]);
+        const props = { server: SERVER, transport: server.transport, token: "same-user" };
+        let notato = mount(props);
+        await server.hello();
+        await until(() => count() === "162");
+        expect(ui().querySelectorAll(".pin")).toHaveLength(150);
+        button("Settings").click();
+        button("Hide completed annotations (161)").click();
+        await until(() => count() === "2");
+        expect(ui().querySelectorAll(".pin")).toHaveLength(2);
+        expect(notato.list()).toEqual(original);
+        expect([...server.notes.values()]).toEqual(original);
+        expect(server.deletes).toEqual([]);
+        expect(
+            server.transport.fetch.mock.calls.every(
+                ([, init]) => !init?.method || init.method === "GET"
+            )
+        ).toBe(true);
+
+        const streams = server.streams.length;
+        notato = reload(props);
+        await until(() => server.streams.length > streams, "the reloaded stream");
+        await server.hello();
+        await until(() => count() === "2");
+        expect(notato.list()).toHaveLength(163);
+        server.say("updated", { annotation: { ...server.notes.get("done-0"), status: "open" } });
+        server.say("updated", {
+            annotation: { ...server.notes.get("done-1"), status: "awaiting_response" },
+        });
+        await until(() => count() === "4");
+        button("Settings").click();
+        expect(button("Hide completed annotations (0)").disabled).toBe(true);
+        button("Restore hidden annotations (161)").click();
+        await until(() => count() === "162");
+    });
+
+    it("respects Only my notes and updates the available count when filters or statuses change", async () => {
+        localStorage.setItem("notato:author", "Alice");
+        const server = fakeServer();
+        add(server, "mine", { status: "open", author: { kind: "human", name: "Alice" } });
+        add(server, "theirs", { status: "resolved", author: { kind: "human", name: "Bob" } });
+        mount({ server: SERVER, transport: server.transport });
+        await server.hello();
+        await until(() => count() === "2");
+        button("Settings").click();
+        expect(button("Hide completed annotations (1)").disabled).toBe(false);
+        const mineOnly = () =>
+            ui().querySelector<HTMLButtonElement>('button[aria-label="Only my notes"]');
+        mineOnly()?.click();
+        expect(button("Hide completed annotations (0)").disabled).toBe(true);
+        server.say("updated", {
+            annotation: { ...server.notes.get("mine"), status: "resolved" },
+        });
+        await until(() => Boolean(button("Hide completed annotations (1)")));
+        button("Hide completed annotations (1)").click();
+        await until(() => count() === "0");
+        button("Settings").click();
+        mineOnly()?.click();
+        await until(() => count() === "1");
+        expect(button("Restore hidden annotations (1)")).toBeDefined();
+        expect(button("Hide completed annotations (1)").disabled).toBe(false);
     });
 });
 
@@ -610,7 +735,7 @@ describe("saving a note from the composer", () => {
         const box = ui().querySelector(".popover textarea") as HTMLTextAreaElement;
         box.value = note;
         [...ui().querySelectorAll<HTMLButtonElement>(".popover button")]
-            .find((b) => b.textContent === "Save")
+            .find((b) => b.textContent === "Save note")
             ?.click();
     };
     const pins = () => [...ui().querySelectorAll<HTMLElement>(".pin")];
@@ -661,5 +786,125 @@ describe("saving a note from the composer", () => {
         expect(ui().querySelector(".toast")?.textContent).toMatch(/^Could not save the note/);
         expect(pins()).toHaveLength(0);
         expect(notato.list()).toHaveLength(0);
+    });
+});
+
+describe("hosted capture-only access", () => {
+    it("uploads notes and reports connected without reading feedback, agent status or event streams", async () => {
+        const requests: string[] = [];
+        const events = vi.fn(() => {
+            throw new Error("private event stream attempted");
+        });
+        const fetcher = vi.fn(async (url: string, init?: RequestInit) => {
+            requests.push(`${init?.method ?? "GET"} ${new URL(url).pathname}`);
+            if (new URL(url).pathname === "/config")
+                return new URL(url).searchParams.get("project") === "shop"
+                    ? Response.json({ screenshots: false, captureOnly: true })
+                    : Response.json(
+                          { error: "project required for allowed origin" },
+                          { status: 403 }
+                      );
+            if (init?.method === "POST" && new URL(url).pathname === "/projects/shop/annotations") {
+                const annotation = JSON.parse((init.body as FormData).get("annotation") as string);
+                return Response.json({ annotation }, { status: 201 });
+            }
+            return Response.json({ error: "private route" }, { status: 403 });
+        });
+        const controller = mount({
+            mode: "dev",
+            server: SERVER,
+            token: "capture",
+            transport: { fetch: fetcher, events },
+        });
+        await settle();
+        await settle();
+        await controller.annotate({ target: "#pay", comment: "Hosted feedback" });
+        await until(() => requests.some((r) => r === "POST /projects/shop/annotations"));
+        expect(events).not.toHaveBeenCalled();
+        expect(
+            requests.every((r) => r === "GET /config" || r === "POST /projects/shop/annotations")
+        ).toBe(true);
+        expect(controller.list()).toHaveLength(1);
+    });
+});
+
+describe("grouped reviews", () => {
+    beforeEach(() => Object.assign(globalThis, { indexedDB: new IDBFactory() }));
+    const button = (label: string) =>
+        [...ui().querySelectorAll<HTMLButtonElement>("button")].find(
+            (b) => b.textContent?.includes(label) || b.title.includes(label)
+        );
+    async function reviewDialog() {
+        button("grouped review")?.click();
+        // Active reviews have their own title.
+        if (!ui().querySelector(".review-dialog")) button("finish and send")?.click();
+        await until(() => Boolean(ui().querySelector(".review-dialog")), "review dialog");
+    }
+    function saveTarget(comment: string) {
+        const el = document.querySelector("#pay") as HTMLElement;
+        for (const type of ["pointerdown", "mousedown", "pointerup", "mouseup", "click"])
+            el.dispatchEvent(
+                new MouseEvent(type, { bubbles: true, cancelable: true, composed: true, button: 0 })
+            );
+        const input = ui().querySelector(".popover textarea") as HTMLTextAreaElement;
+        input.value = comment;
+        button("Add to review")?.click();
+    }
+    it("holds notes across a reload, sends every target with one instruction, and keeps drafts out of exports", async () => {
+        const server = fakeServer();
+        const transport = {
+            ...server.transport,
+            fetch: async (url: string, init?: RequestInit) =>
+                new URL(url).pathname === "/config"
+                    ? Response.json({ screenshots: false, reviews: true, references: true })
+                    : server.transport.fetch(url, init),
+        };
+        const props = { server: SERVER, transport, token: "same-user" };
+        let notato = mount(props);
+        await reviewDialog();
+        (ui().querySelector(".review-dialog textarea") as HTMLTextAreaElement).value =
+            "Use consistent button spacing";
+        button("Start review")?.click();
+        await until(() => !ui().querySelector(".review-dialog"));
+        saveTarget("Checkout");
+        await until(() => notato.list().length === 1, "first target");
+        expect(server.posts).toEqual([]);
+        const draftId = notato.list()[0]?.review?.id;
+        expect(notato.list()[0]?.review?.draft).toBe(true);
+        await expect(notato.package()).rejects.toThrow("nothing to package");
+        await settle();
+        await settle();
+        notato = reload(props);
+        await until(() => notato.list().length === 1, "draft recovery");
+        notato.setAnnotateMode(true);
+        saveTarget("Profile");
+        await until(() => notato.list().length === 2, "second target");
+        await reviewDialog();
+        button("Send review (2)")?.click();
+        await until(() => server.posts.length === 2, "delivery");
+        expect(notato.list().map((a) => a.review)).toEqual(
+            [0, 1].map(() => ({
+                id: draftId,
+                instruction: "Use consistent button spacing",
+                total: 2,
+            }))
+        );
+        expect(notato.list().map((a) => a.comment)).toEqual(["Checkout", "Profile"]);
+    });
+    it("keeps drafts isolated when a different credential uses the same project", async () => {
+        let notato = mount({ token: "first" });
+        await reviewDialog();
+        (ui().querySelector(".review-dialog textarea") as HTMLTextAreaElement).value =
+            "Private review";
+        button("Start review")?.click();
+        await until(() => !ui().querySelector(".review-dialog"));
+        saveTarget("Do not show to another user");
+        await until(() => notato.list().length === 1);
+        await settle();
+        await settle();
+        notato = reload({ token: "second" });
+        await settle();
+        await settle();
+        expect(notato.list()).toEqual([]);
     });
 });

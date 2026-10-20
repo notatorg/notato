@@ -71,6 +71,7 @@ internal sealed class RuntimeState(bool remember)
     public bool? ToolbarVisible { get => Bool(Get("toolbar")); set => Set("toolbar", Bool(value)); }
     public bool? Screenshots { get => Bool(Get("screenshots")); set => Set("screenshots", Bool(value)); }
     public bool? PinsVisible { get => Bool(Get("pins")); set => Set("pins", Bool(value)); }
+    public string? HiddenAnnotations { get => Get("hidden.annotations"); set => Set("hidden.annotations", value); }
     public string? Author { get => Get("author"); set => Set("author", string.IsNullOrWhiteSpace(value) ? null : value.Trim()); }
     public string? Server { get => Get("server"); set => Set("server", string.IsNullOrWhiteSpace(value) ? null : value.Trim().TrimEnd('/')); }
 
@@ -100,7 +101,7 @@ internal sealed class RuntimeState(bool remember)
 
     public void Reset()
     {
-        foreach (string key in new[] { "enabled", "toolbar", "screenshots", "pins", "author", "server", "toolbar.position", "toolbar.collapsed" })
+        foreach (string key in new[] { "enabled", "toolbar", "screenshots", "pins", "author", "server", "toolbar.position", "toolbar.collapsed", "hidden.annotations" })
         {
             Set(key, null);
         }

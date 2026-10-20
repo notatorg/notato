@@ -2,7 +2,7 @@ name: CI
 
 on:
     push:
-        branches: [main]
+        branches: [main, develop]
     pull_request:
 
 permissions:
@@ -18,9 +18,11 @@ jobs:
         runs-on: ubuntu-latest
         steps:
             - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+            # Bun is the same exact version in every workflow and in the Dockerfile's build image. Dependabot moves the
+            # image (and the actions' pins), not these: move them with it.
             - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
               with:
-                  bun-version: latest
+                  bun-version: 1.4.3
             - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
               with:
                   node-version: 24
@@ -34,9 +36,8 @@ jobs:
                   bun run build:schema
                   git diff --exit-code packages/schema/schema.json
             - run: bun run test
-            # The docs are cut from the READMEs by heading, and the build fails when a heading they need is gone.
-            - name: The website and docs build
-              run: bun run build:site
+            - run: bun run build:service
+            - run: bun run build:site
 
     # Each platform builds its own binary and runs the smoke test against it: the real artefact, on the real OS.
     binaries:
@@ -56,7 +57,7 @@ jobs:
             - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
             - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
               with:
-                  bun-version: latest
+                  bun-version: 1.4.3
             - run: bun install --frozen-lockfile
             - run: bun run scripts/build-release.ts --targets ${{ matrix.target }} --skip-libs --no-pack
             - name: Smoke test the binary
@@ -72,7 +73,7 @@ jobs:
             - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
             - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
               with:
-                  bun-version: latest
+                  bun-version: 1.4.3
             - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
               with:
                   node-version: 24
@@ -99,7 +100,7 @@ jobs:
             - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
             - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
               with:
-                  bun-version: latest
+                  bun-version: 1.4.3
             - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
               with:
                   node-version: 24
@@ -108,7 +109,8 @@ jobs:
             - name: Install into a new app and set it up
               run: |
                   cd "$RUNNER_TEMP"
-                  npm create vite@latest shop -- --template react-ts --no-interactive
+                  # An exact create-vite, so a new release of it cannot change what this checks without a pull request.
+                  npm create vite@9.2.1 shop -- --template react-ts --no-interactive
                   cd shop
                   npm install
                   T="$GITHUB_WORKSPACE/dist/release/tarballs"
@@ -131,3 +133,20 @@ jobs:
                   curl -fs http://127.0.0.1:4747/ | grep -q 'id="root"'
                   test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:4747/annotations)" = 401
                   docker exec notato notato healthcheck
+
+
+    self-hosted:
+        name: Self-hosted Postgres, S3 and SMTP
+        needs: checks
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+            - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+              with:
+                  bun-version: 1.4.3
+            - run: bun install --frozen-lockfile
+            - run: bun deploy/self-hosted/init.ts --admin-email admin@example.test --output /tmp/notato-self-hosted.env
+            - run: docker compose --env-file /tmp/notato-self-hosted.env -f deploy/self-hosted/compose.yml -p notato-ci up --build -d --wait --wait-timeout 180
+            - run: bun services/server/scripts/smoke-self-hosted.ts --env /tmp/notato-self-hosted.env
+            - if: always()
+              run: docker compose --env-file /tmp/notato-self-hosted.env -f deploy/self-hosted/compose.yml -p notato-ci down --volumes

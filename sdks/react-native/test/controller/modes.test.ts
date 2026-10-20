@@ -3,9 +3,19 @@ import { unzipSync } from "fflate";
 import { describe, expect, it, vi } from "vitest";
 import { NotatoError } from "../../src/client.ts";
 import { memoryStorage } from "../../src/storage.ts";
-import { fakeHost, fakeServer, PNG, start } from "./harness.ts";
+import { fakeHost, fakeServer, PNG, settle, start } from "./harness.ts";
 
 describe("test mode", () => {
+    it("keeps one session for the run and starts a new one when the project changes", async () => {
+        const { notato } = start({ project: "shop", mode: "test" });
+        const first = await notato.annotate("Text", "First target");
+        const second = await notato.annotate("Text", "Second target");
+        expect(second.sessionId).toBe(first.sessionId);
+        notato.configure({ project: "other", mode: "test", enabled: true, captureLogs: false });
+        const other = await notato.annotate("Text", "Other project");
+        expect(other.sessionId).not.toBe(first.sessionId);
+    });
+
     it("keeps notes on the device, survives a restart, packages them as a bundle, and clears them", async () => {
         const storage = memoryStorage();
         const { notato, server } = start(
@@ -47,7 +57,7 @@ describe("test mode", () => {
         expect(storage.loadNotes()).toEqual([]);
     });
 
-    it("uploads the package to a server when one is set", async () => {
+    it("sends a shared Test run live and also uploads its package when a server is set", async () => {
         const { notato, server } = start({
             project: "shop",
             mode: "test",
@@ -56,7 +66,11 @@ describe("test mode", () => {
         await notato.annotate("Text", "x");
         expect((await notato.packageNotes()).uploaded).toBe(true);
         expect(server.transport.uploadBundle).toHaveBeenCalled();
-        expect(server.transport.send).not.toHaveBeenCalled();
+        expect(server.transport.send).toHaveBeenCalled();
+        expect(notato.getState().notes[0]?.annotation).toMatchObject({
+            visibility: "shared",
+            sessionId: expect.stringMatching(/^review_/),
+        });
     });
 
     it("says there is nothing to package before a note is made", async () => {
@@ -71,8 +85,9 @@ describe("agent mode", () => {
         args: { target, comment: `Request ${requestId}`, author: "Claude" },
     });
 
-    it("follows the project's events with the agent's requests", () => {
+    it("follows the project's events with the agent's requests", async () => {
         const { server } = start({ project: "shop", mode: "agent" });
+        await settle();
         expect(server.transport.follow).toHaveBeenCalledWith(
             expect.anything(),
             true,

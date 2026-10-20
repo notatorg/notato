@@ -22,11 +22,17 @@ export function writeBundle(
             const full = assetOf(a.screenshots.full.id);
             const crop = a.screenshots.crop ? assetOf(a.screenshots.crop.id) : undefined;
             if (full) {
-                const fullRef = { ...a.screenshots.full, path: `shots/${n}-full.png` };
+                const fullRef = {
+                    ...a.screenshots.full,
+                    path: `shots/${n}-full.${a.screenshots.full.mime === "image/webp" ? "webp" : "png"}`,
+                };
                 files[fullRef.path] = [full, { level: 0 }];
                 const cropRef =
                     a.screenshots.crop && crop
-                        ? { ...a.screenshots.crop, path: `shots/${n}-crop.png` }
+                        ? {
+                              ...a.screenshots.crop,
+                              path: `shots/${n}-crop.${a.screenshots.crop.mime === "image/webp" ? "webp" : "png"}`,
+                          }
                         : undefined;
                 if (cropRef && crop) files[cropRef.path] = [crop, { level: 0 }];
                 placed.screenshots = { full: fullRef, ...(cropRef ? { crop: cropRef } : {}) };

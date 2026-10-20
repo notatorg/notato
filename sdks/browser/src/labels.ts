@@ -86,16 +86,15 @@ const animationLabel = (a: AnimationInfo) =>
     ].join("");
 
 /**
- * The small print under what is picked: how to add to it, what on it is moving (worth pausing first), and whether a
- * screenshot will be taken. Undefined when there is nothing to say.
+ * The small print under what is picked: how to add to it and what on it is moving (worth pausing first).
+ * Undefined when there is nothing to say.
  */
 export function pickHint(options: {
     kind: Selection["kind"];
     animations: AnimationInfo[];
     frozen: boolean;
-    screenshotsOff: boolean;
 }): string | undefined {
-    const { kind, animations, frozen, screenshotsOff } = options;
+    const { kind, animations, frozen } = options;
     const moving = animations.slice(0, ANIMATIONS_NAMED);
     const lines = [
         kind === "element" || kind === "multi"
@@ -104,7 +103,6 @@ export function pickHint(options: {
         moving.length
             ? `Animating: ${moving.map(animationLabel).join(", ")}.${frozen ? "" : " Pause first to annotate a frame."}`
             : undefined,
-        screenshotsOff ? "No screenshot will be taken: they are turned off." : undefined,
     ];
     return lines.filter(Boolean).join(" ") || undefined;
 }

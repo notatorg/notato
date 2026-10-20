@@ -62,7 +62,7 @@ class Palette {
 
 /// A pin's colour for its note's status.
 Color statusColor(String status) => switch (status) {
-  'acknowledged' => const Color(0xFFD99A1E),
+  'awaiting_response' || 'acknowledged' => const Color(0xFFD99A1E),
   'resolved' => const Color(0xFF2E9A5B),
   'revert_requested' => const Color(0xFF8B5CF6),
   'variant_chosen' => const Color(0xFF0891B2),
@@ -84,3 +84,5 @@ String? ago(String iso, [DateTime? now]) {
   if (s < 86400) return '${s ~/ 3600}h ago';
   return '${s ~/ 86400}d ago';
 }
+
+String statusLabel(String value) => value == 'awaiting_response' ? 'Needs your answer' : value.replaceAll('_', ' ');

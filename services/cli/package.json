@@ -1,0 +1,15 @@
+{
+    "name": "@notato/service-cli",
+    "version": "0.3.0",
+    "description": "Run and check the self-hosted Notato server.",
+    "private": true,
+    "type": "module",
+    "bin": {
+        "notato-server": "./src/main.ts"
+    },
+    "dependencies": {
+        "@notato/service-server": "workspace:*",
+        "@notato/cli": "workspace:*",
+        "@notato/server": "workspace:*"
+    }
+}

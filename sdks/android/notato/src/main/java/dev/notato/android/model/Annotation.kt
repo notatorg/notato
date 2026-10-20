@@ -33,11 +33,13 @@ public object Severity {
 public object Status {
     public const val OPEN: String = "open"
     public const val ACKNOWLEDGED: String = "acknowledged"
+    public const val AWAITING_RESPONSE: String = "awaiting_response"
     public const val VARIANT_CHOSEN: String = "variant_chosen"
     public const val RESOLVED: String = "resolved"
     public const val REVERT_REQUESTED: String = "revert_requested"
     public const val REVERTED: String = "reverted"
     public const val DISMISSED: String = "dismissed"
+    public fun label(value: String): String = if (value == AWAITING_RESPONSE) "Needs your answer" else value.replace('_', ' ')
 }
 
 /** Who wrote a note or a reply: a person, or an agent. */
@@ -206,6 +208,9 @@ public data class Annotation(
      * left out (null) when off. Anyone on the thread can turn it on or off; each change is recorded in the thread.
      */
     val peopleOnly: Boolean? = null,
+    val visibility: String? = null,
+    val createdBy: String? = null,
+    val sessionId: String? = null,
 )
 
 /** A tester's notes packaged together (the zip's `annotations.json`). */
@@ -234,8 +239,12 @@ internal data class StoredAnnotation(val seq: Long = 0, val annotation: Annotati
 @Serializable
 internal data class AnnotationList(val items: List<StoredAnnotation> = emptyList(), val next: Long? = null)
 
+/**
+ * What the server allows (`GET /config`). [screenshots] is null when it does not say, which is not taken for yes; with
+ * [captureOnly], this app's token can send notes and nothing else (no event stream, no list, no bundles).
+ */
 @Serializable
-internal data class ServerConfig(val screenshots: Boolean = true)
+internal data class ServerConfig(val screenshots: Boolean? = null, val derivedScreenshots: Boolean = false, val captureOnly: Boolean = false)
 
 @Serializable
 internal data class ErrorBody(val error: String? = null)
@@ -280,7 +289,7 @@ internal data class LogEntry(val level: String, val message: String, val at: Str
 public data class NetworkEntry(
     /** `GET`, `POST`, … */
     val method: String,
-    /** The address. Its query string and fragment are left out when it is recorded: they routinely carry tokens. */
+    /** The address. Its query string, fragment and any `user:password@` are left out when it is recorded: they routinely carry tokens. */
     val url: String,
     /** The response's status code, or 0 when there was none. */
     val status: Int,

@@ -73,20 +73,26 @@ describe("the composer", () => {
 
     it("sends a note to the agent unless People only is pressed", async () => {
         const popover = open();
-        const chip = button(layer, "People only") as HTMLButtonElement;
+        const chip = button(layer, "Hide from agent") as HTMLButtonElement;
         expect(chip.getAttribute("aria-pressed")).toBe("false");
         expect(chip.title).toBe(PEOPLE_ONLY_HINT);
-        button(layer, "Save")?.click();
+        button(layer, "Save note")?.click();
         await settle();
-        expect(onSave.mock.calls[0]?.[0]).toEqual({ comment: "is this green right?" });
+        expect(onSave.mock.calls[0]?.[0]).toEqual({
+            comment: "is this green right?",
+            visibility: "personal",
+        });
         popover.destroy();
     });
 
     it("marks the note People only when it is", async () => {
         const popover = open();
-        button(layer, "People only")?.click();
-        expect(button(layer, "People only")?.getAttribute("aria-pressed")).toBe("true");
-        button(layer, "Save")?.click();
+        button(layer, "Hide from agent")?.click();
+        expect(button(layer, "Hide from agent")?.getAttribute("aria-pressed")).toBe("true");
+        expect(layer.querySelector(".composer-visibility p")?.textContent).toBe(
+            "Only people can see this note."
+        );
+        button(layer, "Save note")?.click();
         await settle();
         expect(onSave.mock.calls[0]?.[0]).toMatchObject({ peopleOnly: true });
         popover.destroy();
@@ -94,10 +100,55 @@ describe("the composer", () => {
 });
 
 describe("a card", () => {
+    it("keeps secondary actions in closed options and preserves the reply while opening and closing them", async () => {
+        const onDelete = vi.fn(async () => {});
+        const t = mount({}, { onReply: async () => {}, onPeopleOnly: async () => {}, onDelete });
+        const options = t.card().querySelector("details") as HTMLDetailsElement;
+        const summary = options.querySelector("summary") as HTMLElement;
+        expect(options.open).toBe(false);
+        expect(summary.textContent).toContain("More options");
+        expect(options.contains(button(t.card(), "Delete") as HTMLButtonElement)).toBe(true);
+        const say = t.card().querySelector(".say") as HTMLInputElement;
+        say.value = "Keep this draft";
+        say.dispatchEvent(new Event("input"));
+        options.open = true;
+        options.dispatchEvent(new Event("toggle"));
+        button(t.card(), "Hide reply from agent")?.click();
+        expect((t.card().querySelector(".say") as HTMLInputElement).value).toBe("Keep this draft");
+        expect(t.card().querySelector(".reply-privacy")?.textContent).toBe(
+            "Next reply hidden from agent"
+        );
+        const opened = t.card().querySelector("details") as HTMLDetailsElement;
+        expect(opened.open).toBe(true);
+        opened
+            .querySelector("summary")
+            ?.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+        expect(opened.open).toBe(false);
+        expect(document.activeElement).toBe(opened.querySelector("summary"));
+        expect((t.card().querySelector(".say") as HTMLInputElement).value).toBe("Keep this draft");
+        opened.open = true;
+        button(t.card(), "Delete")?.click();
+        expect(onDelete).not.toHaveBeenCalled();
+        button(t.card(), "Click again to delete")?.click();
+        await settle();
+        expect(onDelete).toHaveBeenCalledWith("a1");
+    });
+
+    it("does not offer reverting an answered question or approval, and removes it if intent changes", () => {
+        const t = mount({ status: "resolved", intent: "fix" }, { onRequestRevert: async () => {} });
+        expect(button(t.card(), "Revert this change…")).toBeDefined();
+        for (const intent of ["question", "approve"] as const) {
+            t.set({ intent });
+            expect(button(t.card(), "Revert this change…")).toBeUndefined();
+        }
+        t.set({ status: "dismissed", intent: "fix" });
+        expect(button(t.card(), "Revert this change…")).toBeUndefined();
+    });
+
     it("shows a People only note as one, and turns it off and on", async () => {
         const onPeopleOnly = vi.fn(async () => {});
         const t = mount({ peopleOnly: true }, { onPeopleOnly });
-        expect(t.card().querySelector(".badge.people")?.textContent).toBe("People only");
+        expect(t.card().querySelector(".badge.people")?.textContent).toBe("Hidden from agent");
         const toggle = t.card().querySelector(".card-foot .chip.people") as HTMLButtonElement;
         expect(toggle.getAttribute("aria-pressed")).toBe("true");
         toggle.click();
@@ -132,7 +183,7 @@ describe("a card", () => {
         const t = mount({ thread: [reply("make it blue"), reply("Sam, agree?", { aside: true })] });
         const bubbles = [...t.card().querySelectorAll(".bubble")];
         expect(bubbles.map((b) => b.classList.contains("aside"))).toEqual([false, true]);
-        expect(bubbles[1]?.querySelector(".aside-tag")?.textContent).toBe("Aside");
+        expect(bubbles[1]?.querySelector(".aside-tag")?.textContent).toBe("Hidden from agent");
     });
 
     it("sends a reply as an aside when Aside is pressed, then goes back to the agent", async () => {

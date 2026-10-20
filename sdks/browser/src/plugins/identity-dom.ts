@@ -1,6 +1,6 @@
 import type { IdentityPlugin } from "@notato/core";
 import { EDITABLE, MASK_ATTR } from "../attributes.ts";
-import { isDocument, isShadowRoot } from "../ui/dom.ts";
+import { isDocument, isElement, isShadowRoot } from "../ui/dom.ts";
 
 export const DEFAULT_TEST_ID_ATTRIBUTES = ["data-testid", "data-qa", "data-cy", "data-test"];
 
@@ -308,6 +308,51 @@ export function safeText(el: Element, limit = TEXT_LIMIT * 2): string {
         out += node.nodeValue ?? "";
     }
     return out;
+}
+
+/** Every element whose text a note leaves out: what `isOmitted` matches, as one selector. */
+const WITHHELD = `${[...OMITTED_TAGS].join(", ")}, ${PRIVATE}, ${EDITABLE}`;
+
+/**
+ * The text of a selection, to record with a note. The browser's own text of it takes in everything selected, text
+ * marked private and what is typed in an editor included, and some browsers give a field's value when that is what is
+ * selected. So a selection that touches any of them is read as `safeText` reads an element, a text node at a time,
+ * with them left out. Empty when nothing of it may be recorded.
+ */
+export function selectionText(selection: Selection): string {
+    if (selection.rangeCount === 0) return "";
+    const range = selection.getRangeAt(0);
+    const root = range.commonAncestorContainer;
+    const around = isElement(root) ? root : root.parentElement;
+    // All of it in a field, an editor or a private element; or the selection is in a field's value, which leaves the
+    // range in the page collapsed beside the field.
+    if (!around || around.closest(WITHHELD) || range.collapsed) return "";
+    const touched = Array.from(around.querySelectorAll(WITHHELD)).some((el) =>
+        range.intersectsNode(el)
+    );
+    if (!touched) return selection.toString();
+    const walker = around.ownerDocument.createTreeWalker(
+        around,
+        NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT,
+        {
+            acceptNode: (node) => {
+                if (!range.intersectsNode(node)) return NodeFilter.FILTER_REJECT;
+                if (node.nodeType === 3) return NodeFilter.FILTER_ACCEPT;
+                return isOmitted(node as Element)
+                    ? NodeFilter.FILTER_REJECT
+                    : NodeFilter.FILTER_SKIP;
+            },
+        }
+    );
+    let out = "";
+    for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+        let text = node.nodeValue ?? "";
+        // Only the selected part of the text nodes it starts and ends in.
+        if (node === range.endContainer) text = text.slice(0, range.endOffset);
+        if (node === range.startContainer) text = text.slice(range.startOffset);
+        out += text;
+    }
+    return collapse(out);
 }
 
 /** Never reads `.value` of a text input: that is user data, not a name. */

@@ -19,6 +19,8 @@ import type {
 export interface PipelineConfig {
     mode: Mode;
     projectId: string;
+    sessionId?: string;
+    localOnly?: boolean;
     appName?: string;
     appVersion?: string;
     /**
@@ -50,6 +52,8 @@ const CAPTURE_FIELDS = ["screenshots", "steps", "route"] as const;
 export function createPipeline(config: PipelineConfig): Pipeline {
     const warn = config.onWarn ?? (() => {});
     let counter = 0;
+    const testSession =
+        config.mode === "test" ? (config.sessionId ?? "review_" + ulid()) : config.sessionId;
 
     const resolveIdentity = (el: Element): ElementIdentity => {
         const merged: Partial<ElementIdentity> = {};
@@ -101,6 +105,7 @@ export function createPipeline(config: PipelineConfig): Pipeline {
                 id,
                 number,
                 projectId: config.projectId,
+                visibility: input.visibility ?? (mode === "test" ? "shared" : "personal"),
                 mode,
                 author:
                     input.author ??
@@ -165,9 +170,25 @@ export function createPipeline(config: PipelineConfig): Pipeline {
 
             // No screenshots is a valid annotation: they can be turned off, and then nothing produces them.
 
+            const references = await Promise.all(
+                (input.references ?? []).map(async ({ blob, name, w, h }) => {
+                    if (
+                        !["image/png", "image/webp"].includes(blob.type) ||
+                        blob.size > 5 * 1024 * 1024 ||
+                        w * h > 16_000_000
+                    )
+                        throw new Error(
+                            "References must be PNG/WebP, at most 5 MB and 16 megapixels each."
+                        );
+                    return { ...(await draft.putAsset(blob, { w, h })), name };
+                })
+            );
             const annotation = Annotation.parse({
                 id,
                 projectId: draft.projectId,
+                visibility: draft.visibility,
+                sessionId: input.sessionId ?? testSession,
+                ...((input.localOnly ?? config.localOnly) ? { localOnly: true } : {}),
                 bundleId: null,
                 author: draft.author,
                 mode,
@@ -187,6 +208,8 @@ export function createPipeline(config: PipelineConfig): Pipeline {
                 severity: draft.severity,
                 intent: draft.intent,
                 screenshots,
+                references: references.length ? references : undefined,
+                review: input.review,
                 steps,
                 context,
                 status: "open",
@@ -196,7 +219,9 @@ export function createPipeline(config: PipelineConfig): Pipeline {
 
             const record = withElements({ annotation, assets }, input.elements);
             const results = await Promise.allSettled(
-                config.sinks.map((sink) => sink.deliver(annotation, assets))
+                (annotation.review?.draft ? [] : config.sinks).map((sink) =>
+                    sink.deliver(annotation, assets)
+                )
             );
             results.forEach((result, i) => {
                 if (result.status === "rejected")

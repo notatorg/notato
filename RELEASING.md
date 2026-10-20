@@ -1,6 +1,6 @@
 # Releasing
 
-Everything is released together, at one version: the `notato` command and server, every npm package, the Swift package, the Android libraries, the .NET MAUI package, the Docker image and the website. "SDK 0.3 works with server 0.3" is then the whole compatibility story.
+Everything is released together, at one version: the `notato` command and server, every npm package, the Swift package, the Android libraries, the .NET MAUI package, the Docker image and the Flutter package. "SDK 0.3 works with server 0.3" is then the whole compatibility story.
 
 ## A release
 
@@ -14,7 +14,7 @@ git push origin main v0.3.0
 
 Every release has a changelog entry: [CHANGELOG.md](CHANGELOG.md) for everything, and the Flutter package's own for pub.dev. The tests and the tag both fail without them, and the CHANGELOG.md entry is the top of the GitHub release's notes, above GitHub's list of what was merged.
 
-The tag starts [`release.yml`](.github/workflows/release.yml). It checks that the tag is the version every package says and that the changelogs have it, builds and smoke-tests the binary on each platform, then builds every package. Each registry only gets an upload when its switch is on, so with every switch off a tag is a complete dry run: `npm publish --dry-run`, the Docker image built but not pushed, the Maven bundle and the NuGet package uploaded as workflow artifacts, and the website built.
+The tag starts [`release.yml`](.github/workflows/release.yml). It checks that the tag is the version every package says and that the changelogs have it, builds and smoke-tests the binary on each platform, then builds every package. Each registry only gets an upload when its switch is on, so with every switch off a tag is a complete dry run: `npm publish --dry-run`, the Docker image built but not pushed, the Maven bundle and the NuGet package uploaded as workflow artifacts.
 
 A pre-release (`0.3.0-rc.1`) works the same way: npm gets it under the `next` tag and Docker does not move `latest`.
 
@@ -25,11 +25,10 @@ Repository variables (Settings › Secrets and variables › Actions › Variabl
 | Variable         | Publishes                                                     | Needs                                                                                             |
 | ---------------- | ------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
 | `PUBLISH_NPM`    | `notato`, `@notato/cli-*`, and every public workspace package | secret `NPM_TOKEN`                                                                                |
-| `PUBLISH_DOCKER` | `ghcr.io/notatorg/notato`                                     | nothing more                                                                                      |
+| `PUBLISH_DOCKER` | `ghcr.io/notatorg/notato` and `ghcr.io/notatorg/notato-server` | nothing more                                                                                      |
 | `PUBLISH_MAVEN`  | `dev.notato:notato-android` and `dev.notato:notato-compose`   | secrets `MAVEN_CENTRAL_USERNAME`, `MAVEN_CENTRAL_PASSWORD`, `SIGNING_KEY`, `SIGNING_KEY_PASSWORD` |
 | `PUBLISH_NUGET`  | `Notato.Maui` and `Notato.Aspire`                             | variable `NUGET_USER` and a Trusted Publishing policy on nuget.org (below); no key                |
 | `PUBLISH_PUB`    | `notato` on pub.dev (Flutter)                                 | automated publishing turned on for the package on pub.dev (below)                                 |
-| `PUBLISH_SITE`   | the website and docs, on GitHub Pages                         | Pages' source set to GitHub Actions, and tags allowed to deploy (below)                           |
 | `PUBLISH_GITHUB` | a GitHub release with the binaries and the extension zip      | nothing more                                                                                      |
 
 SwiftPM has no switch: it reads `Package.swift` at the tag, so pushing the tag is the Swift release.
@@ -37,18 +36,17 @@ SwiftPM has no switch: it reads `Package.swift` at the tag, so pushing the tag i
 ## Before the first one
 
 - **npm.** Create the `notato` organisation on npmjs.com (it owns the `@notato` scope; `notato` and `@notato/*` were free in October 2026) and an automation token for `NPM_TOKEN`. Packages are published with provenance, which needs the repository to be public.
-- **Docker.** After the first push, make the `notato` package public under the organisation's packages.
+- **Docker.** After the first push, make both the `notato` (developer loop) and `notato-server` (the full self-hosted server, [deploy/self-hosted](deploy/self-hosted/README.md)) packages public under the organisation's packages.
 - **Maven Central.** Make an account on the [Central Portal](https://central.sonatype.com) and verify the `dev.notato` namespace. That takes a DNS record on `notato.dev`: without that domain, verify `io.github.notatorg` instead and set `GROUP` in `sdks/android/gradle.properties` to it. Generate a user token (`MAVEN_CENTRAL_USERNAME` and `MAVEN_CENTRAL_PASSWORD`), and a GPG key whose public half is on keys.openpgp.org (`SIGNING_KEY` is the ASCII-armoured private key, `SIGNING_KEY_PASSWORD` its passphrase). `./gradlew publishAllPublicationsToStagingRepository` in `sdks/android` writes the same bundle locally.
 - **NuGet.** No API key: nuget.org trusts the release workflow itself. On nuget.org, under your account's **Trusted Publishing**, add a policy owned by the Notato organisation for repository owner `notatorg`, repository `notato` and workflow file `release.yml`, and set the repository variable `NUGET_USER` to your nuget.org username (the profile name, not the email). Reserving the `Notato.` prefix is worth asking for.
 - **pub.dev.** The first version goes up by hand (`flutter pub publish` in `sdks/flutter`, signed in as the account that should own it; a verified publisher is better). Then, on the package's admin page, turn on automated publishing from GitHub Actions for `notatorg/notato` with the tag pattern `v{{version}}`: the release job publishes with the workflow's own identity, and no secret is needed. `notato` was free on pub.dev in October 2026.
 - **Swift.** Nothing; adding the repository to the Swift Package Index is optional.
-- **GitHub Pages.** Set Settings › Pages › Source to GitHub Actions. That creates a `github-pages` environment that only `main` may deploy to, and a release runs from its tag, so add a tag rule for `v*` under Settings › Environments › github-pages › Deployment branches and tags (`gh api -X POST repos/notatorg/notato/environments/github-pages/deployment-branch-policies -f name='v*' -f type=tag`).
 - **GitHub.** Turn on private vulnerability reporting (Settings › Code security), which [SECURITY.md](SECURITY.md) sends reports to, and reported content (Settings › Moderation options), which the [code of conduct](CODE_OF_CONDUCT.md) relies on.
 
 ## Where the metadata lives
 
 Each registry reads its own file, and [`scripts/repo.test.ts`](scripts/repo.test.ts) checks that they agree:
 
-- The repository URL (`https://github.com/notatorg/notato`): `REPO_URL` in [`scripts/repo.ts`](scripts/repo.ts) for npm, `POM_*` in [`sdks/android/gradle.properties`](sdks/android/gradle.properties), [`sdks/dotnet/Directory.Build.props`](sdks/dotnet/Directory.Build.props), [`site/docs.ts`](site/docs.ts), the Dockerfile.
+- The repository URL (`https://github.com/notatorg/notato`): `REPO_URL` in [`scripts/repo.ts`](scripts/repo.ts) for npm, `POM_*` in [`sdks/android/gradle.properties`](sdks/android/gradle.properties), [`sdks/dotnet/Directory.Build.props`](sdks/dotnet/Directory.Build.props), the Dockerfile.
 - The licence (MIT, [LICENSE](LICENSE)): `common` in [`scripts/build-release.ts`](scripts/build-release.ts), `POM_LICENSE_*`, `PackageLicenseExpression`.
 - The version: every place [`scripts/version.ts`](scripts/version.ts) lists.

@@ -14,6 +14,7 @@ struct PinCard: View {
 
     @State private var reply = ""
     @State private var aside = false
+    @State private var showDeleteConfirmation = false
     @State private var problem: String?
     @State private var busy = false
     /// People only as just asked for, until the server (or the device) has it.
@@ -55,11 +56,10 @@ struct PinCard: View {
                     } else if record.pending {
                         Text(record.error.map { "Not sent: \($0)" } ?? "Not sent yet: \(record.notice ?? "it goes when the server can be reached.")")
                             .font(.system(size: 12.5)).foregroundStyle(Palette.status(Status.acknowledged))
+                    } else if sendOnly {
+                        Text("Sent. This app can only send notes: read, reply to and change them on the Notato board.")
+                            .font(.system(size: 12.5)).foregroundStyle(Palette.muted)
                     }
-                    FlagToggle(title: PeopleOnlyCopy.title, hint: PeopleOnlyCopy.hint,
-                               isOn: Binding(get: { askedPeopleOnly ?? a.isPeopleOnly }, set: { setPeopleOnly($0) }))
-                        .disabled(askedPeopleOnly != nil)
-                        .accessibilityIdentifier("NotatoNotePeopleOnly")
                     ForEach(a.thread.suffix(4)) { ThreadEntry(reply: $0) }
                     if a.thread.count > 4 {
                         // The card shows the latest of a long thread: say the rest is there.
@@ -68,13 +68,14 @@ struct PinCard: View {
                             .padding(.horizontal, 10)
                             .accessibilityIdentifier("NotatoEarlierReplies")
                     }
-                    if notato.hasServer, !record.pending {
+                    if notato.hasServer, !record.pending, !sendOnly {
                         TextField(a.status == Status.resolved ? "Reply, or say what was wrong" : "Reply", text: $reply, axis: .vertical)
                             .lineLimit(1...4)
                             .field()
                             .accessibilityIdentifier("NotatoReply")
-                        FlagToggle(title: PeopleOnlyCopy.aside, hint: PeopleOnlyCopy.asideHint, isOn: $aside)
-                            .accessibilityIdentifier("NotatoAside")
+                        if aside {
+                            Text("Next reply hidden from agent").font(.caption).foregroundStyle(Palette.muted)
+                        }
                     }
                 }
                 .padding(.horizontal, 4)
@@ -88,33 +89,68 @@ struct PinCard: View {
         }
     }
 
+    /// Sent with a token that may only send new notes: the board is where it is read, replied to and changed.
+    private var sendOnly: Bool { notato.hasServer && notato.captureOnly && !record.pending }
+
     @ViewBuilder
     private func actions(_ a: Annotation) -> some View {
-        if notato.hasServer, !record.pending {
-            if a.status == Status.resolved {
-                SheetButton("Ask the agent to revert") { run({ try await notato.requestRevert(a.id, reason: reply) }, "Asked the agent to undo that change") }
-            }
-            if a.status == Status.revertRequested {
-                SheetButton("Cancel request") { run({ try await notato.cancelRevert(a.id) }, "Revert request taken back") }
-            }
-            if record.mine, a.status == Status.open {
-                SheetButton("Delete", kind: .danger) { run({ try await notato.delete(a.id) }, "Note deleted") }
-            }
-            SheetButton("Reply", kind: .primary) {
-                let text = reply.trimmingCharacters(in: .whitespacesAndNewlines)
-                let asAside = aside
-                if text.isEmpty {
-                    problem = "Write a reply first."
-                } else {
-                    run({
-                        try await notato.reply(a.id, text, aside: asAside)
-                        aside = false
-                    }, asAside ? "Aside sent" : "Reply sent")
+        if sendOnly {
+            if HiddenAnnotations.isCompleted(a.status) {
+                SheetButton("Hide from this app") {
+                    close()
+                    notato.hideAnnotation(a.id)
                 }
             }
-            .accessibilityIdentifier("NotatoSendReply")
         } else {
-            SheetButton("Delete", kind: .danger) { run({ try await notato.delete(a.id) }, "Note deleted") }
+            Menu {
+                if HiddenAnnotations.isCompleted(a.status) {
+                    Button("Hide from this app") {
+                        close()
+                        notato.hideAnnotation(a.id)
+                    }
+                }
+                Toggle(PeopleOnlyCopy.title, isOn: Binding(get: { askedPeopleOnly ?? a.isPeopleOnly }, set: { setPeopleOnly($0) }))
+                    .disabled(askedPeopleOnly != nil)
+                if notato.hasServer, !record.pending {
+                    Toggle(PeopleOnlyCopy.aside, isOn: $aside)
+                    Divider()
+                    if a.status == Status.resolved, a.intent != Intent.question, a.intent != Intent.approve {
+                        Button("Revert this change…") { run({ try await notato.requestRevert(a.id, reason: reply) }, "Asked the agent to undo that change") }
+                    }
+                    if a.status == Status.revertRequested {
+                        Button("Cancel revert request") { run({ try await notato.cancelRevert(a.id) }, "Revert request taken back") }
+                    }
+                }
+                if !notato.hasServer || record.pending || (record.mine && a.status == Status.open) {
+                    Button("Delete", role: .destructive) { showDeleteConfirmation = true }
+                }
+            } label: {
+                Text("More options")
+                    .font(.system(size: 14, weight: .semibold))
+                    .padding(.horizontal, 12).padding(.vertical, 10)
+            }
+            .buttonStyle(.bordered)
+            .disabled(busy)
+            .accessibilityIdentifier("NotatoMoreOptions")
+            .confirmationDialog("Delete this note?", isPresented: $showDeleteConfirmation, titleVisibility: .visible) {
+                Button("Delete note", role: .destructive) { run({ try await notato.delete(a.id) }, "Note deleted") }
+                Button("Cancel", role: .cancel) {}
+            }
+            if notato.hasServer, !record.pending {
+                SheetButton("Reply", kind: .primary) {
+                    let text = reply.trimmingCharacters(in: .whitespacesAndNewlines)
+                    let asAside = aside
+                    if text.isEmpty {
+                        problem = "Write a reply first."
+                    } else {
+                        run({
+                            try await notato.reply(a.id, text, aside: asAside)
+                            aside = false
+                        }, asAside ? "Reply hidden from agent" : "Reply sent")
+                    }
+                }
+                .accessibilityIdentifier("NotatoSendReply")
+            }
         }
     }
 
@@ -127,7 +163,7 @@ struct PinCard: View {
 
     /// As the web toolbar draws it: no fill, a hairline, small muted capitals. It is not a status, so it has no colour.
     private var peopleOnlyBadge: some View {
-        Text(PeopleOnlyCopy.title)
+        Text("Hidden from agent")
             .font(.caption2.weight(.bold))
             .textCase(.uppercase)
             .kerning(0.4)
@@ -199,10 +235,10 @@ struct ThreadEntry: View {
             let shape = RoundedRectangle(cornerRadius: 12, style: .continuous)
             VStack(alignment: .leading, spacing: 2) {
                 if aside {
-                    Label(PeopleOnlyCopy.aside, systemImage: "eye.slash")
+                    Label("Hidden from agent", systemImage: "eye.slash")
                         .font(.caption2.weight(.bold))
                         .foregroundStyle(Palette.muted)
-                        .accessibilityLabel("Aside, kept from the agent")
+                        .accessibilityLabel("Hidden from agent")
                 }
                 (Text("\(name): ").bold() + Text(reply.body))
                     .font(.subheadline)
@@ -234,7 +270,7 @@ struct Badge: View {
     let color: Color
 
     var body: some View {
-        Text(text.replacingOccurrences(of: "_", with: " "))
+        Text(Status.label(text))
             .font(.caption2.weight(.bold))
             .padding(.horizontal, 7).padding(.vertical, 2)
             .foregroundStyle(color)

@@ -10,3 +10,26 @@ sdks/dotnet
 sdks/swift
 sdks/android
 site
+
+# Local checkouts of other branches: gigabytes, and one may be a private repository.
+.worktrees
+**/.worktrees
+
+# Keys, certificates and environment files, wherever they are. The image is built from source alone and needs none.
+**/*.key
+**/*.pem
+**/*.crt
+**/*.p12
+**/*.pfx
+**/.env
+**/.env.*
+
+# Local caches and editor files.
+**/.DS_Store
+**/.angular
+.swiftpm
+**/*.tsbuildinfo
+
+# Persistent full-server data must never enter an image.
+**/notato-server-data
+**/.notato-monitor

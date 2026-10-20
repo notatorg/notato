@@ -3,13 +3,18 @@ import {
     awaitsAgent,
     BundleError,
     buildBundle,
+    canRequestRevert,
     PEOPLE_ONLY_TEXT,
+    peopleOnlyRecord,
     readBundle,
+    screenshotCrop,
     streamBundle,
 } from "@notato/core";
 import {
     Annotation,
     type Author,
+    annotationAssets,
+    ExternalLink,
     type Severity,
     type Status,
     type VariantOption,
@@ -18,15 +23,21 @@ import {
 import { ulid } from "ulid";
 import { AgentPresence } from "./agents.ts";
 import { UnknownProjectError } from "./auth.ts";
+import { sha256Hex } from "./blob-store.ts";
+import { captureReceipt } from "./capture-receipt.ts";
+import { canReadSession, ReviewSessions, reviewSessionView } from "./collaboration.ts";
 import { type ConfigSource, defaultConfig } from "./config.ts";
 import { EventBus, type EventType } from "./events.ts";
+import { ImageViews } from "./image-views.ts";
 import { MentionRegistry } from "./mentions.ts";
 import { type RelayArgs, RelayHub, type RelayResult } from "./relay.ts";
 import {
     type AnnotationFilter,
     type BlobStore,
     type BundleRecord,
+    type CaptureReceipt,
     type HandedEntry,
+    inFeedbackScope,
     inProjects,
     PROJECT_ID,
     type ProjectRecord,
@@ -39,8 +50,9 @@ export interface ImportResult {
     bundleId: string;
     projectId: string;
     imported: number;
-    /** Annotations already present (same id), left untouched. Importing twice is safe. */
+    /** Annotations already present (same id). A matching creator may add missing review-session metadata. */
     skipped: number;
+    reviewSessionId?: string;
 }
 
 /** What an agent offers for a person to choose between. */
@@ -62,11 +74,36 @@ export interface AssetBytes {
  * which is how a second `notato dev` attaches to the first.
  */
 export interface Backend {
+    listReviewSessions?(
+        project: string,
+        actor: string
+    ): Promise<import("./collaboration.ts").ReviewSession[]>;
+    getReviewSession?(
+        id: string,
+        actor: string
+    ): Promise<{
+        session: import("./collaboration.ts").ReviewSession;
+        items: StoredAnnotation[];
+    } | null>;
+    replyReviewSession?(
+        id: string,
+        actor: string,
+        body: string,
+        author: Author
+    ): Promise<import("./collaboration.ts").ReviewSession | null>;
+    claimWork?(
+        id: string,
+        action: "claim" | "heartbeat" | "release",
+        checkoutHead?: string
+    ): Promise<import("./team.ts").WorkRecord>;
+    recordResolution?(id: string, branch: string, commit: string): Promise<void>;
+    getWork?(id: string): Promise<import("./team.ts").WorkRecord | null>;
     list(filter?: AnnotationFilter): Promise<StoredAnnotation[]>;
     get(id: string): Promise<StoredAnnotation | null>;
     /** Records follow-ups as delivered to an agent, so another session (or a restart) is not handed them again. */
     markHanded(entries: HandedEntry[]): Promise<void>;
     asset(id: string): Promise<AssetBytes | null>;
+    screenshot?(id: string, view: "crop" | "thumbnail"): Promise<AssetBytes | null>;
     setStatus(
         id: string,
         status: Status,
@@ -105,6 +142,22 @@ export interface Backend {
     ): Promise<RelayResult>;
 }
 
+/** Inspect headers before decoding/storing any explicit reference, including bundle preflight. */
+async function referenceDimensions(bytes: Uint8Array) {
+    if (bytes.byteLength > 5 * 1024 * 1024)
+        throw new RequestError("Reference images must be at most 5 MB each.", 413);
+    try {
+        const meta = await new Bun.Image(bytes).metadata();
+        if (meta.width <= 0 || meta.height <= 0 || meta.width * meta.height > 16_000_000)
+            throw new Error("invalid dimensions");
+        return meta;
+    } catch {
+        throw new RequestError(
+            "Reference images must be valid PNG/WebP images of at most 16 megapixels."
+        );
+    }
+}
+
 /** Raised for input the caller can fix; the HTTP layer turns it into a 4xx. */
 export class RequestError extends Error {
     constructor(
@@ -129,11 +182,14 @@ export interface AnnotationChange {
     note?: string;
     /** People only on or off. Only a person can change it, and each change is recorded in the thread. */
     peopleOnly?: boolean;
+    /** Personal feedback is visible only to its creator; shared feedback is visible to project members. */
+    visibility?: "personal" | "shared";
 }
 
 export function matchesFilter(stored: StoredAnnotation, f: AnnotationFilter): boolean {
     const a = stored.annotation;
     if (!inProjects(f.projectId, a.projectId)) return false;
+    if (f.feedbackScope && !inFeedbackScope(a, f.feedbackActorId, f.feedbackScope)) return false;
     if (
         f.status !== undefined &&
         !(Array.isArray(f.status) ? f.status : [f.status]).includes(a.status)
@@ -147,6 +203,8 @@ export function matchesFilter(stored: StoredAnnotation, f: AnnotationFilter): bo
             a.intent as NonNullable<typeof a.intent>
         )
     )
+        return false;
+    if (f.sessionId && a.sessionId !== f.sessionId && !f.sessionAnnotationIds?.includes(a.id))
         return false;
     if (f.bundleId === null && a.bundleId !== null) return false;
     if (typeof f.bundleId === "string" && a.bundleId !== f.bundleId) return false;
@@ -165,7 +223,53 @@ export function matchesFilter(stored: StoredAnnotation, f: AnnotationFilter): bo
     return true;
 }
 
+/**
+ * Where an extension steps in on what the backend does. Each runs before the change is made, and throwing a
+ * `RequestError` refuses it with that message and status (402 for a limit reached, say).
+ */
+export interface BackendHooks {
+    /** A new note is about to be stored. `assetBytes` is the size of its screenshots. */
+    beforeIngest?(annotation: Annotation, assetBytes: number): void | Promise<void>;
+    /** A project is about to be created through `createProject`. */
+    beforeCreateProject?(project: ProjectRecord): void | Promise<void>;
+    /**
+     * A bundle the server has no record of is about to be imported, and recorded once a note of it is stored. Each of
+     * its notes still goes through `beforeIngest`.
+     */
+    beforeImportBundle?(bundle: BundleRecord): void | Promise<void>;
+}
+
+/** What a bundle import keeps, by who sends it. */
+export interface ImportOptions {
+    /** The project the bundle must be for. */
+    projectId?: string;
+    /**
+     * For a credential that speaks for people and never for an agent (an app's token, a member). Each note comes in
+     * as one sent directly would: a person's (under `name`, when the credential always writes under one), open, with
+     * nothing in its thread but who made it People only. Without it, a bundle's authors, statuses and threads are kept,
+     * as reading back an export needs.
+     */
+    asPerson?: { name?: string };
+    /** Identity derived from the importing credential; bundle metadata cannot choose its owner. */
+    feedbackActorId?: string;
+    allowLocalOnly?: boolean;
+    /** Send-only imports acknowledge only notes previously accepted from this credential with the same content. */
+    captureScope?: string;
+}
+
+interface IngestOptions {
+    projectId?: string;
+    preserveLifecycle?: boolean;
+    bundleId?: string | null;
+    receipt?: CaptureReceipt;
+    feedbackActorId?: string;
+}
+
+/** The most bundle records a listing holds: the newest. */
+export const BUNDLE_LIST_MAX = 500;
+
 export interface LocalBackendOptions {
+    hooks?: BackendHooks;
     /** The settings in force (see `notato config`). Read on every use, so a change applies without a restart. */
     config?: ConfigSource;
     /**
@@ -227,11 +331,31 @@ export class LocalBackend implements Backend {
     readonly bus: EventBus;
     readonly relay: RelayHub;
 
+    private assetsTurn: Promise<unknown> = Promise.resolve();
+    /**
+     * Uploads and deletions take turns, so a screenshot a new note reuses cannot be removed by a deletion that is
+     * finishing at the same moment, before the note is stored.
+     */
+    protected serialAssets<T>(work: () => Promise<T>): Promise<T> {
+        const next = this.assetsTurn.then(work, work);
+        this.assetsTurn = next.catch(() => {});
+        return next;
+    }
+
+    /** An extension's hooks, if it has any. */
+    readonly hooks: BackendHooks;
+    private readonly imageViews: ImageViews;
+    get derivedScreenshots() {
+        return this.imageViews.supported;
+    }
+
     constructor(
         readonly store: Store,
         readonly blobs: BlobStore,
         options: LocalBackendOptions = {}
     ) {
+        this.hooks = options.hooks ?? {};
+        this.imageViews = new ImageViews((id) => this.asset(id));
         this.config = options.config ?? defaultConfig;
         this.autoCreateProjects = options.autoCreateProjects ?? true;
         this.bus = options.bus ?? new EventBus();
@@ -250,8 +374,15 @@ export class LocalBackend implements Backend {
         return this.relay.request(projectId, args, timeoutMs);
     }
 
-    list(filter?: AnnotationFilter) {
-        return this.store.listAnnotations(filter);
+    private async expandSessionFilter(filter: AnnotationFilter): Promise<AnnotationFilter> {
+        if (!filter.sessionId || !this.store.coordination) return filter;
+        const session = await new ReviewSessions(this.store.coordination).get(filter.sessionId);
+        if (!session || !canReadSession(session, filter.feedbackActorId ?? "local"))
+            return { ...filter, projectId: [], sessionAnnotationIds: [] };
+        return { ...filter, sessionAnnotationIds: session.annotationIds ?? [] };
+    }
+    async list(filter: AnnotationFilter = {}) {
+        return this.store.listAnnotations(await this.expandSessionFilter(filter));
     }
 
     markHanded(entries: HandedEntry[]) {
@@ -266,17 +397,38 @@ export class LocalBackend implements Backend {
         return this.blobs.get(id);
     }
 
+    async screenshot(id: string, view: "crop" | "thumbnail"): Promise<AssetBytes | null> {
+        const stored = await this.get(id);
+        const shots = stored?.annotation.screenshots;
+        if (!shots || !stored) return null;
+        const crop = screenshotCrop(stored.annotation);
+        if (view === "thumbnail" && shots.thumbnail) return this.asset(shots.thumbnail.id);
+        if (view === "crop" && shots.crop) return this.asset(shots.crop.id);
+        if (view === "crop" && !crop) return null;
+        const source = crop ? shots.full : (shots.crop ?? shots.full);
+        return this.imageViews.get(source.id, crop, view === "thumbnail");
+    }
+
     /**
      * Validates an incoming annotation, stores its screenshot bytes content-addressed, and rewrites the
      * asset references to the canonical ids. Idempotent on `annotation.id`, so a client retry is safe.
      *
-     * Live annotations always start `open` with an empty thread: a client cannot pre-resolve its own note. The one thing
-     * kept is the record of a person turning People only on or off before the note was sent, so the thread says who did.
+     * Live annotations always start `open` with an empty thread: a client cannot pre-resolve its own note, or offer
+     * itself variants. The one thing kept is that the person who sent a People only note turned it on first, so the
+     * thread says who did; the server writes that line itself.
      */
-    async ingest(
+    ingest(
         raw: unknown,
         files: ReadonlyMap<string, Uint8Array>,
-        options: { projectId?: string; preserveLifecycle?: boolean; bundleId?: string | null } = {}
+        options: IngestOptions = {}
+    ): Promise<{ stored: StoredAnnotation; created: boolean }> {
+        return this.serialAssets(() => this.ingestUnlocked(raw, files, options));
+    }
+
+    private async ingestUnlocked(
+        raw: unknown,
+        files: ReadonlyMap<string, Uint8Array>,
+        options: IngestOptions
     ): Promise<{ stored: StoredAnnotation; created: boolean }> {
         const parsed = Annotation.safeParse(raw);
         if (!parsed.success) {
@@ -285,19 +437,37 @@ export class LocalBackend implements Backend {
                 `invalid annotation: ${issue?.path.join(".") || "(root)"}: ${issue?.message}`
             );
         }
-        let annotation = parsed.data;
+        const { createdBy: _clientCreator, ...clientAnnotation } = parsed.data;
+        let annotation: Annotation = {
+            ...clientAnnotation,
+            createdBy: options.feedbackActorId ?? "local",
+            visibility:
+                clientAnnotation.visibility ??
+                (clientAnnotation.mode === "test" ? "shared" : "personal"),
+        };
         if (options.projectId !== undefined && annotation.projectId !== options.projectId) {
             throw new RequestError(
                 `annotation.projectId "${annotation.projectId}" does not match the URL project "${options.projectId}"`
             );
         }
 
+        if (annotation.review?.draft)
+            throw new RequestError("Send the review before uploading its notes.");
         const tooLarge = oversized(annotation);
         if (tooLarge) throw new RequestError(`annotation too large: ${tooLarge}`, 413);
 
         const existing = await this.store.getAnnotation(annotation.id);
-        if (existing) return { stored: this.sameProject(existing, annotation), created: false };
+        if (existing)
+            return {
+                stored: await this.acceptExisting(existing, annotation, options.receipt),
+                created: false,
+            };
         await this.ensureProject(annotation.projectId);
+        if (this.store.coordination && annotation.sessionId)
+            await new ReviewSessions(this.store.coordination).capture(
+                annotation,
+                options.feedbackActorId ?? "local"
+            );
 
         type Ref = NonNullable<Annotation["screenshots"]>["full"];
         /** A screenshot's bytes, checked: nothing is written until every screenshot of the note is good. */
@@ -318,29 +488,98 @@ export class LocalBackend implements Backend {
             const { id } = await this.blobs.put(bytes);
             return { ...ref, id, mime };
         };
+        const references = await Promise.all(
+            (annotation.references ?? []).map(async (ref) => {
+                const image = await bytesOf(ref);
+                const meta = await referenceDimensions(image.bytes);
+                return { ...image, ref: { ...ref, w: meta.width, h: meta.height } };
+            })
+        );
+        const referenceBytes = references.reduce((n, r) => n + r.bytes.byteLength, 0);
+        let assetBytes = referenceBytes;
         if (!annotation.screenshots || !this.config().screenshots) {
             // Screenshots are off: whatever a client sent is dropped here, so none is ever stored, whatever the page did.
             annotation = { ...annotation, screenshots: undefined };
+            await this.hooks.beforeIngest?.(annotation, referenceBytes);
         } else {
             const full = await bytesOf(annotation.screenshots.full);
-            const crop = annotation.screenshots.crop
+            let crop = annotation.screenshots.crop
                 ? await bytesOf(annotation.screenshots.crop)
                 : undefined;
+            let thumbnail = annotation.screenshots.thumbnail
+                ? await bytesOf(annotation.screenshots.thumbnail)
+                : undefined;
+            const region = screenshotCrop(annotation);
+            const derived = async (image: typeof full, box: typeof region, small: boolean) => {
+                const output = await this.imageViews.get(
+                    await sha256Hex(image.bytes),
+                    box,
+                    small,
+                    image
+                );
+                if (!output) return undefined;
+                const dimensions = await new Bun.Image(output.bytes).metadata();
+                return {
+                    ref: {
+                        id: "derived",
+                        mime: "image/webp" as const,
+                        w: dimensions.width,
+                        h: dimensions.height,
+                    },
+                    bytes: output.bytes,
+                    mime: "image/webp" as const,
+                };
+            };
+            if (this.imageViews.supported) {
+                try {
+                    // Generate once from bytes already in the upload. Cold crop reads must never re-download the original.
+                    if (!crop && region) crop = await derived(full, region, false);
+                    if (!thumbnail)
+                        thumbnail = await derived(crop ?? full, crop ? undefined : region, true);
+                } catch {
+                    // A preview is optional: corrupt/oversized images or a busy encoder cannot discard the note.
+                }
+            }
+            // Checked before anything is written, so a refused note leaves no screenshot behind.
+            assetBytes =
+                referenceBytes +
+                full.bytes.byteLength +
+                (crop?.bytes.byteLength ?? 0) +
+                (thumbnail?.bytes.byteLength ?? 0);
+            await this.hooks.beforeIngest?.(annotation, assetBytes);
             const fullRef = await store(full);
             const cropRef = crop ? await store(crop) : undefined;
+            const thumbnailRef = thumbnail ? await store(thumbnail) : undefined;
             annotation = {
                 ...annotation,
-                screenshots: { full: fullRef, ...(cropRef ? { crop: cropRef } : {}) },
+                screenshots: {
+                    full: fullRef,
+                    ...(cropRef ? { crop: cropRef } : {}),
+                    ...(thumbnailRef ? { thumbnail: thumbnailRef } : {}),
+                },
             };
         }
+
+        if (references.length)
+            annotation = {
+                ...annotation,
+                references: await Promise.all(
+                    references.map(async (image) => ({
+                        ...(await store(image)),
+                        name: image.ref.name,
+                    }))
+                ),
+            };
 
         if (!options.preserveLifecycle) {
             annotation = {
                 ...annotation,
+                // Where a note went is for integrations to say, and what to choose between for the agent.
+                links: undefined,
+                variants: undefined,
                 status: "open",
-                thread: annotation.thread.filter(
-                    (r) => r.automatic && r.peopleOnly !== undefined && r.author.kind === "human"
-                ),
+                awaitingResponse: undefined,
+                thread: sentPeopleOnly(annotation),
                 bundleId: options.bundleId ?? null,
             };
         } else if (options.bundleId !== undefined) {
@@ -349,12 +588,15 @@ export class LocalBackend implements Backend {
 
         let stored: StoredAnnotation;
         try {
-            stored = await this.store.insertAnnotation(annotation);
+            stored = await this.store.insertAnnotation(annotation, assetBytes, options.receipt);
         } catch (error) {
             // The same note sent twice at once: the other request stored it first.
             const raced = await this.store.getAnnotation(annotation.id);
             if (!raced) throw error;
-            return { stored: this.sameProject(raced, annotation), created: false };
+            return {
+                stored: await this.acceptExisting(raced, annotation, options.receipt),
+                created: false,
+            };
         }
         this.emit("created", stored);
         return { stored, created: true };
@@ -368,6 +610,24 @@ export class LocalBackend implements Backend {
                 409
             );
         return existing;
+    }
+
+    private async acceptExisting(
+        existing: StoredAnnotation,
+        sent: Annotation,
+        receipt?: CaptureReceipt
+    ): Promise<StoredAnnotation> {
+        if (receipt) {
+            const accepted = await this.store.getCaptureReceipt?.(sent.id);
+            if (
+                existing.annotation.projectId !== sent.projectId ||
+                !accepted ||
+                accepted.scope !== receipt.scope ||
+                accepted.fingerprint !== receipt.fingerprint
+            )
+                throw new RequestError("annotation id conflicts with an existing submission", 409);
+        }
+        return this.sameProject(existing, sent);
     }
 
     // ---- projects ----------------------------------------------------------------------------------------
@@ -384,14 +644,23 @@ export class LocalBackend implements Backend {
         });
     }
 
-    /** Null when a project with that id already exists. */
-    async createProject(id: string, name?: string): Promise<ProjectRecord | null> {
+    /**
+     * Null when a project with that id already exists. `extra` is what a deployment's own store keeps on a project
+     * (who it belongs to, say), handed to it as it is.
+     */
+    async createProject(
+        id: string,
+        name?: string,
+        extra: Record<string, unknown> = {}
+    ): Promise<ProjectRecord | null> {
         assertProjectId(id);
-        const record = {
+        const record: ProjectRecord = {
+            ...extra,
             id,
             name: cleanProjectName(name) || id,
             createdAt: new Date().toISOString(),
         };
+        await this.hooks.beforeCreateProject?.(record);
         return (await this.store.createProject(record)) ? record : null;
     }
 
@@ -402,7 +671,11 @@ export class LocalBackend implements Backend {
     }
 
     /** Deletes the project, every note in it, and the screenshots only those notes showed. */
-    async deleteProject(id: string): Promise<boolean> {
+    deleteProject(id: string): Promise<boolean> {
+        return this.serialAssets(() => this.deleteProjectUnlocked(id));
+    }
+
+    private async deleteProjectUnlocked(id: string): Promise<boolean> {
         const removed = await this.store.deleteProject(id);
         if (!removed) return false;
         for (const stored of removed) this.emit("deleted", stored, undefined, true);
@@ -411,16 +684,18 @@ export class LocalBackend implements Backend {
     }
 
     /** The projects whose notes show this screenshot; none once they are all deleted. */
-    projectsWithAsset(assetId: string): Promise<string[]> {
-        return this.store.projectsWithAsset(assetId);
+    projectsWithAsset(
+        assetId: string,
+        filter?: Pick<AnnotationFilter, "peopleOnly">
+    ): Promise<string[]> {
+        return this.store.projectsWithAsset(assetId, filter);
     }
 
     /** Deletes the bytes of screenshots no remaining note shows. */
-    private async forgetScreenshots(gone: Annotation[]) {
+    protected async forgetScreenshots(gone: Annotation[]) {
         const ids = new Set<string>();
         for (const a of gone) {
-            if (a.screenshots?.full) ids.add(a.screenshots.full.id);
-            if (a.screenshots?.crop) ids.add(a.screenshots.crop.id);
+            for (const ref of annotationAssets(a)) ids.add(ref.id);
         }
         for (const id of ids) {
             if ((await this.store.projectsWithAsset(id)).length === 0) await this.blobs.delete(id);
@@ -446,14 +721,29 @@ export class LocalBackend implements Backend {
         }
         return this.mutate(id, (a) => {
             // Checked against the stored annotation inside the update, so nothing can change it in between.
-            if (status === "revert_requested" && a.status !== "resolved") {
+            if (status === "revert_requested" && !canRequestRevert(a)) {
                 // Only a change that was made can be undone; asking about anything else is a mistake worth saying so.
                 throw new RequestError(
-                    `only a resolved annotation can have its revert requested (this one is ${a.status})`,
+                    `only a resolved change can have its revert requested (this one is ${a.status}${a.intent ? `, ${a.intent}` : ""})`,
                     409
                 );
             }
             const next = { ...a };
+            if (status === "awaiting_response") {
+                if (author.kind !== "agent")
+                    throw new RequestError("only an agent can request an answer", 403);
+                if (!change.note?.trim()) throw new RequestError("a question is required");
+                if (FINISHED.has(a.status))
+                    throw new RequestError("reopen this note before asking a question", 409);
+                next.awaitingResponse = {
+                    resumeStatus:
+                        a.status === "awaiting_response"
+                            ? (a.awaitingResponse?.resumeStatus ?? "acknowledged")
+                            : a.status === "variant_chosen" || a.status === "revert_requested"
+                              ? a.status
+                              : "acknowledged",
+                };
+            } else if (status) next.awaitingResponse = undefined;
             if (change.peopleOnly !== undefined && change.peopleOnly !== Boolean(a.peopleOnly)) {
                 if (author.kind !== "human")
                     throw new RequestError(
@@ -471,6 +761,22 @@ export class LocalBackend implements Backend {
                             true
                         ),
                         peopleOnly: change.peopleOnly,
+                    },
+                ];
+            }
+            if (change.visibility !== undefined && change.visibility !== a.visibility) {
+                next.visibility = change.visibility;
+                next.thread = [
+                    ...next.thread,
+                    {
+                        ...this.makeReply(
+                            author,
+                            change.visibility === "shared"
+                                ? "Shared this feedback with the project."
+                                : "Made this feedback personal.",
+                            true
+                        ),
+                        visibility: change.visibility,
                     },
                 ];
             }
@@ -492,7 +798,7 @@ export class LocalBackend implements Backend {
     }
 
     /** Applies `change` to the stored annotation atomically and announces the result, with what it was before. */
-    private async mutate(
+    protected async mutate(
         id: string,
         change: (current: Annotation) => Annotation,
         type: EventType = "updated"
@@ -504,6 +810,30 @@ export class LocalBackend implements Backend {
         });
         if (updated) this.emit(type, updated, before);
         return updated;
+    }
+
+    /**
+     * Records where this note went in another system. The same plugin and address twice is one link, so an integration
+     * that retries does not repeat itself. Null when there is no such note.
+     */
+    async addLink(
+        id: string,
+        link: { plugin: string; url: string; ref?: string; title?: string }
+    ): Promise<StoredAnnotation | null> {
+        const parsed = ExternalLink.safeParse({ ...link, createdAt: new Date().toISOString() });
+        if (!parsed.success) {
+            const issue = parsed.error.issues[0];
+            throw new RequestError(
+                `invalid link: ${issue?.path.join(".") || "(root)"}: ${issue?.message}`
+            );
+        }
+        const current = await this.store.getAnnotation(id);
+        if (!current) return null;
+        const links = current.annotation.links ?? [];
+        if (links.some((l) => l.plugin === parsed.data.plugin && l.url === parsed.data.url))
+            return current;
+        if (links.length >= 20) throw new RequestError("a note can have at most 20 links", 409);
+        return this.mutate(id, (a) => ({ ...a, links: [...(a.links ?? []), parsed.data] }));
     }
 
     async offerVariants(
@@ -608,6 +938,15 @@ export class LocalBackend implements Backend {
                     );
                 return {
                     ...a,
+                    ...(a.status === "awaiting_response" &&
+                    author.kind === "human" &&
+                    !options.aside &&
+                    !a.peopleOnly
+                        ? {
+                              status: a.awaitingResponse?.resumeStatus ?? "acknowledged",
+                              awaitingResponse: undefined,
+                          }
+                        : {}),
                     thread: [
                         ...a.thread,
                         {
@@ -621,7 +960,11 @@ export class LocalBackend implements Backend {
         );
     }
 
-    async remove(id: string): Promise<boolean> {
+    remove(id: string): Promise<boolean> {
+        return this.serialAssets(() => this.removeUnlocked(id));
+    }
+
+    private async removeUnlocked(id: string): Promise<boolean> {
         const existing = await this.store.getAnnotation(id);
         if (!existing) return false;
         await this.store.deleteAnnotation(id);
@@ -631,15 +974,24 @@ export class LocalBackend implements Backend {
         return true;
     }
 
-    waitForNew(
+    /**
+     * `watching: false` is for a caller that may wait for notes but does not speak for an agent (an app's token, a
+     * member): pages are not told an agent is watching while it waits.
+     */
+    async waitForNew(
         filter: AnnotationFilter,
         timeoutMs: number,
-        signal?: AbortSignal
+        signal?: AbortSignal,
+        { watching = true }: { watching?: boolean } = {}
     ): Promise<boolean> {
+        filter = await this.expandSessionFilter(filter);
         // Someone waiting for annotations is an agent watching (notato_watch, here or attached).
-        const waited = this.agents.waitStarted(
-            filter.projectId === undefined ? undefined : [filter.projectId].flat()
-        );
+        const waited = watching
+            ? this.agents.waitStarted(
+                  filter.projectId === undefined ? undefined : [filter.projectId].flat(),
+                  filter.workContext
+              )
+            : () => {};
         return new Promise((resolve) => {
             let finished = false;
             const finish = (value: boolean) => {
@@ -671,10 +1023,11 @@ export class LocalBackend implements Backend {
         });
     }
 
-    async importBundle(
-        zip: Uint8Array,
-        options: { projectId?: string } = {}
-    ): Promise<ImportResult> {
+    /**
+     * Loads a bundle zip into the store, with a record of the bundle once a note of it is stored. Importing it again
+     * adds only the notes that are new. See `ImportOptions` for what is kept.
+     */
+    async importBundle(zip: Uint8Array, options: ImportOptions = {}): Promise<ImportResult> {
         let read: ReturnType<typeof readBundle>;
         try {
             read = readBundle(zip);
@@ -688,8 +1041,19 @@ export class LocalBackend implements Backend {
                 `bundle is for project "${bundle.projectId}", not "${options.projectId}"`
             );
         }
+        if (bundle.annotations.length === 0)
+            throw new RequestError("the bundle has no notes in it: there is nothing to import");
+        // A bundle's id is the one it was given where it was made, so another project can name it too: whoever imported
+        // it first keeps it. Refused before anything is stored, as its record would show this project's notes there.
+        const recorded = await this.store.getBundle(bundle.id);
+        if (recorded && recorded.projectId !== bundle.projectId)
+            throw new RequestError(
+                `a bundle with id "${bundle.id}" was already imported into another project`,
+                409
+            );
         // Check everything first so a bad note cannot leave a half-imported bundle behind.
         await this.ensureProject(bundle.projectId);
+        let fresh = 0;
         for (const a of bundle.annotations) {
             const parsed = Annotation.safeParse(a);
             if (!parsed.success) {
@@ -698,12 +1062,44 @@ export class LocalBackend implements Backend {
                     `annotation ${String((a as { id?: unknown }).id)}: ${issue?.path.join(".") || "(root)"}: ${issue?.message}`
                 );
             }
+            if (parsed.data.localOnly && options.allowLocalOnly === false)
+                throw new RequestError(
+                    "Local-only feedback cannot be uploaded to a shared server.",
+                    400
+                );
+            if (parsed.data.review?.draft)
+                throw new RequestError("Send the review before uploading its notes.");
+            const bundledAssets = assetsFor(a, files);
+            for (const ref of parsed.data.references ?? []) {
+                const bytes = bundledAssets.get(ref.id);
+                if (!bytes)
+                    throw new RequestError(`missing reference image bytes for asset "${ref.id}"`);
+                await referenceDimensions(bytes);
+            }
             if (parsed.data.projectId !== bundle.projectId)
                 throw new RequestError(
                     `annotation ${parsed.data.id} is for project "${parsed.data.projectId}", not the bundle's "${bundle.projectId}"`
                 );
+            if (options.captureScope) {
+                const assets = assetsFor(a, files);
+                for (const ref of annotationAssets(a))
+                    if (ref && !assets.has(ref.id))
+                        throw new RequestError("capture tokens must supply screenshot bytes");
+            }
             const existing = await this.store.getAnnotation(parsed.data.id);
-            if (existing) this.sameProject(existing, parsed.data);
+            if (existing)
+                await this.acceptExisting(
+                    existing,
+                    parsed.data,
+                    options.captureScope
+                        ? await captureReceipt(
+                              parsed.data,
+                              assetsFor(a, files),
+                              options.captureScope
+                          )
+                        : undefined
+                );
+            else fresh += 1;
             for (const bytes of assetsFor(a, files).values()) {
                 if (!sniffImageMime(bytes))
                     throw new RequestError(
@@ -711,36 +1107,195 @@ export class LocalBackend implements Backend {
                     );
             }
         }
-        let imported = 0;
-        let skipped = 0;
-        for (const a of bundle.annotations) {
-            const { created } = await this.ingest(a, assetsFor(a, files), {
-                projectId: bundle.projectId,
-                preserveLifecycle: true,
-                bundleId: bundle.id,
-            });
-            if (created) imported += 1;
-            else skipped += 1;
-        }
-        await this.store.insertBundle({
+        const record: BundleRecord = {
             id: bundle.id,
             projectId: bundle.projectId,
             createdAt: bundle.createdAt,
             author: bundle.author,
+            session: bundle.session,
             appName: bundle.appName,
             appVersion: bundle.appVersion,
             annotationCount: bundle.annotations.length,
             importedAt: new Date().toISOString(),
+        };
+        if (!recorded && fresh > 0) await this.hooks.beforeImportBundle?.(record);
+        const asPerson = options.asPerson;
+        let imported = 0;
+        let skipped = 0;
+        let sessionAttached = 0;
+        const sessionNotes: string[] = [];
+        for (const a of bundle.annotations) {
+            const { createdBy: _bundleCreator, ...bundleAnnotation } = a;
+            const sent: Annotation = {
+                ...bundleAnnotation,
+                ...(options.feedbackActorId ? { createdBy: options.feedbackActorId } : {}),
+                visibility: a.visibility ?? (a.mode === "test" ? "shared" : "personal"),
+                ...(asPerson
+                    ? {
+                          workId: undefined,
+                          author: {
+                              ...a.author,
+                              kind: "human" as const,
+                              ...(asPerson.name ? { name: asPerson.name } : {}),
+                          },
+                          ...(options.captureScope
+                              ? {
+                                    context: {
+                                        ...a.context,
+                                        notatoCaptureSource: "unverified app feedback",
+                                    },
+                                }
+                              : {}),
+                      }
+                    : {}),
+            };
+            if (asPerson && this.store.coordination) {
+                const { TeamCoordinator } = await import("./team.ts");
+                const teams = new TeamCoordinator(this.store);
+                if ((await teams.records.list(sent.projectId, "context")).length)
+                    await teams.route(sent);
+            }
+            const { stored, created } = await this.ingest(sent, assetsFor(a, files), {
+                projectId: bundle.projectId,
+                preserveLifecycle: !asPerson,
+                bundleId: bundle.id,
+                feedbackActorId: options.feedbackActorId,
+                receipt: options.captureScope
+                    ? await captureReceipt(a, assetsFor(a, files), options.captureScope)
+                    : undefined,
+            });
+            if (
+                stored &&
+                inFeedbackScope(stored.annotation, options.feedbackActorId ?? "local", "all")
+            )
+                sessionNotes.push(stored.annotation.id);
+            if (created) imported += 1;
+            else {
+                skipped += 1;
+                if (
+                    bundle.session &&
+                    options.feedbackActorId &&
+                    stored &&
+                    (await this.attachBundleSession(
+                        stored,
+                        bundle.id,
+                        bundle.session,
+                        options.feedbackActorId
+                    ))
+                )
+                    sessionAttached += 1;
+            }
+        }
+        // Recorded only once a note of it is stored: a bundle whose notes are all here already (another bundle's), or
+        // one refused part way (a limit reached), leaves no record listing nothing. Two imports of one id into different
+        // projects at the same moment both pass the check above, and one of them records it; the other's notes are
+        // still never shown in its bundle, which every read keeps to the project of its record.
+        if (imported > 0 || sessionAttached > 0) await this.store.insertBundle(record);
+        let reviewSessionId: string | undefined;
+        if (bundle.session && sessionNotes.length && this.store.coordination) {
+            const sessions = new ReviewSessions(this.store.coordination);
+            const actor = options.feedbackActorId ?? "local";
+            const id = "review_bundle_" + bundle.id;
+            let session = await sessions.get(id);
+            if (!session)
+                session = await sessions.create(bundle.projectId, actor, {
+                    id,
+                    ...bundle.session,
+                    visibility: "shared",
+                });
+            if (session.createdBy === actor) {
+                await sessions.group(session.id, actor, sessionNotes);
+                reviewSessionId = session.id;
+            }
+        }
+        return {
+            bundleId: bundle.id,
+            projectId: bundle.projectId,
+            imported,
+            skipped,
+            ...(reviewSessionId ? { reviewSessionId } : {}),
+        };
+    }
+
+    /**
+     * Test mode first sends notes live, then packages them with a named session. Attach that grouping only to notes
+     * owned by the authenticated person, and never move a note out of a different bundle or session.
+     */
+    private async attachBundleSession(
+        stored: StoredAnnotation,
+        bundleId: string,
+        session: { name: string; description?: string },
+        feedbackActorId: string
+    ): Promise<boolean> {
+        let before: Annotation | undefined;
+        let associated = false;
+        let changed = false;
+        const updated = await this.store.updateAnnotation(stored.annotation.id, (current) => {
+            before = current;
+            if (
+                current.createdBy !== feedbackActorId ||
+                (current.bundleId && current.bundleId !== bundleId) ||
+                (current.feedbackSession && current.feedbackSession.id !== bundleId)
+            )
+                return current;
+            associated = true;
+            const next = {
+                ...current,
+                bundleId,
+                feedbackSession: current.feedbackSession ?? { id: bundleId, ...session },
+            };
+            changed =
+                current.bundleId !== next.bundleId ||
+                current.feedbackSession?.id !== next.feedbackSession.id;
+            return next;
         });
-        return { bundleId: bundle.id, projectId: bundle.projectId, imported, skipped };
+        if (updated && changed && before) this.emit("updated", updated, before);
+        return Boolean(updated && associated);
+    }
+
+    async listReviewSessions(project: string, actor: string) {
+        return this.store.coordination
+            ? (await new ReviewSessions(this.store.coordination).list(project, actor)).map(
+                  reviewSessionView
+              )
+            : [];
+    }
+
+    async getReviewSession(id: string, actor: string) {
+        if (!this.store.coordination) return null;
+        const session = await new ReviewSessions(this.store.coordination).get(id);
+        if (!session || (session.visibility === "personal" && session.createdBy !== actor))
+            return null;
+        const items = await this.list({
+            projectId: session.projectId,
+            sessionId: id,
+            feedbackScope: "all",
+            feedbackActorId: actor,
+            peopleOnly: false,
+        });
+        return { session: reviewSessionView(session), items };
+    }
+
+    async replyReviewSession(id: string, actor: string, body: string, author: Author) {
+        if (!this.store.coordination) return null;
+        return reviewSessionView(
+            await new ReviewSessions(this.store.coordination).reply(id, actor, body, author)
+        );
+    }
+
+    setReviewSession(id: string, sessionId: string | undefined) {
+        return this.mutate(id, (annotation) => ({ ...annotation, sessionId }));
     }
 
     getBundle(id: string): Promise<BundleRecord | null> {
         return this.store.getBundle(id);
     }
 
-    listBundles(projectId?: string) {
-        return this.store.listBundles(projectId);
+    /** The newest first, at most `BUNDLE_LIST_MAX` (or `limit`) of them. */
+    async listBundles(projectId?: string, limit = BUNDLE_LIST_MAX) {
+        const most = Math.min(Math.max(1, Math.floor(limit)), BUNDLE_LIST_MAX);
+        // Kept to the limit here too, for a store that reads every record.
+        return (await this.store.listBundles(projectId, most)).slice(0, most);
     }
 
     /**
@@ -748,7 +1303,9 @@ export class LocalBackend implements Backend {
      * of a project's annotations, which becomes a new bundle.
      */
     async exportBundle(
-        selector: { bundleId: string } | { projectId: string; filter?: AnnotationFilter }
+        selector:
+            | { bundleId: string; filter?: AnnotationFilter }
+            | { projectId: string; filter?: AnnotationFilter }
     ): Promise<{ filename: string; zip: ReadableStream<Uint8Array> } | null> {
         let projectId: string;
         let items: StoredAnnotation[];
@@ -756,19 +1313,25 @@ export class LocalBackend implements Backend {
         if ("bundleId" in selector) {
             const record = await this.store.getBundle(selector.bundleId);
             if (!record) return null;
-            items = await this.store.listAnnotations({ bundleId: record.id });
+            // Only its own project's notes: another project may have notes carrying the same bundle id.
+            items = await this.list({
+                ...selector.filter,
+                bundleId: record.id,
+                projectId: record.projectId,
+            });
             projectId = record.projectId;
             meta = {
                 id: record.id,
                 projectId,
                 author: record.author,
+                session: record.session,
                 appName: record.appName,
                 appVersion: record.appVersion,
                 createdAt: record.createdAt,
             };
         } else {
             projectId = selector.projectId;
-            items = await this.store.listAnnotations({ ...selector.filter, projectId });
+            items = await this.list({ ...selector.filter, projectId });
             meta = { projectId };
         }
         const { bundle } = buildBundle(
@@ -796,7 +1359,7 @@ export class LocalBackend implements Backend {
         return { id: ulid(), author, body, createdAt: at, ...(automatic ? { automatic } : {}) };
     }
 
-    private emit(type: EventType, stored: StoredAnnotation, before?: Annotation, bulk?: true) {
+    protected emit(type: EventType, stored: StoredAnnotation, before?: Annotation, bulk?: true) {
         const event = {
             type,
             ...(bulk ? { bulk } : {}),
@@ -809,6 +1372,9 @@ export class LocalBackend implements Backend {
                       previous: {
                           status: before.status,
                           offeredAt: before.variants?.offeredAt,
+                          visibility: before.visibility,
+                          createdBy: before.createdBy,
+                          peopleOnly: before.peopleOnly,
                       },
                   }
                 : {}),
@@ -817,6 +1383,24 @@ export class LocalBackend implements Backend {
         // Mention plugins hear about it here rather than on the bus, which counts the pages and watches listening.
         this.mentions.handle(event);
     }
+}
+
+/**
+ * The thread a new note starts with: when the page recorded that the note's author made it People only before sending
+ * it, that line, in the server's own words and under the note's author. The board shows an automatic entry as something
+ * that happened rather than something said, so no other name, text or entry a page sends is kept.
+ */
+function sentPeopleOnly(a: Annotation): Annotation["thread"] {
+    const made = a.thread.find((r) => r.automatic && r.peopleOnly === true);
+    if (!a.peopleOnly || !made || a.author.kind !== "human") return [];
+    const at = Date.parse(made.createdAt);
+    return [
+        peopleOnlyRecord(
+            true,
+            a.author.name,
+            Number.isNaN(at) ? undefined : new Date(at).toISOString()
+        ),
+    ];
 }
 
 /** Refuses an id no project can have (see `PROJECT_ID`), such as one a bundle names. */

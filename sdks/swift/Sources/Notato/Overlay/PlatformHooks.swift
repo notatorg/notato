@@ -80,6 +80,14 @@ final class PlatformHooks {
                 MainActor.assumeIsolated { self?.rescanSoon() }
             })
         }
+        // A note's screenshots cannot be read while the device is locked (`LocalStore`): one that waited for that goes now.
+        observers.append(NotificationCenter.default.addObserver(forName: UIApplication.protectedDataDidBecomeAvailableNotification,
+                                                                object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let notato = self?.notato, notato.connection == .connected else { return }
+                Task { await notato.flush() }
+            }
+        })
         MarkRegistry.shared.changed = { [weak self] appearedOrWent in self?.marksChanged(appearedOrWent) }
         refresh()
         startShake()
@@ -383,6 +391,27 @@ final class PlatformHooks {
         return Date().timeIntervalSince(since) > Self.accessibilityWarmUp
     }
 
+    /// How long until the accessibility tree can be read (`needAccessibility`, which this asks): zero when it can now.
+    func accessibilityWait() -> TimeInterval {
+        guard !needAccessibility(), let since = AccessibilityRuntime.switchedOn else { return 0 }
+        return max(0.05, Self.accessibilityWarmUp - Date().timeIntervalSince(since))
+    }
+
+    /// Waits until the accessibility tree can be read, so that what is read from it, the fields a picture covers among
+    /// it, is all there. Returns whether it had to wait.
+    @discardableResult
+    func accessible() async -> Bool {
+        var waited = false
+        // Switched on again meanwhile (the app went to the background and came back), it starts over: a few times at most.
+        for _ in 0..<4 {
+            let wait = accessibilityWait()
+            guard wait > 0 else { break }
+            waited = true
+            try? await Task.sleep(for: .seconds(wait))
+        }
+        return waited
+    }
+
     // ---- routes ------------------------------------------------------------------------------------------------
 
     /// The marked screens showing in the session's window, in the order they appeared (`/ProductList/ProductDetail`),
@@ -415,23 +444,37 @@ final class PlatformHooks {
 
     /// What is on screen as it may be recorded: the accessibility tree with private views' text and masked fields'
     /// values taken out (`Privacy`), so no selector, identity, title or match for an agent's `:text()` can carry them.
+    /// The fields are also looked for in the window's views (`InputFields`), for those the tree does not say are fields.
     func scan(_ window: UIWindow) -> [ScreenElement] {
         let registry = MarkRegistry.shared
         return Privacy.apply(AccessibilityScanner.elements(in: window), masks: registry.all(.mask, in: window).map(\.frame),
-                             optOuts: registry.all(.unmask, in: window).map(\.frame), maskInputs: maskInputs)
+                             optOuts: registry.all(.unmask, in: window).map(\.frame), fields: InputFields.find(in: window),
+                             maskInputs: maskInputs)
     }
 
     /// The window as it is now, with what must be covered in it as it is now: `elements` were scanned just before.
     func capture(_ window: UIWindow, elements: [ScreenElement]) -> CapturedScreen? {
-        ScreenshotTaker.capture(window, elements: elements, privateViews: MarkRegistry.shared.all(.mask, in: window).map(\.frame),
-                                maskInputs: maskInputs, maxScale: notato.configuration?.maxScreenshotScale ?? 4)
+        let registry = MarkRegistry.shared
+        return ScreenshotTaker.capture(window, elements: elements, privateViews: registry.all(.mask, in: window).map(\.frame),
+                                       optOuts: registry.all(.unmask, in: window).map(\.frame), maskInputs: maskInputs,
+                                       maxScale: notato.configuration?.maxScreenshotScale ?? 4)
     }
 
     /// Selects what is under the finger and opens the note for it at once: the screen is read for it, and the
-    /// picture (the costly part) is taken on the next frame, with the composer on its way.
+    /// picture (the costly part) is taken on the next frame, with the composer on its way. Read before the
+    /// accessibility tree is built, the screen would be missing parts: the tap is taken once it is.
     func pick(at point: CGPoint, in session: OverlaySession) {
         guard let window = session.appWindow else { return }
-        needAccessibility()
+        let wait = accessibilityWait()
+        guard wait == 0 else {
+            DispatchQueue.main.asyncAfter(deadline: .now() + wait) { [weak self, weak session] in
+                MainActor.assumeIsolated {
+                    guard let self, let session, self.notato.isAnnotating else { return }
+                    self.pick(at: point, in: session)
+                }
+            }
+            return
+        }
         let scanned = scan(window)
         // The views the picker looks through, read once for every element.
         let ignored = MarkRegistry.shared.all(.ignore, in: window).map(\.frame)
@@ -455,24 +498,36 @@ final class PlatformHooks {
         // The picture from the first tap is kept as another element is chosen, with its covers.
         let kept = session.selection?.screen
         select(SelectionState(elements: [picked], all: all, kind: kind, screen: kept, markId: markId), in: session)
-        if kept == nil, notato.screenshotsOn { captureNextFrame(window, scanned: scanned, in: session) }
+        if kept == nil { captureNextFrame(window, scanned: scanned, in: session) }
     }
 
-    /// Takes the picture for the selection on the next frame. The app is not drawn over (Notato's window is its own),
-    /// but it may still be moving (a scroll slowing down): the fields to cover, read as the finger came down, are
-    /// followed in their scroll views to where they are as the picture is taken, and private views read again then.
-    private func captureNextFrame(_ window: UIWindow, scanned: [ScreenElement], in session: OverlaySession) {
+    /// Takes the picture for the selection on the next frame, once the server has said screenshots may be taken (asked
+    /// again now, unless it was moments ago) and the accessibility tree is whole. The app is not drawn over (Notato's
+    /// window is its own), but it may still be moving (a scroll slowing down): the fields to cover, read as the finger
+    /// came down, are followed in their scroll views to where they are as the picture is taken (or read again, when the
+    /// tree had to be waited for), and private views and the fields in the window's views are read again then.
+    func captureNextFrame(_ window: UIWindow, scanned: [ScreenElement], in session: OverlaySession) {
+        // Turned off here, there is nothing to ask the server.
+        guard notato.screenshotsWanted else { return }
         let maskInputs = maskInputs
         var anchors: [Int: ScrollAnchor] = [:]
         for (index, element) in scanned.enumerated() where Privacy.hidesValue(element, maskInputs: maskInputs) {
             anchors[index] = ScrollAnchor(element.frame, in: window, clipped: false)
         }
-        FrameTicker.nextFrame { [weak self, weak session, weak window] in
-            guard let self, let session, let window, session.appWindow === window, session.selection != nil,
-                  session.selection?.screen == nil else { return }
-            var now = scanned
-            for (index, anchor) in anchors { now[index].frame = anchor.rect(in: window) ?? now[index].frame }
-            session.selection?.screen = self.capture(window, elements: now)
+        Task { [weak self, weak session, weak window] in
+            guard let self else { return }
+            await self.notato.refreshPolicy()
+            let waited = await self.accessible()
+            guard self.notato.screenshotsOn else { return }
+            FrameTicker.nextFrame { [weak self, weak session, weak window] in
+                guard let self, let session, let window, session.appWindow === window, session.selection != nil,
+                      session.selection?.screen == nil else { return }
+                var now = waited ? self.scan(window) : scanned
+                if !waited {
+                    for (index, anchor) in anchors { now[index].frame = anchor.rect(in: window) ?? now[index].frame }
+                }
+                session.selection?.screen = self.capture(window, elements: now)
+            }
         }
     }
 
@@ -528,7 +583,7 @@ final class PlatformHooks {
 
     // ---- making notes ------------------------------------------------------------------------------------------
 
-    func submit(comment: String, intent: String?, severity: String?, peopleOnly: Bool, in session: OverlaySession) async -> String? {
+    func submit(comment: String, intent: String?, severity: String?, peopleOnly: Bool, shared: Bool, in session: OverlaySession) async -> String? {
         guard let selection = session.selection else { return "Select something first." }
         // The composer closes now; the note's pin shows as soon as it is made, before its pictures are drawn.
         session.selection = nil
@@ -536,7 +591,7 @@ final class PlatformHooks {
         session.model.sheet = nil
         notato.stopAnnotating()
         let record = await create(selection, comment: comment, intent: intent, severity: severity, author: .human(notato.authorName),
-                                  mode: notato.mode.rawValue, steps: nil, peopleOnly: peopleOnly, in: session)
+                                  mode: notato.mode.rawValue, steps: nil, peopleOnly: peopleOnly, visibility: shared ? "shared" : "personal", in: session)
         let outcome = await notato.send(record)
         toast(outcome.problem ?? (notato.hasServer ? "Sent" : "Saved on this device. Package it from the menu."), in: session)
         return nil
@@ -545,19 +600,20 @@ final class PlatformHooks {
     /// Makes a note of the selection. It is in the list (and its pin on screen) at once; its log is read and its
     /// pictures drawn off the main actor meanwhile, and it is kept on the device (and can be sent) once they are in.
     func create(_ selection: SelectionState, comment: String, intent: String?, severity: String?, author: Author, mode: String,
-                steps: [AgentStep]?, peopleOnly: Bool = false, in session: OverlaySession) async -> NoteRecord {
+                steps: [AgentStep]?, peopleOnly: Bool = false, visibility: String? = nil, in session: OverlaySession) async -> NoteRecord {
         let configuration = notato.configuration!
         let limit = configuration.logLimit, since = notato.started
         let logs = configuration.captureLogs ? Task.detached { LogRecorder.recent(limit: limit, since: since) } : nil
         let route = self.route(of: session)
-        let pin = notato.notes(onRoute: route).count + 1
+        let pin = notato.records.filter { $0.route == route }.count + 1
         let targets = selection.elements.map(\.frame)
-        var drawing: Task<ComposedScreenshots, Never>?
+        var drawing: Task<ComposedScreenshots?, Never>?
         if let screen = selection.screen, notato.screenshotsOn {
             // Covered where things were when the picture was taken, not where they are now.
             let maxScale = configuration.maxScreenshotScale
+            let derived = notato.hasServer && notato.serverDerivedScreenshots
             drawing = Task.detached(priority: .userInitiated) {
-                ScreenshotComposer.compose(screen, targets: targets, pin: pin, maxScale: maxScale)
+                ScreenshotComposer.compose(screen, targets: targets, pin: pin, maxScale: maxScale, derivedCrops: derived)
             }
         }
         let identity = selection.elements.map {
@@ -585,7 +641,7 @@ final class PlatformHooks {
                            rect: PageRect(x: round2(union.minX), y: round2(union.minY), w: round2(union.width), h: round2(union.height))),
             comment: comment.trimmingCharacters(in: .whitespacesAndNewlines), severity: severity, intent: intent, variants: nil,
             screenshots: nil, steps: steps, context: context, status: Status.open, thread: [],
-            peopleOnly: peopleOnly ? true : nil)
+            peopleOnly: peopleOnly ? true : nil, visibility: visibility ?? (mode == "test" ? "shared" : "personal"), sessionId: mode == "test" ? notato.reviewSessionId : nil)
         let record = NoteRecord(annotation, pending: true, mine: true)
         record.markId = selection.markId
         // Not sent (by a connection coming back, say) before its pictures and its log are in.
@@ -600,6 +656,9 @@ final class PlatformHooks {
         if shots != nil || console?.isEmpty == false {
             var finished = record.annotation
             finished.screenshots = shots?.refs
+            if let crop = shots?.cropRect {
+                finished.context["screenshot"] = .object(["pin": .number(Double(pin)), "cropRect": .object(["x": .number(crop.x), "y": .number(crop.y), "w": .number(crop.w), "h": .number(crop.h)])])
+            }
             if let console, !console.isEmpty { finished.context["console"] = .from(console) }
             record.annotation = finished
         }
@@ -641,8 +700,9 @@ final class PlatformHooks {
             return
         }
         var uploadProblem: String?
+        var uploaded = false
         do {
-            try await notato.uploadPackage(url)
+            uploaded = try await notato.uploadPackage(url)
         } catch {
             uploadProblem = error.localizedDescription
         }
@@ -651,7 +711,9 @@ final class PlatformHooks {
         share.popoverPresentationController?.sourceView = presenter.view
         share.popoverPresentationController?.sourceRect = CGRect(x: presenter.view.bounds.midX, y: presenter.view.bounds.maxY - 60, width: 1, height: 1)
         presenter.present(share, animated: true)
-        let done = notato.server == nil ? "Packaged. Send the zip to the developer." : "Packaged and uploaded."
+        let done = notato.server == nil ? "Packaged. Send the zip to the developer."
+            : uploaded ? "Packaged and uploaded."
+            : "Packaged. This app can only send notes, not packages: send the zip to the developer."
         toast(uploadProblem.map { "Packaged, but not uploaded: \($0)" } ?? done, in: session)
     }
 }

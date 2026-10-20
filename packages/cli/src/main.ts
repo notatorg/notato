@@ -1,5 +1,6 @@
 #!/usr/bin/env bun
 import pkg from "../package.json";
+import { backupHealthcheck, runBackupCommand } from "./commands/backup.ts";
 import { runConfigCommand } from "./commands/config.ts";
 import { runDevCommand } from "./commands/dev.ts";
 import { runDoctorCommand } from "./commands/doctor.ts";
@@ -32,6 +33,9 @@ Commands:
   serve     Run the shared server: login, project tokens, HTTP API, MCP over HTTP, board UI
   project   Create, list, rename and delete projects (a shared server only takes notes for its projects)
   token     Create, list and revoke project tokens
+  backup    Create encrypted backups of the data folder, optionally on a schedule
+  restore   Authenticate and restore a backup into a new data folder
+  backup-keygen Make a private key for backups
 
 Options:
   -h, --help       Show this help
@@ -59,6 +63,9 @@ export async function main(argv: string[]): Promise<number> {
     }
     try {
         if (startsServer(command)) return await runStartCommand(argv, version);
+        if (command === "backup-healthcheck") return backupHealthcheck(rest);
+        if (["backup", "restore", "backup-keygen"].includes(command ?? ""))
+            return await runBackupCommand(command ?? "", rest);
         if (command === "healthcheck") return await runHealthcheck();
         if (command === "start") return await runStartCommand(rest, version);
         if (command === "init") return await runInitCommand(rest);

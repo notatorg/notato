@@ -3,6 +3,7 @@ package dev.notato.android
 import android.annotation.SuppressLint
 import android.app.Application
 import android.content.Context
+import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
 import android.os.Looper
 import android.util.Log
@@ -102,13 +103,13 @@ public object Notato {
 
     /**
      * Starts Notato for the whole app. Call it once, from `Application.onCreate`; calling it again applies a new
-     * configuration. Values from `debug.notato.*` system properties win over [config], so a build can be pointed at
-     * another server without being rebuilt.
+     * configuration. In a debuggable build, values from `debug.notato.*` system properties win over [config], so it can
+     * be pointed at another server without being rebuilt.
      */
     @JvmStatic
     public fun start(application: Application, config: NotatoConfig) {
         checkMain()
-        val merged = withSystemProperties(config)
+        val merged = withSystemProperties(config, application)
         installAddOns(merged)
         val existing = controller
         if (existing != null) {
@@ -186,14 +187,16 @@ public object Notato {
 
     /**
      * Test mode: packages the notes on this device as a zip (`annotations.json`, `feedback.md` and the screenshots), and
-     * uploads it when a server is set and [upload] is true. Returns the zip, in the app's cache folder. Throws
-     * [IllegalStateException] when there is nothing to package, and [NotatoServerException] when the upload fails.
+     * uploads it when a server is set and [upload] is true (not with a capture-only token, which can only send notes).
+     * The screenshots are left out when the server has them off, or has not said it takes them. Returns the zip, in the
+     * app's cache folder. Throws [IllegalStateException] when there is nothing to package, and [NotatoServerException]
+     * when the upload fails.
      */
     public suspend fun packageNotes(upload: Boolean = true): File = withContext(Dispatchers.Main.immediate) { running().packageNotes(upload) }
 
     /**
      * Records a request for the `network` context of later notes, from any thread (an OkHttp interceptor, say). The last
-     * 50 are kept, and the query string and fragment of each address are left out.
+     * 50 are kept, and the query string, fragment and any `user:password@` of each address are left out.
      */
     @JvmStatic
     public fun recordRequest(entry: NetworkEntry) {
@@ -283,20 +286,31 @@ public object Notato {
             @Suppress("DEPRECATION")
             values[key.removePrefix("notato.")] = meta.get(key)
         }
-        values.putAll(systemProperties())
+        values.putAll(systemProperties(context))
         return NotatoConfig.from(values)
     }
 
     private val propertyKeys = listOf(
         "project", "mode", "server", "token", "enabled", "author", "screenshots", "maskInputs", "showToolbar", "toolbarPosition",
         "shakeToToggle", "rememberRuntimeState", "captureLogs", "logLimit", "composeSourceInfo", "appName", "appVersion",
-        "maxScreenshotScale",
+        "maxScreenshotScale", "captureSecureWindows",
     )
 
-    /** `debug.notato.*` system properties (`adb shell setprop debug.notato.server http://localhost:4790`). */
+    /**
+     * Whether an app's [flags] (`ApplicationInfo.flags`) make it a debuggable build. Only one is configured from system
+     * properties: anyone with adb can set those, and on a release build that ships Notato they must not be able to start
+     * it, hide its toolbar, or point it (and the app's token) at a server of theirs.
+     */
+    internal fun debuggable(flags: Int): Boolean = flags and ApplicationInfo.FLAG_DEBUGGABLE != 0
+
+    /**
+     * `debug.notato.*` system properties (`adb shell setprop debug.notato.server http://localhost:4790`), in a debuggable
+     * build; none in any other.
+     */
     @SuppressLint("PrivateApi") // Read-only, and optional: without it, only the manifest and code configure Notato.
-    private fun systemProperties(): Map<String, String> {
+    private fun systemProperties(context: Context): Map<String, String> {
         val values = mutableMapOf<String, String>()
+        if (!debuggable(context.applicationInfo?.flags ?: 0)) return values
         val get = runCatching { Class.forName("android.os.SystemProperties").getMethod("get", String::class.java) }.getOrNull() ?: return values
         for (key in propertyKeys) {
             // Property names are limited in length and are case-sensitive; both spellings are read.
@@ -311,8 +325,8 @@ public object Notato {
         return values
     }
 
-    private fun withSystemProperties(config: NotatoConfig): NotatoConfig {
-        val props = systemProperties()
+    private fun withSystemProperties(config: NotatoConfig, context: Context): NotatoConfig {
+        val props = systemProperties(context)
         if (props.isEmpty()) return config
         val base = mutableMapOf<String, Any?>(
             "project" to config.project, "mode" to config.mode.name, "token" to config.token, "enabled" to config.enabled,
@@ -320,6 +334,7 @@ public object Notato {
             "maskInputs" to config.maskInputs, "showToolbar" to config.showToolbar, "toolbarPosition" to config.toolbarPosition.name,
             "shakeToToggle" to config.shakeToToggle, "rememberRuntimeState" to config.rememberRuntimeState, "captureLogs" to config.captureLogs,
             "logLimit" to config.logLimit, "composeSourceInfo" to config.composeSourceInfo, "maxScreenshotScale" to config.maxScreenshotScale,
+            "captureSecureWindows" to config.captureSecureWindows,
         )
         base["server"] = if (config.noServer) "" else config.server
         base.putAll(props)

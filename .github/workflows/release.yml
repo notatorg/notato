@@ -14,7 +14,6 @@ name: Release
 #                                                                              this workflow (a Trusted Publishing policy)
 #   PUBLISH_PUB     pub.dev: notato (Flutter)                                  none: pub.dev trusts this repository's tags
 #                                                                              (its admin page, "Automated publishing")
-#   PUBLISH_SITE    the website and docs on GitHub Pages                       (Pages set to "GitHub Actions")
 #   PUBLISH_GITHUB  a GitHub release with the binaries and the extension zip
 #
 # SwiftPM needs nothing: it reads Package.swift at the tag, so the tag is the Swift release. RELEASING.md has the rest.
@@ -33,6 +32,8 @@ jobs:
         steps:
             - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
             - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+              with:
+                  bun-version: 1.4.3
             - run: bun scripts/version.ts --tag "$GITHUB_REF_NAME"
 
     binaries:
@@ -52,7 +53,7 @@ jobs:
             - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
             - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
               with:
-                  bun-version: latest
+                  bun-version: 1.4.3
             - run: bun install --frozen-lockfile
             - name: Build
               shell: bash
@@ -79,7 +80,7 @@ jobs:
             - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
             - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
               with:
-                  bun-version: latest
+                  bun-version: 1.4.3
             - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
               with:
                   node-version: 24
@@ -118,9 +119,16 @@ jobs:
                   npm publish ./notato --access public $DIST_TAG $DRY_RUN
 
     docker:
-        name: Docker image${{ vars.PUBLISH_DOCKER != 'true' && ' (build only)' || '' }}
+        name: Docker ${{ matrix.name }}${{ vars.PUBLISH_DOCKER != 'true' && ' (build only)' || '' }}
         needs: version
         runs-on: ubuntu-latest
+        strategy:
+            fail-fast: false
+            matrix:
+                include:
+                    # The developer loop (SQLite) and the full self-hosted server (Postgres, accounts, S3).
+                    - { name: developer image, image: "", file: Dockerfile }
+                    - { name: server image, image: -server, file: services/Dockerfile }
         permissions:
             contents: read
             packages: write
@@ -137,7 +145,7 @@ jobs:
             - id: meta
               uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5.10.0
               with:
-                  images: ghcr.io/${{ github.repository }}
+                  images: ghcr.io/${{ github.repository }}${{ matrix.image }}
                   tags: |
                       type=semver,pattern={{version}}
                       type=semver,pattern={{major}}.{{minor}}
@@ -145,6 +153,7 @@ jobs:
             - uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
               with:
                   context: .
+                  file: ${{ matrix.file }}
                   platforms: linux/amd64,linux/arm64
                   push: ${{ vars.PUBLISH_DOCKER == 'true' }}
                   tags: ${{ steps.meta.outputs.tags }}
@@ -258,35 +267,6 @@ jobs:
               if: vars.PUBLISH_PUB == 'true'
               run: flutter pub publish --force
 
-    site:
-        name: Website
-        needs: version
-        runs-on: ubuntu-latest
-        steps:
-            - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
-            - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
-            - run: bun install --frozen-lockfile
-            # From the tag, so the docs describe what this release installs, not what main has since.
-            - run: bun run build:site
-            - uses: actions/upload-pages-artifact@56afc609e74202658d3ffba0e8f6dda462b719fa # v3.0.1
-              with:
-                  path: site/dist
-
-    site-deploy:
-        name: Website on GitHub Pages
-        if: vars.PUBLISH_SITE == 'true'
-        needs: site
-        runs-on: ubuntu-latest
-        permissions:
-            pages: write
-            id-token: write
-        environment:
-            name: github-pages
-            url: ${{ steps.deploy.outputs.page_url }}
-        steps:
-            - id: deploy
-              uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e # v4.0.5
-
     github-release:
         name: GitHub release
         if: vars.PUBLISH_GITHUB == 'true'
@@ -298,6 +278,8 @@ jobs:
             # The release's notes start with its CHANGELOG.md entry; GitHub's list of what was merged follows.
             - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
             - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+              with:
+                  bun-version: 1.4.3
             - run: bun scripts/version.ts --notes "$GITHUB_REF_NAME" > "$RUNNER_TEMP/notes.md"
             # Only what the release carries: downloading everything also takes the Docker job's build record, which
             # download-artifact cannot extract.

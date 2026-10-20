@@ -2,17 +2,36 @@ import type { Annotation } from "@notato/schema";
 import { useState } from "react";
 import { Icon } from "./ui.tsx";
 
+/**
+ * A note's page as a link to open: only an http or https address. Whoever sent the note chose the address and the route
+ * beside it, so a link is labelled from the address it goes to, never from the route, and any other scheme (one the
+ * browser would hand to another program) is shown as text.
+ */
+export function pageLink(url: string): URL | null {
+    try {
+        const parsed = new URL(url);
+        return parsed.protocol === "http:" || parsed.protocol === "https:" ? parsed : null;
+    } catch {
+        return null;
+    }
+}
+
 /** Where a note points: its page, and the component, element and source line it was pinned to, as far as known. */
 export function TargetFacts({ annotation: a }: { annotation: Annotation }) {
     const target = a.target.identity[0];
+    const page = pageLink(a.url);
     return (
         <dl className="target">
             <dt>Page</dt>
             <dd>
-                <a href={a.url} target="_blank" rel="noreferrer noopener" title={a.url}>
-                    {a.route}
-                    <Icon name="external" size={11} />
-                </a>
+                {page ? (
+                    <a href={page.href} target="_blank" rel="noreferrer noopener" title={page.href}>
+                        {`${page.host}${page.pathname}${page.hash}`}
+                        <Icon name="external" size={11} />
+                    </a>
+                ) : (
+                    a.url
+                )}
             </dd>
             {target?.component ? (
                 <>
@@ -52,6 +71,7 @@ export function TargetFacts({ annotation: a }: { annotation: Annotation }) {
 export function MoreFacts({ annotation: a }: { annotation: Annotation }) {
     const [open, setOpen] = useState(false);
     const target = a.target.identity[0];
+    const page = pageLink(a.url);
     return (
         <section className="facts">
             <button
@@ -66,9 +86,13 @@ export function MoreFacts({ annotation: a }: { annotation: Annotation }) {
                 <dl>
                     <dt>Page</dt>
                     <dd>
-                        <a href={a.url} target="_blank" rel="noreferrer noopener">
-                            {a.url}
-                        </a>
+                        {page ? (
+                            <a href={page.href} target="_blank" rel="noreferrer noopener">
+                                {page.href}
+                            </a>
+                        ) : (
+                            a.url
+                        )}
                     </dd>
                     <dt>Screen</dt>
                     <dd>
@@ -91,6 +115,17 @@ export function MoreFacts({ annotation: a }: { annotation: Annotation }) {
                             <dt>Bundle</dt>
                             <dd>
                                 <code>{a.bundleId}</code>
+                            </dd>
+                        </>
+                    ) : null}
+                    {a.feedbackSession ? (
+                        <>
+                            <dt>Test session</dt>
+                            <dd>
+                                <strong>{a.feedbackSession.name}</strong>
+                                {a.feedbackSession.description ? (
+                                    <p>{a.feedbackSession.description}</p>
+                                ) : null}
                             </dd>
                         </>
                     ) : null}

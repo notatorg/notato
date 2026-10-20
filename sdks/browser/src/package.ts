@@ -12,6 +12,8 @@ export interface PackageOptions {
     appVersion?: string;
     /** The name the bundle is from. */
     author?: string;
+    /** In Test mode the bundle is a named review session with a focus for the agent. */
+    session?: { name: string; description?: string };
     /** Where the bundle goes when it is sent. */
     sinks: SinkPlugin[];
     /** Hand the bundle to every sink (download, upload), and say how each went. */
@@ -28,6 +30,7 @@ export async function packageNotes(
     const { bundle, assets } = buildBundle(records, {
         projectId: options.project,
         author: { name: options.author },
+        session: options.session,
         appName: options.appName,
         appVersion: options.appVersion,
     });

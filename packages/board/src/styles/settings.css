@@ -36,6 +36,26 @@
     gap: 20px;
     min-width: 0;
 }
+.settings-form {
+    display: grid;
+    gap: 12px;
+    max-width: 560px;
+    justify-items: start;
+}
+.settings-form .field {
+    width: 100%;
+}
+.settings-form input {
+    width: 100%;
+}
+.project-identifier {
+    display: grid;
+    gap: 10px;
+    margin-top: 10px;
+}
+.project-identifier code {
+    overflow-wrap: anywhere;
+}
 
 .setting-row {
     display: flex;
@@ -278,4 +298,27 @@ button.add-button:hover:not(:disabled) {
 }
 .field > label.confirm-label {
     display: block;
+}
+
+/* Long account identities and preference choices must fit the available settings column. */
+.account-name {
+    max-width: 100%;
+    overflow-wrap: anywhere;
+}
+.settings .segmented {
+    max-width: 100%;
+    flex-wrap: wrap;
+}
+
+/* Tabs under Settings' title: General, any the extension adds, Tokens. */
+.settings > .settings-tabs {
+    align-self: flex-start;
+    max-width: 100%;
+    margin-bottom: 4px;
+}
+.settings-intro {
+    max-width: 640px;
+    padding-bottom: 14px;
+    font-size: 13px;
+    line-height: 1.5;
 }

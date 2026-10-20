@@ -102,8 +102,11 @@ export function AgentsSection({
                                     <dt>Token</dt>
                                     <dd>
                                         An agent token from{" "}
-                                        <a href={href({ page: "tokens" })}>Tokens</a> (for every
-                                        project), or one project's token.
+                                        <a href={href({ page: "settings", tab: "tokens" })}>
+                                            Tokens
+                                        </a>
+                                        , for every project or for one. An app's token cannot be
+                                        used here.
                                     </dd>
                                 </>
                             ) : null}

@@ -1,10 +1,10 @@
-import { mkdirSync } from "node:fs";
+import { chmodSync, mkdirSync, statSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import type { Author, Status } from "@notato/schema";
 import { parseProjects } from "./agents.ts";
-import { LOCAL_PRINCIPAL } from "./auth.ts";
+import { Authenticator, LOCAL_PRINCIPAL } from "./auth.ts";
 import {
     type AssetBytes,
     type Backend,
@@ -29,6 +29,7 @@ import { isConnectionError, RemoteBackend } from "./remote-backend.ts";
 import { ShareLinks } from "./share.ts";
 import { SqliteStore } from "./sqlite-store.ts";
 import type { AnnotationFilter, HandedEntry } from "./storage.ts";
+import { teamBackend } from "./team.ts";
 import {
     createTunnelGate,
     fromOutside,
@@ -95,6 +96,43 @@ function isAddressInUse(error: unknown): boolean {
     return e?.code === "EADDRINUSE" || /EADDRINUSE|in use/i.test(e?.message ?? "");
 }
 
+/**
+ * Makes the data directory, readable by this user only: it holds every note and screenshot, the device token and the
+ * key that signs screenshot links. One that is already there is made private too when this user owns it. One that
+ * belongs to someone else (a volume made for this process to write in) is left as it is, and so is one whose mode
+ * cannot be changed.
+ */
+export function ensureDataDir(dir: string): void {
+    mkdirSync(dir, { recursive: true, mode: 0o700 });
+    keepPrivate(dir);
+}
+
+/**
+ * The database in the data directory, made readable by this user only before SQLite first opens it. SQLite gives its
+ * journal files the database's mode.
+ */
+export function databaseIn(dir: string): string {
+    const file = join(dir, "notato.db");
+    try {
+        writeFileSync(file, "", { flag: "wx", mode: 0o600 });
+    } catch {
+        // it is there already
+    }
+    keepPrivate(file);
+    return file;
+}
+
+/** Takes away any access the group and others have to a file or folder this user owns. */
+function keepPrivate(path: string): void {
+    if (process.platform === "win32") return;
+    try {
+        const { mode, uid } = statSync(path);
+        if (uid === process.getuid?.() && (mode & 0o077) !== 0) chmodSync(path, mode & 0o700);
+    } catch {
+        // not permitted, or a file system without modes: it stays as it was
+    }
+}
+
 /** Binds the port first, then opens storage, so a second process never touches the database of the first. */
 export function startPrimary(options: PrimaryOptions): PrimaryServer | null {
     let handler: AppHandler | undefined;
@@ -115,8 +153,8 @@ export function startPrimary(options: PrimaryOptions): PrimaryServer | null {
         if (isAddressInUse(error)) return null;
         throw error;
     }
-    mkdirSync(options.dir, { recursive: true });
-    const store = new SqliteStore(join(options.dir, "notato.db"));
+    ensureDataDir(options.dir);
+    const store = new SqliteStore(databaseIn(options.dir));
     const backend = new LocalBackend(store, new FileBlobStore(join(options.dir, "assets")), {
         config: options.config,
     });
@@ -139,7 +177,12 @@ export function startPrimary(options: PrimaryOptions): PrimaryServer | null {
         backend,
         version: options.version,
         // Everyone who reaches `/mcp` in dev mode is the person at this machine, as on the rest of the dev server.
-        auth: { identify: async () => LOCAL_PRINCIPAL },
+        auth: {
+            identify: async (req, url) =>
+                req.headers.has("authorization")
+                    ? new Authenticator(store).identify(req, url)
+                    : LOCAL_PRINCIPAL,
+        },
         guard: localAgentsOnly,
         refuse: () => mcpRefusal(backend.config()),
         allowImportPaths: true,
@@ -190,6 +233,12 @@ class SwitchableBackend implements Backend {
     }
 
     list = (filter?: AnnotationFilter) => this.call((b) => b.list(filter));
+    listReviewSessions = (project: string, actor: string) =>
+        this.call((b) => b.listReviewSessions?.(project, actor) ?? Promise.resolve([]));
+    getReviewSession = (id: string, actor: string) =>
+        this.call((b) => b.getReviewSession?.(id, actor) ?? Promise.resolve(null));
+    replyReviewSession = (id: string, actor: string, body: string, author: Author) =>
+        this.call((b) => b.replyReviewSession?.(id, actor, body, author) ?? Promise.resolve(null));
     get = (id: string) => this.call((b) => b.get(id));
     markHanded = (entries: HandedEntry[]) => this.call((b) => b.markHanded(entries));
     asset = (id: string): Promise<AssetBytes | null> => this.call((b) => b.asset(id));
@@ -312,7 +361,12 @@ export async function runDev(options: DevOptions): Promise<DevRuntime> {
         primary = server;
         actualPort = server.port;
         role = "primary";
-        switchable.current = server.backend;
+        switchable.current = teamBackend(
+            server.backend,
+            server.backend.store,
+            undefined,
+            async () => {}
+        );
         if (monitor) clearInterval(monitor);
         monitor = undefined;
         if (stdioOpen) releaseAgent = server.backend.agents.hold(agentId, agentLabel, projects);

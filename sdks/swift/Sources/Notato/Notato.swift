@@ -75,10 +75,13 @@ public final class Notato {
     private(set) var generation = 0
     /// What the person chose on the device, over the configuration.
     var state = RuntimeState(remember: true)
+    @ObservationIgnored private var hidden = HiddenAnnotations()
     /// `NOTATO_ENABLED` and `NOTATO_SERVER`, as they were when Notato started.
     @ObservationIgnored var launch = LaunchEnvironment([:])
-    /// Whether the server takes screenshots: one that has them off wins over the configuration.
-    var serverScreenshots = true
+    /// What a server said it allows at `/config` (`readPolicy`): nil until one has answered.
+    var policy: ServerPolicy?
+    /// Which server was last asked what it allows, and when (`refreshPolicy`), so a burst of notes asks it once.
+    @ObservationIgnored var policyAsked: (server: URL, at: Date)?
     /// Why the configuration cannot be used, when it cannot: Notato stays off.
     var problem: String?
 
@@ -120,10 +123,20 @@ public final class Notato {
         return configuration?.resolvedServer
     }
     /// Whether notes go to a server as they are made. In test mode a server only receives packages.
-    var hasServer: Bool { server != nil && mode != .test }
+    var hasServer: Bool { server != nil }
     var authorName: String? { state.author ?? configuration?.author }
     var screenshotsWanted: Bool { state.screenshots ?? configuration?.screenshots ?? true }
     var screenshotsOn: Bool { screenshotsWanted && serverScreenshots }
+    /// What the server in use now said it allows: nil until it has answered (an answer from another server is not one).
+    var serverPolicy: ServerPolicy? { policy.flatMap { $0.server == server ? $0 : nil } }
+    /// Whether the server takes screenshots: one that has them off wins over the configuration. With a server set (test
+    /// mode's too) none are taken until it has said it takes them, nor after it could not be asked again; with none set,
+    /// nothing stops them.
+    var serverScreenshots: Bool { server == nil || serverPolicy?.screenshots == true }
+    var serverDerivedScreenshots: Bool { serverPolicy?.derivedScreenshots == true }
+    /// The app's token may only send new notes (`--capture-only`): nothing is read back from the server, and nothing is
+    /// done there to a note once it has been sent.
+    var captureOnly: Bool { serverPolicy?.captureOnly == true }
     /// Whether the pins show: `state`'s, kept apart from it, so the overlay reading it is not drawn again whenever
     /// something else is remembered (the toolbar dropped somewhere, or folded).
     private(set) var pinsVisible = true
@@ -147,7 +160,10 @@ public final class Notato {
         start(configuration)
     }
 
+    @ObservationIgnored var reviewSessionId = "review_" + ULID.make()
+
     private func begin(_ configuration: NotatoConfiguration, environment: [String: String]) {
+        reviewSessionId = "review_" + ULID.make()
         launch = LaunchEnvironment(environment)
         let configuration = launch.applied(to: configuration)
         self.configuration = configuration
@@ -203,6 +219,8 @@ public final class Notato {
     public func startAnnotating() {
         guard isEnabled else { return }
         isAnnotating = true
+        // Asked now, so the picture of what is tapped next need not wait for the server's answer.
+        Task { await refreshPolicy() }
     }
 
     /// Stops annotating, and lets go of anything selected.
@@ -282,20 +300,57 @@ public final class Notato {
     /// The notes on a screen, in pin order. Worked out for every screen at once, and again only when a note is added
     /// or forgotten, so the overlay can ask on every tick.
     func notes(onRoute route: String) -> ScreenNotes {
-        if screens?.generation != generation { screens = (generation, Self.byScreen(records)) }
+        syncHidden()
+        if screens?.generation != generation { screens = (generation, Self.byScreen(records, hidden: hidden.ids)) }
         return screens?.notes[route] ?? ScreenNotes()
     }
 
-    static func byScreen(_ records: [NoteRecord]) -> [String: ScreenNotes] {
+    private func syncHidden() {
+        let credential = server.flatMap { url in configuration.flatMap { Self.token(for: url, configuration: $0) } }
+        if hidden.select([server?.absoluteString, configuration?.project, mode.rawValue, credential, authorName], saved: state.hiddenAnnotations) {
+            generation += 1
+        }
+    }
+
+    var hiddenCount: Int { syncHidden(); return hidden.ids.count }
+    var completedCount: Int { syncHidden(); return records.filter { HiddenAnnotations.isCompleted($0.annotation.status) && !hidden.contains($0.annotation) }.count }
+    var visibleCount: Int { syncHidden(); return records.filter { !hidden.contains($0.annotation) }.count }
+
+    func hideAnnotation(_ id: String) {
+        syncHidden()
+        if let a = record(id)?.annotation, hidden.hide([a]) { saveHidden() }
+    }
+
+    func hideCompleted() {
+        syncHidden()
+        if hidden.hide(annotations) { saveHidden() }
+    }
+
+    func restoreHidden() {
+        syncHidden()
+        hidden.clear()
+        saveHidden()
+    }
+
+    private func saveHidden() {
+        state.hiddenAnnotations = hidden.encoded
+        generation += 1
+        #if canImport(UIKit)
+        platform?.refresh()
+        #endif
+    }
+
+    static func byScreen(_ records: [NoteRecord], hidden: Set<String> = []) -> [String: ScreenNotes] {
         var screens: [String: ScreenNotes] = [:]
         for (route, notes) in Dictionary(grouping: records, by: \.route) {
             let all = notes.sorted { ($0.createdAt, $0.id) < ($1.createdAt, $1.id) }
+            let visible = all.enumerated().filter { !(hidden.contains($0.element.id) && HiddenAnnotations.isCompleted($0.element.annotation.status)) }
             var pinned: [(number: Int, record: NoteRecord)] = []
-            for (offset, record) in all.enumerated().reversed() where record.platform == platformName {
+            for (offset, record) in visible.reversed() where record.platform == platformName {
                 pinned.append((offset + 1, record))
                 if pinned.count == PinLayout.maxPins { break }
             }
-            screens[route] = ScreenNotes(all: all, pinned: pinned.reversed())
+            screens[route] = ScreenNotes(all: visible.map(\.element), numbers: Dictionary(uniqueKeysWithValues: visible.map { ($0.element.id, $0.offset + 1) }), pinned: pinned.reversed())
         }
         return screens
     }
@@ -345,7 +400,7 @@ public final class Notato {
         do {
             // Read from their files only now, and off the main actor.
             let kept = record.assets ?? [:]
-            let screenshots = await Task.detached { KeptAsset.read(kept) }.value
+            let screenshots = try await Task.detached { try KeptAsset.readToSend(kept) }.value
             let stored = try await client.post(record.annotation, assets: screenshots)
             Self.landed(record, as: stored.annotation)
             await store?.remove(record.id)
@@ -426,7 +481,9 @@ public final class Notato {
         var sent: [String] = []
         for annotation in listed where annotation.projectId == project && !deletedHere.contains(annotation.id) {
             if let known = byId[annotation.id] ?? addedById[annotation.id] {
+                let wasHidden = hidden.contains(known.annotation)
                 if Self.adopt(annotation, into: known, summary: summary) { sent.append(known.id) }
+                if wasHidden != hidden.contains(known.annotation) { generation += 1 }
             } else {
                 let record = NoteRecord(annotation)
                 addedById[record.id] = record
@@ -545,7 +602,9 @@ public final class Notato {
     func describeConnection() -> String {
         let host = serverHost
         switch connection {
-        case .connected: return "Connected to \(host ?? "the server")"
+        case .connected:
+            if captureOnly { return "Sending notes to \(host ?? "the server"); this app's token cannot read them back" }
+            return "Connected to \(host ?? "the server")"
         case .connecting: return "Connecting to \(host ?? "the server")…"
         case .offline: return connectionDetail ?? "Cannot reach \(host ?? "the server")"
         case .refused: return connectionDetail ?? "\(host ?? "The server") refused this app"
@@ -559,20 +618,25 @@ public final class Notato {
     // ---- test mode: a bundle zip -----------------------------------------------------------------------------------
 
     /// Packages this device's notes as a bundle zip (`feedback.md`, `annotations.json`, `shots/`), the format
-    /// `notato_import_bundle` reads, and uploads it when `upload` is true and a server is set. Returns the zip's file
-    /// URL. Throws `NotatoServerError` when the upload fails; the zip is written all the same.
+    /// `notato_import_bundle` reads, and uploads it when `upload` is true and a server is set, including capture-only
+    /// tokens. Returns the zip's file URL. Throws `NotatoServerError` when the upload fails;
+    /// the zip is written all the same. With a server set, its screenshots are left out unless the server says it takes
+    /// them.
     public func packageNotes(upload: Bool = true) async throws -> URL {
         let url = try await writePackage()
         if upload { try await uploadPackage(url) }
         return url
     }
 
-    /// Writes this device's notes to a bundle zip in the temporary folder, and returns where.
+    /// Writes this device's notes to a bundle zip in the temporary folder, and returns where. A server that has
+    /// screenshots off (or has not said it takes them) gets none in a package, and neither does anyone it is shared with.
     func writePackage() async throws -> URL {
         guard let configuration else { throw NotatoError(message: "Notato has not been started.") }
         let mine = records.filter { $0.pending || (mode == .test && $0.mine) }
         if mine.isEmpty { throw NotatoError(message: "Nothing to package yet: make at least one note.") }
-        let items = mine.map { LocalAnnotation(annotation: $0.annotation, assets: $0.assets ?? [:]) }
+        await refreshPolicy()
+        let shots = serverScreenshots
+        let items = mine.map { LocalAnnotation(annotation: $0.annotation, assets: shots ? $0.assets ?? [:] : [:]) }
         let (bundle, files) = BundleWriter.build(items, project: configuration.project, author: authorName,
                                                  appName: AppInfo.name(configuration), appVersion: AppInfo.version(configuration))
         let formatter = DateFormatter()
@@ -586,9 +650,13 @@ public final class Notato {
         return url
     }
 
-    /// Uploads a package to the server, when one is set.
-    func uploadPackage(_ url: URL) async throws {
-        guard let configuration, let server else { return }
-        try await client(for: server).uploadBundle(project: configuration.project, file: url)
+    /// Uploads captured notes as a package, including with a capture-only token. Returns whether it was uploaded.
+    @discardableResult
+    func uploadPackage(_ url: URL) async throws -> Bool {
+        guard let configuration, let server else { return false }
+        await refreshPolicy()
+        let client = self.client.flatMap { $0.base == server ? $0 : nil } ?? client(for: server)
+        try await client.uploadBundle(project: configuration.project, file: url)
+        return true
     }
 }

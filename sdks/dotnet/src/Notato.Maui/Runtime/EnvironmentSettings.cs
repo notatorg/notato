@@ -1,7 +1,7 @@
 namespace Notato.Maui.Runtime;
 
 /// <summary>
-/// What whoever launched the app says in environment variables: .NET Aspire, an IDE's launch profile, or
+/// What whoever launched the app says in environment variables: Aspire, an IDE's launch profile, or
 /// <c>SIMCTL_CHILD_NOTATO_ENABLED=false xcrun simctl launch …</c>. They are applied after the configuration and the
 /// code in <c>MauiProgram</c>, so they win for this launch.
 /// </summary>

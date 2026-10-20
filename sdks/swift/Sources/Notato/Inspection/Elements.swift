@@ -65,14 +65,46 @@ enum Privacy {
     }
 
     /// The elements as they may be recorded. `masks` are the frames of private views, `optOuts` those of
-    /// `.notatoMask(false)` views.
-    static func apply(_ elements: [ScreenElement], masks: [CGRect], optOuts: [CGRect], maskInputs: Bool) -> [ScreenElement] {
-        elements.map { element in
+    /// `.notatoMask(false)` views, `fields` the text fields found in the app's views (`InputFields`), which the
+    /// accessibility tree may not say are fields: an element that is one of them is taken as a field, and what is typed
+    /// in one whose value is hidden is taken out of the element around it (a combined one) or in it.
+    static func apply(_ elements: [ScreenElement], masks: [CGRect], optOuts: [CGRect], fields: [InputField] = [],
+                      maskInputs: Bool) -> [ScreenElement] {
+        let hidden = fields.filter { hides($0, optOuts: optOuts, maskInputs: maskInputs) }
+        return elements.map { element in
             var element = element
+            for field in hidden where applies(field.frame, to: element.frame) {
+                // Much the same frame: the element is the field.
+                if share(of: field.frame, in: element.frame) >= 0.8, share(of: element.frame, in: field.frame) >= 0.8 {
+                    element.isTextInput = true
+                    element.isSecure = element.isSecure || field.isSecure
+                }
+                element.label = without(field.text, in: element.label)
+                element.value = without(field.text, in: element.value)
+            }
             element.isMasked = masks.contains { applies($0, to: element.frame) }
             element.optsOut = element.isTextInput && optOuts.contains { applies($0, to: element.frame) }
             return scrub(element, maskInputs: maskInputs)
         }
+    }
+
+    /// Whether what is typed in a field is hidden: a secure field's always, any other's with `maskInputs` unless it
+    /// opted out.
+    static func hides(_ field: InputField, optOuts: [CGRect], maskInputs: Bool) -> Bool {
+        field.isSecure || (maskInputs && !optOuts.contains { applies($0, to: field.frame) })
+    }
+
+    /// `text` without `typed` (and, typed over several lines, without each of them), and the commas and spaces left
+    /// where it was; nil when nothing else is left.
+    static func without(_ typed: String?, in text: String?) -> String? {
+        guard var text, let typed else { return text }
+        let parts = [typed] + typed.components(separatedBy: .newlines)
+        for part in parts.map({ $0.trimmingCharacters(in: .whitespacesAndNewlines) }) where !part.isEmpty {
+            text = text.replacingOccurrences(of: part, with: "")
+        }
+        text = text.replacingOccurrences(of: #"(\s*,\s*){2,}"#, with: ", ", options: .regularExpression)
+            .trimmingCharacters(in: CharacterSet(charactersIn: ",").union(.whitespacesAndNewlines))
+        return text.isEmpty ? nil : text
     }
 
     /// Takes out what may not be recorded: all of a masked element's text, and the value of a secure field or (with
@@ -93,10 +125,22 @@ enum Privacy {
         element.isSecure || (maskInputs && element.isTextInput && !element.optsOut)
     }
 
-    /// What to cover in a screenshot: every private view, and the fields whose value is hidden.
-    static func covered(_ elements: [ScreenElement], masks: [CGRect], maskInputs: Bool) -> [CGRect] {
+    /// What to cover in a screenshot: every private view, and the fields whose value is hidden, whether the
+    /// accessibility tree has them (`elements`) or only the app's views do (`fields`).
+    static func covered(_ elements: [ScreenElement], masks: [CGRect], fields: [InputField] = [], optOuts: [CGRect] = [],
+                        maskInputs: Bool) -> [CGRect] {
         masks + elements.filter { hidesValue($0, maskInputs: maskInputs) }.map(\.frame)
+            + fields.filter { hides($0, optOuts: optOuts, maskInputs: maskInputs) }.map(\.frame)
     }
+}
+
+/// A text field as the app's views have it (`InputFields`), whatever the accessibility tree says of it: where it is, in
+/// window coordinates, whether it is secure, and what is typed in it, which is never recorded, only looked for in what
+/// else the screen says so it can be taken out (none is read from a secure field).
+struct InputField: Equatable {
+    var frame: CGRect
+    var isSecure: Bool
+    var text: String?
 }
 
 /// A picture of the app's window and what must be covered in it, taken together. The covers are where the private
@@ -108,11 +152,12 @@ struct Captured<Picture> {
     let size: CGSize
     let covers: [CGRect]
 
-    /// `elements` and `privateViews` as they are now, as the picture is taken.
-    init(_ picture: Picture, size: CGSize, elements: [ScreenElement], privateViews: [CGRect], maskInputs: Bool) {
+    /// `elements`, `privateViews` and `fields` as they are now, as the picture is taken.
+    init(_ picture: Picture, size: CGSize, elements: [ScreenElement], privateViews: [CGRect], fields: [InputField] = [],
+         optOuts: [CGRect] = [], maskInputs: Bool) {
         self.picture = picture
         self.size = size
-        covers = Privacy.covered(elements, masks: privateViews, maskInputs: maskInputs)
+        covers = Privacy.covered(elements, masks: privateViews, fields: fields, optOuts: optOuts, maskInputs: maskInputs)
     }
 }
 

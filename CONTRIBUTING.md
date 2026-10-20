@@ -40,11 +40,12 @@ CI runs these on every pull request. `bun run check` runs the first four togethe
 | `bun run lint`           | Biome's lint and format rules. `bun run format` fixes what it can                                                          |
 | `bun run typecheck`      | TypeScript, for the repository and for React Native (which has its own program)                                            |
 | `bun run test`           | Vitest for the schema, core, the Vite plugin and every TypeScript SDK; `bun test` for the server, CLI, board and extension |
-| `bun run build:site`     | The website, and the docs pages cut from the READMEs                                                                       |
 | `bun scripts/version.ts` | Every package is at the same version                                                                                       |
 | `bun run build:schema`   | Writes `packages/schema/schema.json` from the Zod schema. CI fails if the committed file is out of date                    |
 
 CI also builds the `notato` binary on Linux, macOS and Windows and smoke-tests it, builds the example apps, installs the packed packages into a fresh Vite app, and builds the Docker image.
+
+CI runs one exact Bun (`bun-version` in each workflow), the same as the Dockerfile's build image, and the Dockerfile pins each image by digest. Dependabot moves the images and the actions' pins once a month; when it moves `oven/bun`, move `bun-version` in the workflows with it.
 
 ## Each SDK
 
@@ -113,11 +114,15 @@ Each SDK's README has a Development section with more: running its sample app, a
 
 - **The wire format is the contract.** [`packages/schema`](packages/schema/src/index.ts) defines annotations and bundles for every SDK and the server. Change it there, run `bun run build:schema`, and commit `schema.json`. Add fields as optional, and read leniently, so a newer server never breaks an older app.
 - **One version for everything.** Do not change version numbers by hand: a release sets them all (see [RELEASING.md](RELEASING.md)).
-- **The docs are made from the READMEs.** [`site/docs.ts`](site/docs.ts) cuts the main README into pages by heading. Rename a heading there and update `PAGES` to match; `bun run build:site` fails until you do.
+- **The docs are made from the READMEs.** The documentation at notato.dev is cut from the main README by heading, and from each SDK's README, by the build in [`site/`](site/README.md). Keep headings stable: renaming one is a docs change too, so say so in your pull request.
 - **Adding an SDK** has a checklist in [sdks/README.md](sdks/README.md), and `bun run test` says which steps are missing.
 
 ## Pull requests
 
+- Branch from `develop` and open feature and fix pull requests against `develop`. Merging there runs CI and
+  updates the website preview at `preview.notato.dev`. A reviewed pull request from
+  `develop` into `main` promotes the website to `notato.dev`. Package and container publishing still uses the
+  explicit version-tag process in [RELEASING.md](RELEASING.md). See [website deployment](site/README.md#publishing).
 - Keep each one to a single change, with tests for it, and the READMEs updated to match.
 - Say how you checked it: the commands you ran, and what you tried by hand (a browser, a simulator, a device).
 - Write commit messages that say what changed and why.

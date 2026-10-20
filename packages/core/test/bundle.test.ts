@@ -297,6 +297,22 @@ describe("reading hostile or broken bundles", () => {
         ).toThrow(/severity/);
     });
 
+    it("rejects a bundle id no path can hold, a time that is not one, and an over-long name", async () => {
+        const good = unzipSyncJson(await roundTrip(annotation(1)));
+        for (const [field, value, said] of [
+            ["id", "../other", /id/],
+            ["createdAt", "yesterday", /createdAt/],
+            ["appName", "x".repeat(25 * 1024), /appName/],
+        ] as const)
+            expect(() =>
+                readBundle(
+                    zipOf({
+                        "annotations.json": strToU8(JSON.stringify({ ...good, [field]: value })),
+                    })
+                )
+            ).toThrow(said);
+    });
+
     it("rejects an unsupported schemaVersion before looking at anything else", async () => {
         const good = unzipSyncJson(await roundTrip(annotation(1)));
         good.schemaVersion = 2;

@@ -1,0 +1,933 @@
+/* What Notato Cloud adds to the open board's styles: the workspace switcher, data controls, sign-in preparation and plan picker. */
+
+.side-workspace {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 6px;
+    padding-top: 12px;
+}
+
+.workspace-context {
+    margin-bottom: 8px;
+}
+button.workspace-choice {
+    width: 100%;
+    height: auto;
+    justify-content: flex-start;
+    text-align: left;
+    background: transparent;
+}
+
+.data-controls {
+    display: grid;
+    gap: 12px;
+    padding: 18px;
+    border: 1px solid var(--line);
+    border-radius: 12px;
+}
+.data-controls > label {
+    max-width: 320px;
+}
+.data-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 18px;
+}
+
+.onboarding-steps {
+    text-align: left;
+    max-width: 380px;
+    margin: 18px auto;
+    padding-left: 24px;
+}
+
+.connect-checks {
+    margin-top: 24px;
+    border-top: 1px solid var(--line);
+    padding-top: 16px;
+}
+.connect-checks summary {
+    cursor: pointer;
+    font-weight: 600;
+}
+.connect-checks li {
+    margin: 8px 0;
+}
+
+.onboarding-steps li + li {
+    margin-top: 8px;
+}
+
+.identity-setup-head {
+    max-width: 560px;
+    margin: 24px auto;
+    padding: 0 24px;
+}
+.identity-setup .login {
+    margin-top: 24px;
+}
+
+.plan-picker {
+    display: grid;
+    gap: 12px;
+    margin-top: 14px;
+    max-width: 480px;
+}
+.plan-picker label {
+    display: grid;
+    gap: 6px;
+}
+.plan-picker select,
+.plan-picker input {
+    width: 100%;
+    min-width: 0;
+}
+
+.beta-landing {
+    max-width: 640px;
+    margin: 0 auto;
+    padding: 40px 20px;
+    display: grid;
+    gap: 28px;
+}
+.beta-intro {
+    display: grid;
+    gap: 16px;
+}
+.beta-intro h1 {
+    font-size: clamp(30px, 7vw, 48px);
+    line-height: 1.1;
+}
+.beta-tag {
+    font-size: 12px;
+    color: var(--muted);
+}
+.beta-card {
+    padding: 24px;
+    border: 1px solid var(--line);
+    border-radius: 16px;
+    background: var(--panel);
+    display: grid;
+    gap: 16px;
+    min-width: 0;
+}
+.beta-card form {
+    display: grid;
+    gap: 18px;
+}
+.beta-card label {
+    display: grid;
+    gap: 6px;
+}
+.beta-card input,
+.beta-card select,
+.beta-card textarea {
+    width: 100%;
+    min-width: 0;
+}
+.beta-links {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 16px;
+    align-items: center;
+}
+.beta-honeypot {
+    position: absolute;
+    left: -10000px;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+}
+
+.beta-login-info {
+    max-width: 400px;
+    margin: 24px auto 0;
+    padding: 0 20px;
+    display: grid;
+    gap: 8px;
+}
+
+.plugins-page {
+    max-width: 980px;
+    margin: 0 auto;
+    padding: 28px 24px 60px;
+}
+.plugins-page header {
+    margin-bottom: 24px;
+}
+.plugin-tabs {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-bottom: 22px;
+}
+.plugin-tabs button[aria-pressed="true"] {
+    background: var(--accent);
+    color: var(--panel);
+}
+.plugin-panel {
+    padding: 24px;
+    margin-bottom: 20px;
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    background: var(--panel);
+}
+.plugin-panel form {
+    display: grid;
+    gap: 16px;
+    max-width: 620px;
+}
+.plugin-panel label {
+    display: grid;
+    gap: 6px;
+    margin-bottom: 14px;
+}
+.plugin-panel input,
+.plugin-panel select {
+    width: 100%;
+    min-width: 0;
+}
+.plugin-panel small {
+    color: var(--muted);
+}
+.plugin-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    padding: 14px 0;
+    border-top: 1px solid var(--line);
+}
+.plugin-row > span,
+.workflow-configuration {
+    flex: 1 1 240px;
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+.workflow-scope {
+    margin: 12px 0 0;
+    min-width: 0;
+    width: 100%;
+    box-sizing: border-box;
+    padding: 14px 16px;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    background: var(--bg);
+}
+.workflow-scope legend {
+    padding: 0 6px;
+    font-weight: 600;
+}
+.workflow-scope dl {
+    margin: 10px 0 0;
+    display: grid;
+    gap: 10px;
+}
+.workflow-scope dl > div {
+    display: grid;
+    grid-template-columns: minmax(90px, 1fr) minmax(0, 3fr);
+    gap: 12px;
+}
+.workflow-scope dt {
+    color: var(--muted);
+}
+.workflow-scope dd {
+    margin: 0;
+}
+.workflow-scope dd > span {
+    display: block;
+    color: var(--muted);
+    font-size: 0.875rem;
+    margin-top: 3px;
+}
+.workflow-audience {
+    padding: 16px;
+    border: 1px solid var(--accent);
+    border-left-width: 4px;
+    border-radius: 10px;
+    margin-bottom: 16px;
+}
+.workflow-audience p {
+    margin: 6px 0 0;
+}
+.workflow-rules {
+    width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+    margin: 0;
+    padding: 16px;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    display: grid;
+    gap: 12px;
+}
+.workflow-rules legend {
+    padding: 0 6px;
+    font-weight: 600;
+}
+.workflow-condition-fields {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr) auto;
+    gap: 8px;
+    align-items: end;
+}
+.workflow-condition-fields label {
+    margin: 0;
+    min-width: 0;
+}
+.workflow-condition-fields button {
+    margin-bottom: 0;
+}
+.condition-join {
+    display: inline-block;
+    margin: 8px 0;
+    font-weight: 600;
+    color: var(--accent);
+}
+.workflow-rule-summary {
+    margin-top: 16px;
+    border-top: 1px solid var(--line);
+    padding-top: 12px;
+}
+.workflow-rule-summary ol {
+    list-style: none;
+    padding: 0;
+    margin: 8px 0 0;
+}
+.workflow-rule-summary .condition-join {
+    margin: 0 4px 0 0;
+}
+@media (max-width: 720px) {
+    .workflow-condition-fields {
+        grid-template-columns: minmax(0, 1fr);
+    }
+    .workflow-condition-fields button {
+        justify-self: start;
+    }
+}
+.plugin-setup li {
+    margin-bottom: 12px;
+}
+.plugin-start {
+    border-color: var(--accent);
+}
+.plugin-steps {
+    display: grid;
+    gap: 12px;
+    padding-left: 0;
+    margin: 14px 0 0;
+    list-style: none;
+}
+.plugin-steps li {
+    color: var(--muted);
+}
+.plugin-steps li.done strong {
+    color: var(--muted);
+    font-weight: 500;
+}
+.plugin-steps li.next {
+    color: inherit;
+}
+.plugin-steps li.next strong {
+    font-size: 1.05em;
+}
+.plugin-panel details {
+    margin-bottom: 14px;
+}
+.plugin-panel summary {
+    cursor: pointer;
+}
+.plugin-preview {
+    margin-top: 20px;
+    border-top: 1px solid var(--line);
+    padding-top: 18px;
+}
+.plugin-preview pre {
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    font: inherit;
+    padding: 16px;
+    background: var(--hover);
+    border-radius: 8px;
+}
+.plugin-execution {
+    display: grid;
+    gap: 6px;
+    padding: 16px 0;
+    border-top: 1px solid var(--line);
+}
+.plugin-execution span {
+    color: var(--muted);
+    font-size: 13px;
+}
+@media (max-width: 650px) {
+    .plugins-page {
+        padding: 20px 14px;
+    }
+    .plugin-panel {
+        padding: 18px;
+    }
+    .plugin-row {
+        flex-wrap: wrap;
+    }
+}
+
+.plugin-shortcut {
+    position: fixed;
+    bottom: 20px;
+    right: 24px;
+    z-index: 50;
+    padding: 10px 16px;
+    border-radius: 9px;
+    background: var(--accent);
+    color: var(--panel);
+    box-shadow: var(--card-shadow);
+    font-size: 13px;
+    text-decoration: none;
+}
+.plugin-existing {
+    margin-top: 18px;
+}
+.plugin-preview pre {
+    max-height: 400px;
+    overflow: auto;
+}
+.plugin-panel input[type="checkbox"] {
+    width: auto;
+}
+.plugin-execution > button {
+    justify-self: start;
+}
+
+.pr-page {
+    gap: 28px;
+}
+.pr-list {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(290px, 1fr));
+    gap: 18px;
+}
+.pr-review-card {
+    display: grid;
+    gap: 16px;
+    padding: 24px;
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    color: var(--text);
+    text-decoration: none;
+    background: var(--panel);
+}
+.pr-review-card:hover {
+    border-color: var(--accent);
+}
+.pr-review-card h2 {
+    font-size: 19px;
+    line-height: 1.4;
+}
+.pr-open {
+    font-size: 12px;
+    color: var(--accent-text);
+}
+.pr-summary {
+    display: grid;
+    grid-template-columns: 1.4fr 1fr;
+    gap: 24px;
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    padding: 24px;
+}
+.pr-summary p {
+    margin: 14px 0;
+    line-height: 1.6;
+    font-size: 13px;
+}
+.pr-capture {
+    padding-left: 24px;
+    border-left: 1px solid var(--line);
+}
+.pr-assignment {
+    display: grid;
+    gap: 14px;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    padding: 24px;
+}
+.pr-assignment p {
+    max-width: 650px;
+    line-height: 1.6;
+    font-size: 13px;
+}
+.pr-assignment .work-actions {
+    max-width: 620px;
+}
+.pr-assignment label {
+    font-size: 12px;
+    line-height: 1.6;
+}
+.pr-stale {
+    color: var(--accent-text);
+    font-weight: 600;
+}
+.pr-resolution {
+    display: flex;
+    gap: 14px;
+    padding: 20px;
+    border-radius: 12px;
+    background: var(--panel);
+    border: 1px solid var(--line);
+}
+.pr-resolution h3 {
+    margin-bottom: 8px;
+}
+.pr-empty {
+    display: grid;
+    justify-items: center;
+    text-align: center;
+    gap: 16px;
+    padding: 60px 24px;
+    border: 1px dashed var(--line-2);
+    border-radius: 14px;
+}
+.pr-empty p {
+    max-width: 500px;
+    font-size: 13px;
+    line-height: 1.6;
+    color: var(--muted);
+}
+.pr-form {
+    display: grid;
+    gap: 18px;
+}
+.pr-form label {
+    display: grid;
+    gap: 8px;
+    font-size: 12px;
+}
+.pr-summary-preview {
+    max-height: 380px;
+    overflow: auto;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    padding: 16px;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    font-size: 12px;
+    line-height: 1.7;
+}
+.pr-target-image {
+    width: 110px;
+    max-height: 75px;
+    object-fit: cover;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+}
+.pr-publication {
+    display: grid;
+    gap: 12px;
+    padding: 20px;
+    border: 1px solid var(--line);
+    border-radius: 12px;
+}
+@media (max-width: 700px) {
+    .pr-summary {
+        grid-template-columns: 1fr;
+        padding: 18px;
+        gap: 18px;
+    }
+    .pr-capture {
+        padding: 18px 0 0;
+        border-left: 0;
+        border-top: 1px solid var(--line);
+    }
+    .pr-list {
+        grid-template-columns: 1fr;
+    }
+    .pr-assignment {
+        padding: 18px;
+    }
+    .pr-review-card {
+        padding: 18px;
+    }
+    .pr-empty {
+        padding: 35px 18px;
+    }
+}
+
+.plugin-start {
+    padding: 18px 20px;
+    border: 1px solid var(--accent);
+}
+.plugin-start h2 {
+    font-size: 17px;
+}
+
+/* The cloud's pages share the board's settings layout; these are the parts it does not have. */
+.cloud-page > .banner,
+.cloud-page > .card,
+.cloud-page > .segmented {
+    margin-bottom: 18px;
+}
+.cloud-page > .segmented {
+    align-self: flex-start;
+    max-width: 100%;
+}
+.cloud-page .set-body p {
+    margin: 0;
+}
+.cloud-page form {
+    display: grid;
+    gap: 16px;
+    max-width: 560px;
+    justify-items: start;
+}
+.cloud-page form label,
+.cloud-page .set-body > label {
+    display: grid;
+    gap: 6px;
+    width: 100%;
+}
+.cloud-page input,
+.cloud-page select {
+    width: 100%;
+    min-width: 0;
+}
+.cloud-page .member-row input,
+.cloud-page .member-row select {
+    width: auto;
+}
+.cloud-page small {
+    color: var(--muted);
+}
+.cloud-page details {
+    padding: 4px 0;
+}
+.cloud-page summary {
+    cursor: pointer;
+    font-size: 13px;
+}
+.cloud-page .data-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 16px;
+    align-items: center;
+}
+.cloud-page .plugin-row:first-child {
+    border-top: 0;
+    padding-top: 0;
+}
+.cloud-page .set-body .banner {
+    margin-bottom: 0;
+}
+.cloud-page .table-wrap {
+    overflow-x: auto;
+}
+.cloud-page .table-wrap table {
+    width: 100%;
+}
+.member-list {
+    display: flex;
+    flex-direction: column;
+}
+.member-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 0;
+    border-top: 1px solid var(--line);
+}
+.member-row:first-child {
+    border-top: 0;
+    padding-top: 0;
+}
+.member-text {
+    flex: 1 1 auto;
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+.instance-accounts .member-text {
+    flex-basis: 160px;
+}
+.account-menu {
+    position: relative;
+}
+.account-menu > summary {
+    cursor: pointer;
+    list-style: none;
+}
+.account-menu > summary::-webkit-details-marker {
+    display: none;
+}
+.account-menu > summary:hover,
+.account-menu[open] > summary {
+    background: var(--hover);
+}
+.account-menu .name-text {
+    flex: 1;
+    gap: 3px;
+}
+.account-menu-caption {
+    color: var(--muted);
+    font-size: 12px;
+}
+.account-menu-items {
+    inset: auto 0 calc(100% + 8px);
+    min-width: 0;
+}
+.account-menu-items > p {
+    padding: 8px 10px;
+    overflow-wrap: anywhere;
+}
+.account-menu-items > .support-notato {
+    height: auto;
+    padding: 8px 10px;
+    white-space: normal;
+}
+.support-notato-label {
+    display: grid;
+    gap: 3px;
+}
+.support-notato-label small {
+    font-size: 11px;
+    font-weight: 400;
+    line-height: 1.4;
+}
+.member-actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex: none;
+}
+.role-pill {
+    display: inline-block;
+    margin-left: 8px;
+    padding: 2px 9px;
+    border-radius: 999px;
+    background: var(--hover);
+    color: var(--muted);
+    font-size: 12px;
+    font-weight: 500;
+    text-transform: capitalize;
+}
+.member-actions .role-pill {
+    margin-left: 0;
+}
+.invite-link {
+    display: flex;
+    align-items: flex-end;
+    gap: 10px;
+    max-width: 560px;
+}
+.invite-link label {
+    flex: 1;
+}
+.stats {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+    gap: 10px;
+    margin: 0;
+}
+.stats > div {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 12px 14px;
+    border-radius: 12px;
+    background: var(--hover);
+}
+.stats dt {
+    color: var(--muted);
+    font-size: 12px;
+}
+.stats dd {
+    margin: 0;
+    font: 600 17px / 1.3 var(--display);
+}
+.session-list .setting-row {
+    padding: 8px 0;
+    border-top: 1px solid var(--line);
+}
+.session-list .setting-row:first-child {
+    border-top: 0;
+    padding-top: 0;
+}
+@media (max-width: 650px) {
+    .member-row {
+        flex-wrap: wrap;
+    }
+    .member-actions {
+        margin-left: 44px;
+    }
+    .invite-link {
+        flex-direction: column;
+        align-items: stretch;
+    }
+}
+.session-list .role-pill {
+    text-transform: none;
+}
+
+/* Sign-in: a short lede, and the secondary links tucked under a rule. */
+.login-lede {
+    margin: -6px 0 0;
+    font-size: 13px;
+}
+.login-links {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    gap: 4px 14px;
+    padding-top: 12px;
+    border-top: 1px solid var(--line);
+    font-size: 13px;
+}
+.login-links .link {
+    padding: 0;
+}
+.cloud-page form > button.primary,
+form.set-body > button.primary {
+    justify-self: start;
+}
+
+/* A page the board puts inside Settings: its sections sit directly under the tabs. */
+.cloud-tab {
+    display: flex;
+    flex-direction: column;
+}
+
+/* Connection rows: name and status on the left, one main action and a "More" menu on the right. */
+.conn-info {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+.conn-health.ready::before,
+.conn-health.attention::before {
+    content: "";
+    display: inline-block;
+    width: 7px;
+    height: 7px;
+    margin-right: 6px;
+    border-radius: 50%;
+    background: var(--ok, #2e9a5b);
+}
+.conn-health.attention::before {
+    background: var(--bad, #e5484d);
+}
+.row-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex: none;
+}
+.row-menu {
+    position: relative;
+}
+.row-menu > summary {
+    list-style: none;
+    padding: 6px 12px;
+    border-radius: 10px;
+    background: var(--hover);
+    color: var(--muted);
+    font-size: 13px;
+    cursor: pointer;
+    user-select: none;
+}
+.row-menu > summary::-webkit-details-marker {
+    display: none;
+}
+.row-menu > summary::after {
+    content: " ▾";
+}
+.row-menu[open] > summary {
+    color: var(--text);
+}
+.row-menu-items {
+    position: absolute;
+    right: 0;
+    top: calc(100% + 6px);
+    z-index: 20;
+    display: grid;
+    min-width: 190px;
+    padding: 6px;
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    background: var(--panel);
+    box-shadow: var(--shadow);
+}
+.row-menu-items > button,
+.row-menu-items > a {
+    display: block;
+    padding: 8px 10px;
+    border-radius: 8px;
+    background: transparent;
+    color: var(--text);
+    font-size: 13px;
+    text-align: left;
+    text-decoration: none;
+}
+.row-menu-items > button:hover:not(:disabled),
+.row-menu-items > a:hover {
+    background: var(--hover);
+}
+.row-menu-items > .danger {
+    color: var(--bad);
+}
+.role-note {
+    background: var(--hover);
+    color: var(--text);
+}
+.pr-advanced > summary {
+    cursor: pointer;
+    font-weight: 600;
+}
+.pr-advanced[open] > summary {
+    margin-bottom: 10px;
+}
+
+/* Home's get-started guide. */
+.get-started {
+    padding: 18px 20px;
+    border: 1px solid var(--accent);
+}
+.get-started header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+}
+.get-started h2 {
+    font-size: 17px;
+}
+.get-started .plugin-steps {
+    margin-top: 12px;
+}
+.get-started .button {
+    margin-left: 4px;
+}
+
+.cloud-page form label.check {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: auto;
+}
+.cloud-page form label.check input {
+    width: auto;
+}
+.audit-pages {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 12px;
+}
+
+.instance-login .login form {
+    display: grid;
+    gap: 14px;
+}

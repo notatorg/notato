@@ -21,10 +21,11 @@ internal class ComposerSheet(
     title: String,
     subtitle: String?,
     screenshotsOff: Boolean,
+    sharedByDefault: Boolean = false,
     onParent: () -> Unit,
     onCancel: () -> Unit,
     /** The comment, the intent, the severity and People only. */
-    private val onSend: suspend (String, String?, String?, Boolean) -> String?,
+    private val onSend: suspend (String, String?, String?, Boolean, Boolean) -> String?,
     private val launch: (suspend () -> Unit) -> Unit,
 ) : FrameLayout(ui.context) {
     private val titleView = ui.text(title, 15f, bold = true, maxLines = 1)
@@ -32,6 +33,7 @@ internal class ComposerSheet(
     val comment = ui.field("What should change?", lines = 3).apply { contentDescription = "NotatoComment" }
     private val intents = ui.Chips(listOf(NoteIntent.FIX to "Fix", NoteIntent.CHANGE to "Change", NoteIntent.QUESTION to "Question", NoteIntent.APPROVE to "Approve"))
     private val severities = ui.Chips(listOf(Severity.BLOCKER to "Blocker", Severity.MAJOR to "Major", Severity.MINOR to "Minor", Severity.NIT to "Nit"))
+    private val shared = ui.toggleRow("Share with project", "Project members can see this feedback.").also { it.second.isChecked = sharedByDefault }
     private val peopleOnly = ui.toggleRow(PEOPLE_ONLY, PEOPLE_ONLY_HINT)
     private val error = ui.text(null, 12f, Ui.DANGER).apply { visibility = GONE }
     private val send: TextView
@@ -72,7 +74,7 @@ internal class ComposerSheet(
             override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
             override fun afterTextChanged(s: Editable?) = update()
         })
-        addView(ui.card(ui.column(12, header, comment, intents.view, severities.view, peopleOnly.first, error, footer)))
+        addView(ui.card(ui.column(12, header, comment, intents.view, severities.view, shared.first, peopleOnly.first, error, footer)))
         update()
     }
 
@@ -99,7 +101,7 @@ internal class ComposerSheet(
         send.text = "Sending…"
         update()
         launch {
-            val problem = onSend(text, intents.selected, severities.selected, peopleOnly.second.isChecked)
+            val problem = onSend(text, intents.selected, severities.selected, peopleOnly.second.isChecked, shared.second.isChecked)
             busy = false
             send.text = "Send"
             update()

@@ -114,17 +114,17 @@ struct OverlayRoot: View {
     private func sheetContent(_ sheet: OverlayModel.Sheet) -> some View {
         switch sheet {
         case .composer:
-            ComposerCard(selection: model.selection, screenshotsOff: !notato.screenshotsOn,
+            ComposerCard(selection: model.selection, screenshotsOff: !notato.screenshotsOn, sharedByDefault: notato.mode == .test,
                          parent: { if let s = session.value { hooks.selectParent(in: s) } },
                          cancel: close,
-                         send: { comment, intent, severity, peopleOnly in
+                         send: { comment, intent, severity, peopleOnly, shared in
                              guard let s = session.value else { return "The window went away." }
-                             return await hooks.submit(comment: comment, intent: intent, severity: severity, peopleOnly: peopleOnly, in: s)
+                             return await hooks.submit(comment: comment, intent: intent, severity: severity, peopleOnly: peopleOnly, shared: shared, in: s)
                          })
         case let .pin(id, fromList):
             if let session = session.value, let record = notato.record(id) {
                 // Its number among the notes on this screen; none when it is on another.
-                let number = hooks.notes(on: session).all.firstIndex { $0 === record }.map { $0 + 1 } ?? 0
+                let number = hooks.notes(on: session).number(of: record) ?? 0
                 PinCard(record: record, number: number, notato: notato, back: fromList ? { model.sheet = .list } : nil,
                         close: close, done: { message in model.show(toast: message) })
             }
@@ -261,7 +261,7 @@ struct PinsLayer: View {
                         .opacity(pin.detached ? 0.55 : 1)
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel("Note \(pin.number), \(pin.status.replacingOccurrences(of: "_", with: " "))")
+                .accessibilityLabel("Note \(pin.number), \(Status.label(pin.status))")
                 .region("pin.\(pin.key)", model)
                 .offset(x: pin.origin.x, y: pin.origin.y)
                 // Grows from its own middle: the anchor is in the unmoved frame's terms, as the offset is outside it.

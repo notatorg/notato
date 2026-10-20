@@ -95,10 +95,42 @@ describe("reading the settings", () => {
         expect(text).not.toContain("from-env");
         const data = JSON.parse(text) as SettingsView;
         expect(data.webhooks.map((w) => [w.url, w.secret])).toEqual([
-            ["https://hooks.slack.com/services/••••", { kind: "none" }],
-            ["https://example.com/hook/••••", { kind: "file" }],
-            ["https://example.com/signed", { kind: "env", name: "NOTATO_HOOK_SECRET", set: true }],
+            ["https://hooks.slack.com/••••", { kind: "none" }],
+            ["https://example.com/••••", { kind: "file" }],
+            ["https://example.com/••••", { kind: "env", name: "NOTATO_HOOK_SECRET", set: true }],
         ]);
+    });
+
+    it("shows a URL read from the environment by its variable, and the host it sends to", async () => {
+        writeFileSync(
+            file,
+            JSON.stringify({
+                webhooks: [
+                    { url: "env:NOTATO_TEST_HOOK_URL", format: "slack" },
+                    { url: "env:NOTATO_TEST_HOOK_UNSET", format: "slack" },
+                ],
+            })
+        );
+        process.env.NOTATO_TEST_HOOK_URL = SLACK;
+        try {
+            const text = await (await board("/settings")).text();
+            expect(text).not.toContain("XXXXSECRETXXXX");
+            const data = JSON.parse(text) as SettingsView;
+            expect(data.webhooks.map((w) => [w.url, w.host])).toEqual([
+                ["env:NOTATO_TEST_HOOK_URL", "hooks.slack.com"],
+                ["env:NOTATO_TEST_HOOK_UNSET", "$NOTATO_TEST_HOOK_UNSET"],
+            ]);
+            // The admin's list of webhooks names them the same way.
+            const listed = (await (await ctx.call("/webhooks")).json()) as {
+                items: Array<{ host: string; name: string }>;
+            };
+            expect(listed.items.map((w) => w.host)).toEqual([
+                "hooks.slack.com",
+                "$NOTATO_TEST_HOOK_UNSET",
+            ]);
+        } finally {
+            delete process.env.NOTATO_TEST_HOOK_URL;
+        }
     });
 
     it("says what is wrong with a broken file, and refuses to change it", async () => {
@@ -339,13 +371,82 @@ describe("testing a webhook", () => {
 });
 
 describe("masking a URL", () => {
-    it("keeps the host and the first part of the path", () => {
-        expect(maskUrl(SLACK)).toBe("https://hooks.slack.com/services/••••");
+    it("keeps the host only, and a variable's name as it is written", () => {
+        expect(maskUrl(SLACK)).toBe("https://hooks.slack.com/••••");
         expect(maskUrl("https://discord.com/api/webhooks/123/abc")).toBe(
-            "https://discord.com/api/••••"
+            "https://discord.com/••••"
         );
-        expect(maskUrl("https://example.com/")).toBe("https://example.com");
-        expect(maskUrl("https://example.com/hook")).toBe("https://example.com/hook");
+        expect(maskUrl("https://example.com/")).toBe("https://example.com/");
+        expect(maskUrl("https://example.com/hook")).toBe("https://example.com/••••");
         expect(maskUrl("https://example.com/?token=1")).toBe("https://example.com/••••");
+        expect(maskUrl("env:SLACK_WEBHOOK_URL")).toBe("env:SLACK_WEBHOOK_URL");
+    });
+});
+
+describe("a webhook whose URL is read from the environment", () => {
+    it("is tested at the URL in that variable, and says so when it is not set", async () => {
+        const url = listen();
+        writeFileSync(file, JSON.stringify({ webhooks: [{ url: "env:NOTATO_TEST_HOOK_URL" }] }));
+        const existing = (await view(await board("/settings"))).webhooks[0];
+        const which = { index: 0, fingerprint: existing?.fingerprint };
+        const unset = (await (
+            await board("/settings/webhooks/test", "POST", {
+                hook: { format: "json" },
+                existing: which,
+            })
+        ).json()) as TestResult;
+        expect(unset).toMatchObject({ ok: false });
+        expect(unset.detail).toContain("NOTATO_TEST_HOOK_URL is not set");
+        expect(received).toEqual([]);
+
+        process.env.NOTATO_TEST_HOOK_URL = url;
+        try {
+            const sent = (await (
+                await board("/settings/webhooks/test", "POST", {
+                    hook: { format: "json" },
+                    existing: which,
+                })
+            ).json()) as TestResult;
+            expect(sent).toMatchObject({ ok: true, status: 200 });
+            expect(received).toHaveLength(1);
+        } finally {
+            delete process.env.NOTATO_TEST_HOOK_URL;
+        }
+    });
+});
+
+describe("a signing secret typed as it is", () => {
+    const hook = { url: "https://example.com/in", format: "json", secret: "s3cret" };
+
+    it("is not saved in the settings file, which is meant to be committed, unless asked", async () => {
+        const refused = await board("/settings/webhooks", "POST", { hook });
+        expect(refused.status).toBe(400);
+        expect(((await refused.json()) as { error: string }).error).toContain("env:NAME");
+        expect(ctx.backend.config().webhooks).toEqual([]);
+
+        // Named by a variable, it is read where the server runs and never written.
+        const named = await board("/settings/webhooks", "POST", {
+            hook: { ...hook, secret: "env:NOTATO_HOOK_SECRET" },
+        });
+        expect(named.status).toBe(200);
+
+        // An edit that types one in is held to the same rule; one that keeps the saved secret is not.
+        const saved = (await view(await board("/settings"))).webhooks[0];
+        const edit = (secret?: string, secretInFile?: boolean) =>
+            board("/settings/webhooks/0", "PUT", {
+                fingerprint: saved?.fingerprint,
+                hook: { format: "json", name: "renamed", ...(secret ? { secret } : {}) },
+                ...(secretInFile ? { secretInFile } : {}),
+            });
+        expect((await edit("typed-in")).status).toBe(400);
+        expect(ctx.backend.config().webhooks[0]?.secret).toBe("env:NOTATO_HOOK_SECRET");
+        expect((await edit("typed-in", true)).status).toBe(200);
+        expect(readFileSync(file, "utf8")).toContain("typed-in");
+    });
+
+    it("is saved when the request says it may go in the file", async () => {
+        const res = await board("/settings/webhooks", "POST", { hook, secretInFile: true });
+        expect(res.status).toBe(200);
+        expect(ctx.backend.config().webhooks[0]?.secret).toBe("s3cret");
     });
 });

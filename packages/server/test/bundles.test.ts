@@ -5,8 +5,15 @@ import { join } from "node:path";
 import { readBundle } from "@notato/core";
 import type { Annotation } from "@notato/schema";
 import { strToU8, unzipSync, zipSync } from "fflate";
-import { createMcpServer, SqliteStore } from "../src/index.ts";
 import {
+    createMcpServer,
+    FileBlobStore,
+    LocalBackend,
+    RequestError,
+    SqliteStore,
+} from "../src/index.ts";
+import {
+    annotationFixture,
     cleanupAfterEach,
     connectMcp,
     makeApp,
@@ -328,6 +335,162 @@ describe("rejecting bad bundles", () => {
     });
 });
 
+describe("a bundle's id and record", () => {
+    const error = async (res: Response) => ((await res.json()) as { error: string }).error;
+    const bundleOf = async (id: string) =>
+        (await (await ctx.call(`/bundles/${id}`)).json()) as {
+            bundle: { projectId: string };
+            annotations: Array<{ annotation: Annotation }>;
+        };
+
+    it("refuses an id another project imported first, before storing anything", async () => {
+        ctx = makeApp();
+        const first = await makeBundleZip(1, () => ({}), { id: "SHARED-ID" });
+        expect((await postZip(first.zip)).status).toBe(201);
+        const second = await makeBundleZip(2, () => ({ projectId: "other" }), {
+            projectId: "other",
+            id: "SHARED-ID",
+        });
+        const res = await postZip(second.zip, "/projects/other/bundles");
+        expect(res.status).toBe(409);
+        expect(await error(res)).toContain("already imported into another project");
+        for (const a of second.originals) expect(await ctx.backend.get(a.id)).toBeNull();
+        expect(await ctx.backend.listBundles("other")).toEqual([]);
+
+        const shown = await bundleOf("SHARED-ID");
+        expect(shown.bundle.projectId).toBe("checkout-web");
+        expect(shown.annotations.map((s) => s.annotation.id)).toEqual(
+            first.originals.map((a) => a.id)
+        );
+    });
+
+    it("shows and exports only the notes of its own project, whatever else carries its id", async () => {
+        ctx = makeApp();
+        const { zip, originals } = await makeBundleZip(1, () => ({}), { id: "BUNDLE-A" });
+        await postZip(zip);
+        // A note in another project with the same bundle id: two imports at the same moment, or a store from before
+        // ids were held to one project.
+        const stray = (await makeBundleZip(1, () => ({ projectId: "other" }))).originals[0];
+        await ctx.backend.ingest(
+            { ...(stray as Annotation), comment: "another project's secret" },
+            new Map([
+                [stray?.screenshots?.full.id ?? "", PNG],
+                [stray?.screenshots?.crop?.id ?? "", PNG],
+            ]),
+            { projectId: "other", preserveLifecycle: true, bundleId: "BUNDLE-A" }
+        );
+
+        const shown = await bundleOf("BUNDLE-A");
+        const ids = originals.map((a) => a.id);
+        expect(shown.annotations.map((s) => s.annotation.id)).toEqual(ids);
+        const exported = readBundle(
+            new Uint8Array(await (await ctx.call("/bundles/BUNDLE-A/export")).arrayBuffer())
+        );
+        expect(exported.bundle.annotations.map((a) => a.id)).toEqual(ids);
+    });
+
+    it("refuses a bundle with no notes, and records none for one that brings nothing new", async () => {
+        ctx = makeApp();
+        const empty = await postZip((await makeBundleZip(0)).zip);
+        expect(empty.status).toBe(400);
+        expect(await error(empty)).toContain("no notes");
+
+        const first = await makeBundleZip(2, () => ({}), { id: "BUNDLE-A" });
+        await postZip(first.zip);
+        // The same notes under another id: they are BUNDLE-A's, so BUNDLE-B would list nothing.
+        const again = await makeBundleZip(2, (n) => ({ id: first.originals[n - 1]?.id }), {
+            id: "BUNDLE-B",
+        });
+        const res = await postZip(again.zip);
+        expect(res.status).toBe(200);
+        expect(await res.json()).toMatchObject({ imported: 0, skipped: 2 });
+        expect((await ctx.backend.listBundles("checkout-web")).map((b) => b.id)).toEqual([
+            "BUNDLE-A",
+        ]);
+        expect((await ctx.call("/bundles/BUNDLE-B")).status).toBe(404);
+    });
+
+    it("refuses an id no path can hold, a time that is not one, and names past 200 characters", async () => {
+        ctx = makeApp();
+        for (const meta of [
+            { id: "../BUNDLE" },
+            { createdAt: "yesterday" },
+            { appName: "x".repeat(201) },
+            { appVersion: "x".repeat(201) },
+            { author: { name: "x".repeat(201) } },
+        ]) {
+            const res = await postZip((await makeBundleZip(1, () => ({}), meta)).zip);
+            expect(res.status, JSON.stringify(meta).slice(0, 40)).toBe(400);
+        }
+        expect(await listAll()).toHaveLength(0);
+        expect(await ctx.backend.listBundles()).toEqual([]);
+    });
+
+    it("lists the newest bundles, as many as asked for and never more than 500", async () => {
+        ctx = makeApp();
+        await ctx.backend.createProject("checkout-web");
+        for (let n = 0; n < 501; n++) {
+            await ctx.backend.ingest(
+                annotationFixture({
+                    projectId: "checkout-web",
+                    mode: "test",
+                    screenshots: undefined,
+                }),
+                new Map(),
+                { bundleId: `B${String(n).padStart(3, "0")}` }
+            );
+            await ctx.store.insertBundle({
+                id: `B${String(n).padStart(3, "0")}`,
+                projectId: "checkout-web",
+                createdAt: "2026-10-05T10:00:00.000Z",
+                author: {},
+                annotationCount: 1,
+                importedAt: new Date(Date.UTC(2026, 9, 5, 0, 0, n)).toISOString(),
+            });
+        }
+        const list = async (query = "") =>
+            (
+                (await (await ctx.call(`/projects/checkout-web/bundles${query}`)).json()) as {
+                    items: Array<{ id: string }>;
+                }
+            ).items.map((b) => b.id);
+        expect(await list("?limit=2")).toEqual(["B500", "B499"]);
+        expect(await list()).toHaveLength(500);
+        expect(await list("?limit=10000")).toHaveLength(500);
+        expect((await list())[0]).toBe("B500");
+    });
+
+    it("asks a deployment before recording a new bundle, and stores nothing when it says no", async () => {
+        const seen: string[] = [];
+        let full = false;
+        const store = new SqliteStore(":memory:");
+        const backend = new LocalBackend(store, new FileBlobStore(tempDir(defer)), {
+            hooks: {
+                beforeImportBundle: (record) => {
+                    seen.push(`${record.id} ${record.projectId} ${record.annotationCount}`);
+                    if (full)
+                        throw new RequestError(
+                            "this workspace holds as many bundles as it may",
+                            402
+                        );
+                },
+            },
+        });
+        defer(() => store.close());
+        const first = await makeBundleZip(2, () => ({}), { id: "BUNDLE-A" });
+        await backend.importBundle(first.zip);
+        // Again: nothing new to record, so nothing to ask.
+        await backend.importBundle(first.zip);
+        expect(seen).toEqual(["BUNDLE-A checkout-web 2"]);
+
+        full = true;
+        const second = await makeBundleZip(1, () => ({}), { id: "BUNDLE-B" });
+        await expect(backend.importBundle(second.zip)).rejects.toThrow("as many bundles");
+        expect(await backend.get(second.originals[0]?.id ?? "")).toBeNull();
+        expect((await backend.listBundles()).map((b) => b.id)).toEqual(["BUNDLE-A"]);
+    });
+});
+
 describe("database migration", () => {
     it("upgrades a version 1 database in place, keeping its annotations", async () => {
         const path = join(tempDir(defer, "notato-migrate-"), "old.db");
@@ -387,7 +550,7 @@ describe("database migration", () => {
                     value: string;
                 }
             ).value
-        ).toBe("5");
+        ).toBe("8");
         raw.close();
     });
 });
@@ -412,7 +575,7 @@ describe("notato_import_bundle", () => {
         expect(result.content[0]?.text).toContain("2 new annotations");
         expect(result.content[0]?.text).toContain(bundle.id);
 
-        const listed = await t.call("notato_list_open", { bundleId: bundle.id });
+        const listed = await t.call("notato_list_open", { bundleId: bundle.id, scope: "shared" });
         expect(listed.content[0]?.text).toContain("tester note 1");
         expect(listed.content[0]?.text).toContain("tester note 2");
         const again = await t.call("notato_import_bundle", { path: file });

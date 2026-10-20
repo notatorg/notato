@@ -178,6 +178,9 @@ internal sealed class AppleOverlayHost : IOverlayHost, IElementGeometry
 
     public double KeyboardHeight => _keyboard;
 
+    /// <summary>iOS has no mark that keeps a window out of screenshots.</summary>
+    public bool SecureWindow => false;
+
     public Size Size => _window is null ? Size.Zero : new Size(_window.Bounds.Width, _window.Bounds.Height);
 
     public void ReturnFocus()
