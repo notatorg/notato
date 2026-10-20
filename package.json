@@ -23,6 +23,8 @@
         "build:extension": "bun run --filter @notato/extension build",
         "release:build": "bun run scripts/build-release.ts",
         "version": "bun scripts/version.ts",
+        "build:site": "bun site/build.ts",
+        "site": "bun site/build.ts --serve",
         "build:service": "bun run --filter @notato/service-board build",
         "serve:service": "bun services/cli/src/main.ts serve",
         "test:service": "bun test services",

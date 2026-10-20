@@ -114,7 +114,7 @@ Each SDK's README has a Development section with more: running its sample app, a
 
 - **The wire format is the contract.** [`packages/schema`](packages/schema/src/index.ts) defines annotations and bundles for every SDK and the server. Change it there, run `bun run build:schema`, and commit `schema.json`. Add fields as optional, and read leniently, so a newer server never breaks an older app.
 - **One version for everything.** Do not change version numbers by hand: a release sets them all (see [RELEASING.md](RELEASING.md)).
-- **The docs are made from the READMEs.** The documentation at notato.dev is cut from the main README by heading, and from each SDK's README, by a build kept outside this repository. Keep headings stable: renaming one is a docs change too, so say so in your pull request.
+- **The docs are made from the READMEs.** The documentation at notato.dev is cut from the main README by heading, and from each SDK's README, by the build in [`site/`](site/README.md). Keep headings stable: renaming one is a docs change too, so say so in your pull request.
 - **Adding an SDK** has a checklist in [sdks/README.md](sdks/README.md), and `bun run test` says which steps are missing.
 
 ## Pull requests

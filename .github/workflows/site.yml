@@ -1,0 +1,53 @@
+name: Website
+
+# Builds notato.dev and, when asked, deploys it to Cloudflare as a Worker with static assets. It runs only when
+# someone starts it (Actions > Website > Run workflow), and never on a pull request or from a fork, so no secret is
+# reachable by code you have not reviewed. "preview" deploys to a workers.dev address marked noindex; "production"
+# deploys to notato.dev, which takes the hostname over from wherever it points now, so do that only once DNS and the
+# Cloudflare account are ready. Each target uses a GitHub environment of the same name: put these in it
+#   secret    CLOUDFLARE_API_TOKEN          Workers edit rights
+#   secret    CLOUDFLARE_ACCOUNT_ID         the account that owns notato.dev
+#   variable  NOTATO_SITE_ANALYTICS_TOKEN   (production) the Cloudflare Web Analytics site token, which is public
+# and put a required reviewer on "site-production". The docs are made from this repository's READMEs.
+
+on:
+    workflow_dispatch:
+        inputs:
+            target:
+                description: Where to deploy
+                type: choice
+                options: [preview, production]
+                default: preview
+            deploy:
+                description: Deploy after building. Untick for a dry run that only builds.
+                type: boolean
+                default: false
+
+permissions:
+    contents: read
+
+concurrency:
+    group: site-${{ inputs.target }}
+    cancel-in-progress: false
+
+jobs:
+    site:
+        name: Build and deploy the website
+        runs-on: ubuntu-latest
+        environment: site-${{ inputs.target }}
+        env:
+            NOTATO_SITE_ENV: ${{ inputs.target }}
+            NOTATO_SITE_ANALYTICS_TOKEN: ${{ inputs.target == 'production' && vars.NOTATO_SITE_ANALYTICS_TOKEN || '' }}
+        steps:
+            - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+            - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+              with:
+                  bun-version: 1.4.3
+            - run: bun install --frozen-lockfile
+            - run: bun run build:site
+            - name: Deploy to Cloudflare
+              if: inputs.deploy
+              env:
+                  CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+                  CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+              run: bunx wrangler@4.151.1 deploy --config site/wrangler.${{ inputs.target }}.json
