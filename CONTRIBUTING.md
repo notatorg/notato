@@ -119,6 +119,10 @@ Each SDK's README has a Development section with more: running its sample app, a
 
 ## Pull requests
 
+- Branch from `develop` and open feature and fix pull requests against `develop`. Merging there runs CI and
+  updates the website's develop Preview under the `notato-site` Cloudflare Worker. A reviewed pull request from
+  `develop` into `main` promotes the website to `notato.dev`. Package and container publishing still uses the
+  explicit version-tag process in [RELEASING.md](RELEASING.md). See [website deployment](site/README.md#publishing).
 - Keep each one to a single change, with tests for it, and the READMEs updated to match.
 - Say how you checked it: the commands you ran, and what you tried by hand (a browser, a simulator, a device).
 - Write commit messages that say what changed and why.

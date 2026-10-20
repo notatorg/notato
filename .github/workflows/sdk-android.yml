@@ -2,7 +2,7 @@ name: Android SDK
 
 on:
     push:
-        branches: [main]
+        branches: [main, develop]
         paths: ["sdks/android/**", "packages/schema/**", ".github/workflows/sdk-android.yml"]
     pull_request:
         paths: ["sdks/android/**", "packages/schema/**", ".github/workflows/sdk-android.yml"]

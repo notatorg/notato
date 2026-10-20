@@ -2,7 +2,7 @@ name: Flutter SDK
 
 on:
     push:
-        branches: [main]
+        branches: [main, develop]
         paths: ["sdks/flutter/**", "packages/schema/**", ".github/workflows/sdk-flutter.yml"]
     pull_request:
         paths: ["sdks/flutter/**", "packages/schema/**", ".github/workflows/sdk-flutter.yml"]

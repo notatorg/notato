@@ -14,6 +14,7 @@ import { DETAILS, renderAnnotation } from "../packages/core/src/index.ts";
 import { Annotation, sampleAnnotation } from "../packages/schema/src/index.ts";
 import { currentVersion } from "../scripts/version.ts";
 import { buildDocs, SOURCES } from "./docs.ts";
+import { siteEnvironment } from "./environment.ts";
 
 // Builds the website into site/dist: the hand-written page from site/src, the real Notato toolbar bundled as
 // live.js (the "Try it here" button loads it), the Markdown samples rendered by the real renderer, and the docs.
@@ -130,11 +131,12 @@ function markdownSamples(): Record<string, string> {
 
 async function build() {
     const started = performance.now();
+    const environment = siteEnvironment(process.env);
     rmSync(dist, { recursive: true, force: true });
     mkdirSync(dist, { recursive: true });
     cpSync(src, dist, { recursive: true, filter: (path) => !path.endsWith(".ts") });
     // A preview deployment must never be indexed; production keeps only the headers in src/_headers.
-    if (process.env.NOTATO_SITE_ENV === "preview")
+    if (environment === "preview")
         appendFileSync(join(dist, "_headers"), "/*\n  X-Robots-Tag: noindex, nofollow\n");
 
     // The Markdown samples go into the page itself, so it needs no request to show them. A function replacement, so a
@@ -167,7 +169,8 @@ async function build() {
 
     // Cloudflare Web Analytics counts page views without cookies or fingerprinting. The token is a public identifier,
     // not a secret, and is set only for the production deploy so that previews and local builds are not counted.
-    const analytics = process.env.NOTATO_SITE_ANALYTICS_TOKEN ?? "";
+    const analytics =
+        environment === "production" ? (process.env.NOTATO_SITE_ANALYTICS_TOKEN ?? "") : "";
     if (analytics) {
         if (!/^[A-Za-z0-9]{16,64}$/.test(analytics))
             throw new Error("NOTATO_SITE_ANALYTICS_TOKEN must be the Web Analytics site token");

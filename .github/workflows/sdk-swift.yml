@@ -2,7 +2,7 @@ name: Swift SDK
 
 on:
     push:
-        branches: [main]
+        branches: [main, develop]
         paths: ["Package.swift", "sdks/swift/**", "packages/schema/**", ".github/workflows/sdk-swift.yml"]
     pull_request:
         paths: ["Package.swift", "sdks/swift/**", "packages/schema/**", ".github/workflows/sdk-swift.yml"]

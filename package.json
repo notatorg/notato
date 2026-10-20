@@ -24,6 +24,8 @@
         "release:build": "bun run scripts/build-release.ts",
         "version": "bun scripts/version.ts",
         "build:site": "bun site/build.ts",
+        "preview:site": "wrangler preview",
+        "deploy:site": "wrangler deploy",
         "site": "bun site/build.ts --serve",
         "build:service": "bun run --filter @notato/service-board build",
         "serve:service": "bun services/cli/src/main.ts serve",
@@ -39,6 +41,7 @@
         "typescript": "^7.0.2",
         "vite": "^8.3.2",
         "vite7": "npm:vite@^7.3.1",
-        "vitest": "^5.0.3"
+        "vitest": "^5.0.3",
+        "wrangler": "4.151.1"
     }
 }

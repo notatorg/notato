@@ -2,7 +2,7 @@ name: .NET MAUI SDK
 
 on:
     push:
-        branches: [main]
+        branches: [main, develop]
         paths: ["sdks/dotnet/**", "packages/schema/schema.json", ".github/workflows/sdk-dotnet.yml"]
     pull_request:
         paths: ["sdks/dotnet/**", "packages/schema/schema.json", ".github/workflows/sdk-dotnet.yml"]
