@@ -685,8 +685,6 @@ button.workspace-choice {
 .account-menu-items > .support-notato {
     height: auto;
     padding: 8px 10px;
-    color: var(--muted);
-    opacity: 1;
     white-space: normal;
 }
 .support-notato-label {

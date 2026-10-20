@@ -57,18 +57,19 @@ export function AccountMenu({ me, onSignOut }: { me: Me; onSignOut?: () => Promi
                     </a>
                 )}
                 <hr />
-                <button
-                    type="button"
+                <a
+                    href="https://buymeacoffee.com/notato"
                     className="support-notato"
-                    disabled
-                    title="Buy Me a Coffee support is coming soon."
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    onClick={close}
                 >
                     <Icon name="coffee" />
                     <span className="support-notato-label">
                         <span>Support Notato</span>
-                        <small>Buy Me a Coffee · Coming soon</small>
+                        <small>Buy Me a Coffee</small>
                     </span>
-                </button>
+                </a>
                 {onSignOut && (
                     <>
                         <hr />

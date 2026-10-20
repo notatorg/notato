@@ -75,8 +75,8 @@ keeps its existing preview, commit, assignment and publication workflow. GitHub 
 which belongs to the selected workspace and appears beneath its switcher. Existing session and PR links still work.
 See the [Reviews guide](../../docs/reviews.md) for the workflows, filters and privacy rules. Workspace settings
 contains members, invitations, access tokens, retention and security activity. Your avatar opens Account,
-Appearance and Sign out. It also includes Support Notato, a disabled Buy Me a Coffee placeholder marked Coming soon;
-no donation link or payment flow is active yet. Saved Settings → Account links still work; saved token links open Workspace settings.
+Appearance and Sign out. Support Notato opens [Buy Me a Coffee](https://buymeacoffee.com/notato) in a new tab.
+Saved Settings → Account links still work; saved token links open Workspace settings.
 
 Administration is separate from workspace membership. Only explicit instance, server or admissions permissions
 make it available; owning a workspace does not grant global access. Self-hosted deployments call this area
