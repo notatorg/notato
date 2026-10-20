@@ -41,7 +41,7 @@ the root `package.json` and `bun.lock`. Both addresses are on notato.dev; nothin
 | --- | --- | --- |
 | `develop` | Updates the preview at `preview.notato.dev` (Worker `notato-site-preview`) | `bun run preview:site` |
 | `main` | Publishes the production website at `notato.dev` (Worker `notato-site`) | `bun run deploy:site` |
-| any other branch | Built to catch errors, not published | `bun run preview:site` (does nothing) |
+| any other branch | Not built by Cloudflare (CI still builds and tests it) | |
 
 Open feature and fix pull requests against `develop`. After checking the preview, open a release pull request
 from `develop` into `main`. Merging into `main` publishes the website. Publishing SDK packages, container images
@@ -49,22 +49,23 @@ and GitHub releases still requires the explicit tagged-release process in [RELEA
 
 ### Cloudflare build settings
 
-Connect the `notatorg/notato` GitHub repository to the `notato-site` Worker, with these settings:
+Two Workers are connected to the `notatorg/notato` repository, each with its own Workers Builds connection.
+Workers Builds requires the name in `wrangler.json` to match the Worker it builds, which is why the preview is
+a separate Worker and not an environment of the production one.
 
-| Setting | Value |
-| --- | --- |
-| Root directory | Repository root (`/`) |
-| Production branch | `main` |
-| Build command | `bun run build:site` |
-| Deploy command (production) | `bun run deploy:site` |
-| Non-production branch deploy command | `bun run preview:site` |
-| Non-production branch builds | Enabled |
-| Build variable | `BUN_VERSION=1.4.3`, matching CI |
+| Setting | `notato-site` (production) | `notato-site-preview` |
+| --- | --- | --- |
+| Production branch | `main` | `develop` |
+| Root directory | `/` | `/` |
+| Build command | `bun run build:site` | `bun run build:site` |
+| Deploy command | `bun run deploy:site` (`wrangler deploy`) | `bun run preview:site` (`wrangler deploy --env preview`) |
+| Builds for preview branches | Off | Off |
+| Build variable | `BUN_VERSION=1.4.3`, matching CI | `BUN_VERSION=1.4.3` |
+| Address | `notato.dev` | `preview.notato.dev` |
 
-The preview is a second Worker, `notato-site-preview`, defined by `env.preview` in `wrangler.json`, so the
-`preview.notato.dev` custom domain never touches production. The first `develop` build creates it and attaches
-the domain, which needs `notato.dev` to be a zone in the same Cloudflare account. `site/deploy-preview.ts`
-publishes only `develop`, so other branches cannot replace the shared preview.
+The preview Worker is the `env.preview` block of `wrangler.json`; its custom domain never touches production, and
+it needs `notato.dev` to be a zone in the same Cloudflare account. `site/deploy-preview.ts` publishes only
+`develop`, so no other branch can replace the shared preview.
 
 Cloudflare installs dependencies from `bun.lock` before building. `WORKERS_CI_BRANCH`, supplied by Cloudflare,
 determines the build mode automatically: `main` is production, and other branches are previews. Remove any old
