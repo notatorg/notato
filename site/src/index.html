@@ -222,37 +222,33 @@
       <article class="mode run-card">
         <h3>On your machine</h3>
         <p class="run-sub">Free and open source</p>
-        <p>Run <code>npx notato</code> next to your app. Notes, the board and your agent's tools stay on your computer. No account needed.</p>
+        <p>Run <code>npx notato</code> next to your app. Notes, the board and your agent's tools stay on your computer. No account to make and no server to look after.</p>
         <a class="run-link" href="docs/index.html">Get started locally</a>
       </article>
-      <article class="mode run-card">
-        <h3>A server you run</h3>
-        <p class="run-sub">Open source, self-managed</p>
-        <p>Run <code>npx notato serve</code> where testers and teammates can reach it. You choose the hosting and who gets access, and you look after it.</p>
-        <a class="run-link" href="docs/teams.html">Testers and servers</a>
-      </article>
       <article class="mode run-card run-cloud">
-        <h3>The full self-hosted server</h3>
-        <p class="run-sub">Open source, with accounts &middot; Docker Compose</p>
-        <p>Accounts, workspaces, invitations, pull request reviews and integrations on your own Postgres, S3-compatible storage and email. One command brings up everything, or use what you already run.</p>
+        <h3>For a team or testers</h3>
+        <p class="run-sub">Free and open source &middot; Docker Compose</p>
+        <p>Run the full server where other people can reach it: accounts and invitations, shared workspaces, pull request reviews and tool connections. It uses your own Postgres, storage and email, and one command brings it all up.</p>
         <a class="run-link" href="docs/self-hosting.html">Self-hosting guide</a>
       </article>
     </div>
+    <p class="small-print run-note">Only need testers to send you notes, without accounts? <code>npx notato serve</code> is a smaller shared server that uses project tokens. See <a href="docs/teams.html">Testers and servers</a>.</p>
     <div class="table-wrap">
       <table class="compare">
-        <caption class="sr-only">How the three ways to run Notato compare</caption>
-        <thead><tr><th scope="col">&nbsp;</th><th scope="col">On your machine</th><th scope="col">A server you run</th><th scope="col">The full self-hosted server</th></tr></thead>
+        <caption class="sr-only">How running Notato on your machine compares with running it for a team</caption>
+        <thead><tr><th scope="col">&nbsp;</th><th scope="col">On your machine</th><th scope="col">For a team or testers</th></tr></thead>
         <tbody>
-          <tr><th scope="row">Feedback capture, board and agent tools</th><td>Included</td><td>Included</td><td>Included</td></tr>
-          <tr><th scope="row">Who runs it</th><td>You</td><td>Your organisation</td><td>You or your organisation</td></tr>
-          <tr><th scope="row">Accounts</th><td>None needed</td><td>Project tokens, set up by you</td><td>Your own, with invitations and optional two-factor sign-in</td></tr>
-          <tr><th scope="row">Shared access</th><td>Your machine</td><td>You set up access and hosting</td><td>Workspaces and teams</td></tr>
-          <tr><th scope="row">Tool connections</th><td>Open webhook and extension tools, set up by you</td><td>Open tools, managed by your operator</td><td>GitHub, Azure DevOps, Linear, Jira, Slack, Teams and webhooks, when you configure them</td></tr>
-          <tr><th scope="row">Background workflows</th><td>You run your own tooling</td><td>You run your own tooling</td><td>Included, with no subscription</td></tr>
+          <tr><th scope="row">Best for</th><td>Building and checking your own app</td><td>Several people, or testers outside your team</td></tr>
+          <tr><th scope="row">Who can use it</th><td>Just you</td><td>People you invite, in shared workspaces</td></tr>
+          <tr><th scope="row">Sign-in</th><td>None</td><td>Email and password, with optional two-factor</td></tr>
+          <tr><th scope="row">Where your notes live</th><td>A folder on your computer</td><td>Your own Postgres and storage bucket</td></tr>
+          <tr><th scope="row">What you run</th><td><code>npx notato</code></td><td>One Docker Compose file</td></tr>
+          <tr><th scope="row">Capture, board and agent tools</th><td>Included</td><td>Included</td></tr>
+          <tr><th scope="row">Pull request reviews and integrations</th><td>Webhooks and the extension</td><td>Also GitHub, Azure DevOps, Linear, Jira, Slack and Teams, once you configure them</td></tr>
         </tbody>
       </table>
     </div>
-    <p class="small-print">Every part is MIT licensed: the SDKs, the command line, both servers and the board. Nothing here needs an account with us or a subscription.</p>
+    <p class="small-print">Every part is MIT licensed: the SDKs, the command line, the servers and the board. Nothing here needs an account with us or a subscription.</p>
   </div>
 </section>
 

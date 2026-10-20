@@ -4966,6 +4966,12 @@ code.h-msg {
     font-weight: 600;
     text-underline-offset: 3px;
 }
+.run-cards {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.run-note {
+    margin-top: 16px;
+}
 .run-card {
     padding: 22px;
     border: 1px solid var(--line);
@@ -4997,7 +5003,7 @@ code.h-msg {
 }
 .compare {
     width: 100%;
-    min-width: 640px;
+    min-width: 520px;
     border-collapse: collapse;
     font-size: 15.5px;
 }
