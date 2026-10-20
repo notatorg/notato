@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, it } from "bun:test";
 import { createHmac } from "node:crypto";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { PGlite } from "@electric-sql/pglite";
 import type { Pool } from "pg";
 import { InstanceAuth } from "../src/better-auth.ts";
@@ -508,7 +510,7 @@ async function fullServer(
     const { mkdtempSync, rmSync } = await import("node:fs");
     const f = await fixture(mode, extraEnv);
     const { auth, db } = f;
-    const dir = mkdtempSync("/private/tmp/notato-full-auth-");
+    const dir = mkdtempSync(join(tmpdir(), "notato-full-auth-"));
     const store = await PostgresStore.open({
         async query<T>(sql: string, params: unknown[] = []) {
             return (await db.query<T>(sql, params)).rows;
