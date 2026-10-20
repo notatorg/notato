@@ -8,6 +8,7 @@
         "ios": "expo start --ios"
     },
     "dependencies": {
+        "@noble/hashes": "^2.4.0",
         "expo": "~57.0.27",
         "expo-file-system": "~57.0.7",
         "expo-sharing": "~57.0.22",

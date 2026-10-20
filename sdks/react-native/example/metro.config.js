@@ -6,7 +6,7 @@ const { getDefaultConfig } = require("expo/metro-config");
 
 const sdk = path.resolve(__dirname, "..");
 const sdkSource = path.join(sdk, "src");
-// fflate is the package's own dependency, which an app installing it gets; here the app has its own copy.
+// The SDK's runtime dependencies also come from this app, as they would when installing its published package.
 const SHARED = [
     "react",
     "react-native",
@@ -14,6 +14,7 @@ const SHARED = [
     "expo-file-system",
     "expo-sharing",
     "fflate",
+    "@noble/hashes",
 ];
 
 const config = getDefaultConfig(__dirname);
