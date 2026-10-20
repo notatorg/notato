@@ -4,6 +4,9 @@ Every Notato package is released together, at one version: the `notato` command 
 
 ## 0.3.0
 
+- **Self-hosted server.** The full server (accounts, workspaces, invitations, optional two-factor authentication, reviews and integrations) is MIT and runs from one Docker Compose file on Postgres, S3-compatible storage and standard SMTP; `ghcr.io/notatorg/notato-server` is published beside the developer image. The `npx notato` SQLite loop is unchanged. See [deploy/self-hosted](deploy/self-hosted/README.md), including backups, restore and upgrade/rollback.
+- **Change password** under Settings → Account, with the current password and an option to sign out other devices. The instance administrator is reminded to replace the generated password until they do.
+
 - **Quieter feedback cards.** Browser, React, Angular and native SDKs keep secondary actions under More options. “Hide from agent” and “Hide reply from agent” replace People only and Aside, with an indicator before a private reply is sent. Completion states remain Resolved and Dismissed. Revert is available only for resolved changes, with the server enforcing the same rule.
 
 - Enforce People only on direct MCP reads and agent-token API reads, exports and screenshots. Private event changes clear an agent's cached note without sending its contents; only people can change visibility.

@@ -54,6 +54,8 @@ export interface ManagedAuth {
     reauthenticate?(subject: string, password: string): Promise<boolean>;
     activeUser?(subject: string): Promise<boolean>;
     isProtectedUser?(subject: string): Promise<boolean>;
+    /** True while the protected administrator still signs in with the generated password from the settings file. */
+    bootstrapPasswordInUse?(email: string): Promise<boolean>;
     deleteUser?(subject: string): Promise<void>;
     allowsSignup?(email: string): boolean;
 }

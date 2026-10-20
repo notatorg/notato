@@ -4,6 +4,7 @@ import { DataControls } from "./DataControls.tsx";
 import { EmailPreferences } from "./EmailPreferences.tsx";
 import { usePageTitle } from "./Layout.tsx";
 import { MfaSettings } from "./Mfa.tsx";
+import { PasswordSettings } from "./PasswordSettings.tsx";
 import { ProfileSettings } from "./ProfileSettings.tsx";
 
 /**
@@ -19,6 +20,7 @@ export function AccountPage({ me }: { me: Me }) {
                 across every workspace you belong to.
             </p>
             <ProfileSettings me={me} />
+            <PasswordSettings />
             <MfaSettings />
             <AccountSecurity me={me} show="sessions" />
             <EmailPreferences enabled={Boolean(me.emailPreferencesEnabled)} />

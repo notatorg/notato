@@ -30,6 +30,8 @@ COPY --from=build /src/node_modules ./node_modules
 COPY --from=build /src/packages ./packages
 COPY --from=build /src/services ./services
 COPY --from=build /src/sdks/browser ./sdks/browser
+ARG VERSION=0.0.0-docker
+LABEL org.opencontainers.image.version=$VERSION org.opencontainers.image.source=https://github.com/notatorg/notato org.opencontainers.image.licenses=MIT
 RUN chmod -R a+rX packages services sdks && mkdir /data && chown bun:bun /data && chmod 700 /data
 ENV NOTATO_HOST=0.0.0.0 NOTATO_PORT=4799 NOTATO_DIR=/data NOTATO_CONFIG=/data/notato.config.json NOTATO_WEB_DIST=/app/services/board/dist NODE_ENV=production
 USER bun

@@ -368,6 +368,93 @@ it("supports password reset through email and invalidates previous sessions", as
     ).toBe(200);
 });
 
+it("changes a password with the current one, without email, and refuses a wrong or short one", async () => {
+    const { auth, sent, browser } = await fixture();
+    const b = browser();
+    const email = "admin@example.test";
+    await b.call("/sign-in/email", { email, password: "test administrator password" });
+    const here = b.cookie();
+    const before = sent.length;
+    const change = (currentPassword: string, newPassword: string) =>
+        b.call("/change-password", { currentPassword, newPassword, revokeOtherSessions: false });
+    expect((await change("not the current password", "replacement account password")).status).toBe(
+        400
+    );
+    expect((await change("test administrator password", "too short")).status).toBe(400);
+    expect(
+        (await change("test administrator password", "replacement account password")).status
+    ).toBe(200);
+    // No email is involved, and this device stays signed in.
+    expect(sent.length).toBe(before);
+    expect(
+        await auth.verifyRequest(
+            new Request("http://localhost:4799/", { headers: { cookie: here } })
+        )
+    ).not.toBeNull();
+    const fresh = browser();
+    expect(
+        (await fresh.call("/sign-in/email", { email, password: "test administrator password" }))
+            .status
+    ).toBe(401);
+    expect(
+        (await fresh.call("/sign-in/email", { email, password: "replacement account password" }))
+            .status
+    ).toBe(200);
+});
+
+it("reports the generated administrator password until it is changed, and only for the administrator", async () => {
+    const { auth, browser } = await fixture("open");
+    const email = "admin@example.test";
+    expect(await auth.bootstrapPasswordInUse(email)).toBe(true);
+    expect(await auth.bootstrapPasswordInUse("someone@example.test")).toBe(false);
+    const b = browser();
+    await b.call("/sign-in/email", { email, password: "test administrator password" });
+    expect(
+        (
+            await b.call("/change-password", {
+                currentPassword: "test administrator password",
+                newPassword: "replacement account password",
+            })
+        ).status
+    ).toBe(200);
+    expect(await auth.bootstrapPasswordInUse(email)).toBe(false);
+});
+
+it("does not reveal which addresses have accounts when signing in, signing up or asking for a reset", async () => {
+    const { call, sent } = await fixture("open");
+    const body = async (response: Response) => ({
+        status: response.status,
+        text: (await response.text()).replace(/"id":"[^"]+"|"(created|updated)At":"[^"]+"/g, ""),
+    });
+    const wrong = await body(
+        await call("/sign-in/email", {
+            email: "admin@example.test",
+            password: "a wrong password!!",
+        })
+    );
+    const unknown = await body(
+        await call("/sign-in/email", {
+            email: "nobody@example.test",
+            password: "a wrong password!!",
+        })
+    );
+    expect(unknown).toEqual(wrong);
+    const before = sent.length;
+    const known = await body(
+        await call("/request-password-reset", { email: "admin@example.test" })
+    );
+    const missing = await body(
+        await call("/request-password-reset", { email: "nobody@example.test" })
+    );
+    expect(missing).toEqual(known);
+    expect(sent.length).toBeLessThanOrEqual(before + 1);
+    const signup = (email: string) =>
+        call("/sign-up/email", { name: "Someone", email, password: "a perfectly good password" });
+    const taken = await signup("admin@example.test");
+    const fresh = await signup("fresh@example.test");
+    expect(taken.status).toBe(fresh.status);
+});
+
 it("enrolls optional TOTP, challenges future logins and accepts a recovery code once", async () => {
     const { auth, browser } = await fixture();
     const b = browser();

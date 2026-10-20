@@ -159,6 +159,12 @@ export function aboutCaller(
                 ? false
                 : !accounts.managed || Boolean(accounts.managed.deleteUser),
         instanceAdmin: principal?.kind === "member" && principal.instanceAdmin === true,
+        ...(principal?.kind === "member" &&
+        principal.instanceAdmin &&
+        principal.email &&
+        (await accounts.managed?.bootstrapPasswordInUse?.(principal.email))
+            ? { bootstrapPasswordInUse: true }
+            : {}),
         billingEnabled: Boolean(options.billing),
         ...(accounts.managed ? { identity: accounts.managed.config } : {}),
         ...(options.beta ? { betaEnabled: true } : {}),

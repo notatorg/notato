@@ -4,6 +4,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 const originalDocument = globalThis.document;
 globalThis.document ??= { documentElement: { dataset: {} } } as unknown as Document;
 const { AccountPage } = await import("../src/AccountPage.tsx");
+const { BootstrapPasswordNotice } = await import("../src/PasswordSettings.tsx");
 globalThis.document = originalDocument;
 
 const me = {
@@ -31,6 +32,20 @@ it("puts what belongs to the person on its own page, in the board's settings lay
     expect(html).not.toContain("Usage");
 });
 
+it("lets a person change their password with the current one, before two-factor", () => {
+    const html = renderToStaticMarkup(<AccountPage me={me} />);
+    expect(html).toContain("Change password");
+    expect(html).toContain('autoComplete="current-password"');
+    expect(html).toContain("Sign out my other devices");
+    expect(html.indexOf("Change password")).toBeLessThan(html.indexOf("Two-factor authentication"));
+});
+
 it("hides email choices until the service offers them", () => {
     expect(renderToStaticMarkup(<AccountPage me={me} />)).not.toContain("Email preferences");
+});
+
+it("tells the administrator to replace the generated password, and links to where", () => {
+    const html = renderToStaticMarkup(<BootstrapPasswordNotice />);
+    expect(html).toContain("generated for this instance");
+    expect(html).toContain('href="#/settings/account"');
 });

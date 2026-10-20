@@ -29,9 +29,11 @@ Do not add `--volumes` unless you intend to delete that instance's data.
 
 Better Auth runs inside Notato, with identity tables in the same Postgres database as application records. Its API is `/api/auth`; no provider URL, browser API key, external identity service or CAPTCHA account is required. Browser sessions use HttpOnly cookies, and every application request revalidates the current identity session. Project app and MCP tokens retain their separate permissions and workspace scope.
 
-On the first startup, `NOTATO_ADMIN_EMAIL` and `NOTATO_ADMIN_PASSWORD` create the protected instance administrator. Set `NOTATO_ADMIN_NAME` for its initial display name; the default is `Instance administrator`. Its identity is pinned by ID in Postgres and cannot be deleted, demoted or suspended through Notato. It also owns an ordinary workspace and can use the whole product. Subsequent startups preserve the account, name and password; changing bootstrap settings does not reset an existing account. Use password recovery to reset its password.
+On the first startup, `NOTATO_ADMIN_EMAIL` and `NOTATO_ADMIN_PASSWORD` create the protected instance administrator. Set `NOTATO_ADMIN_NAME` for its initial display name; the default is `Instance administrator`. Its identity is pinned by ID in Postgres and cannot be deleted, demoted or suspended through Notato. It also owns an ordinary workspace and can use the whole product. Subsequent startups preserve the account, name and password; changing bootstrap settings does not reset an existing account.
 
-Every account, including the protected administrator, can change its display name under **Settings → Account → Profile**. Changes appear on the board and in collaborator lists. Names must contain 1–100 characters. Changing a name leaves the account ID, administrator role and workspace names unchanged.
+The generated password sits in plain text in `.env`, so **change it after your first sign-in** under **Settings → Account → Password**. Until you do, the board shows the administrator a reminder; it disappears once the password no longer matches the one in `.env`. Afterwards `NOTATO_ADMIN_PASSWORD` is only used if the database is created again, and you can remove it from the file. If you forget the password, use **Forgot password** on the sign-in page, which needs working SMTP.
+
+Every account can change its own password under **Settings → Account → Password** with the current one (12–256 characters), with no email involved. "Sign out my other devices" is on by default. Every account, including the protected administrator, can change its display name under **Settings → Account → Profile**. Changes appear on the board and in collaborator lists. Names must contain 1–100 characters. Changing a name leaves the account ID, administrator role and workspace names unchanged.
 
 Instance → Invitations sends account invitations through SMTP. Registered users can invite collaborators to workspaces and projects. Each invitation is bound to an email address and expiry; recipients choose a password and verify their address.
 
@@ -93,6 +95,27 @@ docker compose --env-file .env start objects server
 ```
 
 Use your storage system's consistent snapshot or replication procedure for larger deployments. Test a restore into new volumes with the same keys before relying on a backup. Restore Postgres and the matching object snapshot together. Keep writes stopped during restore; change the canonical public origin for an isolated recovery drill. The lightweight developer server's SQLite backup commands do not back up this system.
+
+## Upgrade and roll back
+
+Releases publish two images: `ghcr.io/notatorg/notato` (the SQLite developer loop) and `ghcr.io/notatorg/notato-server` (this full server). Versions move together with the SDKs, so server 0.3 works with SDK 0.3. Read the [changelog](../../CHANGELOG.md) before upgrading.
+
+1. **Back up first**, as in [Backups and recovery](#backups-and-recovery): Postgres, the object store and `.env`. This is also how you roll back.
+2. Move to the new release. From a checkout, check out the release tag and rebuild; to run the published image instead, name it in `.env` and skip the build:
+
+```sh
+# from a checkout of the new tag
+docker compose -f deploy/self-hosted/compose.yml --env-file deploy/self-hosted/.env up --build -d
+
+# or, using the published image
+echo 'NOTATO_IMAGE=ghcr.io/notatorg/notato-server:0.3.0' >> deploy/self-hosted/.env
+docker compose -f deploy/self-hosted/compose.yml --env-file deploy/self-hosted/.env pull server
+docker compose -f deploy/self-hosted/compose.yml --env-file deploy/self-hosted/.env up -d --no-build
+```
+
+3. The server migrates its own tables on startup (Notato's under the `notato` schema, with a recorded schema version, and Better Auth's `notato_auth_*` tables), under a lock, so several replicas starting together are safe. Check `docker compose ... logs server` and sign in.
+
+Schema changes only move forward. A server that finds a database newer than itself refuses to start ("Postgres schema N is newer than this build; upgrade notato") instead of guessing, so **you cannot roll back by starting an older image on an upgraded database**. To roll back, stop the server, restore the pre-upgrade Postgres dump and object snapshot into the volumes, and start the previous image. Keep `NOTATO_AUTH_SECRET` and `NOTATO_PLUGIN_KEY` unchanged through every upgrade and restore.
 
 ## Development and verification
 

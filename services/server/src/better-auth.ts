@@ -343,6 +343,20 @@ export class InstanceAuth implements ManagedAuth {
     async isProtectedUser(subject: string) {
         return subject === this.rootId;
     }
+    private bootstrapPasswordChanged = false;
+    async bootstrapPasswordInUse(email: string) {
+        const password = this.env.NOTATO_ADMIN_PASSWORD;
+        if (this.bootstrapPasswordChanged || !password || !this.rootId) return false;
+        const root = await this.pool.query<{ email: string }>(
+            "SELECT email FROM notato_auth_user WHERE id=$1",
+            [this.rootId]
+        );
+        if (root.rows[0]?.email.toLowerCase() !== email.toLowerCase()) return false;
+        if (await this.reauthenticate(this.rootId, password)) return true;
+        // A password only ever moves away from the generated one, so this stays settled until a restart.
+        this.bootstrapPasswordChanged = true;
+        return false;
+    }
     async reauthenticate(subject: string, password: string) {
         const result = await this.pool.query<{ password: string }>(
             'SELECT password FROM notato_auth_account WHERE "userId"=$1 AND "providerId"=\'credential\'',

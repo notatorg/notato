@@ -23,6 +23,7 @@ import { EmailWelcome, useEmailPreferences } from "./EmailPreferences.tsx";
 import { GetStarted } from "./GetStarted.tsx";
 import { forgetIdentitySession, HostedLogin } from "./HostedLogin.tsx";
 import { InstanceAdmin } from "./InstanceAdmin.tsx";
+import { BootstrapPasswordNotice } from "./PasswordSettings.tsx";
 import { Plugins } from "./Plugins.tsx";
 import { AccountRefreshContext } from "./ProfileSettings.tsx";
 import { ProjectCollaboration } from "./ProjectCollaboration.tsx";
@@ -142,6 +143,7 @@ function CloudFrame({ me, refresh, children }: { me: Me; refresh(): void; childr
                     {error}
                 </p>
             ) : null}
+            {me.bootstrapPasswordInUse && <BootstrapPasswordNotice />}
             <AccountRefreshContext.Provider value={refresh}>
                 {children}
             </AccountRefreshContext.Provider>

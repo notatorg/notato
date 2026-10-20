@@ -12,6 +12,8 @@ export * from "@notato/board";
 export type Me = CoreMe & {
     isAdmin?: boolean;
     instanceAdmin?: boolean;
+    /** The instance administrator still signs in with the generated password from the settings file. */
+    bootstrapPasswordInUse?: boolean;
     billingEnabled?: boolean;
     betaEnabled?: boolean;
     emailPreferencesEnabled?: boolean;

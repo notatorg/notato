@@ -1,6 +1,9 @@
 name: notato
 services:
   server:
+    # Built from this checkout by default. To run a published release instead, set NOTATO_IMAGE (see README) and
+    # use `up -d --no-build`.
+    image: ${NOTATO_IMAGE:-notato-server:local}
     build:
       context: ../..
       dockerfile: services/Dockerfile
