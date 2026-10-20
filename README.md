@@ -416,9 +416,9 @@ docker run -p 4747:4747 -v notato:/data -e NOTATO_ADMIN_PASSWORD=… ghcr.io/not
 
 ## Full self-hosted server
 
-The full Notato server is open source under MIT. It adds accounts, workspaces, collaboration, integrations, workflows and pull-request reviews to the same SDK and MCP APIs. Run it with Docker Compose, Postgres, Better Auth, S3-compatible screenshot storage and standard SMTP. The supplied stack includes local object storage and a mock email inbox, so no SaaS account is required.
+The full Notato server is open source under MIT. It adds accounts, workspaces, collaboration, integrations, workflows and pull-request reviews to the same SDK and MCP APIs. Run it with Docker Compose, Postgres, Better Auth, S3-compatible screenshot storage and standard SMTP. The supplied stack includes Postgres, local object storage and a mock email inbox, so no SaaS account is required, and each of those can be swapped for your own Postgres, S3-compatible bucket or SMTP server.
 
-Registration is invitation-only by default, with a protected instance administrator and optional per-account two-factor authentication. Public registration is configurable. All product features are available when self-hosting; the lightweight SQLite developer loop above stays as it is. See the [self-hosting guide](deploy/self-hosted/README.md) and [server architecture](services/README.md).
+Registration is invitation-only by default, with a protected instance administrator and optional per-account two-factor authentication. Public registration is configurable. All product features are available when self-hosting; the lightweight SQLite developer loop above stays as it is. See the [self-hosting guide](deploy/self-hosted/README.md) (which covers using your own Postgres, storage and email, HTTPS, backups and upgrades) and [server architecture](services/README.md).
 
 ## Reviewing related feedback
 

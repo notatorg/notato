@@ -1,0 +1,20 @@
+# Reach Notato through a Cloudflare Tunnel: no open ports and no certificate on your side.
+#
+#   docker compose -f compose.yml -f examples/compose.tunnel.yml --env-file .env up -d
+#
+# Create the tunnel in the Cloudflare Zero Trust dashboard, give it a public hostname whose service is
+# http://server:4799, and put its token in .env as CLOUDFLARE_TUNNEL_TOKEN. Also set NOTATO_PUBLIC_URL to that
+# hostname. See docs/reverse-proxy.md. This file is not covered by the repository's tests.
+services:
+  server:
+    # Only the tunnel reaches Notato now.
+    ports: !reset []
+    environment:
+      NOTATO_TRUST_PROXY: "1"
+  tunnel:
+    image: cloudflare/cloudflared:latest
+    restart: unless-stopped
+    command: tunnel --no-autoupdate run
+    environment:
+      TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN:?Set CLOUDFLARE_TUNNEL_TOKEN}
+    depends_on: [server]

@@ -12,8 +12,9 @@ services:
       - "127.0.0.1:${NOTATO_HTTP_PORT:-4799}:4799"
     environment:
       NOTATO_PUBLIC_URL: ${NOTATO_PUBLIC_URL:-http://localhost:4799}
-      NOTATO_DATABASE_URL: postgres://notato:${NOTATO_POSTGRES_PASSWORD:?Run init.ts first}@postgres:5432/notato
-      NOTATO_DATABASE_SSL: disable
+      NOTATO_DATABASE_URL: ${NOTATO_DATABASE_URL:-postgres://notato:${NOTATO_POSTGRES_PASSWORD:-}@postgres:5432/notato}
+      NOTATO_DATABASE_SSL: ${NOTATO_DATABASE_SSL:-verify-full}
+      NOTATO_DATABASE_CA_FILE: ${NOTATO_DATABASE_CA_FILE:-}
       NOTATO_AUTH_SECRET: ${NOTATO_AUTH_SECRET:?Run init.ts first}
       NOTATO_ADMIN_EMAIL: ${NOTATO_ADMIN_EMAIL:?Set an administrator email}
       NOTATO_ADMIN_NAME: ${NOTATO_ADMIN_NAME:-Instance administrator}
@@ -22,38 +23,47 @@ services:
       NOTATO_SIGNUP_ALLOWED_EMAILS: ${NOTATO_SIGNUP_ALLOWED_EMAILS:-}
       NOTATO_RESOURCE_LIMITS: ${NOTATO_RESOURCE_LIMITS:-}
       NOTATO_PLUGIN_KEY: ${NOTATO_PLUGIN_KEY:?Run init.ts first}
-      NOTATO_S3_ENDPOINT: ${NOTATO_S3_ENDPOINT:-http://objects:8333}
+      NOTATO_S3_ENDPOINT: ${NOTATO_S3_ENDPOINT:-}
       NOTATO_S3_BUCKET: ${NOTATO_S3_BUCKET:-screenshots}
       NOTATO_S3_REGION: ${NOTATO_S3_REGION:-us-east-1}
-      NOTATO_S3_FORCE_PATH_STYLE: ${NOTATO_S3_FORCE_PATH_STYLE:-true}
-      NOTATO_S3_ACCESS_KEY_ID: ${NOTATO_S3_ACCESS_KEY_ID:?Run init.ts first}
-      NOTATO_S3_SECRET_ACCESS_KEY: ${NOTATO_S3_SECRET_ACCESS_KEY:?Run init.ts first}
-      NOTATO_SMTP_HOST: ${NOTATO_SMTP_HOST:-mailpit}
-      NOTATO_SMTP_PORT: ${NOTATO_SMTP_PORT:-1025}
-      NOTATO_SMTP_SECURE: ${NOTATO_SMTP_SECURE:-false}
+      NOTATO_S3_FORCE_PATH_STYLE: ${NOTATO_S3_FORCE_PATH_STYLE:-false}
+      NOTATO_S3_ACCESS_KEY_ID: ${NOTATO_S3_ACCESS_KEY_ID:-}
+      NOTATO_S3_SECRET_ACCESS_KEY: ${NOTATO_S3_SECRET_ACCESS_KEY:-}
+      NOTATO_BLOB_CACHE_MB: ${NOTATO_BLOB_CACHE_MB:-}
+      NOTATO_SMTP_HOST: ${NOTATO_SMTP_HOST:?Set NOTATO_SMTP_HOST, or enable the mail profile}
+      NOTATO_SMTP_PORT: ${NOTATO_SMTP_PORT:-}
+      NOTATO_SMTP_SECURE: ${NOTATO_SMTP_SECURE:-}
       NOTATO_SMTP_USER: ${NOTATO_SMTP_USER:-}
       NOTATO_SMTP_PASSWORD: ${NOTATO_SMTP_PASSWORD:-}
-      NOTATO_EMAIL_FROM: ${NOTATO_EMAIL_FROM:-notato@example.test}
+      NOTATO_EMAIL_FROM: ${NOTATO_EMAIL_FROM:?Set NOTATO_EMAIL_FROM}
       NOTATO_TRUST_PROXY: ${NOTATO_TRUST_PROXY:-0}
+    # The services below are optional: each belongs to a profile, listed in COMPOSE_PROFILES in .env. Remove a profile
+    # to use your own Postgres (db), S3-compatible storage (storage) or SMTP server (mail) instead.
     depends_on:
       postgres:
         condition: service_healthy
+        required: false
       objects:
         condition: service_healthy
+        required: false
       mailpit:
         condition: service_started
+        required: false
     volumes:
       - server-data:/data
     security_opt:
       - no-new-privileges:true
     cap_drop: [ALL]
   postgres:
+    profiles: [db]
     image: postgres:17@sha256:2d2b8998d31037bf721cfdf764d76ba74171b4fab3431b7f72c27c56ddbdf9e3
     restart: unless-stopped
     environment:
       POSTGRES_USER: notato
       POSTGRES_DB: notato
-      POSTGRES_PASSWORD: ${NOTATO_POSTGRES_PASSWORD:?Run init.ts first}
+      # Compose reads every service's settings, even when its profile is off, so these cannot be required here.
+      # Postgres refuses to start without a password; init.ts writes strong ones for the bundled services.
+      POSTGRES_PASSWORD: ${NOTATO_POSTGRES_PASSWORD:-}
     volumes:
       - postgres-data:/var/lib/postgresql/data
     healthcheck:
@@ -62,12 +72,13 @@ services:
       timeout: 5s
       retries: 12
   objects:
+    profiles: [storage]
     image: chrislusf/seaweedfs:4.48@sha256:4e61d15fd35994cb1e43e1e553dff106794841fd9a99ade2fc8c8bfce4d7872d
     command: [mini, -dir=/data]
     restart: unless-stopped
     environment:
-      AWS_ACCESS_KEY_ID: ${NOTATO_S3_ACCESS_KEY_ID:?Run init.ts first}
-      AWS_SECRET_ACCESS_KEY: ${NOTATO_S3_SECRET_ACCESS_KEY:?Run init.ts first}
+      AWS_ACCESS_KEY_ID: ${NOTATO_S3_ACCESS_KEY_ID:-}
+      AWS_SECRET_ACCESS_KEY: ${NOTATO_S3_SECRET_ACCESS_KEY:-}
       S3_BUCKET: ${NOTATO_S3_BUCKET:-screenshots}
     volumes:
       - object-data:/data
@@ -77,6 +88,7 @@ services:
       timeout: 5s
       retries: 12
   mailpit:
+    profiles: [mail]
     image: axllent/mailpit:v1.31.6@sha256:23fe39e81bde596a918000b3135c0f85dc8bb4c9ea6be274b051143f3e300387
     restart: unless-stopped
     ports:

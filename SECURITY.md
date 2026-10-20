@@ -10,7 +10,7 @@ It helps to include:
 
 - what an attacker can do, and what they need first (a page open in your browser, a project token, a place on your network)
 - the steps to reproduce it, or a proof of concept
-- the version (`npx notato --version`, or the SDK's) and how Notato was run: `npx notato`, `notato dev`, `notato serve`, the Docker image, the browser extension or a mobile SDK
+- the version (`npx notato --version`, or the SDK's) and how Notato was run: `npx notato`, `notato dev`, `notato serve`, the Docker image, the self-hosted server (`ghcr.io/notatorg/notato-server` or the Compose deployment), the browser extension or a mobile SDK
 
 We will confirm we have it, keep you told as we work on a fix, and publish a GitHub security advisory when the fix is released. Tell us if you would like to be credited in it.
 
@@ -20,7 +20,7 @@ Notato is before 1.0. Fixes go into the next release, so please check that the p
 
 ## What is in scope
 
-Everything in this repository: the `notato` command and server, the board, MCP over stdio and HTTP, the dev tunnel, webhooks, the browser extension, the page script and every SDK. Some examples of what we would want to hear about:
+Everything in this repository: the `notato` command and server, the full self-hosted server (`services/`: accounts, sign-in, two-factor authentication, invitations, workspaces, integrations, and the Docker Compose deployment in `deploy/self-hosted/` with its Postgres, storage and email settings), the board, MCP over stdio and HTTP, the dev tunnel, webhooks, the browser extension, the page script and every SDK. Some examples of what we would want to hear about:
 
 - a web page, or anything else that is not you, reaching the server or acting as your agent
 - a project token or the device token reaching anything other than its own server

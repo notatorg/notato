@@ -1,6 +1,7 @@
 import { closeSync, constants, fstatSync, openSync, readFileSync } from "node:fs";
 import { parseArgs } from "node:util";
 import { resourceLimitsFromEnv, signupPolicyFromEnv } from "@notato/service-server";
+import { dropBlankSettings } from "./environment.ts";
 export interface DeploymentCheck {
     id: string;
     status: "pass" | "fail" | "manual";
@@ -151,7 +152,7 @@ export function readDeploymentEnv(path: string): Record<string, string> {
                 );
             env[key] = value;
         }
-        return env;
+        return dropBlankSettings(env);
     } finally {
         closeSync(fd);
     }

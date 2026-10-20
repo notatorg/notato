@@ -15,6 +15,9 @@ const path = values.output ?? join(import.meta.dir, ".env");
 writeFileSync(
     path,
     [
+        "# Bundled Postgres, S3-compatible storage and mock inbox. To use your own, remove its profile (db, storage, mail)",
+        "# and set its NOTATO_* settings: see README.md.",
+        "COMPOSE_PROFILES=db,storage,mail",
         "NOTATO_PUBLIC_URL=http://localhost:4799",
         "NOTATO_HTTP_PORT=4799",
         "NOTATO_MAIL_PORT=8026",
@@ -25,6 +28,12 @@ writeFileSync(
         `NOTATO_POSTGRES_PASSWORD=${secret()}`,
         `NOTATO_S3_ACCESS_KEY_ID=${randomBytes(12).toString("hex")}`,
         `NOTATO_S3_SECRET_ACCESS_KEY=${secret()}`,
+        "NOTATO_DATABASE_SSL=disable",
+        "NOTATO_S3_ENDPOINT=http://objects:8333",
+        "NOTATO_S3_FORCE_PATH_STYLE=true",
+        "NOTATO_SMTP_HOST=mailpit",
+        "NOTATO_SMTP_PORT=1025",
+        "NOTATO_EMAIL_FROM=notato@example.test",
         "NOTATO_SIGNUP_MODE=closed",
         "",
     ].join("\n"),

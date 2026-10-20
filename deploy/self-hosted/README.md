@@ -4,9 +4,25 @@ The full Notato server is MIT and runs without SaaS accounts. Docker Compose sup
 
 The existing `npx notato` developer loop remains on SQLite and local files. Use the full server when you need accounts and a shared instance. No existing developer database or hosted test database is migrated by these instructions.
 
+## Choose your setup
+
+One command brings up everything, and each bundled part can be swapped for something you already run. Which parts run is set by `COMPOSE_PROFILES` in `.env`: `db` is Postgres, `storage` is S3-compatible screenshot storage, `mail` is a mock inbox. Remove a profile and set that part's `NOTATO_*` settings to use your own.
+
+| You have | Do this |
+| --- | --- |
+| Nothing yet | [Start locally](#start-locally): the whole stack, one command |
+| A Postgres server (self-run or managed) | [Use your own Postgres](docs/external-postgres.md) |
+| S3, Cloudflare R2, Backblaze B2 or another bucket | [Use your own screenshot storage](docs/object-storage.md) |
+| An email provider or SMTP server | [Send real email](docs/email.md) |
+| A domain you want people to reach over HTTPS | [Put Notato on the internet](docs/reverse-proxy.md): Caddy, nginx or a Cloudflare Tunnel |
+| Postgres, storage or mail in another container | [`examples/compose.existing-network.yml`](examples/compose.existing-network.yml) joins their Docker network |
+| A running instance and an app to connect | [Connect an app and an agent](docs/connect-an-app.md) |
+
+Mix freely: your own Postgres with the bundled storage and mail is `COMPOSE_PROFILES=storage,mail` plus `NOTATO_DATABASE_URL`. With all three swapped, only the Notato container runs. `.env.example` lists every setting, and `examples/` holds the Compose add-ons.
+
 ## Start locally
 
-From the repository root, with Bun and Docker Compose installed:
+From the repository root, with Bun and Docker Compose 2.24 or later installed:
 
 ```sh
 bun deploy/self-hosted/init.ts --admin-email you@example.com
@@ -15,7 +31,7 @@ docker compose -f deploy/self-hosted/compose.yml --env-file deploy/self-hosted/.
 
 Open **http://localhost:4799** and sign in with the configured administrator email and password. The initializer stores the generated password and keys in `deploy/self-hosted/.env`, with owner-only permissions. It prints no secrets and refuses to replace an existing file. View the password privately, or edit it before the first startup. Keep this file out of Git and backups that are not encrypted. `.env.example` documents settings if you prefer to provide your own values.
 
-Open **http://localhost:8026** for the mock inbox. SMTP stays inside the Compose network. The database and S3 service expose no host ports. Application and inbox ports bind to loopback. If you change the application port, change both `NOTATO_HTTP_PORT` and `NOTATO_PUBLIC_URL`.
+Open **http://localhost:8026** for the mock inbox (the `mail` profile). SMTP stays inside the Compose network. The database and S3 service expose no host ports. Application and inbox ports bind to loopback. If you change the application port, change both `NOTATO_HTTP_PORT` and `NOTATO_PUBLIC_URL`.
 
 The application runs as a non-root user. Postgres, objects, the inbox and application state have separate persistent volumes. Stopping containers preserves data:
 
@@ -24,6 +40,8 @@ docker compose -f deploy/self-hosted/compose.yml --env-file deploy/self-hosted/.
 ```
 
 Do not add `--volumes` unless you intend to delete that instance's data.
+
+**Then:** change the generated administrator password under Settings → Account → Password, [connect an app and an agent](docs/connect-an-app.md), and when you want other people or real email, read [Send real email](docs/email.md) and [Put Notato on the internet](docs/reverse-proxy.md).
 
 ## Accounts and registration
 
@@ -49,42 +67,38 @@ The root administrator exists in every mode. Ordinary accounts cannot grant them
 
 Two-factor authentication is **optional per account** under Settings → Account. TOTP enrollment requires the current password and a valid authenticator code before activation. Save the recovery codes; each works once. Once enabled, future sign-ins must complete the second factor. Enabling public registration does not make MFA compulsory.
 
-## Storage, database and email
+## Settings
 
-| Settings | Purpose |
+Set these in `.env`. The initializer writes the secrets and the bundled-service values; everything else is optional. Blank values count as not set.
+
+| Setting | Purpose |
 | --- | --- |
-| `NOTATO_DATABASE_URL` | Standard `postgres://` or `postgresql://` URL |
-| `NOTATO_DATABASE_SSL` | `verify-full`, or explicit `disable` for a private Docker network; remote connections verify certificates by default |
-| `NOTATO_DATABASE_CA_FILE` | Optional private CA certificate for Postgres TLS |
+| `COMPOSE_PROFILES` | Which bundled services run: `db`, `storage`, `mail` |
+| `NOTATO_PUBLIC_URL` | The address people use, such as `https://notato.example.com`. Used for cookies, emails and origin checks |
+| `NOTATO_HTTP_PORT`, `NOTATO_MAIL_PORT` | Host ports (loopback only) for the app and the mock inbox |
+| `NOTATO_ADMIN_EMAIL`, `NOTATO_ADMIN_NAME`, `NOTATO_ADMIN_PASSWORD` | The protected administrator, created on first start |
 | `NOTATO_AUTH_SECRET` | Stable random signing/encryption secret, at least 32 characters |
-| `NOTATO_S3_ENDPOINT`, `NOTATO_S3_REGION`, `NOTATO_S3_BUCKET` | Any compatible S3 endpoint, region and pre-created private bucket |
-| `NOTATO_S3_ACCESS_KEY_ID`, `NOTATO_S3_SECRET_ACCESS_KEY` | S3 credentials; outside Compose the standard AWS credential chain also works |
-| `NOTATO_S3_FORCE_PATH_STYLE` | `true` for the bundled store; configurable for other endpoints |
-| `NOTATO_BLOB_CACHE_MB` | Verified in-process image cache, default 16 MiB, 0 to disable |
-| `NOTATO_SMTP_HOST`, `NOTATO_SMTP_PORT`, `NOTATO_SMTP_SECURE` | Standard SMTP; `true` means implicit TLS, typically port 465; port 587 can negotiate STARTTLS |
-| `NOTATO_SMTP_USER`, `NOTATO_SMTP_PASSWORD` | Optional paired SMTP credentials |
-| `NOTATO_EMAIL_FROM` | Sender address or `Name <address>` |
-| `NOTATO_PLUGIN_KEY` | Stable 64-character hex encryption key for integration credentials |
+| `NOTATO_PLUGIN_KEY` | Stable 64-character hex key that encrypts integration credentials |
+| `NOTATO_SIGNUP_MODE`, `NOTATO_SIGNUP_ALLOWED_EMAILS` | Who may register: see [Accounts](#accounts-and-registration) |
+| `NOTATO_DATABASE_URL`, `NOTATO_DATABASE_SSL`, `NOTATO_DATABASE_CA_FILE` | Your own Postgres: [guide](docs/external-postgres.md). Default is the bundled one |
+| `NOTATO_POSTGRES_PASSWORD` | The bundled Postgres's password |
+| `NOTATO_S3_ENDPOINT`, `NOTATO_S3_REGION`, `NOTATO_S3_BUCKET`, `NOTATO_S3_FORCE_PATH_STYLE`, `NOTATO_S3_ACCESS_KEY_ID`, `NOTATO_S3_SECRET_ACCESS_KEY`, `NOTATO_BLOB_CACHE_MB` | Screenshot storage: [guide](docs/object-storage.md) |
+| `NOTATO_SMTP_HOST`, `NOTATO_SMTP_PORT`, `NOTATO_SMTP_SECURE`, `NOTATO_SMTP_USER`, `NOTATO_SMTP_PASSWORD`, `NOTATO_EMAIL_FROM` | Email: [guide](docs/email.md) |
+| `NOTATO_TRUST_PROXY` | `1` behind a proxy you control: [guide](docs/reverse-proxy.md) |
+| `NOTATO_RESOURCE_LIMITS` | Optional JSON caps on notes, bytes, projects, workspaces, tokens and members |
+| `NOTATO_IMAGE` | A published image to run instead of building from this checkout |
 
-Mailpit needs no SMTP credentials and captures messages locally. For real delivery, point the SMTP settings at your own mail server or an email provider and configure a verified sender there. The same SMTP adapter sends verification, password recovery and invitation messages. Notato is not tied to the Resend API.
+Screenshots are named by content hash, checked on read, and served only through Notato after project authorization. Keep the bucket private. Postgres holds no image bytes, and the database and object storage are independently replaceable. Resource limits are resource controls, not paid feature gates: by default there is no plan enforcement, monthly quota or one-workspace restriction, and billing stays off unless an operator configures it.
 
-Screenshots are named by content hash, checked on read, and served only through Notato after project authorization. Keep the bucket private; never enable anonymous bucket access. Postgres records do not contain the image bytes. Database and object storage are independently replaceable; using external services is an operator choice.
-
-The optional `NOTATO_RESOURCE_LIMITS` JSON setting can cap workspace usage (notes, bytes, projects, workspaces, tokens and members). Unspecified limits remain unrestricted. These are resource controls, not paid feature gates. Default self-hosting enables no plan enforcement, monthly product quota or one-workspace restriction. Billing remains disabled unless an operator explicitly configures it.
-
-## Expose an instance
-
-Set `NOTATO_PUBLIC_URL=https://notato.example.com`, put a TLS reverse proxy in front of port 4799, preserve the original Host header, and set `NOTATO_TRUST_PROXY=1` only when the proxy is trusted. Keep direct application access restricted to the proxy. The public origin is used for cookies, verification links and browser checks. List each SDK application's permitted origins in its project settings. Browser clients cannot use MCP.
-
-Add integration provider credentials through the board. OAuth credentials are optional deployment settings where a provider requires an OAuth app. Keep `NOTATO_PLUGIN_KEY` stable and save a recovery copy: losing it makes saved credentials unreadable. Existing GitHub, Azure DevOps and issue-tracker adapters, signed webhooks, personal feedback permissions, context assignment and review leases use the shared implementation.
-
-Optional admissions and waitlist management use `NOTATO_BETA_ENABLED=1`; the instance administrator's email is the default admission administrator, or set `NOTATO_BETA_ADMIN_EMAILS`. Management runs in this board, backed by this Postgres database. No separate Supabase function or admin account is needed. Marketing email preferences remain explicitly configurable, including consent evidence and unsubscribe handling. [Independent monitoring](../../services/monitor/README.md) can run on a separate host and send alerts through SMTP.
+Add integration provider credentials through the board. Keep `NOTATO_PLUGIN_KEY` stable and keep a recovery copy: losing it makes saved credentials unreadable. GitHub, Azure DevOps and issue-tracker adapters, signed webhooks, personal feedback permissions, context assignment and review leases are all part of the server. Optional admissions and waitlist management use `NOTATO_BETA_ENABLED=1` (the instance administrator's email is the default admission administrator, or set `NOTATO_BETA_ADMIN_EMAILS`) and run in this board on this Postgres. [Independent monitoring](../../services/monitor/README.md) can run on a separate host and alert through SMTP.
 
 ## Backups and recovery
 
 Back up the **whole Postgres database**, including Better Auth's `notato_auth_*` tables, `notato_instance`, invitations and the `notato` schema. Postgres exports alone do not contain screenshots. Back up the private S3 bucket and the deployment settings, especially `NOTATO_AUTH_SECRET` and `NOTATO_PLUGIN_KEY`, in encrypted storage with a separate recovery copy.
 
-For a simple single-host recovery point, stop application and object writes, take a Postgres dump, and snapshot the object-store volume while it is stopped. Run these from this directory (the Compose project is named `notato`, so volumes are `notato_*` unless you pass `-p`; `docker volume ls` shows the volume names):
+**With your own Postgres or storage**, use their tools instead of the commands below: `pg_dump` against your database ([notes](docs/external-postgres.md#things-to-know)), and your provider's versioning, replication or `rclone` for the bucket ([notes](docs/object-storage.md#backups)). The rule is unchanged: the database and the bucket must come from the same moment, and `.env` (above all `NOTATO_AUTH_SECRET` and `NOTATO_PLUGIN_KEY`) is saved in encrypted storage.
+
+For the bundled stack, a simple single-host recovery point is: stop application and object writes, take a Postgres dump, and snapshot the object-store volume while it is stopped. Run these from this directory (the Compose project is named `notato`, so volumes are `notato_*` unless you pass `-p`; `docker volume ls` shows the volume names):
 
 ```sh
 docker compose --env-file .env stop server

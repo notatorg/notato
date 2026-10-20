@@ -1,6 +1,7 @@
 #!/usr/bin/env bun
 import { main as openMain } from "@notato/cli";
 import pkg from "../package.json";
+import { dropBlankSettings, explainStartupError } from "./environment.ts";
 import { runHealthcheck } from "./healthcheck.ts";
 import { runPreflightCommand } from "./preflight.ts";
 import { runCloudServeCommand } from "./serve.ts";
@@ -30,6 +31,7 @@ const LOCAL_ONLY = new Set([
 ]);
 
 export async function main(argv: string[]): Promise<number> {
+    dropBlankSettings(process.env);
     const [command, ...rest] = argv;
     if (!command || command === "-h" || command === "--help") {
         console.log(HELP);
@@ -44,7 +46,9 @@ export async function main(argv: string[]): Promise<number> {
         if (command === "preflight") return await runPreflightCommand(rest);
         if (command === "healthcheck") return await runHealthcheck();
     } catch (error) {
-        console.error(`notato-server: ${error instanceof Error ? error.message : error}`);
+        console.error(
+            `notato-server: ${explainStartupError(error instanceof Error ? error.message : String(error))}`
+        );
         return 1;
     }
     if (LOCAL_ONLY.has(command)) {
