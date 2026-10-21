@@ -26,6 +26,7 @@ Npm versions were checked against the [npm registry](https://registry.npmjs.org/
 - Peer dependency ranges, minimum deployment targets and Swift's tools-version declaration describe consumer compatibility; they are not requests to install old packages. The development dependencies, samples and lockfiles use the stable baseline above.
 - The optional preview-only MAUI DevFlow sample integration is excluded from the stable baseline. It has no stable upstream package release.
 - The current Mac Catalyst runtime requires applications to target version 17.0 or later; the MAUI sample follows that minimum.
+- Scoped overrides update Angular's pinned Vite patch to 8.3.5 and Expo's Xcode project parser to 4.0.0. The latter removes its old `uuid` dependency; its new Node minimum is below the supported Expo toolchain. Keep the override in both the Bun root and the independently installed Expo example until their upstream ranges catch up.
 
 The current MAUI Apple workloads require Xcode 27.1 to link sample applications. A Mac with Xcode 27.0 can compile the libraries and run their managed tests but cannot finish the current iOS or Mac Catalyst sample builds. CI uses GitHub's managed Xcode runner with `DEVELOPER_DIR` pointing at the stable 27.1 installation; the directory's historical Release Candidate name carries the same build number as Apple's general release.
 
@@ -36,3 +37,7 @@ Run the checks in [CONTRIBUTING](../CONTRIBUTING.md). Native SDKs, examples and 
 For a database major change, exercise a real dump and restore as well as the fresh-stack smoke test. The bundled [PostgreSQL 17-to-18 upgrade](../deploy/self-hosted/docs/postgres-upgrade.md) keeps the old volume for rollback. Updating the image tag never converts existing database files.
 
 Dependabot covers Bun workspaces, the independently locked Expo example, NuGet, both Gradle builds, Flutter, Swift, workflow actions and the deployment images. Routine update PRs target `develop`. Review SDK/toolchain compatibility, regenerate lockfiles and verify immutable pins before promoting a release to `main`.
+
+## Outstanding upstream advisories
+
+The audit still reports two high-severity advisories in the latest stable Expo/Metro tooling dependencies: [braces 3.0.3](https://github.com/advisories/GHSA-vfj7-8cjw-p6xm) and [node-forge 1.4.0](https://github.com/advisories/GHSA-86w9-cpqp-85rv). Neither has an upstream patched release as of this review. Updating to the latest stable versions does not produce a clean audit; recheck these when their maintainers publish fixes.

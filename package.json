@@ -32,6 +32,14 @@
         "test:service": "bun test services",
         "check:service": "bun run lint && bun run typecheck && bun run test:service && bun run build:service"
     },
+    "overrides": {
+        "@angular/build": {
+            "vite": "^8.3.5"
+        },
+        "@expo/config-plugins": {
+            "xcode": "^4.0.0"
+        }
+    },
     "devDependencies": {
         "@biomejs/biome": "^2.6.2",
         "@modelcontextprotocol/sdk": "^1.32.1",

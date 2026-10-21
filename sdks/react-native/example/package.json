@@ -18,6 +18,11 @@
         "react-native": "0.88.0",
         "react-native-view-shot": "6.1.1"
     },
+    "overrides": {
+        "@expo/config-plugins": {
+            "xcode": "^4.0.0"
+        }
+    },
     "devDependencies": {
         "@types/react": "~19.3.0",
         "typescript": "~7.0.2"
