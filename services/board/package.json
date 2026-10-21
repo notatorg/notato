@@ -1,6 +1,6 @@
 {
     "name": "@notato/service-board",
-    "version": "0.3.0",
+    "version": "0.3.1",
     "description": "The full Notato board with accounts, workspaces and integrations.",
     "private": true,
     "type": "module",

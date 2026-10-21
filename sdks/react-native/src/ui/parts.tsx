@@ -441,44 +441,48 @@ export function SheetScroll({ children }: { children: ReactNode }) {
     );
 }
 
-/** Chips that pick one value, or none. */
+/**
+ * Equal chips that pick one value, or none. The one that is on is filled with the text colour, as on the web; `dots`
+ * puts a colour beside a chip's label (the severity's).
+ */
 export function Chips<T extends string>(props: {
     options: Array<[T, string]>;
     value: T | undefined;
     onChange(value: T | undefined): void;
+    dots?: Partial<Record<T, string>>;
 }) {
     const p = usePalette();
     return (
-        <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            keyboardShouldPersistTaps="handled"
-        >
-            <View style={styles.chips}>
-                {props.options.map(([value, label]) => {
-                    const on = props.value === value;
-                    return (
-                        <Pressable
-                            key={value}
-                            accessibilityRole="button"
-                            accessibilityState={{ selected: on }}
-                            onPress={() => props.onChange(on ? undefined : value)}
-                            style={[
-                                styles.chip,
-                                {
-                                    borderColor: on ? p.accent : p.line,
-                                    backgroundColor: on ? p.accent : "transparent",
-                                },
-                            ]}
+        <View style={styles.chips}>
+            {props.options.map(([value, label]) => {
+                const on = props.value === value;
+                const dot = props.dots?.[value];
+                return (
+                    <Pressable
+                        key={value}
+                        accessibilityRole="button"
+                        accessibilityState={{ selected: on }}
+                        onPress={() => props.onChange(on ? undefined : value)}
+                        style={[
+                            styles.chip,
+                            {
+                                borderColor: on ? p.text : p.line,
+                                backgroundColor: on ? p.text : "transparent",
+                            },
+                        ]}
+                    >
+                        {dot ? <View style={[styles.chipDot, { backgroundColor: dot }]} /> : null}
+                        <Text
+                            numberOfLines={1}
+                            adjustsFontSizeToFit
+                            style={[styles.chipText, { color: on ? p.background : p.text }]}
                         >
-                            <Text style={[styles.chipText, { color: on ? "#fff" : p.text }]}>
-                                {label}
-                            </Text>
-                        </Pressable>
-                    );
-                })}
-            </View>
-        </ScrollView>
+                            {label}
+                        </Text>
+                    </Pressable>
+                );
+            })}
+        </View>
     );
 }
 
@@ -576,7 +580,18 @@ const styles = StyleSheet.create({
     field: { fontSize: 15, paddingHorizontal: 12, paddingVertical: 11, borderRadius: 12 },
     scroll: { flexGrow: 0, flexShrink: 1 },
     chips: { flexDirection: "row", gap: 6 },
-    chip: { borderWidth: 1, borderRadius: 999, paddingHorizontal: 11, paddingVertical: 6 },
+    chip: {
+        flex: 1,
+        flexDirection: "row",
+        alignItems: "center",
+        justifyContent: "center",
+        gap: 5,
+        minHeight: 38,
+        paddingHorizontal: 4,
+        borderWidth: 1,
+        borderRadius: 10,
+    },
+    chipDot: { width: 7, height: 7, borderRadius: 3.5 },
     chipText: { fontSize: 14, fontWeight: "600" },
     badge: { borderRadius: 999, paddingHorizontal: 7, paddingVertical: 2 },
     badgeText: { fontSize: 11, fontWeight: "700" },

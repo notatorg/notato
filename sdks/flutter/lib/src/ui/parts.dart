@@ -607,49 +607,70 @@ InputDecoration fieldDecoration(BuildContext context, String hint) {
   );
 }
 
-/// Chips that pick one value, or none.
+/// Equal chips that pick one value, or none. The one that is on is filled with the text colour, as on the web, and
+/// [dots] puts a colour beside a chip's label (the severity's).
 class Chips extends StatelessWidget {
-  const Chips({super.key, required this.options, required this.value, required this.onChanged});
+  const Chips({super.key, required this.options, required this.value, required this.onChanged, this.dots = const {}});
   final Map<String, String> options;
   final String? value;
   final ValueChanged<String?> onChanged;
+  final Map<String, Color> dots;
 
   @override
   Widget build(BuildContext context) {
     final p = Palette.of(context);
-    return SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
-      child: Row(
-        children: [
-          for (final MapEntry(:key, value: label) in options.entries)
-            Padding(
-              padding: const EdgeInsets.only(right: 6),
-              child: Semantics(
-                button: true,
-                selected: value == key,
-                child: GestureDetector(
-                  onTap: () => onChanged(value == key ? null : key),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 6),
-                    decoration: BoxDecoration(
-                      color: value == key ? Brand.accent : Colors.transparent,
-                      border: Border.all(color: value == key ? Brand.accent : p.line),
-                      borderRadius: BorderRadius.circular(999),
-                    ),
-                    child: Text(
-                      label,
-                      style: TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w600,
-                        color: value == key ? Colors.white : p.text,
-                      ),
+    final entries = options.entries.toList();
+    return Row(
+      children: [
+        for (var i = 0; i < entries.length; i++) ...[
+          if (i > 0) const SizedBox(width: 6),
+          Expanded(
+            child: Semantics(
+              button: true,
+              selected: value == entries[i].key,
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: () => onChanged(value == entries[i].key ? null : entries[i].key),
+                child: Container(
+                  constraints: const BoxConstraints(minHeight: 38),
+                  padding: const EdgeInsets.symmetric(horizontal: 4),
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: value == entries[i].key ? p.text : Colors.transparent,
+                    border: Border.all(color: value == entries[i].key ? p.text : p.line),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (dots[entries[i].key] != null) ...[
+                          Container(
+                            width: 7,
+                            height: 7,
+                            decoration: BoxDecoration(color: dots[entries[i].key], shape: BoxShape.circle),
+                          ),
+                          const SizedBox(width: 5),
+                        ],
+                        Text(
+                          entries[i].value,
+                          maxLines: 1,
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                            color: value == entries[i].key ? p.background : p.text,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                 ),
               ),
             ),
+          ),
         ],
-      ),
+      ],
     );
   }
 }

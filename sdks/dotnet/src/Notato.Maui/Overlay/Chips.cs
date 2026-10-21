@@ -5,24 +5,42 @@ using Notato.Maui.Model;
 
 namespace Notato.Maui.Overlay;
 
-/// <summary>A row of choices of which at most one is on; tapping the one that is on turns it off.</summary>
-internal sealed class ChipRow : HorizontalStackLayout
+/// <summary>
+/// A row of equal choices of which at most one is on; tapping the one that is on turns it off. The one that is on is
+/// filled with the text colour, as on the web, and <c>dots</c> puts a colour beside a choice's label (the severity's).
+/// </summary>
+internal sealed class ChipRow : Grid
 {
     private readonly List<(string Value, Border Box, Label Label)> _chips = [];
     private string? _selected;
 
-    public ChipRow(IEnumerable<(string Value, string Label)> options)
+    public ChipRow(IEnumerable<(string Value, string Label)> options, IReadOnlyDictionary<string, Color>? dots = null)
     {
         Ui.Plain(this);
-        Spacing = 6;
+        ColumnSpacing = 6;
+        int column = 0;
         foreach ((string value, string label) in options)
         {
-            Label text = Ui.Text(label, 13, Ui.CardText, maxLines: 1);
-            Border box = Ui.Box(text, Colors.Transparent, 14, new Thickness(11, 6), Ui.CardLine, 1);
+            ColumnDefinitions.Add(new ColumnDefinition(GridLength.Star));
+            Label text = Ui.Text(label, 14, Ui.CardText, maxLines: 1, semibold: true);
+            View content = text;
+            if (dots is not null && dots.TryGetValue(value, out Color? dotColor))
+            {
+                BoxView dot = new() { Color = dotColor, WidthRequest = 7, HeightRequest = 7, CornerRadius = 3.5, VerticalOptions = LayoutOptions.Center };
+                content = new HorizontalStackLayout { Spacing = 5, HorizontalOptions = LayoutOptions.Center, Children = { dot, text } };
+            }
+            else
+            {
+                text.HorizontalOptions = LayoutOptions.Center;
+            }
+            Border box = Ui.Box(content, Colors.Transparent, 10, new Thickness(4, 0), Ui.CardLine, 1);
+            box.HeightRequest = 38;
+            box.VerticalOptions = LayoutOptions.Fill;
             Ui.OnTap(box, () => Selected = Selected == value ? null : value);
             SemanticProperties.SetDescription(box, label);
             _chips.Add((value, box, text));
             Children.Add(box);
+            SetColumn((BindableObject)box, column++);
         }
     }
 
@@ -35,10 +53,10 @@ internal sealed class ChipRow : HorizontalStackLayout
             foreach ((string chip, Border box, Label label) in _chips)
             {
                 bool on = chip == value;
-                box.BackgroundColor = on ? Ui.Accent : Colors.Transparent;
-                box.Background = new SolidColorBrush(on ? Ui.Accent : Colors.Transparent);
-                box.Stroke = new SolidColorBrush(on ? Ui.Accent : Ui.CardLine);
-                label.TextColor = on ? Colors.White : Ui.CardText;
+                box.BackgroundColor = on ? Ui.CardText : Colors.Transparent;
+                box.Background = new SolidColorBrush(on ? Ui.CardText : Colors.Transparent);
+                box.Stroke = new SolidColorBrush(on ? Ui.CardText : Ui.CardLine);
+                label.TextColor = on ? Ui.CardBackground : Ui.CardText;
             }
         }
     }

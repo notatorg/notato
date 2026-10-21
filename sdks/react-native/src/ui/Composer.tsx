@@ -1,5 +1,5 @@
 import type { Intent, Severity } from "@notato/schema";
-import { useEffect, useRef, useState } from "react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 import { Pressable, StyleSheet, Text, type TextInput, View } from "react-native";
 import { PEOPLE_ONLY } from "../annotation.ts";
 import { Chips, Field, FlagToggle, HeaderButton, Icon } from "./parts.tsx";
@@ -17,6 +17,25 @@ const SEVERITIES: Array<[Severity, string]> = [
     ["minor", "Minor"],
     ["nit", "Nit"],
 ];
+
+/** The severity's colours, the web composer's. */
+const SEVERITY_DOTS: Partial<Record<Severity, string>> = {
+    blocker: "#d6453d",
+    major: "#d99a1e",
+    minor: "#2f6fde",
+    nit: "#9a9a9a",
+};
+
+/** A small heading over a group of controls, as the web composer has them. */
+function Group(props: { title: string; children: ReactNode }) {
+    const p = usePalette();
+    return (
+        <View style={styles.group}>
+            <Text style={[styles.groupTitle, { color: p.text }]}>{props.title}</Text>
+            {props.children}
+        </View>
+    );
+}
 
 /** How long the card has to settle before the comment field takes the keyboard. */
 const FOCUS_DELAY_MS = 250;
@@ -94,22 +113,35 @@ export function Composer(props: {
                 accessibilityLabel="Note"
                 testID="NotatoComment"
             />
-            <Chips<Intent> options={INTENTS} value={intent} onChange={setIntent} />
-            <Chips<Severity> options={SEVERITIES} value={severity} onChange={setSeverity} />
-            <FlagToggle
-                title="Share with project"
-                hint="Project members can see this feedback."
-                value={shared}
-                onChange={setShared}
-                testID="NotatoShared"
-            />
-            <FlagToggle
-                title={PEOPLE_ONLY.title}
-                hint={PEOPLE_ONLY.hint}
-                value={peopleOnly}
-                onChange={setPeopleOnly}
-                testID="NotatoPeopleOnly"
-            />
+            <Group title="Feedback type">
+                <Chips<Intent> options={INTENTS} value={intent} onChange={setIntent} />
+            </Group>
+            <Group title="Severity">
+                <Chips<Severity>
+                    options={SEVERITIES}
+                    value={severity}
+                    onChange={setSeverity}
+                    dots={SEVERITY_DOTS}
+                />
+            </Group>
+            <View style={styles.visibility}>
+                <View style={[styles.rule, { backgroundColor: p.line }]} />
+                <Text style={[styles.groupTitle, { color: p.text }]}>Visibility</Text>
+                <FlagToggle
+                    title="Share with project"
+                    hint="Project members can see this feedback."
+                    value={shared}
+                    onChange={setShared}
+                    testID="NotatoShared"
+                />
+                <FlagToggle
+                    title={PEOPLE_ONLY.title}
+                    hint={PEOPLE_ONLY.hint}
+                    value={peopleOnly}
+                    onChange={setPeopleOnly}
+                    testID="NotatoPeopleOnly"
+                />
+            </View>
             <View style={styles.footer}>
                 <Text style={[styles.footnote, { color: p.muted }]}>
                     {props.screenshotsOff
@@ -175,6 +207,10 @@ const styles = StyleSheet.create({
     },
     parentText: { fontSize: 13.5, fontWeight: "600" },
     comment: { minHeight: 76, maxHeight: 150, textAlignVertical: "top" },
+    group: { gap: 7 },
+    groupTitle: { fontSize: 13, fontWeight: "600" },
+    visibility: { gap: 10 },
+    rule: { height: StyleSheet.hairlineWidth * 2 },
     footer: { flexDirection: "row", alignItems: "center", gap: 10 },
     footnote: { flex: 1, fontSize: 12 },
     send: { paddingHorizontal: 14, paddingVertical: 9, borderRadius: 12 },

@@ -75,7 +75,16 @@ internal sealed class ComposerCard : ContentView
         _editor.TextChanged += (_, _) => Update();
 
         _intents = new ChipRow([(AnnotationIntents.Fix, "Fix"), (AnnotationIntents.Change, "Change"), (AnnotationIntents.Question, "Question"), (AnnotationIntents.Approve, "Approve")]);
-        _severities = new ChipRow([(Severities.Blocker, "Blocker"), (Severities.Major, "Major"), (Severities.Minor, "Minor"), (Severities.Nit, "Nit")]);
+        _severities = new ChipRow(
+            [(Severities.Blocker, "Blocker"), (Severities.Major, "Major"), (Severities.Minor, "Minor"), (Severities.Nit, "Nit")],
+            // The severity's colours, the web composer's.
+            new Dictionary<string, Color>
+            {
+                [Severities.Blocker] = Ui.Danger,
+                [Severities.Major] = Color.FromArgb("#d99a1e"),
+                [Severities.Minor] = Color.FromArgb("#2f6fde"),
+                [Severities.Nit] = Color.FromArgb("#9a9a9a"),
+            });
         _mentions = new MentionRow(_editor);
         // Visibility defaults are set from Dev/Test mode by the server; this switch is the separate People only control.
         (Grid sharedRow, _shared) = Ui.SwitchRow("Share with project", "Project members can see this feedback.", sharedByDefault, "NotatoShared");
@@ -100,16 +109,29 @@ internal sealed class ComposerCard : ContentView
                 header,
                 Fields.EditorBox(_editor),
                 Scroll(_mentions),
-                Scroll(_intents),
-                Scroll(_severities),
-                sharedRow,
-                peopleOnlyRow,
+                Group("Feedback type", _intents),
+                Group("Severity", _severities),
+                Ui.Plain(new VerticalStackLayout
+                {
+                    Spacing = 10,
+                    Children =
+                    {
+                        new BoxView { HeightRequest = 1, Color = Ui.CardLine },
+                        Ui.Text("Visibility", 13, Ui.CardText, semibold: true),
+                        sharedRow,
+                        peopleOnlyRow,
+                    },
+                }),
                 _error,
                 footer,
             },
         }));
         Update();
     }
+
+    /// <summary>A small heading over a group of controls, as the web composer has them.</summary>
+    private static VerticalStackLayout Group(string title, View content) =>
+        Ui.Plain(new VerticalStackLayout { Spacing = 7, Children = { Ui.Text(title, 13, Ui.CardText, semibold: true), content } });
 
     private static ScrollView Scroll(View row) => new() { Orientation = ScrollOrientation.Horizontal, HorizontalScrollBarVisibility = ScrollBarVisibility.Never, Content = row };
 

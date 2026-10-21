@@ -13,13 +13,16 @@ import android.graphics.drawable.InsetDrawable
 import android.graphics.drawable.StateListDrawable
 import android.os.Build
 import android.provider.Settings
+import android.text.SpannableStringBuilder
+import android.text.Spanned
 import android.text.TextUtils
+import android.text.style.ForegroundColorSpan
+import android.text.style.RelativeSizeSpan
 import android.util.TypedValue
 import android.view.Gravity
 import android.view.View
 import android.view.animation.PathInterpolator
 import android.widget.FrameLayout
-import android.widget.HorizontalScrollView
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.Switch
@@ -350,8 +353,11 @@ internal class Ui(val context: Context) {
         switch.trackTintList = ColorStateList(states, intArrayOf(over(cardBackground, ACCENT, 0.5f), if (dark) "#4a4c52".toColorInt() else "#c9cac6".toColorInt()))
     }
 
-    /** A row of choices of which at most one is on; tapping the one that is on turns it off. */
-    inner class Chips(options: List<Pair<String, String>>) {
+    /**
+     * A row of equal choices of which at most one is on; tapping the one that is on turns it off. The one that is on is
+     * filled with the text colour, as on the web, and [dots] puts a colour beside a choice's label (the severity's).
+     */
+    inner class Chips(options: List<Pair<String, String>>, dots: Map<String, Int> = emptyMap()) {
         var selected: String? = null
             private set
         private val views = mutableListOf<Pair<String, TextView>>()
@@ -361,21 +367,27 @@ internal class Ui(val context: Context) {
             val row = own(LinearLayout(context)).apply { orientation = LinearLayout.HORIZONTAL }
             for ((index, option) in options.withIndex()) {
                 val (value, label) = option
-                val chip = text(label, 13f, cardText, maxLines = 1).apply {
-                    setPadding(dp(11), dp(6), dp(11), dp(6))
+                val chip = text(label, 14f, cardText, maxLines = 1, weight = 600).apply {
+                    gravity = Gravity.CENTER
+                    minimumHeight = dp(38)
+                    setPadding(dp(6), dp(6), dp(6), dp(6))
                     isClickable = true
                     contentDescription = label
+                    // The dot is a coloured character in the label, so the two sit together in the middle of the chip.
+                    dots[value]?.let { color ->
+                        val dot = SpannableStringBuilder("●  $label")
+                        dot.setSpan(ForegroundColorSpan(color), 0, 1, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+                        dot.setSpan(RelativeSizeSpan(0.9f), 0, 1, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+                        text = dot
+                    }
                     setOnClickListener { select(if (selected == value) null else value) }
                 }
                 views += value to chip
-                row.addView(chip, LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
+                row.addView(chip, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
                     if (index > 0) marginStart = dp(6)
                 })
             }
-            view = own(HorizontalScrollView(context)).apply {
-                isHorizontalScrollBarEnabled = false
-                addView(row)
-            }
+            view = row
             select(null)
         }
 
@@ -383,8 +395,8 @@ internal class Ui(val context: Context) {
             selected = value
             for ((v, chip) in views) {
                 val on = v == value
-                chip.background = rounded(if (on) ACCENT else Color.TRANSPARENT, 14, if (on) ACCENT else cardLine)
-                chip.setTextColor(if (on) Color.WHITE else cardText)
+                chip.background = rounded(if (on) cardText else Color.TRANSPARENT, 10, if (on) cardText else cardLine)
+                chip.setTextColor(if (on) cardBackground else cardText)
             }
         }
     }
