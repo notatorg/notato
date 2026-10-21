@@ -168,7 +168,10 @@ class _ComposerState extends State<Composer> {
               const SizedBox(height: 12),
               Divider(height: 1, thickness: 1, color: p.line),
               const SizedBox(height: 10),
-              Text('Visibility', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: p.text)),
+              Text(
+                'Visibility',
+                style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: p.text),
+              ),
               const SizedBox(height: 6),
               FlagToggle(
                 title: 'Share with project',
@@ -244,7 +247,10 @@ class _Group extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(title, style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: p.text)),
+        Text(
+          title,
+          style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: p.text),
+        ),
         const SizedBox(height: 7),
         child,
       ],
