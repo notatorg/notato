@@ -1,5 +1,5 @@
 {
-    "$schema": "https://biomejs.dev/schemas/2.5.15/schema.json",
+    "$schema": "https://biomejs.dev/schemas/2.6.2/schema.json",
     "files": {
         "includes": [
             "**",
@@ -25,6 +25,7 @@
         "lineEnding": "lf"
     },
     "linter": { "rules": { "preset": "recommended" } },
+    "markdown": { "formatter": { "enabled": false } },
     "javascript": {
         "formatter": {
             "quoteStyle": "double",

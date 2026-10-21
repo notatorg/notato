@@ -1,12 +1,13 @@
 # Version updates, once a month, one pull request per ecosystem. Security updates are separate: they are turned on
 # in the repository's settings (Code security) and arrive as soon as an advisory is published.
 #
-# The native SDKs (Gradle, NuGet, pub) are left out on purpose: their dependency ranges are the oldest version an app
-# may use, and raising them would make every app upgrade with us.
+# Native SDKs and the independently locked Expo example are included. Review compatibility and update the
+# stable toolchain pins together; consumer peer ranges and deployment targets are separate compatibility contracts.
 version: 2
 updates:
     - package-ecosystem: github-actions
       directory: /
+      target-branch: develop
       schedule:
           interval: monthly
       groups:
@@ -15,6 +16,7 @@ updates:
 
     - package-ecosystem: bun
       directory: /
+      target-branch: develop
       schedule:
           interval: monthly
       groups:
@@ -25,9 +27,55 @@ updates:
     # here too, or its pins will never move. Bun's version in the workflows is not something Dependabot can see: move
     # it with the Dockerfile's oven/bun image.
     - package-ecosystem: docker
-      directories: ["/"]
+      directories: ["/", "/services", "/deploy/self-hosted", "/deploy/self-hosted/examples"]
+      target-branch: develop
       schedule:
           interval: monthly
       groups:
           docker:
+              patterns: ["*"]
+
+    - package-ecosystem: npm
+      directory: /sdks/react-native/example
+      target-branch: develop
+      schedule:
+          interval: monthly
+      groups:
+          expo:
+              patterns: ["*"]
+
+    - package-ecosystem: nuget
+      directory: /sdks/dotnet
+      target-branch: develop
+      schedule:
+          interval: monthly
+      groups:
+          dotnet:
+              patterns: ["*"]
+
+    - package-ecosystem: gradle
+      directories: ["/sdks/android", "/sdks/flutter/example/android"]
+      target-branch: develop
+      schedule:
+          interval: monthly
+      groups:
+          android:
+              patterns: ["*"]
+
+    - package-ecosystem: pub
+      directories: ["/sdks/flutter", "/sdks/flutter/example"]
+      target-branch: develop
+      schedule:
+          interval: monthly
+      groups:
+          flutter:
+              patterns: ["*"]
+
+    - package-ecosystem: swift
+      directory: /
+      target-branch: develop
+      schedule:
+          interval: monthly
+      groups:
+          swift:
               patterns: ["*"]

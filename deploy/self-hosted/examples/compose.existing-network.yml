@@ -5,9 +5,9 @@
 #
 # Set NOTATO_EXTERNAL_NETWORK in .env to the network's name (`docker network ls`).
 services:
-  server:
-    networks: [default, existing]
+    server:
+        networks: [default, existing]
 networks:
-  existing:
-    name: ${NOTATO_EXTERNAL_NETWORK:?Set NOTATO_EXTERNAL_NETWORK to the existing Docker network}
-    external: true
+    existing:
+        name: ${NOTATO_EXTERNAL_NETWORK:?Set NOTATO_EXTERNAL_NETWORK to the existing Docker network}
+        external: true

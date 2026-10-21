@@ -145,6 +145,8 @@ Sign in with your current password, not the one in `.env`, and open a note with 
 
 Releases publish two images: `ghcr.io/notatorg/notato` (the SQLite developer loop) and `ghcr.io/notatorg/notato-server` (this full server). Versions move together with the SDKs, so server 0.3 works with SDK 0.3. Read the [changelog](../../CHANGELOG.md) before upgrading.
 
+The bundled database is PostgreSQL 18.6. Existing PostgreSQL 17 installations need a deliberate [database major upgrade](docs/postgres-upgrade.md) before using this Compose file. The image refuses an old data directory; keep the old volume for rollback and restore a dump into a fresh PostgreSQL 18 volume. External Postgres installations are managed independently.
+
 1. **Back up first**, as in [Backups and recovery](#backups-and-recovery): Postgres, the object store and `.env`. This is also how you roll back.
 2. Move to the new release. From a checkout, check out the release tag and rebuild; to run the published image instead, name it in `.env` and skip the build:
 

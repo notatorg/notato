@@ -38,23 +38,15 @@
 
 	<ItemGroup>
 		<PackageReference Include="Microsoft.Maui.Controls" Version="$(MauiVersion)" />
-		<PackageReference Include="Microsoft.Extensions.Logging.Debug" Version="10.0.0" />
-		<PackageReference Include="Microsoft.Extensions.Configuration.Json" Version="10.0.0" />
-		<PackageReference Include="Microsoft.Extensions.Configuration.EnvironmentVariables" Version="10.0.0" />
+		<PackageReference Include="Microsoft.Extensions.Logging.Debug" Version="10.0.13" />
+		<PackageReference Include="Microsoft.Extensions.Configuration.Json" Version="10.0.13" />
+		<PackageReference Include="Microsoft.Extensions.Configuration.EnvironmentVariables" Version="10.0.13" />
 	</ItemGroup>
 
 	<ItemGroup>
 		<EmbeddedResource Include="appsettings.json" LogicalName="Notato.Maui.Sample.appsettings.json" />
 		<ProjectReference Include="..\..\src\Notato.Maui\Notato.Maui.csproj" />
 	</ItemGroup>
-
-	<!-- Opt-in, for driving the sample from a terminal while developing Notato: dotnet build -p:NotatoSampleDevFlow=true -->
-	<ItemGroup Condition="'$(NotatoSampleDevFlow)' == 'true'">
-		<PackageReference Include="Microsoft.Maui.DevFlow.Agent" Version="0.1.0-preview.9.26258.5" />
-	</ItemGroup>
-	<PropertyGroup Condition="'$(NotatoSampleDevFlow)' == 'true'">
-		<DefineConstants>$(DefineConstants);NOTATO_DEVFLOW</DefineConstants>
-	</PropertyGroup>
 
 	<!-- What the Notato.Maui package adds to an app by itself; a project reference has to import it. -->
 	<Import Project="..\..\src\Notato.Maui\build\Notato.Maui.targets" />

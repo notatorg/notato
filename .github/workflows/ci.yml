@@ -25,7 +25,7 @@ jobs:
                   bun-version: 1.4.3
             - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
               with:
-                  node-version: 24
+                  node-version: 26.12.1
             - run: bun install --frozen-lockfile
             - name: Every package is at the same version
               run: bun scripts/version.ts
@@ -76,7 +76,7 @@ jobs:
                   bun-version: 1.4.3
             - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
               with:
-                  node-version: 24
+                  node-version: 26.12.1
             - run: bun install --frozen-lockfile
             - name: React (Vite)
               run: bunx vite build
@@ -103,7 +103,7 @@ jobs:
                   bun-version: 1.4.3
             - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
               with:
-                  node-version: 24
+                  node-version: 26.12.1
             - run: bun install --frozen-lockfile
             - run: bun run scripts/build-release.ts --targets bun-linux-x64
             - name: Install into a new app and set it up
@@ -128,12 +128,11 @@ jobs:
             - run: docker build -t notato:ci .
             - name: Run it and call it
               run: |
-                  docker run -d --name notato -p 4747:4747 -e NOTATO_ADMIN_PASSWORD=ci-password notato:ci
-                  for i in $(seq 1 30); do curl -fs http://127.0.0.1:4747/health && break || sleep 1; done
-                  curl -fs http://127.0.0.1:4747/ | grep -q 'id="root"'
-                  test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:4747/annotations)" = 401
+                  docker run -d --name notato -p 127.0.0.1:4799:4747 -e NOTATO_ADMIN_PASSWORD=ci-password notato:ci
+                  for i in $(seq 1 30); do curl -fs http://127.0.0.1:4799/health && break || sleep 1; done
+                  curl -fs http://127.0.0.1:4799/ | grep -q 'id="root"'
+                  test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:4799/annotations)" = 401
                   docker exec notato notato healthcheck
-
 
     self-hosted:
         name: Self-hosted Postgres, S3 and SMTP

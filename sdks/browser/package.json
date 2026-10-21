@@ -26,11 +26,11 @@
         "@noble/hashes": "^2.4.0",
         "@notato/core": "workspace:*",
         "@notato/schema": "workspace:*",
-        "fflate": "^0.8.2",
+        "fflate": "^0.8.3",
         "modern-screenshot": "^4.7.0"
     },
     "devDependencies": {
         "fake-indexeddb": "^6.2.6",
-        "happy-dom": "^21.0.3"
+        "happy-dom": "^21.0.4"
     }
 }

@@ -36,9 +36,6 @@ public static class MauiProgram
             options.AppName = "Notato MAUI sample";
         });
 #endif
-#if NOTATO_DEVFLOW
-        Microsoft.Maui.DevFlow.Agent.AgentServiceExtensions.AddMauiDevFlowAgent(builder);
-#endif
 
         builder.Services.AddTransient<AccountPage>();
         builder.Services.AddTransient<FeedbackPage>();

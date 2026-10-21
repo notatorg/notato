@@ -27,17 +27,18 @@ jobs:
             - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
               with:
                   global-json-file: sdks/dotnet/global.json
-            # The workload set the SDK is built with locally: iOS 26.5 and MAUI 10.0.20. Unpinned, CI takes the newest,
-            # whose iOS SDK can need an Xcode the runner does not have yet.
-            - run: dotnet workload install maui-android --version 10.0.401
+            # A reviewed stable workload set, matching the local native build.
+            - run: dotnet workload install maui-android --version 10.0.402.1
             - run: dotnet test tests/Notato.Maui.Tests
             - run: dotnet test tests/Notato.Aspire.Tests
 
     # Every platform the SDK targets, and the sample app, compile.
     build:
         name: Build (iOS, Mac Catalyst, Android)
-        # Xcode 26.6 by default, which the pinned iOS 26.5 SDK builds with.
-        runs-on: macos-26
+        # The stable iOS 27 workload requires Xcode 27.
+        runs-on: xcode-27
+        env:
+            DEVELOPER_DIR: /Applications/Xcode_27.1.app/Contents/Developer
         defaults:
             run:
                 working-directory: sdks/dotnet
@@ -46,7 +47,7 @@ jobs:
             - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
               with:
                   global-json-file: sdks/dotnet/global.json
-            - run: dotnet workload install maui --version 10.0.401
+            - run: dotnet workload install maui --version 10.0.402.1
             # The house style (sdks/dotnet/.editorconfig) as build errors, on every target.
             - run: dotnet build src/Notato.Maui -c Release -p:EnforceCodeStyleInBuild=true -p:TreatWarningsAsErrors=true
             - run: dotnet build src/Notato.Aspire -c Release -p:EnforceCodeStyleInBuild=true -p:TreatWarningsAsErrors=true
@@ -59,3 +60,18 @@ jobs:
               with:
                   name: Notato.Maui-nupkg
                   path: sdks/dotnet/artifacts/*.nupkg
+
+    windows:
+        name: Build (Windows)
+        runs-on: windows-latest
+        defaults:
+            run:
+                working-directory: sdks/dotnet
+        steps:
+            - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+            - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+              with:
+                  global-json-file: sdks/dotnet/global.json
+            - run: dotnet workload install maui-windows --version 10.0.402.1
+            - run: dotnet build src/Notato.Maui -c Release -p:TargetFrameworks=net10.0-windows10.0.19041.0 -p:EnforceCodeStyleInBuild=true -p:TreatWarningsAsErrors=true
+            - run: dotnet build samples/Notato.Maui.Sample -p:TargetFrameworks=net10.0-windows10.0.19041.0
