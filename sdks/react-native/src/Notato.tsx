@@ -1,4 +1,12 @@
-import { type ReactNode, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import {
+    type ComponentRef,
+    type ReactNode,
+    useEffect,
+    useMemo,
+    useRef,
+    useState,
+    useSyncExternalStore,
+} from "react";
 import { DevSettings, StyleSheet, View } from "react-native";
 import { isDev, type NotatoConfig } from "./config.ts";
 import { NotatoController, type NotatoState } from "./controller.ts";
@@ -54,8 +62,8 @@ export function Notato(props: NotatoProps) {
 const isEnabled = () => notato.getState().enabled;
 
 function NotatoRoot(props: NotatoProps) {
-    const outer = useRef<View>(null);
-    const app = useRef<View>(null);
+    const outer = useRef<ComponentRef<typeof View>>(null);
+    const app = useRef<ComponentRef<typeof View>>(null);
     const enabled = useSyncExternalStore(notato.subscribe, isEnabled, isEnabled);
     const [stage] = useState(() => new Stage());
     const route = useRef(props.route);

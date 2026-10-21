@@ -1,4 +1,12 @@
-import { memo, type RefObject, useEffect, useMemo, useRef, useState } from "react";
+import {
+    type ComponentRef,
+    memo,
+    type RefObject,
+    useEffect,
+    useMemo,
+    useRef,
+    useState,
+} from "react";
 import { Animated, AppState, Pressable, StyleSheet, type View } from "react-native";
 import type { NotatoController } from "../controller.ts";
 import { appElements, commitCount, watchApp } from "../inspect.ts";
@@ -24,7 +32,7 @@ const MAX_CANDIDATES = 12;
  */
 export const PinLayer = memo(function PinLayer(props: {
     notato: NotatoController;
-    app: RefObject<View | null>;
+    app: RefObject<ComponentRef<typeof View> | null>;
     /** The screen's notes that get a pin. */
     pinnable: readonly NumberedNote[];
     shown: boolean;

@@ -1,5 +1,5 @@
 import type { Intent, Severity } from "@notato/schema";
-import { type ReactNode, useEffect, useRef, useState } from "react";
+import { type ComponentRef, type ReactNode, useEffect, useRef, useState } from "react";
 import { Pressable, StyleSheet, Text, type TextInput, View } from "react-native";
 import { PEOPLE_ONLY } from "../annotation.ts";
 import { Chips, Field, FlagToggle, HeaderButton, Icon } from "./parts.tsx";
@@ -67,7 +67,7 @@ export function Composer(props: {
     const [severity, setSeverity] = useState<Severity>();
     const [shared, setShared] = useState(Boolean(props.sharedByDefault));
     const [peopleOnly, setPeopleOnly] = useState(false);
-    const input = useRef<TextInput>(null);
+    const input = useRef<ComponentRef<typeof TextInput>>(null);
     // autoFocus is unreliable while the card animates in: focus once it is laid out.
     useEffect(() => {
         const t = setTimeout(() => input.current?.focus(), FOCUS_DELAY_MS);

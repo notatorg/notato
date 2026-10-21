@@ -375,7 +375,7 @@ export function NotesSheet(props: {
                                     : `${others} more on other screens.`}
                             </Text>
                         </View>
-                    ) : null
+                    ) : undefined
                 }
             />
         </>
