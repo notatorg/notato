@@ -12,6 +12,6 @@ Pod::Spec.new do |s|
   s.source = { :git => 'https://github.com/notatorg/notato.git', :tag => "v#{s.version}" }
   s.source_files = 'ios/**/*.{h,m}'
   s.dependency 'React-Core'
-  s.dependency 'SDWebImageWebPCoder', '~> 0.14'
+  s.dependency 'SDWebImageWebPCoder', '~> 0.15'
   s.dependency 'libwebp', '~> 1.6'
 end
