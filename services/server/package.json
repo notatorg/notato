@@ -1,6 +1,6 @@
 {
     "name": "@notato/service-server",
-    "version": "0.3.0",
+    "version": "0.3.1",
     "description": "Self-hosted Notato: Postgres, Better Auth, S3-compatible screenshots, workspaces and integrations.",
     "private": true,
     "type": "module",

@@ -1,6 +1,6 @@
 {
     "name": "@notato/service-cli",
-    "version": "0.3.0",
+    "version": "0.3.1",
     "description": "Run and check the self-hosted Notato server.",
     "private": true,
     "type": "module",

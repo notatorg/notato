@@ -2,6 +2,10 @@
 
 Every Notato package is released together, at the same version: see [the releases](https://github.com/notatorg/notato/releases).
 
+## 0.3.1
+
+- Released with the rest of Notato at 0.3.1. The note sheet puts a heading over the feedback type and severity choices, fills the chosen option with the text colour, shows the severity's colour beside each severity, and groups the "Share with project" and "Hide from agent" switches under "Visibility". What a note records is unchanged.
+
 ## 0.3.0
 
 - Released with the rest of Notato at 0.3.0. The wire format is unchanged: an app token (the default for a project) and an agent token are both accepted by every SDK, and an app token cannot use MCP.

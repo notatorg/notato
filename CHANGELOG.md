@@ -2,6 +2,10 @@
 
 Every Notato package is released together, at one version: the `notato` command and server, the npm packages, the Swift package, the Android libraries, the .NET MAUI package, the Flutter package and the Docker image. A release's entry here is also the top of its [GitHub release](https://github.com/notatorg/notato/releases), and a tag is refused until this file has its version.
 
+## 0.3.1
+
+- **The mobile note sheets match the web composer.** The SwiftUI, Android, .NET MAUI, Flutter and React Native sheets now put a heading over the feedback type and severity choices, draw the options as equal-width buttons filled with the text colour when chosen, show the severity's colour beside each severity, and group the "Share with project" and "Hide from agent" switches under a "Visibility" heading. What a note records is unchanged.
+
 ## 0.3.0
 
 - **Self-hosted server.** The full server (accounts, workspaces, invitations, optional two-factor authentication, reviews and integrations) is MIT and runs from one Docker Compose file on Postgres, S3-compatible storage and standard SMTP; `ghcr.io/notatorg/notato-server` is published beside the developer image. The `npx notato` SQLite loop is unchanged. Each bundled part (Postgres, screenshot storage, mock inbox) can be switched off with `COMPOSE_PROFILES` and replaced by your own Postgres, S3-compatible bucket or SMTP server; guides cover Caddy, nginx and Cloudflare Tunnel for HTTPS. See [deploy/self-hosted](deploy/self-hosted/README.md), including backups, restore and upgrade/rollback.
