@@ -114,7 +114,7 @@ jobs:
                   cd shop
                   npm install
                   T="$GITHUB_WORKSPACE/dist/release/tarballs"
-                  npm i -D "$T"/notato-0.*.tgz "$T"/notato-cli-linux-x64-*.tgz "$T"/notato-react-*.tgz "$T"/notato-browser-*.tgz "$T"/notato-core-*.tgz "$T"/notato-schema-*.tgz
+                  npm i -D "$T"/notato-0.*.tgz "$T"/notato-cli-linux-x64-*.tgz "$T"/notato-react-[0-9]*.tgz "$T"/notato-browser-*.tgz "$T"/notato-core-*.tgz "$T"/notato-schema-*.tgz
                   npx notato init --no-mcp
                   npm run build
                   if grep -rl "notato" dist; then echo "Notato code shipped in the production build"; exit 1; fi
