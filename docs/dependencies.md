@@ -25,6 +25,7 @@ Npm versions were checked against the [npm registry](https://registry.npmjs.org/
 - Flutter's stable SDK and plugins constrain some transitive packages, including `test_api`, `material_color_utilities` and `cross_file`. Keep their resolved supported versions rather than overriding them outside the upstream constraints.
 - Peer dependency ranges, minimum deployment targets and Swift's tools-version declaration describe consumer compatibility; they are not requests to install old packages. The development dependencies, samples and lockfiles use the stable baseline above.
 - The optional preview-only MAUI DevFlow sample integration is excluded from the stable baseline. It has no stable upstream package release.
+- The current Mac Catalyst runtime requires applications to target version 17.0 or later; the MAUI sample follows that minimum.
 
 The current MAUI Apple workloads require Xcode 27.1 to link sample applications. A Mac with Xcode 27.0 can compile the libraries and run their managed tests but cannot finish the current iOS or Mac Catalyst sample builds. CI uses GitHub's managed Xcode runner with `DEVELOPER_DIR` pointing at the stable 27.1 installation; the directory's historical Release Candidate name carries the same build number as Apple's general release.
 

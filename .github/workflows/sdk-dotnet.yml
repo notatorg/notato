@@ -35,7 +35,7 @@ jobs:
     # Every platform the SDK targets, and the sample app, compile.
     build:
         name: Build (iOS, Mac Catalyst, Android)
-        # The stable iOS 27 workload requires Xcode 27.
+        # The stable Apple workloads require Xcode 27.1.
         runs-on: xcode-27
         env:
             DEVELOPER_DIR: /Applications/Xcode_27.1.app/Contents/Developer
