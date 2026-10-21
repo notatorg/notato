@@ -1,12 +1,13 @@
 plugins {
     alias(libs.plugins.android.library)
-    alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
 }
 
 android {
     namespace = "dev.notato.android.compose"
-    compileSdk = 36
+    compileSdk = 37
+    compileSdkMinor = 2
+    buildToolsVersion = "37.0.0"
 
     defaultConfig {
         minSdk = 24

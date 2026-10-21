@@ -15,9 +15,9 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Aspire.Hosting" Version="$(AspireMinimumVersion)" />
+    <PackageReference Include="Aspire.Hosting" Version="$(AspireVersion)" />
     <!-- To tell a JavaScript app (Vite's variables) from the rest. -->
-    <PackageReference Include="Aspire.Hosting.JavaScript" Version="$(AspireMinimumVersion)" />
+    <PackageReference Include="Aspire.Hosting.JavaScript" Version="$(AspireVersion)" />
   </ItemGroup>
 
   <ItemGroup>

@@ -26,15 +26,15 @@
         "src"
     ],
     "dependencies": {
-        "@modelcontextprotocol/sdk": "^1.32.0",
+        "@modelcontextprotocol/sdk": "^1.32.1",
         "@notato/core": "workspace:*",
         "@notato/schema": "workspace:*",
-        "fflate": "^0.8.2",
+        "fflate": "^0.8.3",
         "pngjs": "^7.0.0",
         "ulid": "^3.0.2",
-        "zod": "^4.3.0"
+        "zod": "^4.6.7"
     },
     "devDependencies": {
-        "@types/pngjs": "^6.0.0"
+        "@types/pngjs": "^6.0.5"
     }
 }

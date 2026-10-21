@@ -1,4 +1,13 @@
-import { forwardRef, type ReactNode, useEffect, useMemo, useRef } from "react";
+import {
+    type ComponentPropsWithRef,
+    type ComponentRef,
+    type ForwardRefExoticComponent,
+    forwardRef,
+    type ReactNode,
+    useEffect,
+    useMemo,
+    useRef,
+} from "react";
 import {
     Animated,
     Image,
@@ -420,7 +429,10 @@ export function FieldLabel({ text }: { text: string }) {
 }
 
 /** A text field's look in a sheet or card. */
-export const Field = forwardRef<TextInput, TextInputProps>(function Field(props, ref) {
+export const Field: ForwardRefExoticComponent<ComponentPropsWithRef<typeof TextInput>> = forwardRef<
+    ComponentRef<typeof TextInput>,
+    TextInputProps
+>(function Field(props, ref) {
     const p = usePalette();
     return (
         <TextInput

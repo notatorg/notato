@@ -1,0 +1,4 @@
+# GitHub's managed Xcode runner is newer than actionlint's built-in label list.
+self-hosted-runner:
+    labels:
+        - xcode-27

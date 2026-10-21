@@ -245,7 +245,7 @@ The code, in `src/Notato.Maui`:
 - `Native/`: the overlay's host on each platform (a window of its own on iOS and Mac Catalyst, a view in the top window on Android), and the screenshot.
 - `Inspection/`: reading the app's visual tree (hit-testing, selectors, text, privacy, XAML source info). `Capture/` draws the screenshots, `Net/` is the HTTP API, `Runtime/` what is kept on the device and recorded from the app.
 
-The sample is a small Shell shop with a modal checkout and a **Feedback** tab that drives `INotato`. Point it at another server with an environment variable (`Notato__Server=http://localhost:4790`; on the simulator, `SIMCTL_CHILD_Notato__Server` with `xcrun simctl launch`). Build it with `-p:NotatoSampleDevFlow=true` to include the MAUI DevFlow agent, for driving it from a terminal.
+The sample is a small Shell shop with a modal checkout and a **Feedback** tab that drives `INotato`. Point it at another server with an environment variable (`Notato__Server=http://localhost:4790`; on the simulator, `SIMCTL_CHILD_Notato__Server` with `xcrun simctl launch`). Its dependencies use stable releases only.
 
 `src/Notato.Maui/build/Notato.Maui.targets` ships in the package (`buildTransitive`) and records each assembly's project path from the repository root, in Debug builds only (the repository's absolute path names your machine and user: `<NotatoSourceInfo>true</NotatoSourceInfo>` records it in other configurations too, `false` in none); a project reference imports it by hand, as the sample does.
 

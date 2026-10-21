@@ -5,6 +5,6 @@
 # Put the CA certificate at ./certs/postgres-ca.pem and set NOTATO_DATABASE_SSL=verify-full and
 # NOTATO_DATABASE_CA_FILE=/certs/postgres-ca.pem in .env.
 services:
-  server:
-    volumes:
-      - ./certs:/certs:ro
+    server:
+        volumes:
+            - ./certs:/certs:ro

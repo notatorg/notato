@@ -10,7 +10,7 @@ Everyone taking part agrees to the [code of conduct](CODE_OF_CONDUCT.md).
 
 ## Set up
 
-You need [Bun](https://bun.sh) 1.x and Node 24 (the TypeScript tests run on Vitest under Node). The native SDKs need their own tools, but only for the SDK you work on (see [Each SDK](#each-sdk)).
+CI and the current dependency baseline use [Bun](https://bun.sh) 1.4.3 and Node 26.12.1 (the TypeScript tests run on Vitest under Node). The native SDKs need their own tools, but only for the SDK you work on (see [Each SDK](#each-sdk)). The [dependency baseline](docs/dependencies.md) records the reviewed stable versions and compatibility constraints.
 
 ```bash
 git clone https://github.com/notatorg/notato
@@ -73,7 +73,7 @@ xcodebuild build -project sdks/swift/Example/ShopSample.xcodeproj -scheme ShopSa
   -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO
 ```
 
-**Android** (JDK 21 and the Android SDK)
+**Android** (JDK 27 and Android SDK 37.2 with build tools 37.0.0)
 
 ```bash
 cd sdks/android
@@ -81,7 +81,7 @@ cd sdks/android
 ./gradlew :notato:lintDebug :notato-compose:lintDebug :sample:assembleDebug
 ```
 
-**.NET MAUI** (the .NET SDK in `sdks/dotnet/global.json`, and `dotnet workload install maui`)
+**.NET MAUI** (the .NET SDK in `sdks/dotnet/global.json`, `dotnet workload install maui --version 10.0.402.1`, and Xcode 27.1 for Apple sample builds)
 
 ```bash
 cd sdks/dotnet

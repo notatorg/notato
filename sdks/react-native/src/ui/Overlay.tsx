@@ -1,4 +1,5 @@
 import {
+    type ComponentRef,
     type RefObject,
     useCallback,
     useEffect,
@@ -78,9 +79,9 @@ const sheetKey = (sheet: Sheet | null) =>
 export function Overlay(props: {
     notato: NotatoController;
     /** The view the stage and the app share: the screenshots are of it. */
-    outer: RefObject<View | null>;
+    outer: RefObject<ComponentRef<typeof View> | null>;
     /** The app's own view. */
-    app: RefObject<View | null>;
+    app: RefObject<ComponentRef<typeof View> | null>;
     stage: Stage;
     route: () => string;
 }) {

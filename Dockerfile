@@ -1,4 +1,4 @@
-# syntax=docker/dockerfile:1.27.1@sha256:4edf897a3ffa55b89f906fc8cc78afdb3f1834cc9c7083565e611a8a7d5fe99e
+# syntax=docker/dockerfile:1.28.0@sha256:bb22d9815c728170f72750f4e5b0d672e06176142e1d602c7e66c050100b7e5b
 #
 # The shared Notato server (`notato serve`): login, project tokens, HTTP API, MCP over HTTP, board UI.
 # Data lives in /data; mount a volume there. Put a TLS-terminating reverse proxy in front and run with
@@ -37,12 +37,12 @@ COPY . .
 ARG TARGETARCH
 ARG VERSION=0.0.0-docker
 RUN bun packages/board/scripts/build.ts --embed \
- && case "$TARGETARCH" in arm64) TARGET=bun-linux-arm64 ;; *) TARGET=bun-linux-x64 ;; esac \
+ && case "${TARGETARCH:-$(uname -m)}" in arm64|aarch64) TARGET=bun-linux-arm64 ;; *) TARGET=bun-linux-x64 ;; esac \
  && bun build --compile --minify --target="$TARGET" \
       --define="process.env.NOTATO_VERSION=\"$VERSION\"" \
       packages/cli/src/main.ts --outfile /out/notato
 
-FROM debian:bookworm-slim@sha256:7c7b2c966bc9ee8cedfeef67e0e279108992c77681fa595db4a9d65c06ccc587
+FROM debian:trixie-slim@sha256:62bd423aeee912639ca8ee681c2b762cb3e25137e0a92b20be455898a9f034ad
 RUN useradd --system --uid 10001 --create-home notato \
  && mkdir /data && chown notato:notato /data
 COPY --from=build /out/notato /usr/local/bin/notato

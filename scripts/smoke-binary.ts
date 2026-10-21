@@ -303,7 +303,7 @@ await step("notato init: edits a Vite app, and --revert undoes it", async () => 
     writeFileSync(join(dir, "index.html"), '<script type="module" src="/src/main.tsx"></script>');
     const original = 'import { App } from "./App"\ncreateRoot(el).render(<App />)\n';
     writeFileSync(join(dir, "src/main.tsx"), original);
-    const result = await run(["init", "--no-mcp"], {}, dir);
+    const result = await run(["init", "--agent", "claude", "--no-mcp"], {}, dir);
     assert(result.code === 0, `init failed:\n${result.stdout}\n${result.stderr}`);
     for (const skill of ["notato", "notato-critique"])
         assert(
@@ -319,7 +319,7 @@ await step("notato init: edits a Vite app, and --revert undoes it", async () => 
         "the entry was not edited"
     );
 
-    const reverted = await run(["init", "--revert", "--no-mcp"], {}, dir);
+    const reverted = await run(["init", "--revert", "--agent", "claude", "--no-mcp"], {}, dir);
     assert(reverted.code === 0, `init --revert failed:\n${reverted.stdout}\n${reverted.stderr}`);
     assert(
         (await Bun.file(join(dir, "src/main.tsx")).text()) === original,

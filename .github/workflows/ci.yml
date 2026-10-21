@@ -17,15 +17,15 @@ jobs:
         name: Lint, types, tests
         runs-on: ubuntu-latest
         steps:
-            - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+            - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
             # Bun is the same exact version in every workflow and in the Dockerfile's build image. Dependabot moves the
             # image (and the actions' pins), not these: move them with it.
             - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
               with:
                   bun-version: 1.4.3
-            - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+            - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
               with:
-                  node-version: 24
+                  node-version: 26.12.1
             - run: bun install --frozen-lockfile
             - name: Every package is at the same version
               run: bun scripts/version.ts
@@ -54,7 +54,7 @@ jobs:
                     - { os: windows-latest, target: bun-windows-x64, exe: notato.exe }
         runs-on: ${{ matrix.os }}
         steps:
-            - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+            - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
             - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
               with:
                   bun-version: 1.4.3
@@ -70,13 +70,13 @@ jobs:
         needs: checks
         runs-on: ubuntu-latest
         steps:
-            - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+            - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
             - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
               with:
                   bun-version: 1.4.3
-            - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+            - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
               with:
-                  node-version: 24
+                  node-version: 26.12.1
             - run: bun install --frozen-lockfile
             - name: React (Vite)
               run: bunx vite build
@@ -97,13 +97,13 @@ jobs:
         needs: checks
         runs-on: ubuntu-latest
         steps:
-            - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+            - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
             - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
               with:
                   bun-version: 1.4.3
-            - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+            - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
               with:
-                  node-version: 24
+                  node-version: 26.12.1
             - run: bun install --frozen-lockfile
             - run: bun run scripts/build-release.ts --targets bun-linux-x64
             - name: Install into a new app and set it up
@@ -114,7 +114,7 @@ jobs:
                   cd shop
                   npm install
                   T="$GITHUB_WORKSPACE/dist/release/tarballs"
-                  npm i -D "$T"/notato-0.*.tgz "$T"/notato-cli-linux-x64-*.tgz "$T"/notato-react-*.tgz "$T"/notato-browser-*.tgz "$T"/notato-core-*.tgz "$T"/notato-schema-*.tgz
+                  npm i -D "$T"/notato-0.*.tgz "$T"/notato-cli-linux-x64-*.tgz "$T"/notato-react-[0-9]*.tgz "$T"/notato-browser-*.tgz "$T"/notato-core-*.tgz "$T"/notato-schema-*.tgz
                   npx notato init --no-mcp
                   npm run build
                   if grep -rl "notato" dist; then echo "Notato code shipped in the production build"; exit 1; fi
@@ -124,23 +124,22 @@ jobs:
         needs: checks
         runs-on: ubuntu-latest
         steps:
-            - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+            - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
             - run: docker build -t notato:ci .
             - name: Run it and call it
               run: |
-                  docker run -d --name notato -p 4747:4747 -e NOTATO_ADMIN_PASSWORD=ci-password notato:ci
-                  for i in $(seq 1 30); do curl -fs http://127.0.0.1:4747/health && break || sleep 1; done
-                  curl -fs http://127.0.0.1:4747/ | grep -q 'id="root"'
-                  test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:4747/annotations)" = 401
+                  docker run -d --name notato -p 127.0.0.1:4799:4747 -e NOTATO_ADMIN_PASSWORD=ci-password notato:ci
+                  for i in $(seq 1 30); do curl -fs http://127.0.0.1:4799/health && break || sleep 1; done
+                  curl -fs http://127.0.0.1:4799/ | grep -q 'id="root"'
+                  test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:4799/annotations)" = 401
                   docker exec notato notato healthcheck
-
 
     self-hosted:
         name: Self-hosted Postgres, S3 and SMTP
         needs: checks
         runs-on: ubuntu-latest
         steps:
-            - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+            - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
             - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
               with:
                   bun-version: 1.4.3
