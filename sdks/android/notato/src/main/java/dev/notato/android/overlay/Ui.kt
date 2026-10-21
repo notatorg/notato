@@ -13,7 +13,11 @@ import android.graphics.drawable.InsetDrawable
 import android.graphics.drawable.StateListDrawable
 import android.os.Build
 import android.provider.Settings
+import android.text.SpannableStringBuilder
+import android.text.Spanned
 import android.text.TextUtils
+import android.text.style.ForegroundColorSpan
+import android.text.style.RelativeSizeSpan
 import android.util.TypedValue
 import android.view.Gravity
 import android.view.View
@@ -369,14 +373,12 @@ internal class Ui(val context: Context) {
                     setPadding(dp(6), dp(6), dp(6), dp(6))
                     isClickable = true
                     contentDescription = label
+                    // The dot is a coloured character in the label, so the two sit together in the middle of the chip.
                     dots[value]?.let { color ->
-                        val dot = GradientDrawable().apply {
-                            shape = GradientDrawable.OVAL
-                            setColor(color)
-                            setSize(dp(7), dp(7))
-                        }
-                        setCompoundDrawablesRelativeWithIntrinsicBounds(dot, null, null, null)
-                        compoundDrawablePadding = dp(5)
+                        val dot = SpannableStringBuilder("●  $label")
+                        dot.setSpan(ForegroundColorSpan(color), 0, 1, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+                        dot.setSpan(RelativeSizeSpan(0.9f), 0, 1, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+                        text = dot
                     }
                     setOnClickListener { select(if (selected == value) null else value) }
                 }
