@@ -10,7 +10,7 @@
 # that is. Dependabot moves the FROM images (the syntax line above is moved by hand). Bun here is the version CI uses
 # (.github/workflows): move them together.
 
-FROM oven/bun:1.4.3@sha256:ec06c3b6cea04192ae6770c434f668ca41d343ad19fa6472216c7b48be39c598 AS build
+FROM oven/bun:1.4.4@sha256:1d22548f177f4ff38e0c15baa3c2c46c6c2060ba2d1bc573bb4720b407548f1d AS build
 WORKDIR /src
 # Manifests first, so dependency installs are cached until a package.json changes. Every workspace is listed
 # (scripts/repo.test.ts checks), or the frozen install would not match the lockfile.
@@ -42,7 +42,7 @@ RUN bun packages/board/scripts/build.ts --embed \
       --define="process.env.NOTATO_VERSION=\"$VERSION\"" \
       packages/cli/src/main.ts --outfile /out/notato
 
-FROM debian:bookworm-slim@sha256:7c7b2c966bc9ee8cedfeef67e0e279108992c77681fa595db4a9d65c06ccc587
+FROM debian:bookworm-slim@sha256:99c0b25c46d0214d5a2091092e7908907dcaecd6a962cde0ac700acee222b6f3
 RUN useradd --system --uid 10001 --create-home notato \
  && mkdir /data && chown notato:notato /data
 COPY --from=build /out/notato /usr/local/bin/notato
