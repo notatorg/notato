@@ -33,15 +33,15 @@
         "check:service": "bun run lint && bun run typecheck && bun run test:service && bun run build:service"
     },
     "devDependencies": {
-        "@biomejs/biome": "^2.5.15",
-        "@modelcontextprotocol/sdk": "^1.32.0",
+        "@biomejs/biome": "^2.6.4",
+        "@modelcontextprotocol/sdk": "^1.32.2",
         "@notato/schema": "workspace:*",
         "@types/bun": "latest",
         "ajv": "^8.17.1",
         "typescript": "^7.0.2",
-        "vite": "^8.3.2",
+        "vite": "^8.3.5",
         "vite7": "npm:vite@^7.3.1",
-        "vitest": "^5.0.3",
-        "wrangler": "4.151.1"
+        "vitest": "^5.0.5",
+        "wrangler": "4.155.0"
     }
 }
