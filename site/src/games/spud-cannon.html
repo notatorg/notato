@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Spud Cannon · Notato games</title>
+<meta name="description" content="Fire potatoes at the bug on top of a tower of potatoes. Not at the potatoes. A Notato game.">
+<link rel="icon" href="../notato.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wdth,wght@12..96,75..100,400..800&family=Caveat:wght@500..700&family=Figtree:ital,wght@0,400..700;1,400&family=JetBrains+Mono:wght@400;500;700&display=swap">
+<link rel="stylesheet" href="../base.css">
+<link rel="stylesheet" href="games.css">
+<script type="module" src="spud-cannon.js"></script>
+</head>
+<body>
+<a class="skip" href="#game">Skip to the game</a>
+<header class="nav">
+  <div class="wrap nav-in">
+    <a class="brand" href="../index.html"><img src="../notato.png" alt="" width="34" height="34"><span>Notato</span></a>
+    <span class="games-badge">Games</span>
+    <nav class="nav-links" aria-label="Site">
+      <a href="../index.html">Home</a>
+      <a href="index.html">Games</a>
+      <a href="../docs/index.html">Docs</a>
+    </nav>
+    <a class="btn btn-sm btn-tab" href="../docs/index.html">Get started</a>
+  </div>
+</header>
+
+<main class="wrap games" id="game">
+  <p class="games-crumb"><a href="index.html">Games</a> › Spud Cannon</p>
+  <h1>Spud Cannon</h1>
+  <p class="games-lede">Russ is a tower of three potatoes, and there is a bug on top. Knock it off with a potato. Do not hit Russ.</p>
+
+  <div class="game-layout">
+    <div class="stage stage-wide" data-game="cannon">
+      <canvas aria-label="Spud Cannon. Drag back from the cannon to aim, let go to fire. Or use the arrow keys and Space." tabindex="0"></canvas>
+      <div class="hud" aria-hidden="true">
+        <span>Score <b data-hud="score">0</b></span>
+        <span class="hearts" data-hud="hearts"></span>
+        <span>Spuds <b data-hud="spuds">3</b></span>
+        <span>Wind <b data-hud="wind">calm</b></span>
+        <span class="hud-end">Best <b data-hud="best">0</b></span>
+      </div>
+      <button class="mute" type="button"></button>
+      <p class="sr-only" aria-live="polite" data-say></p>
+    </div>
+
+    <aside class="howto">
+      <h2>How to play</h2>
+      <ul>
+        <li><b>Drag back</b> anywhere on the scene, like a slingshot. The further you pull, the harder it fires. Let go to fire.</li>
+        <li><b>Keys:</b> <kbd>←</kbd> <kbd>→</kbd> aim, <kbd>↑</kbd> <kbd>↓</kbd> power, <kbd>Space</kbd> fires.</li>
+        <li>Bugs come as nits, minors, majors and blockers: the rarer and smaller, the more points. Hit one with your first spud for a bonus point.</li>
+        <li>Three spuds per bug. Run out, or hit the tower, and you lose a heart (and the top potato goes flying).</li>
+        <li>Each bug moves the tower further back, and a new one hops in every four bugs: Russ, Ruby, Sunny, Violet and Pip. Wind, the web's annoyances (cookie banners, chat pop-ups and worse) and fidgety towers join in, and the day wears on into night.</li>
+      </ul>
+      <p class="other">Rather tidy up? <a href="note-toss.html">Inbox Zero</a>: bin the notes your agent resolved. Just want to blow things up? <a href="mash-pit.html">Mash Pit</a>.</p>
+    </aside>
+  </div>
+</main>
+
+<footer class="foot">
+  <div class="wrap foot-in">
+    <span class="brand"><img src="../notato.png" alt="" width="28" height="28"><span>Notato</span></span>
+    <p>Figma-style comments for your running app. Fixes bugs without potatoes.</p>
+    <p class="foot-links"><a href="index.html">Games</a><a href="../docs/index.html">Docs</a><a href="https://github.com/notatorg/notato">Source on GitHub</a><a href="../index.html">Home</a></p>
+  </div>
+</footer>
+</body>
+</html>

@@ -421,6 +421,7 @@ function layout(options: {
     <nav class="nav-links" aria-label="Site">
       <a href="../index.html">Home</a>
       <a href="index.html"${slug === "index" ? ' aria-current="page"' : ""}>Docs</a>
+      <a href="../games/index.html">Games</a>
       <a href="${REPO_URL}">GitHub</a>
     </nav>
     <a class="btn btn-sm btn-tab" href="../index.html#try">Try it</a>
@@ -442,7 +443,7 @@ function layout(options: {
   <div class="wrap foot-in">
     <span class="brand"><img src="../notato.png" alt="" width="28" height="28"><span>Notato</span></span>
     <p>Made from the READMEs in the repository, so it says what the code does.</p>
-    <p class="foot-links"><a href="${REPO_URL}">Source on GitHub</a><a href="https://buymeacoffee.com/notato" target="_blank" rel="noopener noreferrer">Support Notato</a><a href="../index.html">Home</a></p>
+    <p class="foot-links"><a href="${REPO_URL}">Source on GitHub</a><a href="https://buymeacoffee.com/notato" target="_blank" rel="noopener noreferrer">Support Notato</a><a href="../games/index.html">Games</a><a href="../index.html">Home</a></p>
   </div>
 </footer>
 </body>

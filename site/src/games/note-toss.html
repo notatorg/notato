@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Inbox Zero · Notato games</title>
+<meta name="description" content="Your agent fixed them, you get to bin them. Flick resolved notes into the bin, and mind the fan. A Notato game.">
+<link rel="icon" href="../notato.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wdth,wght@12..96,75..100,400..800&family=Caveat:wght@500..700&family=Figtree:ital,wght@0,400..700;1,400&family=JetBrains+Mono:wght@400;500;700&display=swap">
+<link rel="stylesheet" href="../base.css">
+<link rel="stylesheet" href="games.css">
+<script type="module" src="note-toss.js"></script>
+</head>
+<body>
+<a class="skip" href="#game">Skip to the game</a>
+<header class="nav">
+  <div class="wrap nav-in">
+    <a class="brand" href="../index.html"><img src="../notato.png" alt="" width="34" height="34"><span>Notato</span></a>
+    <span class="games-badge">Games</span>
+    <nav class="nav-links" aria-label="Site">
+      <a href="../index.html">Home</a>
+      <a href="index.html">Games</a>
+      <a href="../docs/index.html">Docs</a>
+    </nav>
+    <a class="btn btn-sm btn-tab" href="../docs/index.html">Get started</a>
+  </div>
+</header>
+
+<main class="wrap games" id="game">
+  <p class="games-crumb"><a href="index.html">Games</a> › Inbox Zero</p>
+  <h1>Inbox Zero</h1>
+  <p class="games-lede">Your agent fixed them. You get to bin them. Flick each resolved note into the bin, and mind the fan.</p>
+
+  <div class="game-layout">
+    <div class="stage stage-tall" data-game="toss">
+      <canvas aria-label="Inbox Zero. Swipe up from the note to throw it. Or aim with the arrow keys and press Space." tabindex="0"></canvas>
+      <div class="hud" aria-hidden="true">
+        <span>Streak <b data-hud="streak">0</b></span>
+        <span>Score <b data-hud="score">0</b></span>
+        <span class="hearts" data-hud="hearts"></span>
+        <span class="hud-end">Best <b data-hud="best">0</b></span>
+      </div>
+      <button class="mute" type="button"></button>
+      <p class="sr-only" aria-live="polite" data-say></p>
+    </div>
+
+    <aside class="howto">
+      <h2>How to play</h2>
+      <ul>
+        <li><b>Swipe up</b> from the note to throw it. Only the direction counts: every throw has the same arc.</li>
+        <li><b>Keys:</b> <kbd>←</kbd> <kbd>→</kbd> aim, <kbd>Space</kbd> throws.</li>
+        <li>The fan blows it sideways. The bigger the wind number, the more you aim into it.</li>
+        <li>Notes come in Notato's severities. A nit is a light scrap the fan carries off (3 points), a blocker a heavy wad that barely drifts (2 points), and minors and majors are 1 each.</li>
+        <li>Five in a row sets the note on fire, and burning notes score double.</li>
+        <li>Three misses and the run is over. The bin moves back as you bin more, then starts to slide, and the office stays late into the night.</li>
+      </ul>
+      <p class="other">Want something louder? <a href="spud-cannon.html">Spud Cannon</a>: knock the bug off a tower of potatoes.</p>
+    </aside>
+  </div>
+</main>
+
+<footer class="foot">
+  <div class="wrap foot-in">
+    <span class="brand"><img src="../notato.png" alt="" width="28" height="28"><span>Notato</span></span>
+    <p>Figma-style comments for your running app. Your agent resolves the notes; binning them is optional.</p>
+    <p class="foot-links"><a href="index.html">Games</a><a href="../docs/index.html">Docs</a><a href="https://github.com/notatorg/notato">Source on GitHub</a><a href="../index.html">Home</a></p>
+  </div>
+</footer>
+</body>
+</html>
