@@ -37,6 +37,8 @@ import {
 } from "./kit.js";
 
 const stage = document.querySelector('[data-game="cannon"]');
+/** Mash Pit: the same scene as a toy, with no score. The Spudzooka never runs out, and buttons make it silly. */
+const PARTY = stage.dataset.mode === "party";
 const { canvas, ctx, size, begin, local, onResize } = makeCanvas(stage);
 const sound = makeSound(stage.querySelector(".mute"));
 const say = announcer(stage.querySelector("[data-say]"));
@@ -222,32 +224,67 @@ const aim = {
     start: null,
 };
 const cam = { x: 300, y: -200, zoom: 0.7, mode: "frame" };
-const stack = {
-    who: 0,
-    x: distanceFor(1),
-    fromX: 0,
-    toX: 0,
-    base: distanceFor(1),
-    sway: 0,
-    swaySpeed: 0,
-    mood: "calm", // calm | nervous | flinch | cheer | dizzy
-    moodTimer: 0,
-    blink: 0,
-    nextBlink: 2,
-    lean: 0,
-    leanV: 0,
-    hop: 0,
-    hopV: 0,
-    // The top potato, when a hit sends it flipping into the air: its height above its place, and its turn.
-    popY: 0,
-    popV: 0,
-    popRot: 0,
-    popSpin: 0,
-    walking: false,
-    speech: "",
-    speechTimer: 0,
-    near: 0,
-};
+/** A fresh tower of potatoes at `x`, of variety `who`. */
+function freshTower(x, who) {
+    return {
+        who,
+        x,
+        fromX: 0,
+        toX: 0,
+        base: x,
+        sway: 0,
+        swaySpeed: 0,
+        mood: "calm", // calm | nervous | flinch | cheer | dizzy
+        moodTimer: 0,
+        blink: 0,
+        nextBlink: rand(1, 4),
+        lean: 0,
+        leanV: 0,
+        hop: 0,
+        hopV: 0,
+        // The top potato, when a hit sends it flipping into the air: its height above its place, and its turn.
+        popY: 0,
+        popV: 0,
+        popRot: 0,
+        popSpin: 0,
+        // Each potato, when the Spudzooka blows the stack apart: how far it is from its place, and how it is moving.
+        parts: [0, 1, 2].map(() => ({ dx: 0, dy: 0, vx: 0, vy: 0, rot: 0, spin: 0, air: false })),
+        scatter: 0,
+        walking: false,
+        speech: "",
+        speechTimer: 0,
+        near: 0,
+    };
+}
+
+/**
+ * The tower being moved, drawn or hit. It is the one with the bug (`mainTower`) except while `withTower` lends
+ * the name to one of Mash Pit's `extras`, so the same code serves every tower.
+ */
+let stack = freshTower(distanceFor(1), 0);
+const mainTower = stack;
+let extras = [];
+const towers = () => [...extras, mainTower];
+
+function withTower(t, fn) {
+    const previous = stack;
+    stack = t;
+    try {
+        return fn();
+    } finally {
+        stack = previous;
+    }
+}
+
+/** Which tower, and which of its potatoes, `p` is touching; or null. */
+function towerHit(p) {
+    for (const t of towers()) {
+        const i = withTower(t, () => partHit(p));
+        if (i >= 0) return { t, i };
+    }
+    return null;
+}
+
 const bug = {
     sev: "minor",
     on: true,
@@ -288,6 +325,7 @@ const pest = {
     wobbleV: 0,
     appear: 1,
     fresh: false,
+    blown: 0,
 };
 let potato = null;
 let particles = [];
@@ -326,6 +364,8 @@ function setUpLevel(level) {
         pest.range = Math.min(50 + (level - 5) * 14, 120) * (kind === "newsletter" ? 0.7 : 1);
         pest.phase = rand(0, Math.PI * 2);
     }
+    // Now and then a golden crate with a Spudzooka in it.
+    if (!PARTY && level >= 2 && !zooka.on && !crate.on && Math.random() < 0.12) dropCrate();
     stack.sway = level >= 7 ? Math.min((level - 6) * 11, 56) : 0;
     stack.swaySpeed = level >= 7 ? Math.min(0.9 + (level - 7) * 0.16, 2.1) : 0;
 }
@@ -358,6 +398,11 @@ function setHud(node, text) {
 }
 
 function updateHud() {
+    if (PARTY) {
+        setHud(hud.fired, String(game.fired ?? 0));
+        setHud(hud.kabooms, String(game.kabooms ?? 0));
+        return;
+    }
     setHud(hud.score, String(game.score));
     setHud(hud.best, String(Math.max(best.value, game.score)));
     setHud(hud.spuds, String(game.spuds));
@@ -379,6 +424,14 @@ function newGame() {
         slowTarget: 1,
     });
     potato = null;
+    rockets = [];
+    extras = [];
+    drops = [];
+    pile = [];
+    Object.assign(rain, { on: false, umbrella: 0 });
+    payback.on = false;
+    Object.assign(zooka, { on: false, firing: false, time: 0 });
+    crate.on = false;
     particles = [];
     floaters = [];
     splats = [];
@@ -387,19 +440,24 @@ function newGame() {
     setUpLevel(1);
     stack.x = stack.base;
     stack.who = 0;
-    Object.assign(stack, { popY: 0, popV: 0, popRot: 0 });
+    Object.assign(stack, { popY: 0, popV: 0, popRot: 0, scatter: 0 });
+    for (const o of stack.parts)
+        Object.assign(o, { dx: 0, dy: 0, vx: 0, vy: 0, rot: 0, spin: 0, air: false });
+    pest.blown = 0;
     stack.swapTo = undefined;
     stack.mood = "calm";
     stack.lean = 0;
     bug.on = true;
     bug.landing = false;
-    startLevel();
+    if (PARTY) startParty();
+    else startLevel();
     canvas.focus({ preventScroll: true });
 }
 
 function startLevel() {
     game.state = "aim";
     game.banner = 0.001;
+    game.bannerText = null;
     cam.mode = "frame";
     updateHud();
     sound.tone(523, 523, 0.1, "triangle", 0.06);
@@ -530,7 +588,7 @@ function endShot(kind) {
         sound.chime(784, 0.07, 0.09);
         mood("cheer", 1.8);
         stack.hopV = -380;
-        speak(pick(["Thank you!", "Fixed!", "My hero.", "Ship it!", "Resolved!", "Nice shot!"]));
+        speak(pick(["Thank you!", "Fixed!", "My hero.", "Ship it!", "Mashed it!", "Nice shot!"]));
         floaters.push({
             kind: "pill",
             text: "✓ Resolved",
@@ -583,7 +641,7 @@ function endShot(kind) {
         speak(
             game.hearts
                 ? pick([
-                      "Ouch! That's a regression.",
+                      "That's a regression!",
                       "OW. Filing a bug.",
                       "Not the face!",
                       "I've been mashed!",
@@ -616,7 +674,7 @@ function endShot(kind) {
             speak(
                 near
                     ? pick(["Close!", "Whoa, close!", "Felt the breeze!"])
-                    : pick(["Missed!", "Over here!", "Bit more?", "Try again!"]),
+                    : pick(["Nope!", "Over here!", "Bit more?", "Try again!"]),
                 1.5
             );
             say(`Missed. ${game.spuds} potato${game.spuds === 1 ? "" : "es"} left for this bug.`);
@@ -680,9 +738,808 @@ function shake(amount) {
     if (!reduceMotion.matches) game.shake = Math.max(game.shake, amount);
 }
 
+// ------------------------------------------------- the Spudzooka (an easter egg)
+//
+// Now and then a golden crate drops by the cannon. Tap it (or hit it with a potato, or type the Konami code, or
+// "spudzooka") and the cannon becomes a potato launcher for a few seconds: hold to spray rocket spuds at
+// whatever you point at. They burst into potato confetti. The bug still counts; the tower is forgiven.
+
+const ZOOKA_TIME = 12;
+const ZOOKA_RATE = 0.075;
+const ROCKET_SPEED = 1150;
+const KONAMI = [
+    "arrowup",
+    "arrowup",
+    "arrowdown",
+    "arrowdown",
+    "arrowleft",
+    "arrowright",
+    "arrowleft",
+    "arrowright",
+    "b",
+    "a",
+];
+const zooka = { on: false, time: 0, firing: false, target: null, clock: 0, boom: 0, heckle: 0 };
+const crate = { on: false, x: 0, y: 0, vy: 0, landed: false, glint: 0 };
+let rockets = [];
+let typed = [];
+
+/** A point on the canvas, in the world. */
+const toWorld = (p) => ({
+    x: cam.x + (p.x - size.w / 2) / cam.zoom,
+    y: cam.y + (p.y - size.h / 2) / cam.zoom,
+});
+
+function dropCrate() {
+    crate.on = true;
+    crate.landed = false;
+    crate.x = 131;
+    crate.y = -560;
+    crate.vy = 150;
+    say("A golden crate is floating down by the cannon.");
+}
+
+const inCrate = (x, y, pad = 0) =>
+    crate.on && Math.abs(x - crate.x) < 26 + pad && y > crate.y - 48 - pad && y < crate.y + pad;
+
+function startZooka() {
+    if (zooka.on || !["aim", "flight", "result", "walk"].includes(game.state)) return;
+    Object.assign(zooka, { on: true, time: ZOOKA_TIME, firing: false, target: null, clock: 0 });
+    if (crate.on) {
+        particles.push(...confetti(crate.x, crate.y - 24, 40, 1.4));
+        rings.push({ x: crate.x, y: crate.y - 24, r: 16, life: 0.4, max: 0.4 });
+        crate.on = false;
+    }
+    aim.dragging = false;
+    game.bannerText = { title: "SPUDZOOKA!", sub: "hold to fire  ·  go wild" };
+    game.banner = 0.001;
+    shake(0.35);
+    buzz([30, 30, 60]);
+    for (const [i, f] of [392, 523, 659, 784, 1046].entries())
+        sound.tone(f, f, 0.14, "square", 0.04, i * 0.07);
+    speak(
+        pick([
+            "Oh no.",
+            "Is that even legal?",
+            "That's not in the spec!",
+            "Not the potato launcher…",
+        ]),
+        2
+    );
+    say("Spudzooka! Hold to fire potatoes everywhere, for twelve seconds.");
+}
+
+function stopZooka() {
+    zooka.on = false;
+    zooka.firing = false;
+    speak(pick(["Phew.", "Is it over?", "I need a lie down."]), 1.8);
+    sound.tone(523, 262, 0.4, "triangle", 0.06);
+}
+
+function launchRocket() {
+    let angle = aim.angle;
+    if (zooka.target) {
+        angle = Math.atan2(-(zooka.target.y - PIVOT.y), zooka.target.x - PIVOT.x);
+        if (angle < -Math.PI / 2) angle = Math.PI;
+        angle = clamp(angle, -0.35, 1.5);
+        aim.angle = clamp(angle, MIN_ANGLE, MAX_ANGLE);
+    }
+    const a = angle + rand(-0.05, 0.05);
+    const dx = Math.cos(a);
+    const dy = -Math.sin(a);
+    const speed = ROCKET_SPEED * rand(0.92, 1.08);
+    game.fired = (game.fired ?? 0) + 1;
+    if (PARTY) updateHud();
+    rockets.push({
+        x: PIVOT.x + dx * BARREL,
+        y: PIVOT.y + dy * BARREL,
+        vx: dx * speed,
+        vy: dy * speed,
+        rot: rand(0, 6),
+        spin: rand(10, 18),
+        seed: rand(0, 6),
+        puff: 0,
+    });
+    game.recoil = 1;
+    shake(0.05);
+    for (let i = 0; i < 4; i++)
+        particles.push({
+            kind: "puff",
+            x: PIVOT.x - dx * 30,
+            y: PIVOT.y - dy * 30,
+            vx: -dx * rand(60, 160) + rand(-30, 30),
+            vy: -dy * rand(60, 160) + rand(-30, 30),
+            r: rand(6, 11),
+            grow: 30,
+            color: "#f4f2ea",
+            alpha: 0.85,
+            life: rand(0.4, 0.7),
+            max: 0.7,
+            drag: 3,
+        });
+    sound.noise(0.09, rand(1400, 2200), 0.07, 0, 4000, "bandpass");
+}
+
+/** A rocket spud bursts: potato confetti, smoke and a thump. */
+function burst(r) {
+    particles.push(...confetti(r.x, r.y, 9, 1.3));
+    for (let i = 0; i < 3; i++)
+        particles.push({
+            kind: "puff",
+            x: r.x + rand(-8, 8),
+            y: r.y + rand(-8, 8),
+            vx: rand(-60, 60),
+            vy: rand(-80, 0),
+            r: rand(7, 12),
+            grow: 26,
+            color: "#e9dcc4",
+            alpha: 0.75,
+            life: 0.5,
+            max: 0.5,
+            drag: 2,
+        });
+    rings.push({ x: r.x, y: r.y, r: 8, life: 0.22, max: 0.22 });
+    if (zooka.boom <= 0) {
+        zooka.boom = 0.06;
+        sound.noise(0.2, 520, 0.3, 0, 140);
+        sound.tone(140, 45, 0.18, "sine", 0.22);
+        shake(0.07);
+    }
+}
+
+function stepZooka(realDt, dt) {
+    zooka.boom -= realDt;
+    zooka.heckle -= realDt;
+    // The crate floats down on its parachute, lands with a bump, and glints.
+    if (crate.on && !crate.landed) {
+        crate.y += crate.vy * dt;
+        if (crate.y >= 0) {
+            crate.y = 0;
+            crate.landed = true;
+            sound.tone(200, 120, 0.15, "triangle", 0.08);
+            shake(0.08);
+            if (game.state === "aim" && stack.speechTimer <= 0)
+                speak(
+                    pick(["Ooh, what's in the crate?", "Don't open that.", "Is that… gold?"]),
+                    1.8
+                );
+        }
+    }
+    crate.glint += realDt;
+    if (zooka.on) {
+        zooka.time -= realDt;
+        if (zooka.firing && !["title", "over"].includes(game.state)) {
+            zooka.clock -= realDt;
+            while (zooka.clock <= 0) {
+                launchRocket();
+                zooka.clock += ZOOKA_RATE;
+            }
+        }
+        if (zooka.time <= 0) stopZooka();
+    }
+    for (const r of rockets) {
+        r.vy += GRAVITY * 0.12 * dt;
+        r.x += r.vx * dt;
+        r.y += r.vy * dt;
+        r.rot += r.spin * dt;
+        r.puff -= dt;
+        if (r.puff <= 0) {
+            r.puff = 0.035;
+            particles.push({
+                kind: "puff",
+                x: r.x,
+                y: r.y,
+                vx: rand(-15, 15),
+                vy: rand(-15, 15),
+                r: 4,
+                grow: 16,
+                color: "#ffffff",
+                alpha: 0.6,
+                life: 0.35,
+                max: 0.35,
+            });
+        }
+        if (bug.on && Math.hypot(r.x - bug.x, r.y - bug.y) < POTATO_R + bugSize() + 4) {
+            // The Spudzooka is for potatoes. The bug just laughs.
+            r.dead = true;
+            if (bug.tauntTimer <= 0) taunt(pick(["nyah", "can't touch this", "missed me", "lol"]));
+        } else if (towerHit(r)) {
+            r.dead = true;
+            const hit = towerHit(r);
+            withTower(hit.t, () => {
+                blowUp(hit.i, r);
+                if (stack.speechTimer <= 0 && zooka.heckle <= 0) {
+                    zooka.heckle = 0.5;
+                    mood("dizzy", 1);
+                    speak(
+                        pick(["Hey!", "I'm on your side!", "Watch the peel!", "My mash!", "Rude."]),
+                        1.2
+                    );
+                }
+            });
+        } else if (pestHere() && bounceOffPest(r)) {
+            r.dead = true;
+            blowUpPest();
+        } else if (inCrate(r.x, r.y)) {
+            r.dead = true;
+        } else if (r.y >= -POTATO_R) {
+            r.y = -4;
+            r.dead = true;
+            splats.push({ x: r.x, r: rand(12, 20), seed: rand(0, 10) });
+            if (splats.length > 30) splats.shift();
+        } else if (r.x > stack.base + 1400 || r.x < -700 || r.y < -2600) {
+            r.gone = true;
+        }
+        if (r.dead) burst(r);
+    }
+    rockets = rockets.filter((r) => !r.dead && !r.gone);
+    if (particles.length > 900) particles.splice(0, particles.length - 900);
+}
+
+/** The annoyance is there to hit, unless the Spudzooka has just blown it to bits. */
+const pestHere = () => pest.on && !(pest.blown > 0);
+
+/** The annoyance bursts: a cookie banner into cookies, the rest into chunks of itself. It comes back, as they do. */
+function blowUpPest() {
+    const cx = pest.x + pest.w / 2;
+    const cy = pest.y + pest.h / 2;
+    const colours = {
+        chat: ["#fffaf0", "#8b5cf6", "#e5484d"],
+        newsletter: ["#fffaf0", "#ec4899", "#ffffff"],
+        spinner: ["#fffaf0", "#1f8a78", "#e3e5e8"],
+    };
+    const count = pest.kind === "cookies" ? 16 : 14;
+    for (let i = 0; i < count; i++) {
+        const a = rand(-Math.PI, 0);
+        const sp = rand(160, 520);
+        particles.push({
+            kind: pest.kind === "cookies" ? "cookie" : "chunk",
+            x: cx + rand(-pest.w / 3, pest.w / 3),
+            y: cy + rand(-pest.h / 3, pest.h / 3),
+            vx: Math.cos(a) * sp,
+            vy: Math.sin(a) * sp,
+            r: pest.kind === "cookies" ? rand(6, 11) : rand(5, 10),
+            rot: rand(0, 6),
+            spin: rand(-10, 10),
+            seed: rand(0, 10),
+            color: pick(colours[pest.kind] ?? ["#fffaf0"]),
+            life: rand(1.2, 1.8),
+            max: 1.8,
+            drag: 0.6,
+            gravity: 900,
+        });
+    }
+    particles.push(...confetti(cx, cy, 12, 1.4));
+    rings.push({ x: cx, y: cy, r: 14, life: 0.3, max: 0.3 });
+    floaters.push({
+        kind: "word",
+        text: pest.kind === "cookies" ? "Cookies everywhere!" : PESTS[pest.kind].hit,
+        x: cx,
+        y: cy - 50,
+        vy: -30,
+        life: 1.1,
+        max: 1.1,
+        color: "#f4c56e",
+    });
+    sound.noise(0.25, 900, 0.3, 0, 300);
+    sound.tone(700, 300, 0.2, "triangle", 0.06);
+    shake(0.15);
+    pest.blown = 3.5;
+}
+
+function drawRockets() {
+    for (const r of rockets) {
+        // A little flame out of the back.
+        const back = Math.atan2(-r.vy, -r.vx);
+        ctx.save();
+        ctx.translate(r.x, r.y);
+        ctx.rotate(back);
+        ctx.beginPath();
+        ctx.moveTo(10, -5);
+        ctx.quadraticCurveTo(26 + Math.random() * 10, 0, 10, 5);
+        ctx.closePath();
+        ctx.fillStyle = "#ffb347";
+        ctx.fill();
+        ctx.restore();
+        drawPotato(ctx, r.x, r.y, POTATO_R * 0.9, r.rot, r.seed);
+    }
+}
+
+function drawCrate() {
+    ctx.save();
+    ctx.translate(crate.x, crate.y);
+    if (!crate.landed) {
+        // A striped parachute.
+        const sway = Math.sin(game.time * 2) * 0.08;
+        ctx.rotate(sway);
+        ctx.strokeStyle = INK;
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        for (const sx of [-22, 22]) {
+            ctx.moveTo(sx, -46);
+            ctx.lineTo(sx * 2.1, -104);
+        }
+        ctx.moveTo(0, -46);
+        ctx.lineTo(0, -116);
+        ctx.stroke();
+        for (let i = 0; i < 4; i++) {
+            ctx.beginPath();
+            ctx.moveTo(-50 + i * 25, -104);
+            ctx.arc(-50 + i * 25 + 12.5, -104, 12.5, Math.PI, 0);
+            ctx.closePath();
+            inked(ctx, i % 2 ? "#ffffff" : "#1f8a78", 2.5);
+        }
+        ctx.beginPath();
+        ctx.arc(0, -104, 50, Math.PI, 0);
+        ctx.lineWidth = 3;
+        ctx.strokeStyle = INK;
+        ctx.stroke();
+    }
+    // The crate, gold, with a question mark.
+    const bob = crate.landed ? Math.abs(Math.sin(crate.glint * 3)) * -3 : 0;
+    roundRect(ctx, -26, -48 + bob, 52, 48, 6);
+    inked(ctx, "#f4c56e", 3);
+    ctx.strokeStyle = "#c98b2a";
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(-26, -24 + bob);
+    ctx.lineTo(26, -24 + bob);
+    ctx.stroke();
+    inkedText(ctx, "?", 0, -24 + bob, "#ffffff", 30, 800, 5);
+    // Sparkles.
+    for (let i = 0; i < 3; i++) {
+        const a = crate.glint * 1.8 + (i / 3) * Math.PI * 2;
+        const tw = (Math.sin(crate.glint * 5 + i * 2) + 1) / 2;
+        ctx.globalAlpha = tw;
+        star(Math.cos(a) * 40, -24 + Math.sin(a) * 30 + bob, 5 + tw * 3);
+    }
+    ctx.globalAlpha = 1;
+    ctx.restore();
+}
+
+/** The launcher's barrel, drawn in place of the cannon's while the Spudzooka is on. */
+function drawZookaBarrel(recoil) {
+    ctx.translate(-recoil * 0.6, 0);
+    // Flared back end.
+    ctx.beginPath();
+    ctx.moveTo(-44, -24);
+    ctx.lineTo(-24, -16);
+    ctx.lineTo(-24, 16);
+    ctx.lineTo(-44, 24);
+    ctx.closePath();
+    inked(ctx, "#3f6b4f", 3);
+    roundRect(ctx, -26, -17, BARREL + 34, 34, 8);
+    inked(ctx, "#5f8f5a", 3);
+    ctx.fillStyle = "rgba(255, 255, 255, 0.2)";
+    roundRect(ctx, -18, -12, BARREL + 16, 6, 3);
+    ctx.fill();
+    // Hazard stripes and a stencil.
+    ctx.save();
+    roundRect(ctx, BARREL - 12, -17, 20, 34, 4);
+    ctx.clip();
+    ctx.fillStyle = "#f4c56e";
+    ctx.fillRect(BARREL - 12, -17, 20, 34);
+    ctx.fillStyle = INK;
+    for (let i = -2; i < 4; i++) {
+        ctx.beginPath();
+        ctx.moveTo(BARREL - 12 + i * 10, -17);
+        ctx.lineTo(BARREL - 6 + i * 10, -17);
+        ctx.lineTo(BARREL - 18 + i * 10 + 18, 17);
+        ctx.lineTo(BARREL - 24 + i * 10 + 18, 17);
+        ctx.closePath();
+        ctx.fill();
+    }
+    ctx.restore();
+    roundRect(ctx, BARREL - 12, -17, 20, 34, 4);
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = INK;
+    ctx.stroke();
+    ctx.fillStyle = "#1d2b20";
+    ctx.font = "800 12px 'JetBrains Mono', monospace";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText("SPUD", BARREL * 0.42, 1);
+    // A sight on top.
+    roundRect(ctx, 14, -29, 18, 12, 3);
+    inked(ctx, "#3f6b4f", 2.5);
+}
+
+/** How much Spudzooka is left, under the HUD. */
+function drawZookaMeter() {
+    const w = Math.min(220, size.w * 0.5);
+    const x = size.w / 2 - w / 2;
+    const y = 58;
+    roundRect(ctx, x, y, w, 26, 13);
+    inked(ctx, "#17181b", 2.5);
+    const left = clamp(zooka.time / ZOOKA_TIME, 0, 1);
+    roundRect(ctx, x + 4, y + 4, Math.max(18, (w - 8) * left), 18, 9);
+    ctx.fillStyle = left < 0.25 && Math.sin(game.time * 20) > 0 ? "#e5484d" : "#f4c56e";
+    ctx.fill();
+    ctx.fillStyle = INK;
+    ctx.font = "800 12px 'JetBrains Mono', monospace";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText("SPUDZOOKA", size.w / 2, y + 14);
+}
+
+// ------------------------------------------------------- Mash Pit: the toy mode
+//
+// The same scene with no score. The Spudzooka never runs out, and buttons under the stage start a Spud Shower
+// (it rains potatoes; the tower puts up an umbrella), call Payback (the tower lobs spuds at the cannon), bring
+// on an annoyance to blow up, or swap in another tower.
+
+const PAYBACK_SHOTS = 7;
+const rain = { on: false, clock: 0, umbrella: 0 };
+const payback = { on: false, shots: 0, clock: 0, aim: 0 };
+let drops = [];
+let pile = [];
+let bonk = 0;
+
+function startRain() {
+    if (rain.on) return;
+    Object.assign(rain, { on: true, clock: 0 });
+    game.bannerText = { title: "SPUD SHOWER!", sub: "it's raining potatoes" };
+    game.banner = 0.001;
+    speak(pick(["Is it… raining spuds?", "Umbrella time!", "Forecast said chips."]), 2);
+    sound.noise(1.2, 900, 0.05, 0, 3000, "bandpass");
+    say("A spud shower! Potatoes are raining down for a few seconds.");
+}
+
+function startPayback() {
+    if (payback.on) return;
+    Object.assign(payback, { on: true, shots: PAYBACK_SHOTS, clock: 0.9 });
+    game.bannerText = { title: "PAYBACK!", sub: "the tower fires back" };
+    game.banner = 0.001;
+    speak(pick(["My turn!", "Two can play at that!", "Payback time!"]), 2);
+    say("Payback! The tower is lobbing potatoes at your cannon.");
+}
+
+/** A potato falling from the sky, somewhere over what the camera can see. */
+function dropSpud() {
+    const half = size.w / 2 / cam.zoom;
+    drops.push({
+        x: cam.x + rand(-half, half),
+        y: cam.y - size.h / 2 / cam.zoom - 40,
+        vx: game.wind * 0.3 + rand(-50, 50),
+        vy: rand(80, 260),
+        rot: rand(0, 6),
+        spin: rand(-8, 8),
+        seed: rand(0, 6),
+        bounces: 0,
+    });
+}
+
+/** The tower's own launcher lobs one spud at the cannon. */
+function lobSpud() {
+    const sx = stack.x - 44;
+    const sy = -112;
+    const tx = rand(-30, 70);
+    const ty = -50;
+    const T = rand(0.95, 1.25);
+    drops.push({
+        x: sx,
+        y: sy,
+        vx: (tx - sx) / T,
+        vy: (ty - sy - 0.5 * GRAVITY * T * T) / T,
+        rot: 0,
+        spin: rand(-14, -8),
+        seed: rand(0, 6),
+        bounces: 0,
+        lobbed: true,
+    });
+    payback.aim = 1;
+    sound.tone(240, 120, 0.15, "square", 0.05);
+    sound.noise(0.2, 1200, 0.15, 0, 2000);
+    for (let i = 0; i < 5; i++)
+        particles.push({
+            kind: "puff",
+            x: sx - 10,
+            y: sy,
+            vx: rand(-90, -20),
+            vy: rand(-60, 20),
+            r: rand(5, 9),
+            grow: 22,
+            color: "#f4f2ea",
+            alpha: 0.85,
+            life: 0.5,
+            max: 0.5,
+            drag: 3,
+        });
+}
+
+/** Where the tower's umbrella is, while it rains: a dome over the top potato. */
+function umbrellaAt() {
+    const top = stack.parts[2];
+    return {
+        x: stack.x + leanAt(HEAD_Y) + top.dx + 34,
+        y: HEAD_Y - 66 + stack.popY + top.dy + stack.hop,
+        r: 52,
+    };
+}
+
+/** The umbrella nearest to `d`, of all the towers'. */
+function nearestUmbrella(d) {
+    let best = null;
+    for (const t of towers()) {
+        const u = withTower(t, umbrellaAt);
+        if (!best || Math.hypot(d.x - u.x, d.y - u.y) < Math.hypot(d.x - best.x, d.y - best.y))
+            best = u;
+    }
+    return best;
+}
+
+function stepSilliness(realDt, dt) {
+    bonk -= realDt;
+    rain.umbrella = approach(rain.umbrella, rain.on ? 1 : 0, 6, realDt);
+    if (rain.on) {
+        rain.clock -= realDt;
+        while (rain.clock <= 0) {
+            dropSpud();
+            rain.clock += rand(0.03, 0.08);
+        }
+    }
+    if (payback.on) {
+        payback.aim = Math.max(0, payback.aim - realDt * 3);
+        payback.clock -= realDt;
+        if (payback.clock <= 0 && payback.shots > 0) {
+            lobSpud();
+            payback.shots -= 1;
+            payback.clock = rand(0.35, 0.6);
+        }
+        if (payback.shots === 0 && payback.clock < -1.4) {
+            payback.on = false;
+            speak(pick(["Fair's fair.", "We're even.", "Right. Carry on."]), 1.8);
+        }
+    }
+    for (const d of drops) {
+        d.vy += GRAVITY * dt;
+        d.x += d.vx * dt;
+        d.y += d.vy * dt;
+        d.rot += d.spin * dt;
+        const u = rain.umbrella > 0.5 ? nearestUmbrella(d) : null;
+        const toU = u ? Math.hypot(d.x - u.x, d.y - u.y) : Infinity;
+        if (u && toU < u.r + POTATO_R && d.y < u.y + 4 && d.vy > 0) {
+            // Off the umbrella.
+            const nx = (d.x - u.x) / toU;
+            const ny = (d.y - u.y) / toU;
+            d.x = u.x + nx * (u.r + POTATO_R);
+            d.y = u.y + ny * (u.r + POTATO_R);
+            const dot = d.vx * nx + d.vy * ny;
+            d.vx = (d.vx - 2 * dot * nx) * 0.55 + nx * 60;
+            d.vy = (d.vy - 2 * dot * ny) * 0.55;
+            if (bonk <= 0) {
+                bonk = 0.05;
+                sound.tone(900, 700, 0.06, "triangle", 0.04);
+            }
+        } else if (
+            !d.lobbed &&
+            bug.on &&
+            Math.hypot(d.x - bug.x, d.y - bug.y) < POTATO_R + bugSize()
+        ) {
+            d.vy = -Math.abs(d.vy) * 0.5;
+            d.vx += rand(-80, 80);
+            if (bug.tauntTimer <= 0) taunt(pick(["nyah", "dry as a bone", "lol"]));
+        } else if (d.vy > 0 && towerHit(d)) {
+            d.vy = -Math.abs(d.vy) * 0.45;
+            d.vx += (d.x > towerHit(d).t.x ? 1 : -1) * rand(60, 140);
+            if (bonk <= 0) {
+                bonk = 0.08;
+                sound.tone(380, 260, 0.08, "triangle", 0.06);
+            }
+        } else if (d.lobbed && d.x < 112 && d.x > -64 && d.y > -96 && d.vx < 0) {
+            // BONK, off the cannon.
+            d.vx = rand(120, 220);
+            d.vy = -rand(260, 380);
+            game.recoil = Math.max(game.recoil, 0.7);
+            shake(0.12);
+            sound.tone(200, 90, 0.18, "square", 0.07);
+            sound.noise(0.12, 700, 0.3);
+            floaters.push({
+                kind: "burst",
+                text: "BONK!",
+                x: d.x,
+                y: d.y - 40,
+                vy: -18,
+                life: 0.7,
+                max: 0.7,
+            });
+        }
+        if (d.y >= -POTATO_R) {
+            d.y = -POTATO_R;
+            d.bounces += 1;
+            if (d.bounces > 2 || Math.abs(d.vy) < 120) {
+                d.dead = true;
+                pile.push({ x: d.x, rot: d.rot, seed: d.seed });
+                if (pile.length > 46) pile.shift();
+            } else {
+                d.vy = -Math.abs(d.vy) * 0.35;
+                d.vx *= 0.6;
+                if (bonk <= 0) {
+                    bonk = 0.05;
+                    sound.noise(0.06, 500, 0.12);
+                }
+            }
+        }
+        if (d.x < -900 || d.x > stack.base + 1500) d.dead = true;
+    }
+    drops = drops.filter((d) => !d.dead);
+}
+
+function stopRain() {
+    rain.on = false;
+    speak(pick(["Is it over?", "Lovely weather for it.", "Brought a mash umbrella."]), 1.8);
+}
+
+function startParty() {
+    game.state = "aim";
+    game.fired = 0;
+    game.kabooms = 0;
+    cam.mode = "frame";
+    Object.assign(zooka, { on: true, time: Infinity, firing: false, target: null, clock: 0 });
+    pest.on = false;
+    stack.base = 780;
+    stack.x = 780;
+    layoutTowers(3);
+    game.bannerText = { title: "MASH PIT", sub: "hold anywhere to fire" };
+    game.banner = 0.001;
+    updateHud();
+    speak(pick(["Oh no. Not the Mash Pit.", "Go on then.", "Be gentle. Please."]), 2.2);
+    say(
+        "Mash Pit. Hold anywhere on the scene, or Space, to fire potatoes. The buttons below make it rain, and more."
+    );
+}
+
+const PEST_CYCLE = [null, ...PEST_ORDER];
+const MOST_TOWERS = 6;
+
+/** Mash Pit's row of `n` towers, the one with the bug furthest away; the new ones hop in. */
+function layoutTowers(n) {
+    extras = Array.from({ length: n - 1 }, (_, i) => {
+        const t = freshTower(
+            lerp(300, mainTower.base, i / (n - 1)),
+            (mainTower.who + i + 1) % TESTERS.length
+        );
+        t.hopV = -rand(300, 460);
+        return t;
+    });
+}
+
+/** The buttons under Mash Pit's stage. */
+function partyTool(tool, button) {
+    if (!started) return;
+    sound.unlock();
+    if (tool === "rain") {
+        if (rain.on) stopRain();
+        else startRain();
+        button.setAttribute("aria-pressed", String(rain.on));
+    } else if (tool === "payback") {
+        startPayback();
+    } else if (tool === "pest") {
+        const next =
+            PEST_CYCLE[(PEST_CYCLE.indexOf(pest.on ? pest.kind : null) + 1) % PEST_CYCLE.length];
+        if (!next) {
+            pest.on = false;
+            button.querySelector("b").textContent = "none";
+            return;
+        }
+        Object.assign(pest, {
+            on: true,
+            kind: next,
+            w: PESTS[next].w,
+            h: PESTS[next].h,
+            centre: lerp(220, stack.base - 120, 0.5),
+            range: 70,
+            phase: rand(0, Math.PI * 2),
+            appear: 0,
+            blown: 0,
+        });
+        button.querySelector("b").textContent = next === "cookies" ? "cookie banner" : next;
+        speak(PESTS[next].line, 1.8);
+    } else if (tool === "tower") {
+        // One more tower each press, up to six, then back to one.
+        const n = (towers().length % MOST_TOWERS) + 1;
+        layoutTowers(n);
+        button.querySelector("b").textContent = String(n);
+        const newest = extras[extras.length - 1];
+        if (newest)
+            withTower(newest, () =>
+                speak(pick(["Room for one more?", "Is this the queue?", "Hi! What's this?"]), 1.8)
+            );
+        else speak("Where did everyone go?", 1.8);
+        sound.tone(392, 784, 0.18, "triangle", 0.06);
+    }
+}
+
+if (PARTY)
+    for (const button of document.querySelectorAll("[data-tool]"))
+        button.addEventListener("click", () => partyTool(button.dataset.tool, button));
+
+function drawUmbrella() {
+    const t = easeBack(rain.umbrella);
+    if (t <= 0.02) return;
+    const u = umbrellaAt();
+    ctx.save();
+    ctx.translate(u.x, u.y + 66);
+    ctx.scale(t, t);
+    ctx.translate(0, -66);
+    // The handle, down to the middle potato's hand.
+    inkedLine(
+        ctx,
+        [
+            [0, 0],
+            [0, 74],
+        ],
+        "#3a3f46",
+        4,
+        2
+    );
+    ctx.beginPath();
+    ctx.arc(-6, 74, 6, 0, Math.PI);
+    ctx.lineWidth = 4;
+    ctx.strokeStyle = INK;
+    ctx.stroke();
+    // A striped dome.
+    const r = u.r;
+    for (let i = 0; i < 6; i++) {
+        const a0 = Math.PI + (i / 6) * Math.PI;
+        const a1 = Math.PI + ((i + 1) / 6) * Math.PI;
+        ctx.beginPath();
+        ctx.moveTo(0, 0);
+        ctx.arc(0, 0, r, a0, a1);
+        ctx.closePath();
+        ctx.fillStyle = i % 2 ? "#ffffff" : "#e5484d";
+        ctx.fill();
+    }
+    ctx.beginPath();
+    ctx.arc(0, 0, r, Math.PI, 0);
+    // A scalloped hem.
+    for (let i = 6; i >= 0; i--) {
+        const x = -r + (i / 6) * r * 2;
+        ctx.quadraticCurveTo(x + r / 6, 9, x, 0);
+    }
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = INK;
+    ctx.stroke();
+    circle(ctx, 0, -r, 4);
+    inked(ctx, "#3a3f46", 2);
+    ctx.restore();
+}
+
+/** The tower's little launcher, held up while it pays you back. */
+function drawPaybackLauncher() {
+    if (!payback.on || stack !== mainTower) return;
+    ctx.save();
+    ctx.translate(stack.x - 18, -104);
+    ctx.rotate(-0.55 + payback.aim * 0.15);
+    ctx.translate(payback.aim * 5, 0);
+    roundRect(ctx, -46, -9, 52, 18, 5);
+    inked(ctx, "#5f8f5a", 2.5);
+    roundRect(ctx, -50, -11, 10, 22, 3);
+    inked(ctx, "#f4c56e", 2.5);
+    ctx.restore();
+}
+
+function drawDrops() {
+    for (const d of drops) drawPotato(ctx, d.x, d.y, POTATO_R, d.rot, d.seed);
+}
+
 // ----------------------------------------------------------------- input
 
 canvas.addEventListener("pointerdown", (event) => {
+    const at = toWorld(local(event));
+    if (inCrate(at.x, at.y, 14)) {
+        sound.unlock();
+        startZooka();
+        return;
+    }
+    if (zooka.on) {
+        sound.unlock();
+        canvas.setPointerCapture(event.pointerId);
+        zooka.firing = true;
+        zooka.target = at;
+        zooka.clock = 0;
+        return;
+    }
     if (game.state !== "aim") return;
     sound.unlock();
     canvas.setPointerCapture(event.pointerId);
@@ -693,6 +1550,7 @@ canvas.addEventListener("pointerdown", (event) => {
     aim.start = { angle: aim.angle, power: aim.power };
 });
 canvas.addEventListener("pointermove", (event) => {
+    if (zooka.firing && zooka.target) zooka.target = toWorld(local(event));
     if (!aim.dragging) return;
     aim.to = local(event);
     const px = aim.from.x - aim.to.x;
@@ -710,6 +1568,7 @@ canvas.addEventListener("pointermove", (event) => {
     aim.power = clamp(length / (Math.min(size.w, size.h) * 0.46), 0.04, 1);
 });
 const release = (event) => {
+    zooka.firing = false;
     if (!aim.dragging) return;
     aim.dragging = false;
     const moved = Math.hypot(aim.from.x - aim.to.x, aim.from.y - aim.to.y);
@@ -719,7 +1578,29 @@ const release = (event) => {
 canvas.addEventListener("pointerup", release);
 canvas.addEventListener("pointercancel", release);
 
+// The secret ways in: the Konami code, or typing "spudzooka". Z opens a crate.
 document.addEventListener("keydown", (event) => {
+    if (event.target.closest?.("input, textarea") || event.repeat) return;
+    typed = [...typed, event.key.toLowerCase()].slice(-10);
+    const word = typed.join("");
+    if (typed.join() === KONAMI.join() || word.endsWith("spudzooka")) {
+        typed = [];
+        startZooka();
+    } else if (event.key.toLowerCase() === "z" && crate.on) startZooka();
+});
+document.addEventListener("keyup", (event) => {
+    if (event.key === " " || event.key === "Enter") zooka.firing = false;
+});
+
+document.addEventListener("keydown", (event) => {
+    if (zooka.on && (event.key === " " || event.key === "Enter")) {
+        if (event.target.closest?.("button, a, input")) return;
+        event.preventDefault();
+        if (!zooka.firing) zooka.clock = 0;
+        zooka.firing = true;
+        zooka.target = null;
+        return;
+    }
     if (game.state !== "aim" || event.target.closest?.("button, a, input")) return;
     const fine = event.shiftKey ? 0.25 : 1;
     const keys = {
@@ -762,6 +1643,7 @@ function step(realDt) {
     if (game.banner > 2.6) game.banner = 0;
 
     stepStack(dt);
+    for (const t of extras) withTower(t, () => stepTowerBody(dt));
     stepBug(dt);
     if (pest.on) {
         const t = game.time * 1.25 + pest.phase;
@@ -773,7 +1655,17 @@ function step(realDt) {
         pest.wobbleV += (-pest.wobble * 180 - pest.wobbleV * 9) * dt;
         pest.wobble += pest.wobbleV * dt;
         pest.appear = Math.min(1, pest.appear + realDt * 2.2);
+        if (pest.blown > 0) {
+            pest.blown -= realDt;
+            // Annoyances always come back.
+            if (pest.blown <= 0) {
+                pest.appear = 0;
+                sound.tone(880, 1320, 0.12, "triangle", 0.05);
+            }
+        }
     }
+    stepZooka(realDt, dt);
+    stepSilliness(realDt, dt);
     for (const cloud of clouds) {
         cloud.x += (14 + game.wind * 0.12) * dt * cloud.s;
         if (cloud.x > 2600) cloud.x -= 2900;
@@ -843,6 +1735,12 @@ function step(realDt) {
 }
 
 function stepStack(dt) {
+    stepTowerBody(dt);
+    stepTowerWalk(dt);
+}
+
+/** What every tower does: moods, blinks, wobbles, hops and putting itself back together. */
+function stepTowerBody(dt) {
     stack.moodTimer -= dt;
     stack.speechTimer -= dt;
     if (stack.moodTimer <= 0 && ["flinch", "cheer", "nervous"].includes(stack.mood))
@@ -855,6 +1753,7 @@ function stepStack(dt) {
     stack.blink = Math.max(0, stack.blink - dt);
     stack.leanV += (-stack.lean * 60 - stack.leanV * 7) * dt;
     stack.lean += stack.leanV * dt;
+    stepParts(dt);
     if (stack.popY < 0 || stack.popV < 0) {
         stack.popV += GRAVITY * dt;
         stack.popY += stack.popV * dt;
@@ -875,7 +1774,10 @@ function stepStack(dt) {
     stack.hopV += 1600 * dt;
     stack.hop = Math.min(0, stack.hop + stack.hopV * dt);
     if (stack.hop === 0) stack.hopV = 0;
+}
 
+/** What only the tower with the bug does: walk on between bugs, and get nervous about shots. */
+function stepTowerWalk(dt) {
     if (game.state === "walk") {
         game.timer += dt;
         let t = clamp(game.timer / 1.25, 0, 1);
@@ -958,12 +1860,14 @@ function bugHome() {
     // Where it sits relative to the middle of the top potato, turned with it when it flips.
     const dx = off;
     const dy = -Math.sqrt(HEAD_R * HEAD_R - off * off) - (tester().crown ?? 0) - bugSize() + 3;
-    const c = Math.cos(stack.popRot);
-    const s = Math.sin(stack.popRot);
+    const top = stack.parts[2];
+    const turn = stack.popRot + top.rot;
+    const c = Math.cos(turn);
+    const s = Math.sin(turn);
     return {
-        x: stack.x + leanAt(HEAD_Y) + dx * c - dy * s,
-        y: HEAD_Y + stack.hop + stack.popY + dx * s + dy * c,
-        rot: Math.asin(off / HEAD_R) * 0.9 + stack.popRot,
+        x: stack.x + leanAt(HEAD_Y) + top.dx + dx * c - dy * s,
+        y: HEAD_Y + stack.hop + stack.popY + top.dy + dx * s + dy * c,
+        rot: Math.asin(off / HEAD_R) * 0.9 + turn,
     };
 }
 
@@ -974,6 +1878,7 @@ function flightStep(dt) {
     p.x += p.vx * dt;
     p.y += p.vy * dt;
     p.rot += p.spin * dt;
+    if (inCrate(p.x, p.y, POTATO_R)) startZooka();
 
     // Slow motion as it closes on the bug.
     const toBug = Math.hypot(p.x - bug.x, p.y - bug.y);
@@ -1011,7 +1916,7 @@ function flightStep(dt) {
         endShot("ouch");
         return;
     }
-    if (pest.on && bounceOffPest(p)) {
+    if (pestHere() && bounceOffPest(p)) {
         sound.tone(1300, 1250, 0.12, "triangle", 0.07);
         sound.tone(1950, 1900, 0.1, "sine", 0.05, 0.03);
         floaters.push({
@@ -1058,15 +1963,89 @@ function settlePotato(dt) {
     p.squash = approach(p.squash, 0, 10, dt);
 }
 
-function hitsStack(p) {
-    for (const t of TUBERS) {
-        const dx = p.x - (stack.x + leanAt(t.y));
-        const dy = p.y - (t.y + stack.hop);
+/** Which potato of the stack `p` is touching, bottom 0 to top 2, or -1. */
+function partHit(p) {
+    for (const [i, t] of TUBERS.entries()) {
+        const o = stack.parts[i];
+        const dx = p.x - (stack.x + leanAt(t.y) + o.dx);
+        const dy = p.y - (t.y + stack.hop + o.dy + (i === 2 ? stack.popY : 0));
         const rx = t.rx + POTATO_R - 3;
         const ry = t.ry + POTATO_R - 3;
-        if ((dx / rx) ** 2 + (dy / ry) ** 2 < 1) return true;
+        if ((dx / rx) ** 2 + (dy / ry) ** 2 < 1) return i;
     }
-    return false;
+    return -1;
+}
+
+const hitsStack = (p) => partHit(p) >= 0;
+
+/** A rocket spud blows potato `i` off the stack, and everything above it: hit the bottom and it all goes. */
+function blowUp(i, r) {
+    const base = i === 0 ? 1.35 : 1;
+    for (let j = i; j < TUBERS.length; j++) {
+        const o = stack.parts[j];
+        o.air = true;
+        o.vx += r.vx * 0.16 + rand(-170, 170) + (j - i) * rand(-70, 70);
+        o.vy = Math.min(o.vy, 0) - rand(360, 540) * base - (j - i) * 60;
+        o.spin = rand(7, 14) * pick([-1, 1]);
+    }
+    stack.scatter = 0.6;
+    particles.push(...confetti(r.x, r.y, i === 0 ? 34 : 18, 1.5));
+    if (i === 0) {
+        game.kabooms = (game.kabooms ?? 0) + 1;
+        if (PARTY) updateHud();
+        shake(0.3);
+        sound.noise(0.35, 380, 0.45, 0, 110);
+        sound.tone(110, 35, 0.35, "sine", 0.3);
+        if (zooka.heckle <= 0.7)
+            floaters.push({
+                kind: "burst",
+                text: "KABOOM!",
+                x: r.x + 40,
+                y: r.y - 50,
+                vy: -20,
+                life: 0.9,
+                max: 0.9,
+            });
+    }
+}
+
+/** Blown-apart potatoes fly, bounce and roll; a moment after the last hit they hop back into a stack. */
+function stepParts(dt) {
+    stack.scatter -= dt;
+    for (const [j, o] of stack.parts.entries()) {
+        const t = TUBERS[j];
+        // Back home in order, bottom first.
+        if (stack.scatter < -j * 0.1) {
+            if (o.air) sound.tone(260 + j * 120, 520 + j * 160, 0.12, "sine", 0.05);
+            o.air = false;
+            o.vx = 0;
+            o.vy = 0;
+            o.dx = approach(o.dx, 0, 14, dt);
+            o.dy = approach(o.dy, 0, 14, dt);
+            o.rot = approach(o.rot, Math.round(o.rot / (Math.PI * 2)) * Math.PI * 2, 14, dt);
+            continue;
+        }
+        if (!o.air) continue;
+        o.vy += GRAVITY * dt;
+        o.dx += o.vx * dt;
+        o.dy += o.vy * dt;
+        o.rot += o.spin * dt;
+        // Where its bottom touches the ground.
+        const floor = -(t.y + t.ry);
+        if (o.dy >= floor) {
+            o.dy = floor;
+            if (o.vy > 160) {
+                o.vy *= -0.35;
+                o.vx *= 0.6;
+                o.spin *= 0.6;
+                sound.tone(150, 90, 0.08, "triangle", 0.05);
+            } else {
+                o.vy = 0;
+                o.vx *= Math.exp(-5 * dt);
+                o.spin *= Math.exp(-5 * dt);
+            }
+        }
+    }
 }
 
 function bounceOffPest(p) {
@@ -1242,13 +2221,18 @@ function draw() {
     drawGround();
     drawSigns();
     for (const s of splats) drawSplat(s);
+    for (const s of pile) drawPotato(ctx, s.x, -POTATO_R + 2, POTATO_R, s.rot, s.seed);
     for (const s of spent) drawPotato(ctx, s.x, -POTATO_R + 2, POTATO_R, s.rot, s.seed);
     if (ghost.length > 1 && game.state === "aim") drawGhost();
     drawFlag();
+    for (const t of extras) withTower(t, drawStack);
     drawStack();
-    if (pest.on) drawPest();
+    if (pestHere()) drawPest();
+    if (crate.on) drawCrate();
     drawCannon();
-    if (game.state === "aim") drawGuide();
+    if (game.state === "aim" && !zooka.on) drawGuide();
+    drawRockets();
+    drawDrops();
     if (potato) {
         drawPotato(ctx, potato.x, potato.y, POTATO_R, potato.rot, potato.seed, potato.squash);
     }
@@ -1263,7 +2247,10 @@ function draw() {
     if (bug.on || bug.landing || bug.y < 200) drawBug();
     drawParticles(ctx, particles);
     for (const r of rings) drawRing(r);
-    if (stack.speechTimer > 0 && stack.speech) drawSpeech();
+    for (const t of towers())
+        withTower(t, () => {
+            if (stack.speechTimer > 0 && stack.speech) drawSpeech();
+        });
     if (bug.tauntTimer > 0 && bug.taunt && bug.on) drawTaunt();
     for (const f of floaters) drawFloater(f);
     ctx.restore();
@@ -1271,7 +2258,8 @@ function draw() {
     drawStreaks();
     if (potato && toScreenY(potato.y) < -6) drawOffscreen();
     if (game.state === "aim" && aim.dragging) drawPull();
-    if (game.state === "aim") drawAimReadout();
+    if (game.state === "aim" && !zooka.on) drawAimReadout();
+    if (zooka.on && !PARTY) drawZookaMeter();
     if (game.banner > 0) drawBanner();
     ctx.restore();
 }
@@ -1622,18 +2610,21 @@ function drawCannon() {
     ctx.save();
     ctx.translate(PIVOT.x, PIVOT.y);
     ctx.rotate(-aim.angle);
-    ctx.translate(-recoil, 0);
-    roundRect(ctx, -30, -19, BARREL + 30, 38, 14);
-    inked(ctx, "#5b6773", 3);
-    ctx.fillStyle = "rgba(255, 255, 255, 0.22)";
-    roundRect(ctx, -20, -13, BARREL + 8, 7, 4);
-    ctx.fill();
-    for (const bx of [6, BARREL - 26]) {
-        roundRect(ctx, bx, -20, 10, 40, 3);
-        inked(ctx, "#e0a24a", 2.5);
+    if (zooka.on) drawZookaBarrel(recoil);
+    else {
+        ctx.translate(-recoil, 0);
+        roundRect(ctx, -30, -19, BARREL + 30, 38, 14);
+        inked(ctx, "#5b6773", 3);
+        ctx.fillStyle = "rgba(255, 255, 255, 0.22)";
+        roundRect(ctx, -20, -13, BARREL + 8, 7, 4);
+        ctx.fill();
+        for (const bx of [6, BARREL - 26]) {
+            roundRect(ctx, bx, -20, 10, 40, 3);
+            inked(ctx, "#e0a24a", 2.5);
+        }
+        roundRect(ctx, BARREL - 8, -23, 14, 46, 6);
+        inked(ctx, "#47515c", 3);
     }
-    roundRect(ctx, BARREL - 8, -23, 14, 46, 6);
-    inked(ctx, "#47515c", 3);
     ctx.restore();
 
     // Wheel.
@@ -1656,7 +2647,7 @@ function drawCannon() {
     inked(ctx, "#e0a24a", 2.5);
 
     // Power, round the wheel, while aiming.
-    if (game.state === "aim") {
+    if (game.state === "aim" && !zooka.on) {
         ctx.lineCap = "round";
         ctx.lineWidth = 7;
         ctx.strokeStyle = "rgba(35, 38, 43, 0.2)";
@@ -1690,15 +2681,18 @@ function drawStack() {
     // Shadow.
     ctx.fillStyle = "rgba(35, 38, 43, 0.16)";
     ctx.beginPath();
-    ctx.ellipse(x, 2, 44 - hopT * 8, 8, 0, 0, Math.PI * 2);
+    ctx.ellipse(x + stack.parts[0].dx, 2, 44 - hopT * 8, 8, 0, 0, Math.PI * 2);
     ctx.fill();
 
     ctx.save();
     ctx.translate(x, bounce);
     ctx.scale(1 + squash, 1 - squash);
     const [bottom, middle, top] = TUBERS;
+    ctx.save();
+    partTransform(0);
     tuber(bottom, look);
     drawBottomFace(bottom);
+    ctx.restore();
 
     // The rest leans from the bottom potato, the top a little behind the middle, like jelly.
     ctx.translate(0, bottom.y);
@@ -1707,6 +2701,7 @@ function drawStack() {
     const wobble = stack.walking ? Math.sin(game.time * 9 + 1) * 2 : 0;
     ctx.save();
     ctx.translate(wobble * 0.5 + knock * 0.5, breathe * 0.4);
+    partTransform(1);
     drawArms(middle, "back");
     tuber(middle, look);
     // A note stuck on, as every tester has.
@@ -1725,6 +2720,7 @@ function drawStack() {
     ctx.restore();
 
     ctx.translate(wobble + knock, breathe + stack.popY);
+    partTransform(2);
     ctx.translate(0, top.y);
     ctx.rotate(stack.popRot);
     ctx.translate(0, -top.y);
@@ -1734,6 +2730,17 @@ function drawStack() {
     if (look.hat === "sprout") drawSprout(top);
     if (look.hat === "beanie") drawBeanie(top, look);
     ctx.restore();
+    drawUmbrella();
+    drawPaybackLauncher();
+}
+
+/** Moves the drawing to where potato `j` has been blown to, turned about its middle. */
+function partTransform(j) {
+    const o = stack.parts[j];
+    const y = TUBERS[j].y;
+    ctx.translate(o.dx, o.dy + y);
+    ctx.rotate(o.rot);
+    ctx.translate(0, -y);
 }
 
 /** One potato of the stack: lumpy, outlined, shaded, with a few eyes (the potato kind). */
@@ -2477,8 +3484,19 @@ function drawBanner() {
     const big = clamp(size.w * 0.075, 30, 56);
     ctx.translate(size.w / 2, y);
     ctx.rotate(-0.03);
-    inkedText(ctx, `Bug ${game.level}`, 0, 0, "#ffffff", big, 800, Math.max(5, big * 0.14));
-    const sub = `${bug.sev}  ·  ${Math.round(stack.base / METRE)} m  ·  wind ${windLabel()}`;
+    const custom = game.bannerText;
+    inkedText(
+        ctx,
+        custom?.title ?? `Bug ${game.level}`,
+        0,
+        0,
+        custom ? "#f4c56e" : "#ffffff",
+        big,
+        800,
+        Math.max(5, big * 0.14)
+    );
+    const sub =
+        custom?.sub ?? `${bug.sev}  ·  ${Math.round(stack.base / METRE)} m  ·  wind ${windLabel()}`;
     ctx.font = "700 14px 'JetBrains Mono', monospace";
     const w = ctx.measureText(sub).width + 24;
     roundRect(ctx, -w / 2, big * 0.62, w, 28, 14);
@@ -2523,6 +3541,21 @@ if (new URLSearchParams(location.search).has("debug"))
         stack,
         bug,
         pest,
+        zooka,
+        crate,
+        dropCrate,
+        startZooka,
+        startRain,
+        startPayback,
+        get drops() {
+            return drops;
+        },
+        get towers() {
+            return towers();
+        },
+        get rockets() {
+            return rockets;
+        },
         cam,
         fire,
         debug,
@@ -2532,13 +3565,24 @@ if (new URLSearchParams(location.search).has("debug"))
         },
     };
 
-showCard(stage, {
-    kicker: "A Notato game",
-    title: "Spud Cannon",
-    image: "../notato.png",
-    text: "Russ the potato has a bug on top. Knock it off with a potato. Do not hit Russ.",
-    button: "Fire away",
-}).then(() => {
+showCard(
+    stage,
+    PARTY
+        ? {
+              kicker: "A Notato toy",
+              title: "Mash Pit",
+              image: "../notato.png",
+              text: "No score, no rules, no bugs fixed. Hold anywhere to fire potatoes. The buttons below make it worse.",
+              button: "Let's mash",
+          }
+        : {
+              kicker: "A Notato game",
+              title: "Spud Cannon",
+              image: "../notato.png",
+              text: "Russ the potato has a bug on top. Knock it off with a potato. Do not hit Russ.",
+              button: "Fire away",
+          }
+).then(() => {
     started = true;
     newGame();
 });

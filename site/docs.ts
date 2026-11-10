@@ -421,6 +421,7 @@ function layout(options: {
     <nav class="nav-links" aria-label="Site">
       <a href="../index.html">Home</a>
       <a href="index.html"${slug === "index" ? ' aria-current="page"' : ""}>Docs</a>
+      <a href="../games/index.html">Games</a>
       <a href="${REPO_URL}">GitHub</a>
     </nav>
     <a class="btn btn-sm btn-tab" href="../index.html#try">Try it</a>

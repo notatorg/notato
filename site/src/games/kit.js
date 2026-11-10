@@ -514,6 +514,33 @@ export function drawParticles(ctx, list) {
             ctx.scale(Math.cos(p.rot * 1.7) * p.size, p.size);
             drawConfettiPiece(ctx, p);
             ctx.restore();
+        } else if (p.kind === "cookie") {
+            // A cookie, tumbling: golden, with chocolate chips.
+            ctx.save();
+            ctx.translate(p.x, p.y);
+            ctx.rotate(p.rot);
+            circle(ctx, 0, 0, p.r);
+            inked(ctx, "#d9a05a", Math.max(1.5, p.r * 0.22));
+            ctx.fillStyle = "#5b3a1e";
+            for (let i = 0; i < 4; i++) {
+                const a = p.seed + i * 1.7;
+                circle(ctx, Math.cos(a) * p.r * 0.5, Math.sin(a) * p.r * 0.5, p.r * 0.17);
+                ctx.fill();
+            }
+            ctx.restore();
+        } else if (p.kind === "chunk") {
+            // A broken-off chunk of something: a little outlined shard.
+            ctx.save();
+            ctx.translate(p.x, p.y);
+            ctx.rotate(p.rot);
+            ctx.beginPath();
+            ctx.moveTo(-p.r, -p.r * 0.6);
+            ctx.lineTo(p.r * 0.8, -p.r);
+            ctx.lineTo(p.r, p.r * 0.5);
+            ctx.lineTo(-p.r * 0.4, p.r);
+            ctx.closePath();
+            inked(ctx, p.color, 2);
+            ctx.restore();
         } else if (p.kind === "puff") {
             circle(ctx, p.x, p.y, p.r);
             ctx.fillStyle = p.color;

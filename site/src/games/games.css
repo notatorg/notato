@@ -393,6 +393,48 @@
         grid-template-columns: minmax(0, 1fr);
     }
 }
+/* Mash Pit's buttons, under the stage. */
+.party-tools {
+    min-width: 0;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 10px;
+}
+.party-tools button {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 16px;
+    border: 2.5px solid #23262b;
+    border-radius: 999px;
+    background: #fffdf8;
+    box-shadow: 0 4px 0 #23262b;
+    color: #23262b;
+    font: 700 15px / 1.2 var(--f-body);
+    cursor: pointer;
+}
+.party-tools button b {
+    color: #1f8a78;
+}
+.party-tools button:hover {
+    background: #fff6e0;
+}
+.party-tools button:active {
+    transform: translateY(3px);
+    box-shadow: 0 1px 0 #23262b;
+}
+.party-tools button[aria-pressed="true"] {
+    background: #f4c56e;
+}
+.party-tools button:focus-visible {
+    outline: 3px solid #45bfa8;
+    outline-offset: 3px;
+}
+
 @media (max-width: 640px) {
     .games {
         padding-block: 22px 56px;
