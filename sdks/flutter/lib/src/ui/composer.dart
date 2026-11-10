@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../annotation.dart';
+import 'motion.dart';
 import 'parts.dart';
 import 'theme.dart';
 
@@ -40,6 +41,9 @@ class _ComposerState extends State<Composer> {
   String? _severity;
   var _peopleOnly = false;
   var _shared = false;
+
+  /// Whether the visibility switches are showing. They start hidden each time the composer opens.
+  var _visibilityOpen = false;
 
   static const _intents = {'fix': 'Fix', 'change': 'Change', 'question': 'Question', 'approve': 'Approve'};
   static const _severities = {'blocker': 'Blocker', 'major': 'Major', 'minor': 'Minor', 'nit': 'Nit'};
@@ -122,7 +126,10 @@ class _ComposerState extends State<Composer> {
                               children: [
                                 NotatoIcon('up', size: 13, color: p.text),
                                 const SizedBox(width: 4),
-                                const Text('Parent', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600)),
+                                Text(
+                                  'Parent',
+                                  style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600, color: p.text),
+                                ),
                               ],
                             ),
                           ),
@@ -135,6 +142,12 @@ class _ComposerState extends State<Composer> {
                 ],
               ),
               const SizedBox(height: 12),
+              Semantics(
+                container: true,
+                label: 'Feedback type',
+                child: Chips(options: _intents, value: _intent, onChanged: (v) => setState(() => _intent = v)),
+              ),
+              const SizedBox(height: 12),
               TextField(
                 key: const ValueKey('NotatoComment'),
                 controller: _text,
@@ -145,13 +158,9 @@ class _ComposerState extends State<Composer> {
                 decoration: fieldDecoration(context, 'What should change?'),
               ),
               const SizedBox(height: 12),
-              _Group(
-                title: 'Feedback type',
-                child: Chips(options: _intents, value: _intent, onChanged: (v) => setState(() => _intent = v)),
-              ),
-              const SizedBox(height: 12),
-              _Group(
-                title: 'Severity',
+              Semantics(
+                container: true,
+                label: 'Severity',
                 child: Chips(
                   options: _severities,
                   value: _severity,
@@ -166,25 +175,44 @@ class _ComposerState extends State<Composer> {
                 ),
               ),
               const SizedBox(height: 12),
-              Divider(height: 1, thickness: 1, color: p.line),
-              const SizedBox(height: 10),
-              Text(
-                'Visibility',
-                style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: p.text),
+              Align(
+                alignment: AlignmentDirectional.centerStart,
+                child: VisibilityButton(
+                  shared: _shared,
+                  peopleOnly: _peopleOnly,
+                  open: _visibilityOpen,
+                  onPressed: () => setState(() => _visibilityOpen = !_visibilityOpen),
+                ),
               ),
-              const SizedBox(height: 6),
-              FlagToggle(
-                title: 'Share with project',
-                hint: 'Project members can see this feedback.',
-                value: _shared,
-                onChanged: (value) => setState(() => _shared = value),
-              ),
-              FlagToggle(
-                key: const ValueKey('NotatoPeopleOnly'),
-                title: PeopleOnlyCopy.title,
-                hint: PeopleOnlyCopy.hint,
-                value: _peopleOnly,
-                onChanged: (v) => setState(() => _peopleOnly = v),
+              // The two switches, under the button while it is open.
+              AnimatedSize(
+                duration: reducedMotion(context) ? Duration.zero : enter,
+                curve: enterCurve,
+                alignment: Alignment.topCenter,
+                child: _visibilityOpen
+                    ? Padding(
+                        padding: const EdgeInsets.only(top: 8),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            FlagToggle(
+                              key: const ValueKey('NotatoShared'),
+                              title: 'Share with project',
+                              hint: 'Project members can see this feedback.',
+                              value: _shared,
+                              onChanged: (value) => setState(() => _shared = value),
+                            ),
+                            FlagToggle(
+                              key: const ValueKey('NotatoPeopleOnly'),
+                              title: PeopleOnlyCopy.title,
+                              hint: PeopleOnlyCopy.hint,
+                              value: _peopleOnly,
+                              onChanged: (v) => setState(() => _peopleOnly = v),
+                            ),
+                          ],
+                        ),
+                      )
+                    : const SizedBox(width: double.infinity),
               ),
               const SizedBox(height: 12),
               Row(
@@ -235,25 +263,75 @@ class _ComposerState extends State<Composer> {
   }
 }
 
-/// A small heading over a group of controls, as the web composer has them.
-class _Group extends StatelessWidget {
-  const _Group({required this.title, required this.child});
-  final String title;
-  final Widget child;
+/// Who can see the note, in a few words, from its two switches: the web composer's labels.
+String visibilityLabel({required bool shared, required bool peopleOnly}) => switch ((shared, peopleOnly)) {
+  (false, false) => 'You and your agent',
+  (true, false) => 'Shared with project',
+  (false, true) => 'Only you',
+  (true, true) => 'Project, not agent',
+};
+
+/// A capsule saying who can see the note. Tapped, it shows or hides the switches that choose that.
+class VisibilityButton extends StatelessWidget {
+  const VisibilityButton({
+    super.key,
+    required this.shared,
+    required this.peopleOnly,
+    required this.open,
+    required this.onPressed,
+  });
+  final bool shared;
+  final bool peopleOnly;
+
+  /// Whether the switches are showing.
+  final bool open;
+  final VoidCallback onPressed;
 
   @override
   Widget build(BuildContext context) {
     final p = Palette.of(context);
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          title,
-          style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: p.text),
+    final label = visibilityLabel(shared: shared, peopleOnly: peopleOnly);
+    return Semantics(
+      button: true,
+      expanded: open,
+      label: 'Visibility: $label',
+      excludeSemantics: true,
+      child: Material(
+        color: open ? p.soft : Colors.transparent,
+        shape: StadiumBorder(side: BorderSide(color: p.line)),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          key: const ValueKey('NotatoVisibility'),
+          onTap: onPressed,
+          customBorder: const StadiumBorder(),
+          highlightColor: p.soft,
+          splashFactory: NoSplash.splashFactory,
+          child: SizedBox(
+            height: 34,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  NotatoIcon(shared ? 'people' : 'lock', size: 14, color: p.muted),
+                  const SizedBox(width: 6),
+                  Text(
+                    label,
+                    style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600, color: p.text),
+                  ),
+                  const SizedBox(width: 6),
+                  AnimatedRotation(
+                    turns: open ? 0.5 : 0,
+                    duration: reducedMotion(context) ? Duration.zero : enter,
+                    curve: enterCurve,
+                    child: NotatoIcon('chevronDown', size: 12, color: p.muted),
+                  ),
+                ],
+              ),
+            ),
+          ),
         ),
-        const SizedBox(height: 7),
-        child,
-      ],
+      ),
     );
   }
 }

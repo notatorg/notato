@@ -97,7 +97,12 @@ internal static partial class Ui
     public const string IconUp = "M12 19V5M5 12l7-7 7 7";
     public const string IconChevronLeft = "M15 6l-6 6 6 6";
     public const string IconChevronRight = "M9 6l6 6-6 6";
-    public const string IconCamera = "M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3zM15 13a3 3 0 1 1-6 0a3 3 0 1 1 6 0";
+    public const string IconChevronDown = "M6 9l6 6 6-6";
+    /// <summary>A note only its writer's side sees: the composer's visibility button while it is not shared.</summary>
+    public const string IconLock = "M7 10h10a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2zM8 10V7a4 4 0 0 1 8 0v3M12 14v3";
+    /// <summary>A note shared with the project.</summary>
+    public const string IconPeople = "M5.8 8a3.2 3.2 0 1 0 6.4 0a3.2 3.2 0 1 0-6.4 0M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6M16 5.2a3.2 3.2 0 0 1 0 5.6M18 14.4c1.8 0.8 3 2.7 3 5.6";
+    public const string IconCamera ="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3zM15 13a3 3 0 1 1-6 0a3 3 0 1 1 6 0";
 
     // Filled dots, as path data: the bar's grip and its "more" button.
     public static readonly string IconGrip = Dots(1.6, (9, 6), (15, 6), (9, 12), (15, 12), (9, 18), (15, 18));

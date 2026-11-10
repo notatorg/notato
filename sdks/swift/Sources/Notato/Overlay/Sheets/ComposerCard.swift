@@ -17,6 +17,8 @@ struct ComposerCard: View {
     @State private var sharedOverride: Bool?
     @State private var busy = false
     @State private var problem: String?
+    /// Whether the two visibility switches show under their button; closed each time the composer opens.
+    @State private var visibilityOpen = false
     @FocusState private var focused: Bool
 
     var body: some View {
@@ -38,23 +40,25 @@ struct ComposerCard: View {
                     HeaderButton(.close, action: cancel)
                         .accessibilityLabel("Cancel")
                 }
+                // The kind of note first, as the web composer has it: it shapes what is written under it.
+                Chips(options: [(Intent.fix, "Fix"), (Intent.change, "Change"), (Intent.question, "Question"), (Intent.approve, "Approve")], selected: $intent)
+                    .accessibilityElement(children: .contain)
+                    .accessibilityLabel("Feedback type")
                 TextField("What should change?", text: $comment, axis: .vertical)
                     .lineLimit(3...6)
                     .focused($focused)
                     .field()
                     .accessibilityIdentifier("NotatoComment")
-                ComposerGroup("Feedback type") {
-                    Chips(options: [(Intent.fix, "Fix"), (Intent.change, "Change"), (Intent.question, "Question"), (Intent.approve, "Approve")], selected: $intent)
-                }
-                ComposerGroup("Severity") {
-                    Chips(options: [(Severity.blocker, "Blocker"), (Severity.major, "Major"), (Severity.minor, "Minor"), (Severity.nit, "Nit")], selected: $severity, dots: true)
-                }
-                VStack(alignment: .leading, spacing: 10) {
-                    Rectangle().fill(Palette.line).frame(height: 1)
-                    Text("Visibility").font(.system(size: 13, weight: .semibold))
-                    FlagToggle(title: "Share with project", hint: "Project members can see this feedback.", isOn: Binding(get: { sharedOverride ?? sharedByDefault }, set: { sharedOverride = $0 }))
-                    FlagToggle(title: PeopleOnlyCopy.title, hint: PeopleOnlyCopy.hint, isOn: $peopleOnly)
-                        .accessibilityIdentifier("NotatoPeopleOnly")
+                Chips(options: [(Severity.blocker, "Blocker"), (Severity.major, "Major"), (Severity.minor, "Minor"), (Severity.nit, "Nit")], selected: $severity, dots: true)
+                    .accessibilityElement(children: .contain)
+                    .accessibilityLabel("Severity")
+                VisibilityButton(shared: shared, peopleOnly: peopleOnly, open: $visibilityOpen)
+                if visibilityOpen {
+                    VStack(alignment: .leading, spacing: 10) {
+                        FlagToggle(title: "Share with project", hint: "Project members can see this feedback.", isOn: Binding(get: { shared }, set: { sharedOverride = $0 }))
+                        FlagToggle(title: PeopleOnlyCopy.title, hint: PeopleOnlyCopy.hint, isOn: $peopleOnly)
+                            .accessibilityIdentifier("NotatoPeopleOnly")
+                    }
                 }
                 if let problem { Text(problem).font(.caption).foregroundStyle(Palette.danger) }
                 HStack(spacing: 10) {
@@ -66,7 +70,7 @@ struct ComposerCard: View {
                         guard !busy, !text.isEmpty else { return }
                         busy = true
                         Task {
-                            problem = await send(text, intent, severity, peopleOnly, sharedOverride ?? sharedByDefault)
+                            problem = await send(text, intent, severity, peopleOnly, shared)
                             busy = false
                         }
                     }
@@ -78,21 +82,50 @@ struct ComposerCard: View {
     }
 }
 
-/// A labelled part of the composer, as the web composer's: a small heading over its controls.
-struct ComposerGroup<Content: View>: View {
-    let title: String
-    @ViewBuilder var content: Content
+extension ComposerCard {
+    private var shared: Bool { sharedOverride ?? sharedByDefault }
+}
 
-    init(_ title: String, @ViewBuilder content: () -> Content) {
-        self.title = title
-        self.content = content()
+/// Who can see the note, in a few words on a capsule, as the web composer has it; tapping it shows the two switches.
+struct VisibilityButton: View {
+    let shared: Bool
+    let peopleOnly: Bool
+    @Binding var open: Bool
+
+    /// The words on the button, the same in every SDK.
+    static func summary(shared: Bool, peopleOnly: Bool) -> String {
+        switch (shared, peopleOnly) {
+        case (false, false): return "You and your agent"
+        case (true, false): return "Shared with project"
+        case (false, true): return "Only you"
+        case (true, true): return "Project, not agent"
+        }
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 7) {
-            Text(title).font(.system(size: 13, weight: .semibold))
-            content
+        let summary = Self.summary(shared: shared, peopleOnly: peopleOnly)
+        Button { withAnimation(.easeOut(duration: 0.18)) { open.toggle() } } label: {
+            HStack(spacing: 6) {
+                Image(systemName: shared ? "person.2" : "lock").font(.system(size: 12, weight: .semibold)).foregroundStyle(Palette.muted)
+                Text(summary).font(.system(size: 13.5, weight: .semibold)).foregroundStyle(Palette.text).lineLimit(1)
+                Image(systemName: "chevron.down").font(.system(size: 10.5, weight: .bold)).foregroundStyle(Palette.muted)
+                    .rotationEffect(.degrees(open ? 180 : 0))
+            }
+            .padding(.horizontal, 12).frame(height: 34)
+            .background(open ? Palette.soft : Color.clear, in: Capsule())
+            .overlay(Capsule().strokeBorder(Palette.line))
+            .contentShape(Capsule())
         }
+        .buttonStyle(VisibilityButtonStyle())
+        .accessibilityIdentifier("NotatoVisibility")
+        .accessibilityLabel("Visibility: \(summary)")
+        .accessibilityValue(open ? "Expanded" : "Collapsed")
+    }
+}
+
+private struct VisibilityButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label.background(configuration.isPressed ? Palette.soft : Color.clear, in: Capsule())
     }
 }
 

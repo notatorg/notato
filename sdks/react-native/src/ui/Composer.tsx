@@ -26,13 +26,73 @@ const SEVERITY_DOTS: Partial<Record<Severity, string>> = {
     nit: "#9a9a9a",
 };
 
-/** A small heading over a group of controls, as the web composer has them. */
-function Group(props: { title: string; children: ReactNode }) {
+/** A group of controls with no heading: its name is for screen readers only. */
+function Group(props: { label: string; children: ReactNode }) {
+    return <View accessibilityLabel={props.label}>{props.children}</View>;
+}
+
+/** Who can see the note, in the words of the visibility button, from its two switches. */
+export function visibilityLabel(shared: boolean, peopleOnly: boolean): string {
+    if (shared) return peopleOnly ? "Project, not agent" : "Shared with project";
+    return peopleOnly ? "Only you" : "You and your agent";
+}
+
+/**
+ * Who can see the note: a capsule button saying so, and under it, while it is open, the two switches that decide it.
+ * It holds no state: the composer opens it, closed each time it opens.
+ */
+export function Visibility(props: {
+    open: boolean;
+    onToggle(): void;
+    shared: boolean;
+    onShared(value: boolean): void;
+    peopleOnly: boolean;
+    onPeopleOnly(value: boolean): void;
+}) {
     const p = usePalette();
+    const label = visibilityLabel(props.shared, props.peopleOnly);
     return (
-        <View style={styles.group}>
-            <Text style={[styles.groupTitle, { color: p.text }]}>{props.title}</Text>
-            {props.children}
+        <View style={styles.visibility}>
+            <Pressable
+                testID="NotatoVisibility"
+                onPress={props.onToggle}
+                accessibilityRole="button"
+                accessibilityLabel={`Visibility: ${label}`}
+                accessibilityState={{ expanded: props.open }}
+                style={({ pressed }) => [
+                    styles.visibilityButton,
+                    {
+                        borderColor: p.line,
+                        backgroundColor: pressed || props.open ? p.soft : "transparent",
+                    },
+                ]}
+            >
+                <Icon name={props.shared ? "people" : "lock"} size={14} color={p.muted} />
+                <Text style={[styles.visibilityText, { color: p.text }]} numberOfLines={1}>
+                    {label}
+                </Text>
+                <View style={props.open ? styles.flipped : null}>
+                    <Icon name="chevronDown" size={12} color={p.muted} />
+                </View>
+            </Pressable>
+            {props.open ? (
+                <>
+                    <FlagToggle
+                        title="Share with project"
+                        hint="Project members can see this feedback."
+                        value={props.shared}
+                        onChange={props.onShared}
+                        testID="NotatoShared"
+                    />
+                    <FlagToggle
+                        title={PEOPLE_ONLY.title}
+                        hint={PEOPLE_ONLY.hint}
+                        value={props.peopleOnly}
+                        onChange={props.onPeopleOnly}
+                        testID="NotatoPeopleOnly"
+                    />
+                </>
+            ) : null}
         </View>
     );
 }
@@ -67,6 +127,7 @@ export function Composer(props: {
     const [severity, setSeverity] = useState<Severity>();
     const [shared, setShared] = useState(Boolean(props.sharedByDefault));
     const [peopleOnly, setPeopleOnly] = useState(false);
+    const [visibilityOpen, setVisibilityOpen] = useState(false);
     const input = useRef<TextInput>(null);
     // autoFocus is unreliable while the card animates in: focus once it is laid out.
     useEffect(() => {
@@ -103,6 +164,9 @@ export function Composer(props: {
                 ) : null}
                 <HeaderButton kind="close" label="Cancel" onPress={props.onCancel} />
             </View>
+            <Group label="Feedback type">
+                <Chips<Intent> options={INTENTS} value={intent} onChange={setIntent} />
+            </Group>
             <Field
                 ref={input}
                 multiline
@@ -113,10 +177,7 @@ export function Composer(props: {
                 accessibilityLabel="Note"
                 testID="NotatoComment"
             />
-            <Group title="Feedback type">
-                <Chips<Intent> options={INTENTS} value={intent} onChange={setIntent} />
-            </Group>
-            <Group title="Severity">
+            <Group label="Severity">
                 <Chips<Severity>
                     options={SEVERITIES}
                     value={severity}
@@ -124,24 +185,14 @@ export function Composer(props: {
                     dots={SEVERITY_DOTS}
                 />
             </Group>
-            <View style={styles.visibility}>
-                <View style={[styles.rule, { backgroundColor: p.line }]} />
-                <Text style={[styles.groupTitle, { color: p.text }]}>Visibility</Text>
-                <FlagToggle
-                    title="Share with project"
-                    hint="Project members can see this feedback."
-                    value={shared}
-                    onChange={setShared}
-                    testID="NotatoShared"
-                />
-                <FlagToggle
-                    title={PEOPLE_ONLY.title}
-                    hint={PEOPLE_ONLY.hint}
-                    value={peopleOnly}
-                    onChange={setPeopleOnly}
-                    testID="NotatoPeopleOnly"
-                />
-            </View>
+            <Visibility
+                open={visibilityOpen}
+                onToggle={() => setVisibilityOpen((open) => !open)}
+                shared={shared}
+                onShared={setShared}
+                peopleOnly={peopleOnly}
+                onPeopleOnly={setPeopleOnly}
+            />
             <View style={styles.footer}>
                 <Text style={[styles.footnote, { color: p.muted }]}>
                     {props.screenshotsOff
@@ -207,10 +258,19 @@ const styles = StyleSheet.create({
     },
     parentText: { fontSize: 13.5, fontWeight: "600" },
     comment: { minHeight: 76, maxHeight: 150, textAlignVertical: "top" },
-    group: { gap: 7 },
-    groupTitle: { fontSize: 13, fontWeight: "600" },
     visibility: { gap: 10 },
-    rule: { height: StyleSheet.hairlineWidth * 2 },
+    visibilityButton: {
+        alignSelf: "flex-start",
+        flexDirection: "row",
+        alignItems: "center",
+        gap: 6,
+        height: 34,
+        paddingHorizontal: 12,
+        borderRadius: 999,
+        borderWidth: 1,
+    },
+    visibilityText: { fontSize: 13.5, fontWeight: "600" },
+    flipped: { transform: [{ rotate: "180deg" }] },
     footer: { flexDirection: "row", alignItems: "center", gap: 10 },
     footnote: { flex: 1, fontSize: 12 },
     send: { paddingHorizontal: 14, paddingVertical: 9, borderRadius: 12 },
