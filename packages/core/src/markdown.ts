@@ -1,6 +1,6 @@
 import type { Annotation } from "@notato/schema";
 import { agentView } from "./agent-view.ts";
-import { screenshotCrop } from "./screenshot.ts";
+import { screenshotCrop, screenshotProblem } from "./screenshot.ts";
 
 /**
  * How much of an annotation to write out. `compact` is a line, for scanning. `standard` is what a person or an agent
@@ -438,10 +438,13 @@ export function renderAnnotation(note: Annotation, options: RenderOptions = {}):
         lines.push(
             "No screenshot was taken for this annotation (they may be turned off); use the target above."
         );
-    } else if (options.screenshotsAttached) {
-        lines.push(
-            "Screenshots follow: first the full viewport with the target outlined, then a crop of the target."
-        );
+    } else {
+        const problem = screenshotProblem(a);
+        if (problem) lines.push(`${problem.replace(/\.?$/, ".")} Rely on the target above.`);
+        if (options.screenshotsAttached)
+            lines.push(
+                "Screenshots follow: first the full viewport with the target outlined, then a crop of the target."
+            );
     }
     return lines.join("\n");
 }

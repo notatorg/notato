@@ -12,6 +12,7 @@ import {
     planCapture,
     shiftFixed,
     shouldMask,
+    viewportSize,
 } from "../src/plugins/screenshot.ts";
 import { safeUrl } from "../src/url.ts";
 
@@ -40,6 +41,28 @@ describe("planCapture", () => {
     });
     it("never upscales beyond the DPR", () => {
         expect(planCapture(800, 600, 1, 2000).scale).toBe(1);
+    });
+});
+
+describe("viewportSize", () => {
+    // happy-dom does no layout, so each element is given the number a browser would report.
+    const fake = (compatMode: string, root: number, body: number, bodyName = "body") =>
+        ({
+            compatMode,
+            documentElement: { clientWidth: 1000, clientHeight: root },
+            body: { localName: bodyName, clientWidth: 1000, clientHeight: body },
+        }) as unknown as Document;
+    it("takes the root element's size on a page with a doctype", () => {
+        expect(viewportSize(fake("CSS1Compat", 768, 4000))).toEqual({ width: 1000, height: 768 });
+    });
+    it("takes the body's on a page without one, where the root reports the whole document", () => {
+        expect(viewportSize(fake("BackCompat", 4000, 768))).toEqual({ width: 1000, height: 768 });
+    });
+    it("keeps the root for a frameset page, whose body is the frameset", () => {
+        expect(viewportSize(fake("BackCompat", 768, 0, "frameset"))).toEqual({
+            width: 1000,
+            height: 768,
+        });
     });
 });
 

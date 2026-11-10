@@ -136,4 +136,6 @@ export const isElement = (n: unknown): n is Element => Boolean(n) && (n as Node)
 export const isDocument = (n: unknown): n is Document => Boolean(n) && (n as Node).nodeType === 9;
 export const isShadowRoot = (n: unknown): n is ShadowRoot =>
     Boolean(n) && (n as Node).nodeType === 11 && "host" in (n as object);
-export const isIframe = (n: Element): n is HTMLIFrameElement => n.localName === "iframe";
+/** An `<iframe>`, or a `<frame>` of an old `<frameset>` page, which holds a document the same way. */
+export const isIframe = (n: Element): n is HTMLIFrameElement =>
+    n.localName === "iframe" || n.localName === "frame";
