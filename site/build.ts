@@ -217,6 +217,9 @@ if (flag("--serve")) {
         hostname: "localhost",
         fetch(request) {
             const path = decodeURIComponent(new URL(request.url).pathname);
+            // A folder without its slash goes to the slash, as the host does (/games → /games/).
+            if (!path.endsWith("/") && existsSync(join(dist, path, "index.html")))
+                return Response.redirect(`${path}/`, 308);
             const file = join(dist, path.endsWith("/") ? `${path}index.html` : path);
             if (!file.startsWith(dist) || !existsSync(file))
                 return new Response("Not found", { status: 404 });
@@ -236,5 +239,5 @@ if (flag("--serve")) {
     };
     watch(src, { recursive: true }, rebuild);
     // The docs are made from these, so a change to one rebuilds them too.
-    for (const readme of SOURCES) watch(join(root, "..", "core", readme), rebuild);
+    for (const readme of SOURCES) watch(join(root, "..", readme), rebuild);
 }

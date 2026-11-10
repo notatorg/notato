@@ -1,0 +1,442 @@
+/* The games: a small arcade page per game on the site's canvas, and a hub that lists them. The page around a
+   game follows the theme; the game scenes keep their own daylight colours, like the demo app on the home page. */
+
+.games-badge {
+    padding: 2px 9px;
+    border-radius: 6px;
+    background: var(--potato-soft);
+    color: var(--ink);
+    font: 600 13px / 1.6 var(--f-mono);
+}
+.nav-links a[aria-current="page"] {
+    color: var(--ink);
+    background: var(--surface-2);
+}
+
+.games {
+    padding-block: 36px 72px;
+}
+.games-crumb {
+    margin-bottom: 8px;
+    color: var(--ink-3);
+    font: 500 13px / 1.4 var(--f-mono);
+}
+.games-crumb a {
+    color: var(--ink-2);
+    text-underline-offset: 3px;
+}
+.games h1 {
+    font-size: clamp(34px, 5vw, 52px);
+    line-height: 1.05;
+    letter-spacing: -0.025em;
+}
+.games-lede {
+    max-width: 640px;
+    margin-top: 12px;
+    color: var(--ink-2);
+    font-size: 18px;
+}
+
+/* ------------------------------------------------------------------ hub */
+.game-cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 360px), 1fr));
+    gap: 22px;
+    margin-top: 36px;
+}
+.game-card {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    border: 1px solid var(--line);
+    border-radius: 18px;
+    background: var(--surface);
+    box-shadow: var(--shadow);
+    color: inherit;
+    text-decoration: none;
+    transition:
+        transform 0.25s var(--spring),
+        box-shadow 0.2s;
+}
+.game-card:hover {
+    transform: translateY(-4px) rotate(-0.4deg);
+    box-shadow: var(--shadow-lg);
+}
+.game-card:nth-child(2n):hover {
+    transform: translateY(-4px) rotate(0.4deg);
+}
+.game-card svg {
+    display: block;
+    width: 100%;
+    height: auto;
+    aspect-ratio: 16 / 9;
+}
+.game-card-body {
+    display: grid;
+    gap: 6px;
+    padding: 18px 20px 20px;
+}
+.game-card h2 {
+    font-size: 24px;
+    letter-spacing: -0.015em;
+}
+.game-card p {
+    color: var(--ink-2);
+    font-size: 16px;
+}
+.game-card .game-best {
+    justify-self: start;
+    padding: 2px 10px;
+    border-radius: 999px;
+    background: var(--potato-soft);
+    color: var(--ink);
+    font: 600 13px / 1.6 var(--f-mono);
+}
+.game-card .play {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 6px;
+    color: var(--tab);
+    font-weight: 700;
+}
+.game-card .play svg {
+    width: 14px;
+    height: 14px;
+    aspect-ratio: auto;
+    transition: translate 0.2s var(--spring);
+}
+.game-card:hover .play svg {
+    translate: 4px 0;
+}
+.game-soon {
+    display: grid;
+    place-content: center;
+    gap: 6px;
+    min-height: 200px;
+    padding: 24px;
+    border: 1.5px dashed var(--line);
+    border-radius: 18px;
+    color: var(--ink-3);
+    text-align: center;
+}
+.game-soon b {
+    color: var(--ink-2);
+    font: 700 20px / 1.2 var(--f-display);
+}
+
+/* ---------------------------------------------------------------- a game */
+.game-layout {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 22px;
+    margin-top: 28px;
+}
+.stage {
+    position: relative;
+    overflow: hidden;
+    border: 1px solid var(--line);
+    border-radius: 18px;
+    background: #cfe9ef;
+    box-shadow: var(--shadow-lg);
+    user-select: none;
+    -webkit-user-select: none;
+    -webkit-touch-callout: none;
+}
+.stage canvas {
+    display: block;
+    width: 100%;
+    height: 100%;
+    touch-action: none;
+    cursor: crosshair;
+}
+.stage-wide {
+    width: 100%;
+    aspect-ratio: 16 / 9;
+    max-height: calc(100vh - 120px);
+    min-height: 320px;
+}
+.stage-tall {
+    width: min(100%, 640px, calc((100vh - 110px) * 0.8));
+    aspect-ratio: 4 / 5;
+    margin-inline: auto;
+}
+
+/* The score along the top of the scene. */
+.hud {
+    position: absolute;
+    inset: 12px 12px auto;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    pointer-events: none;
+}
+.hud span {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    padding: 6px 12px;
+    border: 2px solid #23262b;
+    border-radius: 999px;
+    background: rgba(23, 24, 27, 0.86);
+    color: #b9bdc3;
+    font: 600 13px / 1.3 var(--f-mono);
+    box-shadow: 0 3px 0 rgba(35, 38, 43, 0.25);
+}
+.hud b {
+    font-variant-numeric: tabular-nums;
+}
+.hud b.bump {
+    animation: bump 0.45s var(--spring);
+}
+@keyframes bump {
+    40% {
+        scale: 1.45;
+        color: #f4c56e;
+    }
+}
+.hud b {
+    color: #fff;
+    font-weight: 700;
+}
+.hud .hud-end {
+    margin-left: auto;
+}
+.hud .hot {
+    background: linear-gradient(90deg, #c2410c, #f59e0b);
+    color: #fff7e6;
+    animation: hot 0.9s ease-in-out infinite alternate;
+}
+@keyframes hot {
+    to {
+        box-shadow:
+            0 3px 0 rgba(35, 38, 43, 0.25),
+            0 0 18px rgba(249, 115, 22, 0.7);
+    }
+}
+.hud .hearts {
+    color: #ff7a7f;
+    letter-spacing: 1px;
+}
+.hud .hearts i {
+    font-style: normal;
+    color: rgba(255, 255, 255, 0.25);
+}
+
+.mute {
+    position: absolute;
+    right: 12px;
+    bottom: 12px;
+    display: grid;
+    place-items: center;
+    width: 38px;
+    height: 38px;
+    border: 0;
+    border-radius: 12px;
+    background: rgba(23, 24, 27, 0.7);
+    color: #eceded;
+    cursor: pointer;
+}
+.mute-icon {
+    width: 18px;
+    height: 18px;
+}
+
+/* The card over the scene before a game and after it. */
+.overlay {
+    position: absolute;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    padding: 20px;
+    background: rgba(20, 24, 30, 0.3);
+    backdrop-filter: blur(4px) saturate(1.1);
+    -webkit-backdrop-filter: blur(4px) saturate(1.1);
+    animation: overlay-in 0.3s ease-out;
+}
+.overlay.leaving {
+    opacity: 0;
+    transition: opacity 0.18s;
+}
+.overlay-card {
+    width: min(100%, 390px);
+    max-height: 100%;
+    overflow: auto;
+    padding: 26px 26px 24px;
+    border: 3px solid #23262b;
+    border-radius: 22px;
+    background: #fffdf8;
+    box-shadow:
+        0 8px 0 rgba(35, 38, 43, 0.35),
+        var(--shadow-lg);
+    color: #23262b;
+    text-align: center;
+    animation: card-in 0.5s var(--spring);
+}
+.overlay-card .card-art {
+    display: block;
+    margin: -8px auto 4px;
+    animation: wiggle 2.4s ease-in-out infinite;
+}
+.overlay-card .kicker {
+    margin: 0 0 4px;
+    color: #1f8a78;
+    font: 700 12px / 1.4 var(--f-mono);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+.card-actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 10px;
+    margin-top: 18px;
+}
+.overlay-card .btn-ghost {
+    background: #ffffff;
+    color: #23262b;
+}
+.overlay-card .btn {
+    border: 2.5px solid #23262b;
+    box-shadow: 0 4px 0 #23262b;
+}
+.overlay-card .btn:active {
+    transform: translateY(3px);
+    box-shadow: 0 1px 0 #23262b;
+}
+@keyframes wiggle {
+    0%,
+    100% {
+        rotate: -6deg;
+    }
+    50% {
+        rotate: 6deg;
+    }
+}
+.overlay-card h2 {
+    font-size: 30px;
+    letter-spacing: -0.02em;
+}
+.overlay-card p {
+    margin-top: 8px;
+    color: #5d6168;
+    font-size: 16px;
+}
+.overlay-card .big {
+    margin-top: 12px;
+    color: #23262b;
+    font: 800 64px / 1 var(--f-display);
+    letter-spacing: -0.03em;
+}
+.overlay-card .new-best {
+    display: inline-block;
+    margin-top: 10px;
+    padding: 3px 10px;
+    border-radius: 999px;
+    background: #e6f3f0;
+    color: #1f8a78;
+    font: 700 13px / 1.5 var(--f-mono);
+}
+@keyframes overlay-in {
+    from {
+        opacity: 0;
+    }
+}
+@keyframes card-in {
+    from {
+        opacity: 0;
+        transform: translateY(14px) scale(0.96);
+    }
+}
+
+/* How to play, under the scene. */
+.howto {
+    display: grid;
+    grid-template-columns: 160px minmax(0, 1fr);
+    gap: 14px 24px;
+    padding: 20px 22px;
+    border: 1px solid var(--line);
+    border-radius: 16px;
+    background: var(--surface);
+}
+.howto h2 {
+    font-size: 19px;
+}
+.howto ul {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 10px 24px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    color: var(--ink-2);
+    font-size: 15px;
+    line-height: 1.5;
+}
+.howto li b {
+    color: var(--ink);
+}
+.howto .other {
+    grid-column: 1 / -1;
+    padding-top: 14px;
+    border-top: 1px solid var(--line);
+    font-size: 15px;
+}
+.howto .other a {
+    color: var(--tab);
+    font-weight: 700;
+    text-underline-offset: 3px;
+}
+
+@media (max-width: 760px) {
+    .howto {
+        grid-template-columns: minmax(0, 1fr);
+    }
+}
+@media (max-width: 640px) {
+    .games {
+        padding-block: 22px 56px;
+    }
+    .games-badge {
+        display: none;
+    }
+    /* A phone gets the game edge to edge. */
+    .stage {
+        width: calc(100% + 40px);
+        margin-inline: -20px;
+        border-inline: 0;
+        border-radius: 0;
+    }
+    .stage-wide {
+        aspect-ratio: 1 / 1;
+        min-height: 0;
+    }
+    .stage-tall {
+        width: calc(100% + 40px);
+        max-height: none;
+    }
+    .hud .hud-end {
+        display: none;
+    }
+    .mute {
+        right: 8px;
+        bottom: 8px;
+        width: 32px;
+        height: 32px;
+        border-radius: 10px;
+    }
+    .hud {
+        inset: 8px 8px auto;
+        gap: 6px;
+    }
+    .hud span {
+        padding: 4px 9px;
+        font-size: 12px;
+    }
+    .overlay-card {
+        padding: 20px 18px 18px;
+    }
+    .overlay-card h2 {
+        font-size: 25px;
+    }
+}

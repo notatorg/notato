@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Notato games</title>
+<meta name="description" content="Two small games from Notato: fire potatoes at bugs, and bin the notes your agent resolved.">
+<link rel="icon" href="../notato.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wdth,wght@12..96,75..100,400..800&family=Caveat:wght@500..700&family=Figtree:ital,wght@0,400..700;1,400&family=JetBrains+Mono:wght@400;500;700&display=swap">
+<link rel="stylesheet" href="../base.css">
+<link rel="stylesheet" href="games.css">
+<script type="module">
+  // Your best score on each card, if this browser has one.
+  for (const node of document.querySelectorAll("[data-best]")) {
+    let best = 0;
+    try {
+      best = Number(localStorage.getItem(`notato.games.${node.dataset.best}.best`)) || 0;
+    } catch {}
+    if (!best) continue;
+    node.textContent = `Your best: ${best} ${node.dataset.unit}`;
+    node.hidden = false;
+  }
+</script>
+</head>
+<body>
+<a class="skip" href="#games">Skip to the games</a>
+<header class="nav">
+  <div class="wrap nav-in">
+    <a class="brand" href="../index.html"><img src="../notato.png" alt="" width="34" height="34"><span>Notato</span></a>
+    <span class="games-badge">Games</span>
+    <nav class="nav-links" aria-label="Site">
+      <a href="../index.html">Home</a>
+      <a href="index.html" aria-current="page">Games</a>
+      <a href="../docs/index.html">Docs</a>
+    </nav>
+    <a class="btn btn-sm btn-tab" href="../docs/index.html">Get started</a>
+  </div>
+</header>
+
+<main class="wrap games" id="games">
+  <h1>Notato games</h1>
+  <p class="games-lede">Notato turns feedback into fixes. These turn it into potatoes. Two small games for the minute while your agent works through the notes.</p>
+
+  <div class="game-cards">
+    <a class="game-card" href="spud-cannon.html">
+      <svg viewBox="0 0 480 270" aria-hidden="true">
+        <defs>
+          <linearGradient id="sc-sky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#7fc2dc"/><stop offset="1" stop-color="#e3f2e8"/></linearGradient>
+        </defs>
+        <rect width="480" height="270" fill="url(#sc-sky)"/>
+        <circle cx="410" cy="52" r="26" fill="#fff1b8"/>
+        <circle cx="410" cy="52" r="40" fill="#fff4c8" opacity=".4"/>
+        <g fill="#fff"><ellipse cx="120" cy="58" rx="40" ry="13"/><ellipse cx="138" cy="48" rx="22" ry="15"/><ellipse cx="300" cy="80" rx="32" ry="10"/><ellipse cx="312" cy="72" rx="18" ry="12"/></g>
+        <path d="M0 200 C80 170 160 185 240 175 S400 160 480 180 V270 H0Z" fill="#a3cfb4"/>
+        <path d="M0 214 C60 200 120 206 200 202 S360 194 480 206 V270 H0Z" fill="#8cc59a"/>
+        <rect y="226" width="480" height="44" fill="#9b7149"/>
+        <path d="M0 226 H480 V236 H0Z" fill="#7cc36a" stroke="#23262b" stroke-width="3"/>
+        <g fill="none" stroke="#23262b" stroke-width="3" stroke-dasharray="1 11" stroke-linecap="round"><path d="M96 168 Q220 30 352 112"/></g>
+        <g stroke="#23262b" stroke-width="3" stroke-linejoin="round">
+          <path d="M44 214 H100 L90 186 H58Z" fill="#b07a45"/>
+          <rect x="62" y="160" width="74" height="28" rx="10" fill="#5b6773" transform="rotate(-38 72 196)"/>
+          <circle cx="74" cy="208" r="20" fill="#c48a52"/>
+          <circle cx="74" cy="208" r="6" fill="#e0a24a"/>
+          <ellipse cx="236" cy="62" rx="13" ry="10" fill="#d9a05a" transform="rotate(-20 236 62)"/>
+        </g>
+        <g stroke="#23262b" stroke-width="3" stroke-linejoin="round" stroke-linecap="round">
+          <path d="M366 178 L348 166 M352 168 l-6 -8 M352 168 l-9 2 M410 178 L428 164 M424 166 l2 -9 M424 166 l9 0" fill="none" stroke="#8a5a33" stroke-width="4"/>
+          <ellipse cx="388" cy="208" rx="30" ry="21" fill="#c99a62"/>
+          <ellipse cx="388" cy="171" rx="24" ry="19" fill="#c99a62"/>
+          <rect x="371" y="164" width="13" height="13" rx="1.5" fill="#fde29a" stroke-width="2" transform="rotate(-8 377 170)"/>
+          <ellipse cx="388" cy="136" rx="21" ry="20" fill="#c99a62"/>
+          <circle cx="381" cy="134" r="4.5" fill="#fff" stroke-width="2"/>
+          <circle cx="395" cy="134" r="4.5" fill="#fff" stroke-width="2"/>
+          <path d="M383 145 q5 -3 10 0" fill="none" stroke-width="2.5"/>
+          <path d="M378 204 l5 3 l-5 3 M398 204 l-5 3 l5 3" fill="none" stroke-width="2.2"/>
+          <ellipse cx="388" cy="108" rx="11" ry="9" fill="#e5484d" stroke-width="2.5"/>
+          <path d="M388 100 V116" stroke-width="2"/>
+          <path d="M384 101 q-4 -8 -8 -9 M392 101 q4 -8 8 -9" fill="none" stroke-width="2"/>
+        </g>
+        <g fill="#23262b"><circle cx="383" cy="109" r="1.8"/><circle cx="393" cy="111" r="1.8"/><circle cx="392" cy="169" r="1.8"/><circle cx="401" cy="169" r="1.8"/><circle cx="381" cy="135" r="2"/><circle cx="395" cy="135" r="2"/></g>
+        <g transform="translate(436 70) rotate(6)">
+          <rect x="-34" y="-14" width="68" height="26" rx="13" fill="#fff" stroke="#23262b" stroke-width="2.5"/>
+          <text y="4" text-anchor="middle" font-family="Figtree, sans-serif" font-style="italic" font-weight="600" font-size="12" fill="#23262b">Not me!</text>
+        </g>
+      </svg>
+      <div class="game-card-body">
+        <h2>Spud Cannon</h2>
+        <p>A bug has landed on a tower of potatoes. Knock it off with another potato. Drag back to aim, mind the wind, and try not to hit the tower.</p>
+        <p class="game-best" data-best="spud-cannon" data-unit="points" hidden></p>
+        <span class="play">Play <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12h15M13 6l6 6-6 6" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+      </div>
+    </a>
+
+    <a class="game-card" href="note-toss.html">
+      <svg viewBox="0 0 480 270" aria-hidden="true">
+        <rect width="480" height="270" fill="#f6f2ea"/>
+        <path d="M0 0 H480 L380 60 H100Z" fill="#ece5d8"/>
+        <path d="M0 0 L100 60 V150 L0 230Z M480 0 L380 60 V150 L480 230Z" fill="#e7dfd0"/>
+        <rect x="100" y="60" width="280" height="90" fill="#efe8da"/>
+        <rect x="120" y="76" width="90" height="52" rx="4" fill="#9fd0e3" stroke="#23262b" stroke-width="2.5"/>
+        <g fill="#aec6cf"><rect x="124" y="104" width="12" height="22"/><rect x="140" y="96" width="12" height="30"/><rect x="156" y="108" width="12" height="18"/><rect x="172" y="92" width="12" height="34"/><rect x="188" y="102" width="16" height="24"/></g>
+        <rect x="262" y="76" width="96" height="54" rx="5" fill="#fff" stroke="#23262b" stroke-width="2.5"/>
+        <g><rect x="270" y="90" width="22" height="12" rx="2" fill="#f2f2ef"/><rect x="298" y="90" width="22" height="12" rx="2" fill="#fff1a8"/><rect x="326" y="90" width="22" height="12" rx="2" fill="#d9f3e4"/><rect x="326" y="106" width="22" height="12" rx="2" fill="#ffdbe3"/><rect x="298" y="106" width="22" height="12" rx="2" fill="#dbe8ff"/></g>
+        <path d="M100 150 H380 L480 230 V270 H0 V230Z" fill="#d6aa78"/>
+        <g stroke="rgba(110,72,38,.3)" stroke-width="1.5"><path d="M160 150 L110 270 M220 150 L200 270 M260 150 L280 270 M320 150 L370 270"/></g>
+        <path d="M150 168 H330 L380 214 H100Z" fill="#5fae9c"/>
+        <g stroke="#23262b" stroke-width="3" stroke-linejoin="round">
+          <path d="M214 158 L220 206 Q240 214 260 206 L266 158Z" fill="#1f8a78"/>
+          <ellipse cx="240" cy="158" rx="26" ry="7" fill="#145e52"/>
+          <rect x="226" y="176" width="28" height="12" rx="3" fill="#fff" stroke-width="2"/>
+        </g>
+        <path d="M236 182 l3 3 l6 -6" fill="none" stroke="#2e9a5b" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
+        <g fill="none" stroke="#23262b" stroke-width="3" stroke-dasharray="1 11" stroke-linecap="round"><path d="M250 248 Q290 70 246 140"/></g>
+        <g stroke="#23262b" stroke-width="2.5" stroke-linejoin="round"><path d="M276 78 l9 -5 l9 3 l3 9 l-4 8 l-9 3 l-8 -4 l-3 -8Z" fill="#fff1a8"/></g>
+        <g stroke="#23262b" stroke-width="3">
+          <path d="M70 216 V150" stroke="#9aa3ad" stroke-width="5"/>
+          <ellipse cx="70" cy="218" rx="20" ry="6" fill="#5b6773"/>
+          <ellipse cx="74" cy="132" rx="16" ry="30" fill="#dcebf0"/>
+        </g>
+        <g fill="#45bfa8"><ellipse cx="74" cy="118" rx="5" ry="11"/><ellipse cx="80" cy="140" rx="5" ry="10" transform="rotate(50 80 140)"/><ellipse cx="68" cy="142" rx="5" ry="10" transform="rotate(-50 68 142)"/></g>
+        <g stroke="#fff" stroke-width="3" stroke-linecap="round" opacity=".8"><path d="M104 118 h26 M112 134 h34 M104 150 h22"/></g>
+        <g transform="translate(410 46)">
+          <rect x="-36" y="-16" width="72" height="32" rx="10" fill="#17181b" stroke="#23262b" stroke-width="2.5"/>
+          <text x="-14" y="6" text-anchor="middle" font-family="Bricolage Grotesque, sans-serif" font-weight="800" font-size="15" fill="#eceded">2.4</text>
+          <path d="M6 0 h16 M18 -5 l5 5 l-5 5" fill="none" stroke="#45bfa8" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+        </g>
+      </svg>
+      <div class="game-card-body">
+        <h2>Inbox Zero</h2>
+        <p>Your agent fixed them. You get to bin them. Flick each resolved note at the bin, and aim into the fan.</p>
+        <p class="game-best" data-best="inbox-zero" data-unit="points" hidden></p>
+        <span class="play">Play <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12h15M13 6l6 6-6 6" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+      </div>
+    </a>
+  </div>
+</main>
+
+<footer class="foot">
+  <div class="wrap foot-in">
+    <span class="brand"><img src="../notato.png" alt="" width="28" height="28"><span>Notato</span></span>
+    <p>Figma-style comments for your running app, for coding agents and the people who build with them.</p>
+    <p class="foot-links"><a href="../docs/index.html">Docs</a><a href="https://github.com/notatorg/notato">Source on GitHub</a><a href="../index.html">Home</a></p>
+  </div>
+</footer>
+</body>
+</html>
