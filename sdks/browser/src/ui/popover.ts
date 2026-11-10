@@ -55,7 +55,8 @@ export interface Popover {
 }
 
 const SEVERITIES: Severity[] = ["blocker", "major", "minor", "nit"];
-const INTENTS: Intent[] = ["fix", "change", "question", "approve", "variants"];
+/** The kinds of note. Variants is not one of them: it is the other side of the Note / Variants switch. */
+const NOTE_INTENTS: Intent[] = ["fix", "change", "question", "approve"];
 const INTENT_HINT: Record<Intent, string> = {
     fix: "Something is broken",
     change: "It works, but should be different",
@@ -66,6 +67,9 @@ const INTENT_HINT: Record<Intent, string> = {
 /** Said wherever People only can be turned on, in every SDK. */
 export const PEOPLE_ONLY_HINT = "Keep this between people: the agent won't see it.";
 const PLACEHOLDER = "What should change? Be specific.";
+/** Shown in place of the kinds of note once Variants is chosen: what asking for them gets you. */
+const VARIANTS_EXPLAINER =
+    "Your agent writes a few versions into the page. Switch between them here, and press Use this on the one you like.";
 const VARIANTS_PLACEHOLDER = "What should the versions explore? e.g. three layouts for this header";
 const WIDTH = 320;
 const GAP = 12;
@@ -95,7 +99,10 @@ export function createPopover(layer: HTMLElement, frames: Frames = createFrames(
     let leaving: HTMLElement | null = null;
     let current: PopoverInit | null = null;
     let severity: Severity | undefined;
-    let intent: Intent | undefined;
+    /** The kind of note chosen; kept while Variants is chosen, so going back to Note finds it again. */
+    let noteIntent: Intent | undefined;
+    let asking: "note" | "variants" = "note";
+    const intent = (): Intent | undefined => (asking === "variants" ? "variants" : noteIntent);
     let peopleOnly = false;
     let visibility: FeedbackVisibility = "personal";
     let textarea: HTMLTextAreaElement;
@@ -116,7 +123,7 @@ export function createPopover(layer: HTMLElement, frames: Frames = createFrames(
     let files: File[] = [];
     const attachmentsBusy = (busy: boolean) => {
         for (const control of el?.querySelectorAll<HTMLInputElement | HTMLButtonElement>(
-            ".reference-picker input, .reference-picker button"
+            ".reference-choose, .reference-files button, input[type=file]"
         ) ?? [])
             control.disabled = busy;
     };
@@ -171,7 +178,7 @@ export function createPopover(layer: HTMLElement, frames: Frames = createFrames(
                 comment,
                 ...(files.length ? { references: [...files] } : {}),
                 severity,
-                intent,
+                intent: intent(),
                 ...(peopleOnly ? { peopleOnly } : {}),
                 visibility,
             });
@@ -205,7 +212,8 @@ export function createPopover(layer: HTMLElement, frames: Frames = createFrames(
         el = null;
         current = null;
         severity = undefined;
-        intent = undefined;
+        noteIntent = undefined;
+        asking = "note";
         peopleOnly = false;
         visibility = "personal";
         files = [];
@@ -221,7 +229,7 @@ export function createPopover(layer: HTMLElement, frames: Frames = createFrames(
             if (leaving) settle(leaving);
             current = init;
             visibility = init.defaultVisibility ?? "personal";
-            const intentChips = INTENTS.filter((i) => i !== "variants" || init.variants).map((i) =>
+            const intentChips = NOTE_INTENTS.map((i) =>
                 h(
                     "button",
                     {
@@ -231,20 +239,67 @@ export function createPopover(layer: HTMLElement, frames: Frames = createFrames(
                         "data-intent": i,
                         title: INTENT_HINT[i],
                         onclick: (ev: Event) => {
-                            intent = intent === i ? undefined : i;
+                            noteIntent = noteIntent === i ? undefined : i;
                             for (const chip of intentChips)
                                 chip.setAttribute(
                                     "aria-pressed",
-                                    String(chip.dataset.intent === intent)
+                                    String(chip.dataset.intent === noteIntent)
                                 );
-                            textarea.placeholder =
-                                intent === "variants" ? VARIANTS_PLACEHOLDER : PLACEHOLDER;
                             ev.stopPropagation();
                         },
                     },
                     capitalize(i)
                 )
             );
+            const intentsGroup = h(
+                "div",
+                { class: "composer-options", role: "group", "aria-label": "Feedback type" },
+                h("div", { class: "chips composer-intents" }, ...intentChips)
+            );
+            const variantsExplainer = h(
+                "p",
+                { class: "variants-explainer", hidden: true },
+                VARIANTS_EXPLAINER
+            );
+            // Asking for variants is a different request from a note (versions in the page to pick from), so it is
+            // chosen first, at the top, and the rest of the composer follows from it.
+            const modeButton = (mode: "note" | "variants", label: string, svg: string) =>
+                h(
+                    "button",
+                    {
+                        type: "button",
+                        "aria-pressed": String(mode === "note"),
+                        "data-mode": mode,
+                        ...(mode === "variants"
+                            ? { "data-intent": "variants", title: INTENT_HINT.variants }
+                            : { title: "Leave a note: something to fix, change, ask or approve" }),
+                        onclick: (ev: Event) => {
+                            ev.stopPropagation();
+                            if (asking === mode) return;
+                            asking = mode;
+                            showMode();
+                            textarea.focus({ preventScroll: true });
+                        },
+                    },
+                    icon(svg),
+                    label
+                );
+            const modeButtons = [
+                modeButton("note", "Note", ICONS.note),
+                modeButton("variants", "Variants", ICONS.versions),
+            ];
+            const showMode = () => {
+                const variants = asking === "variants";
+                for (const b of modeButtons)
+                    b.setAttribute("aria-pressed", String(b.dataset.mode === asking));
+                intentsGroup.hidden = variants;
+                variantsExplainer.hidden = !variants;
+                if (!init.reviewInstruction) {
+                    textarea.placeholder = variants ? VARIANTS_PLACEHOLDER : PLACEHOLDER;
+                    saveBtn.textContent = variants ? "Ask for variants" : "Save note";
+                }
+                place();
+            };
             const chips = SEVERITIES.map((s) =>
                 h(
                     "button",
@@ -268,12 +323,23 @@ export function createPopover(layer: HTMLElement, frames: Frames = createFrames(
                 )
             );
             const visibilityDetail = h("p", {});
+            const visibilitySummary = h("span", {});
+            const visibilityIcon = h("span", { class: "icon" });
             const showVisibility = () => {
                 visibilityDetail.textContent = peopleOnly
                     ? "Only people can see this note."
                     : visibility === "shared"
                       ? "Everyone with access to this project can see this feedback."
                       : "Only you and your agent can see this feedback.";
+                visibilitySummary.textContent =
+                    visibility === "shared"
+                        ? peopleOnly
+                            ? "Project, not agent"
+                            : "Shared with project"
+                        : peopleOnly
+                          ? "Only you"
+                          : "You and your agent";
+                visibilityIcon.innerHTML = visibility === "shared" ? ICONS.people : ICONS.lock;
             };
             showVisibility();
             const visibilitySwitch = (
@@ -321,6 +387,41 @@ export function createPopover(layer: HTMLElement, frames: Frames = createFrames(
                     peopleOnly = !peopleOnly;
                     return peopleOnly;
                 }
+            );
+            const visibilityPanel = h(
+                "div",
+                {
+                    class: "composer-visibility",
+                    id: "notato-composer-visibility",
+                    role: "group",
+                    "aria-label": "Visibility",
+                    hidden: true,
+                },
+                shareChip,
+                peopleChip,
+                visibilityDetail
+            );
+            const visibilityToggle: HTMLButtonElement = h(
+                "button",
+                {
+                    class: "extra visibility-toggle",
+                    type: "button",
+                    "aria-expanded": "false",
+                    "aria-controls": "notato-composer-visibility",
+                    title: "Who can see this",
+                    onclick: (ev: Event) => {
+                        ev.stopPropagation();
+                        visibilityPanel.hidden = !visibilityPanel.hidden;
+                        visibilityToggle.setAttribute(
+                            "aria-expanded",
+                            String(!visibilityPanel.hidden)
+                        );
+                        place();
+                    },
+                },
+                visibilityIcon,
+                visibilitySummary,
+                icon(ICONS.chevron)
             );
             hintEl = h("p", { class: "hint" });
             showHint(init.hint);
@@ -388,7 +489,7 @@ export function createPopover(layer: HTMLElement, frames: Frames = createFrames(
                 });
                 return preview.element;
             };
-            const fileCount = h("span", { class: "reference-count" }, "0 / 3");
+            const fileCount = h("span", { class: "reference-count", hidden: true }, "0 / 3");
             const fileInput = h("input", {
                 type: "file",
                 accept: "image/png,image/jpeg,image/webp",
@@ -399,16 +500,22 @@ export function createPopover(layer: HTMLElement, frames: Frames = createFrames(
             const chooseFiles = h(
                 "button",
                 {
-                    class: "btn reference-choose",
+                    class: "extra reference-choose",
                     type: "button",
-                    onclick: () => {
+                    title: `Attach up to three PNG, JPG or WebP images of 16 MB or less. You can also paste one (${isMac() ? "⌘V" : "Ctrl+V"}).`,
+                    style: { display: init.references ? "" : "none" },
+                    onclick: (ev: Event) => {
+                        ev.stopPropagation();
                         if (!saving && current?.references) fileInput.click();
                     },
                 },
-                "Choose images"
+                icon(ICONS.paperclip),
+                "Add image",
+                fileCount
             );
             const redraw = () => {
                 fileCount.textContent = `${files.length} / 3`;
+                fileCount.hidden = files.length === 0;
                 fileCount.setAttribute("aria-label", `${files.length} of 3 images attached`);
                 fileList.replaceChildren(
                     ...files.map((f) =>
@@ -506,101 +613,34 @@ export function createPopover(layer: HTMLElement, frames: Frames = createFrames(
                               init.reviewInstruction
                           )
                         : null,
+                    init.variants
+                        ? h(
+                              "div",
+                              {
+                                  class: "composer-mode",
+                                  role: "group",
+                                  "aria-label": "Note or variants",
+                              },
+                              ...modeButtons
+                          )
+                        : null,
+                    variantsExplainer,
+                    intentsGroup,
                     textarea,
-                    h(
-                        "div",
-                        {
-                            class: "reference-picker",
-                            style: { display: init.references ? "" : "none" },
-                        },
-                        h(
-                            "div",
-                            { class: "reference-heading" },
-                            h(
-                                "span",
-                                {},
-                                "Reference images ",
-                                h("span", { class: "reference-optional" }, "(optional)")
-                            ),
-                            fileCount
-                        ),
-                        fileInput,
-                        h(
-                            "div",
-                            {
-                                class: "reference-attach",
-                                role: "group",
-                                "aria-label": "Add reference images",
-                                onclick: (event: MouseEvent) => {
-                                    if (
-                                        event.target instanceof Element &&
-                                        event.target.closest("button")
-                                    )
-                                        return;
-                                    textarea.focus({ preventScroll: true });
-                                },
-                            },
-                            h(
-                                "span",
-                                { class: "reference-symbol", "aria-hidden": "true" },
-                                icon(ICONS.image)
-                            ),
-                            h(
-                                "div",
-                                { class: "reference-options" },
-                                h(
-                                    "p",
-                                    { class: "reference-paste" },
-                                    "Paste an image ",
-                                    h("kbd", {}, isMac() ? "⌘ V" : "Ctrl V")
-                                ),
-                                h(
-                                    "div",
-                                    { class: "reference-alternative" },
-                                    h("span", {}, "or"),
-                                    chooseFiles
-                                )
-                            )
-                        ),
-                        fileList,
-                        h("p", { class: "reference-help" }, "PNG, JPG or WebP · Up to 16 MB each")
-                    ),
-                    h(
-                        "div",
-                        { class: "composer-options", role: "group", "aria-label": "Feedback type" },
-                        h(
-                            "span",
-                            { class: "composer-label", "aria-hidden": "true" },
-                            "Feedback type"
-                        ),
-                        h(
-                            "div",
-                            {
-                                class: `chips composer-intents${init.variants ? " has-variants" : ""}`,
-                            },
-                            ...intentChips
-                        )
-                    ),
+                    fileInput,
+                    fileList,
                     h(
                         "div",
                         { class: "composer-options", role: "group", "aria-label": "Severity" },
-                        h("span", { class: "composer-label", "aria-hidden": "true" }, "Severity"),
                         h("div", { class: "chips composer-severities" }, ...chips)
                     ),
-                    init.reviewInstruction
-                        ? null
-                        : h(
-                              "div",
-                              {
-                                  class: "composer-visibility",
-                                  role: "group",
-                                  "aria-label": "Visibility",
-                              },
-                              h("span", { class: "composer-label" }, "Visibility"),
-                              shareChip,
-                              peopleChip,
-                              visibilityDetail
-                          )
+                    h(
+                        "div",
+                        { class: "composer-extras" },
+                        chooseFiles,
+                        init.reviewInstruction ? null : visibilityToggle
+                    ),
+                    init.reviewInstruction ? null : visibilityPanel
                 ),
                 h(
                     "div",
@@ -641,8 +681,8 @@ export function createPopover(layer: HTMLElement, frames: Frames = createFrames(
             if ("screenshotsOff" in patch)
                 screenshotState.style.display = patch.screenshotsOff ? "" : "none";
             if ("references" in patch) {
-                const picker = el?.querySelector<HTMLElement>(".reference-picker");
-                if (picker) picker.style.display = patch.references ? "" : "none";
+                const choose = el?.querySelector<HTMLElement>(".reference-choose");
+                if (choose) choose.style.display = patch.references ? "" : "none";
             }
             renderTargets();
             place();

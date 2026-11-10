@@ -85,6 +85,27 @@ describe("the composer", () => {
         popover.destroy();
     });
 
+    it("folds who can see it into one button that says so, and opens the switches", () => {
+        const popover = open();
+        const toggle = layer.querySelector(".visibility-toggle") as HTMLButtonElement;
+        const panel = layer.querySelector(".composer-visibility") as HTMLElement;
+        expect(toggle.textContent).toBe("You and your agent");
+        expect(panel.hidden).toBe(true);
+        expect(toggle.getAttribute("aria-expanded")).toBe("false");
+        toggle.click();
+        expect(panel.hidden).toBe(false);
+        expect(toggle.getAttribute("aria-expanded")).toBe("true");
+        button(layer, "Share with project")?.click();
+        expect(toggle.textContent).toBe("Shared with project");
+        button(layer, "Hide from agent")?.click();
+        expect(toggle.textContent).toBe("Project, not agent");
+        button(layer, "Share with project")?.click();
+        expect(toggle.textContent).toBe("Only you");
+        toggle.click();
+        expect(panel.hidden).toBe(true);
+        popover.destroy();
+    });
+
     it("marks the note People only when it is", async () => {
         const popover = open();
         button(layer, "Hide from agent")?.click();
