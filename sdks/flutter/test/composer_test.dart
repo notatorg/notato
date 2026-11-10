@@ -59,12 +59,7 @@ void main() {
     expect(find.text('You and your agent'), findsOneWidget);
     expect(
       tester.getSemantics(_button),
-      isSemantics(
-        label: 'Visibility: You and your agent',
-        isButton: true,
-        hasExpandedState: true,
-        isExpanded: false,
-      ),
+      isSemantics(label: 'Visibility: You and your agent', isButton: true, hasExpandedState: true, isExpanded: false),
     );
 
     await tester.tap(_button);
