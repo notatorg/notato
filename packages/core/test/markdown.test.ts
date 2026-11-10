@@ -175,6 +175,17 @@ describe("standard", () => {
         );
         expect(renderAnnotation(rich())).not.toContain("Screenshots follow");
     });
+    it("says when the screenshot is a stand-in or is missing frames, so a blank picture is not taken as the page", () => {
+        const fallback = rich({
+            context: { screenshot: { method: "fallback", pin: 3, error: "Image load failed" } },
+        });
+        expect(renderAnnotation(fallback)).toContain(
+            "The toolbar could not draw this page, so the screenshot is a stand-in: Image load failed. Rely on the target above."
+        );
+        const frames = rich({ context: { screenshot: { method: "dom", pin: 3, frameErrors: 2 } } });
+        expect(renderAnnotation(frames)).toContain("2 frames on this page could not be drawn");
+        expect(renderAnnotation(rich())).not.toContain("could not");
+    });
     it("puts the caller's notes before the screenshot line", () => {
         const out = renderAnnotation(rich(), { screenshotsAttached: true, notes: ["NOTE ONE"] });
         expect(out.indexOf("NOTE ONE")).toBeGreaterThan(-1);

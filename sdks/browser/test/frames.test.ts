@@ -234,6 +234,16 @@ describe("framesIn", () => {
         expect(framesIn(document)).toEqual([first, inShadow, last]);
     });
 
+    it("lists the frames of an old frameset page too", () => {
+        const frame = document.createElement("frame");
+        document.body.append(frame);
+        try {
+            expect(framesIn(document)).toEqual([frame]);
+        } finally {
+            frame.remove();
+        }
+    });
+
     it("does not look inside an iframe's own document", () => {
         const outer = addFrame();
         addFrame(docOf(outer).body, docOf(outer));

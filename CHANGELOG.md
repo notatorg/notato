@@ -2,6 +2,11 @@
 
 Every Notato package is released together, at one version: the `notato` command and server, the npm packages, the Swift package, the Android libraries, the .NET MAUI package, the Flutter package and the Docker image. A release's entry here is also the top of its [GitHub release](https://github.com/notatorg/notato/releases), and a tag is refused until this file has its version.
 
+## Unreleased
+
+- **Browser screenshots no longer come out blank.** When the page's snapshot fails to load (a large or slow page), the browser toolbar used to keep an empty white picture with only the red outline on it. It now notices, tries again without embedded web fonts, and if that also fails keeps a stand-in image that says why. Pages built from an old `<frameset>` have their frames drawn, content scrolled inside a container is drawn where it is scrolled to (the outline used to land on the wrong row), and a page with no doctype is captured at the window's size rather than the whole document's.
+- The board says under the screenshots when the toolbar could not draw the page or some of its frames, and the agent's note says the same, so a stand-in is never taken for the page.
+
 ## 0.3.1
 
 - **The mobile note sheets match the web composer.** The SwiftUI, Android, .NET MAUI, Flutter and React Native sheets now put a heading over the feedback type and severity choices, draw the options as equal-width buttons filled with the text colour when chosen, show the severity's colour beside each severity, and group the "Share with project" and "Hide from agent" switches under a "Visibility" heading. What a note records is unchanged.

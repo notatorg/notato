@@ -144,7 +144,7 @@ const shadowHoldsFrame = (el: Element) =>
 function holdsFrame(el: Element): boolean {
     if (isIframe(el) || shadowHoldsFrame(el)) return true;
     if (!el.firstElementChild) return false;
-    if (el.querySelector("iframe")) return true;
+    if (el.querySelector("iframe, frame")) return true;
     const doc = el.ownerDocument;
     const walker = doc.createTreeWalker(el, 1 /* NodeFilter.SHOW_ELEMENT */);
     for (let node = walker.nextNode(); node; node = walker.nextNode())

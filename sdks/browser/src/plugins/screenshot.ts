@@ -323,30 +323,113 @@ interface Rendered {
     error?: string;
 }
 
+/**
+ * The size of a window's viewport in CSS pixels, without its scrollbars. A page with no doctype (quirks mode) reports
+ * the whole document's height on its root element, so there the body is the one that knows the viewport.
+ */
+export function viewportSize(doc: Document): { width: number; height: number } {
+    const body = doc.body;
+    const el =
+        doc.compatMode === "BackCompat" && body?.localName === "body" ? body : doc.documentElement;
+    return { width: el.clientWidth, height: el.clientHeight };
+}
+
+/**
+ * Options for rendering a window's visible part. Scroll containers inside the page are drawn where they are scrolled
+ * to (modern-screenshot's `restoreScrollPosition`), but the page's own scroll is not: the root is translated by it
+ * instead, which keeps the root the containing block for `position: fixed`. So the shift that `restoreScrollPosition`
+ * gives the scrolling element's children is put back once the clone is made.
+ */
+function renderOptions(win: Window, maskFields: boolean) {
+    const doc = win.document;
+    const sx = win.scrollX;
+    const sy = win.scrollY;
+    const scroller = doc.scrollingElement;
+    const transforms = new WeakMap<Node, string>();
+    return {
+        style: { transform: `translate(${-sx}px, ${-sy}px)`, transformOrigin: "0 0" },
+        features: { restoreScrollPosition: true },
+        onCloneEachNode: (cloned: Node) => {
+            maskClone(cloned, maskFields);
+            shiftFixed(cloned, sx, sy);
+            const style = (cloned as HTMLElement).style;
+            if (style) transforms.set(cloned, style.transform);
+        },
+        onCloneNode: (root: Node) => {
+            if (!scroller || (sx === 0 && sy === 0) || root.nodeType !== 1) return;
+            const clonedRoot = root as Element;
+            const clonedScroller =
+                scroller === doc.documentElement
+                    ? clonedRoot
+                    : Array.from(clonedRoot.children).find(
+                          (el) => el.localName === scroller.localName
+                      );
+            for (const child of Array.from(clonedScroller?.children ?? [])) {
+                const before = transforms.get(child);
+                if (before !== undefined) (child as HTMLElement).style.transform = before;
+            }
+        },
+    };
+}
+
+/**
+ * Whether a canvas is one flat colour. modern-screenshot does not fail when its snapshot of the page cannot be loaded
+ * (too large, too slow, refused): it resolves and draws nothing, which leaves only the background.
+ */
+export function looksBlank(canvas: HTMLCanvasElement): boolean {
+    try {
+        const size = 24;
+        const probe = document.createElement("canvas");
+        probe.width = size;
+        probe.height = size;
+        const ctx = probe.getContext("2d", { willReadFrequently: true });
+        if (!ctx || !canvas.width || !canvas.height) return false;
+        ctx.drawImage(canvas, 0, 0, size, size);
+        const d = ctx.getImageData(0, 0, size, size).data;
+        for (let i = 4; i < d.length; i += 4)
+            for (let c = 0; c < 4; c++)
+                if (Math.abs((d[i + c] as number) - (d[c] as number)) > 2) return false;
+        return true;
+    } catch {
+        return false; // a canvas that cannot be read cannot be judged
+    }
+}
+
+/** Whether a page shows anything, so that a blank render of it is a failure rather than the truth. */
+function hasContent(doc: Document): boolean {
+    if (doc.querySelector("img, svg, canvas, video, iframe, frame, input, textarea, select"))
+        return true;
+    return (doc.body?.innerText ?? "").trim() !== "";
+}
+
 /** Re-renders the visible part of the page. Falls back to a placeholder image if that fails. */
 async function renderDom(maxEdge: number, maskFields: boolean): Promise<Rendered> {
     const root = document.documentElement;
-    const vw = root.clientWidth;
-    const vh = root.clientHeight;
+    const { width: vw, height: vh } = viewportSize(document);
     const plan = planCapture(vw, vh, window.devicePixelRatio || 1, maxEdge);
-    const sx = window.scrollX;
-    const sy = window.scrollY;
-    try {
+    const draw = async (lighter: boolean) => {
         const canvas = await domToCanvas(root, {
             width: vw,
             height: vh,
             scale: plan.scale,
             backgroundColor: backgroundOf(window),
-            style: { transform: `translate(${-sx}px, ${-sy}px)`, transformOrigin: "0 0" },
-            timeout: 8000,
+            // Embedded web fonts are most of a big page's snapshot. Without them it is smaller and quicker to load.
+            ...(lighter ? { font: false as const, timeout: 15000 } : { timeout: 8000 }),
             filter: (node) => !(node.nodeType === 1 && (node as Element).hasAttribute(ROOT_ATTR)),
-            onCloneEachNode: (cloned) => {
-                maskClone(cloned, maskFields);
-                shiftFixed(cloned, sx, sy);
-            },
+            ...renderOptions(window, maskFields),
         });
         // An iframe's content is a document of its own, which this render leaves blank: draw each one in.
         const frames = await compositeFrames(canvas, window, plan.scale, maskFields);
+        return { canvas, frames };
+    };
+    try {
+        let drawn = await draw(false);
+        if (looksBlank(drawn.canvas) && hasContent(document)) {
+            drawn = await draw(true);
+            if (looksBlank(drawn.canvas))
+                throw new Error("the page came out blank; it may be too large or too slow to draw");
+        }
+        const { canvas, frames } = drawn;
         return {
             canvas,
             vw,
@@ -418,20 +501,14 @@ async function compositeFrames(
             x + box.width > 0 &&
             y + box.height > 0;
         if (!inView) continue;
-        const sx = inner.scrollX;
-        const sy = inner.scrollY;
         try {
             const sub = await domToCanvas(inner.document.documentElement, {
                 width: box.width,
                 height: box.height,
                 scale,
                 backgroundColor: backgroundOf(inner),
-                style: { transform: `translate(${-sx}px, ${-sy}px)`, transformOrigin: "0 0" },
                 timeout: 5000,
-                onCloneEachNode: (cloned) => {
-                    maskClone(cloned, maskFields);
-                    shiftFixed(cloned, sx, sy);
-                },
+                ...renderOptions(inner, maskFields),
             });
             ctx.drawImage(sub, x * scale, y * scale, box.width * scale, box.height * scale);
             result.drawn += 1;
@@ -540,9 +617,15 @@ function placeholder(width: number, height: number, message: string): HTMLCanvas
     if (ctx) {
         ctx.fillStyle = "#f3f4f6";
         ctx.fillRect(0, 0, canvas.width, canvas.height);
+        // Sized to the image, so it can still be read when the board shows it small, and at the bottom, out of the
+        // way of the target's outline, which is still drawn where the target was.
+        const size = Math.max(16, Math.round(canvas.width / 32));
+        const bottom = canvas.height - size;
         ctx.fillStyle = "#374151";
-        ctx.font = "16px system-ui, sans-serif";
-        ctx.fillText(`Screenshot unavailable: ${message}`.slice(0, 120), 16, 28);
+        ctx.font = `600 ${size}px system-ui, sans-serif`;
+        ctx.fillText("This page could not be drawn", size, bottom - size * 1.2);
+        ctx.font = `${Math.round(size * 0.7)}px system-ui, sans-serif`;
+        ctx.fillText(message.slice(0, 120), size, bottom, canvas.width - size * 2);
     }
     return canvas;
 }

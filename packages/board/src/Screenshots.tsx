@@ -1,4 +1,4 @@
-import { pinNumber, screenshotCrop } from "@notato/core";
+import { pinNumber, screenshotCrop, screenshotProblem } from "@notato/core";
 import type { Annotation } from "@notato/schema";
 import { useCallback, useRef, useState } from "react";
 import { assetHref } from "./api.ts";
@@ -39,6 +39,7 @@ export function Screenshots({ annotation: a }: { annotation: Annotation }) {
     const shots = a.screenshots;
     if (!shots) return null;
     const pin = pinNumber(a);
+    const problem = screenshotProblem(a);
 
     return (
         <>
@@ -95,6 +96,7 @@ export function Screenshots({ annotation: a }: { annotation: Annotation }) {
                     </button>
                 ) : null}
             </div>
+            {problem ? <p className="shot-note">{problem}</p> : null}
 
             {zoom ? (
                 <dialog className="lightbox" open aria-label="Screenshot">
