@@ -154,12 +154,18 @@ final class NotatoUITests: XCTestCase {
         XCTAssertTrue(comment.waitForExistence(timeout: 5))
         comment.tap()
         comment.typeText("Between us: is this the final copy?")
+        // Who can see it is one button that says so; the switches are under it.
+        let visibility = app.buttons["NotatoVisibility"]
+        XCTAssertEqual(visibility.label, "Visibility: You and your agent")
+        XCTAssertFalse(app.switches["NotatoPeopleOnly"].exists, "closed by default")
+        visibility.tap()
         let peopleOnly = app.switches["NotatoPeopleOnly"]
-        XCTAssertTrue(peopleOnly.exists)
+        XCTAssertTrue(peopleOnly.waitForExistence(timeout: 2))
         XCTAssertEqual(peopleOnly.value as? String, "0", "off by default")
         XCTAssertTrue(app.staticTexts["Keep this between people: the agent won't see it."].exists)
         flip(peopleOnly)
         XCTAssertEqual(peopleOnly.value as? String, "1")
+        XCTAssertEqual(visibility.label, "Visibility: Only you")
         shot("20-people-only-composer")
         app.buttons["NotatoSend"].tap()
         XCTAssertTrue(app.staticTexts["Sent"].waitForExistence(timeout: 10))

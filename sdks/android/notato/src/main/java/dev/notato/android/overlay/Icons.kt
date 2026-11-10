@@ -33,6 +33,13 @@ internal enum class Icon(private val data: String? = null) {
     /** People only, and asides: kept between people. */
     USERS("M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M5 7a4 4 0 1 0 8 0a4 4 0 1 0-8 0M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"),
 
+    /** The composer's Visibility while the note is not shared: a lock (a rounded rect 14×11 at 5,10, and its shackle). */
+    LOCK("M7 10h10a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2zM8 10V7a4 4 0 0 1 8 0v3M12 14v3"),
+
+    /** The composer's Visibility while the note is shared with the project: two people. */
+    PEOPLE("M5.8 8a3.2 3.2 0 1 0 6.4 0a3.2 3.2 0 1 0-6.4 0M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6M16 5.2a3.2 3.2 0 0 1 0 5.6M18 14.4c1.8.8 3 2.7 3 5.6"),
+    CHEVRON_DOWN("M6 9l6 6 6-6"),
+
     /** Settings' Screenshots. */
     CAMERA("M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3zM9 13a3 3 0 1 0 6 0a3 3 0 1 0-6 0"),
     ;

@@ -115,16 +115,32 @@ describe("pasted reference images", () => {
         expect(saved()).toEqual([file]);
     });
 
-    it("focuses the comment when the paste prompt is clicked so the next paste reaches the composer", () => {
-        layer.querySelector<HTMLButtonElement>(".reference-choose")?.focus();
-        layer.querySelector<HTMLElement>(".reference-paste")?.click();
-        expect(document.activeElement).toBe(comment());
-        paste(clipboard([image()]));
+    it("attaches an image pasted anywhere in the composer, not only in the comment", () => {
+        const file = image();
+        paste(clipboard([file]), layer.querySelector(".composer-severities") as HTMLElement);
         save();
-        expect(saved()).toHaveLength(1);
+        expect(saved()).toEqual([file]);
     });
 
-    it("opens the file picker from Choose images and disables that action while saving", () => {
+    it("shows the count on Add image only once something is attached", () => {
+        const count = () =>
+            layer.querySelector(".reference-choose .reference-count") as HTMLElement;
+        expect(count().hidden).toBe(true);
+        paste(clipboard([image()]));
+        expect(count().hidden).toBe(false);
+        expect(count().textContent).toBe("1 / 3");
+        layer.querySelector<HTMLButtonElement>('[aria-label="Remove image.png"]')?.click();
+        expect(count().hidden).toBe(true);
+    });
+
+    it("hides Add image where references are not allowed", () => {
+        const add = () => layer.querySelector(".reference-choose") as HTMLElement;
+        expect(add().style.display).toBe("");
+        popover.update({ references: false });
+        expect(add().style.display).toBe("none");
+    });
+
+    it("opens the file picker from Add image and disables that action while saving", () => {
         const chooseButton = layer.querySelector<HTMLButtonElement>(
             ".reference-choose"
         ) as HTMLButtonElement;
