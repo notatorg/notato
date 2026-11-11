@@ -428,28 +428,24 @@ class _SettingsSheetState extends State<SettingsSheet> {
                   value: _screenshots,
                   onChanged: (v) => setState(() => _screenshots = v),
                 ),
-                SheetButton(
-                  'Hide completed annotations (${runtime.completedCount})',
-                  key: const ValueKey('NotatoHideCompleted'),
-                  onPressed: runtime.completedCount == 0
-                      ? null
-                      : () {
-                          widget.open(null);
-                          runtime.hideCompleted();
-                        },
+                FlagToggle(
+                  key: const ValueKey('NotatoHideDone'),
+                  tile: const SheetTile.icon('eyeOff'),
+                  title: 'Hide done annotations',
+                  hint:
+                      'Resolved, reverted and dismissed annotations, including ones finished later. The dashboard keeps them.',
+                  value: runtime.hideDone,
+                  onChanged: (v) => setState(() => runtime.setHideDone(v)),
                 ),
-                Text(
-                  'Across this app, on this device. Kept in the dashboard.',
-                  style: TextStyle(fontSize: 12.5, color: p.muted),
-                ),
-                SheetButton(
-                  'Restore hidden annotations (${runtime.hiddenCount})',
-                  key: const ValueKey('NotatoRestoreHidden'),
-                  onPressed: () {
-                    widget.open(null);
-                    runtime.restoreHidden();
-                  },
-                ),
+                if (runtime.hiddenCount > 0)
+                  SheetButton(
+                    'Restore hidden annotations (${runtime.hiddenCount})',
+                    key: const ValueKey('NotatoRestoreHidden'),
+                    onPressed: () {
+                      widget.open(null);
+                      runtime.restoreHidden();
+                    },
+                  ),
               ],
             ),
           ),
@@ -598,6 +594,10 @@ class _ThreadEntry extends StatelessWidget {
               ),
               style: TextStyle(fontSize: 14.5, color: aside ? p.muted : p.text),
             ),
+            if (imagesAttachedLabel(reply) case final images?) ...[
+              const SizedBox(height: 3),
+              Text(images, style: TextStyle(fontSize: 12, color: p.muted)),
+            ],
           ],
         ),
       ),

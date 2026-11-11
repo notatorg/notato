@@ -483,7 +483,8 @@ export class SqliteStore implements Store, AuthStore {
 
     async updateAnnotation(
         id: string,
-        mutate: (current: Annotation) => Annotation
+        mutate: (current: Annotation) => Annotation,
+        _addedAssetBytes?: number
     ): Promise<StoredAnnotation | null> {
         const run = this.db.transaction((): StoredAnnotation | null => {
             const row = this.db
@@ -639,9 +640,9 @@ export class SqliteStore implements Store, AuthStore {
             values.push(filter.feedbackActorId ?? "");
         }
         clauses.push(
-            "(json_extract(json, '$.screenshots.full.id') = ? OR json_extract(json, '$.screenshots.crop.id') = ? OR json_extract(json, '$.screenshots.thumbnail.id') = ? OR EXISTS (SELECT 1 FROM json_each(annotations.json, '$.references') r WHERE json_extract(r.value, '$.id') = ?))"
+            "(json_extract(json, '$.screenshots.full.id') = ? OR json_extract(json, '$.screenshots.crop.id') = ? OR json_extract(json, '$.screenshots.thumbnail.id') = ? OR EXISTS (SELECT 1 FROM json_each(annotations.json, '$.references') r WHERE json_extract(r.value, '$.id') = ?) OR EXISTS (SELECT 1 FROM json_each(annotations.json, '$.thread') t, json_each(t.value, '$.images') i WHERE json_extract(i.value, '$.id') = ?))"
         );
-        values.push(assetId, assetId, assetId, assetId);
+        values.push(assetId, assetId, assetId, assetId, assetId);
         return (
             this.db
                 .query(

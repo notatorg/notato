@@ -243,6 +243,11 @@ struct ThreadEntry: View {
                 (Text("\(name): ").bold() + Text(reply.body))
                     .font(.subheadline)
                     .foregroundStyle(aside ? Palette.muted : Palette.text)
+                if let count = reply.images?.count, count > 0 {
+                    Text(CardCopy.imagesAttached(count))
+                        .font(.caption)
+                        .foregroundStyle(Palette.muted)
+                }
             }
             .padding(.horizontal, 10).padding(.vertical, 7)
             .frame(maxWidth: .infinity, alignment: .leading)

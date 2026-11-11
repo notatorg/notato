@@ -55,6 +55,72 @@ struct HiddenAnnotationsTests {
         #expect(reload.hiddenCount == 0)
     }
 
+    @Test func hideDoneLeavesOutEveryFinishedNoteIncludingOnesFinishedLater() {
+        let notato = Fixture.notato()
+        var finished = Fixture.note(0)
+        finished.status = Status.dismissed
+        let open = NoteRecord(Fixture.note(1))
+        notato.insert([NoteRecord(finished), open])
+        #expect(notato.hideDone == false)
+        notato.setHideDone(true)
+        #expect(notato.notes(onRoute: open.route).all.map(\.id) == [open.id])
+        #expect(notato.notes(onRoute: open.route).pinned.first?.number == 2, "pin numbers stay those of the screenshots")
+        #expect(notato.visibleCount == 1)
+        #expect(notato.hiddenCount == 0, "nothing is hidden one at a time")
+
+        var resolved = open.annotation
+        resolved.status = Status.resolved
+        notato.upsert(resolved)
+        #expect(notato.notes(onRoute: open.route).count == 0, "a note finished after the switch went on is left out too")
+        #expect(notato.visibleCount == 0)
+
+        var reopened = resolved
+        reopened.status = Status.open
+        notato.upsert(reopened)
+        #expect(notato.notes(onRoute: open.route).all.map(\.id) == [open.id], "a reopened note comes back by itself")
+
+        notato.setHideDone(false)
+        #expect(notato.notes(onRoute: open.route).count == 2)
+        #expect(notato.visibleCount == 2)
+        #expect(notato.annotations.count == 2, "feedback itself is never changed")
+    }
+
+    @Test func hideDoneKeepsNotesHiddenOneAtATimeApart() {
+        let notato = Fixture.notato()
+        var finished = Fixture.note(0)
+        finished.status = Status.reverted
+        notato.insert([NoteRecord(finished), NoteRecord(Fixture.note(1))])
+        notato.hideAnnotation(finished.id)
+        notato.setHideDone(true)
+        notato.setHideDone(false)
+        #expect(notato.hiddenCount == 1)
+        #expect(notato.visibleCount == 1, "turning the switch off does not restore notes hidden one at a time")
+        notato.restoreHidden()
+        #expect(notato.visibleCount == 2)
+    }
+
+    @Test func hideDoneIsKeptAcrossLaunchesAndReset() {
+        let defaults = UserDefaults.standard
+        defer { defaults.removeObject(forKey: "notato.hide.done") }
+        var state = RuntimeState(remember: true)
+        #expect(state.hideDone == nil)
+        state.hideDone = true
+        #expect(RuntimeState(remember: true).hideDone == true)
+
+        let notato = Fixture.notato()
+        notato.setHideDone(true)
+        let relaunched = Fixture.notato()
+        relaunched.state = notato.state
+        var finished = Fixture.note(0)
+        finished.status = Status.resolved
+        relaunched.insert([NoteRecord(finished)])
+        #expect(relaunched.hideDone)
+        #expect(relaunched.notes(onRoute: finished.route).count == 0)
+
+        state.reset()
+        #expect(RuntimeState(remember: true).hideDone == nil)
+    }
+
     @Test func preferencesArePrivateToEachConnectionAndPerson() {
         var hidden = HiddenAnnotations()
         let parts = ["https://stub.test", "shop", "dev", "credential", "Alice"]

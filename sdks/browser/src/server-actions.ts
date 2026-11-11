@@ -12,8 +12,16 @@ export interface ServerActions {
     changeStatus(id: string, status: "revert_requested" | "resolved", note: string): Promise<void>;
     /** Picks one of the versions an agent offered, or (with `null`) takes the pick back. */
     chooseVariant(id: string, name: string | null): Promise<void>;
-    /** Writes in an annotation's thread as the person; an aside is for the people on it, kept from the agent. */
-    reply(id: string, body: string, aside?: boolean): Promise<void>;
+    /**
+     * Writes in an annotation's thread as the person; an aside is for the people on it, kept from the agent. Images go
+     * with it, already prepared (see `attachedImage`), as multipart.
+     */
+    reply(
+        id: string,
+        body: string,
+        aside?: boolean,
+        images?: ReadonlyArray<{ blob: Blob; name: string }>
+    ): Promise<void>;
     /** Turns People only on or off. The server records the change in the thread. */
     setPeopleOnly(id: string, on: boolean): Promise<void>;
     /** Deletes an annotation. One the server does not have counts as deleted. */
@@ -53,19 +61,33 @@ export function createServerActions(options: ServerActionsOptions): ServerAction
             throw new Error("Review and edit submitted feedback in the Notato dashboard.");
     };
 
-    /** A request to the server as the person. Rejects with a message fit to show. */
-    async function asPerson(url: string, method: string, body: Record<string, unknown>) {
+    /**
+     * A request to the server as the person. Rejects with a message fit to show. With `images`, it goes as multipart:
+     * the JSON in `field`, and each image as a file named `image`.
+     */
+    async function asPerson(
+        url: string,
+        method: string,
+        body: Record<string, unknown>,
+        attached?: { field: string; images: ReadonlyArray<{ blob: Blob; name: string }> }
+    ) {
         writable();
         const since = sync.mark();
+        const said = JSON.stringify({ ...body, author: { kind: "human", name: options.author() } });
+        let form: FormData | undefined;
+        if (attached?.images.length) {
+            form = new FormData();
+            form.set(attached.field, said);
+            for (const image of attached.images) form.append("image", image.blob, image.name);
+        }
         let res: Response;
         try {
             res = await net.fetch(url, {
                 method,
-                headers: { "content-type": "application/json", ...authHeaders(token) },
-                body: JSON.stringify({
-                    ...body,
-                    author: { kind: "human", name: options.author() },
-                }),
+                headers: form
+                    ? authHeaders(token)
+                    : { "content-type": "application/json", ...authHeaders(token) },
+                body: form ?? said,
             });
         } catch {
             throw new Error("Cannot reach the Notato server.");
@@ -84,8 +106,13 @@ export function createServerActions(options: ServerActionsOptions): ServerAction
         changeStatus: (id, status, note) => asPerson(annotation(id), "PATCH", { status, note }),
         chooseVariant: (id, name) =>
             asPerson(`${annotation(id)}/variants/choose`, "POST", { name }),
-        reply: (id, body, aside = false) =>
-            asPerson(`${annotation(id)}/replies`, "POST", { body, ...(aside ? { aside } : {}) }),
+        reply: (id, body, aside = false, images = []) =>
+            asPerson(
+                `${annotation(id)}/replies`,
+                "POST",
+                { body, ...(aside ? { aside } : {}) },
+                { field: "reply", images }
+            ),
         setPeopleOnly: (id, on) => asPerson(annotation(id), "PATCH", { peopleOnly: on }),
 
         async remove(id) {

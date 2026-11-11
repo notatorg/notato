@@ -1,8 +1,15 @@
 import { readFile, stat } from "node:fs/promises";
 import { resolve } from "node:path";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { DETAILS, type Detail, pinNumber } from "@notato/core";
-import { AgentStep, type Author, Intent, Severity, VariantOption } from "@notato/schema";
+import { agentView, DETAILS, type Detail, lastWord, pinNumber } from "@notato/core";
+import {
+    AgentStep,
+    type Author,
+    Intent,
+    type Reply,
+    Severity,
+    VariantOption,
+} from "@notato/schema";
 import { z } from "zod";
 import { agentName, waitsLong } from "./agents.ts";
 import { type Backend, TEXT_MAX } from "./backend.ts";
@@ -443,7 +450,10 @@ export function createMcpServer(options: McpOptions): McpServer {
         return out;
     }
 
-    /** A note as the agent reads it: the Markdown, then the screenshots asked for. */
+    /**
+     * A note as the agent reads it: the Markdown, then the screenshots asked for. A follow-up brings the images sent
+     * with the latest reply; `references` brings the design references and every image sent in the thread.
+     */
     async function describe(
         stored: StoredAnnotation,
         which: ScreenshotChoice,
@@ -452,6 +462,14 @@ export function createMcpServer(options: McpOptions): McpServer {
         references = false
     ): Promise<Content[]> {
         const images = await screenshotContent(stored, which);
+        const latest = followUp ? lastWord(stored.annotation) : undefined;
+        const replies = stored.annotation.peopleOnly
+            ? []
+            : references
+              ? agentView(stored.annotation).thread
+              : latest
+                ? [latest]
+                : [];
         return [
             text(
                 formatAnnotation(stored, {
@@ -462,7 +480,31 @@ export function createMcpServer(options: McpOptions): McpServer {
             ),
             ...images,
             ...(!references || stored.annotation.peopleOnly ? [] : await referenceContent(stored)),
+            ...(await replyImageContent(replies)),
         ];
+    }
+
+    /** The images people sent with these replies (asides are never among them), each after a line saying whose. */
+    async function replyImageContent(replies: readonly Reply[]): Promise<Content[]> {
+        const out: Content[] = [];
+        for (const reply of replies) {
+            if (reply.aside) continue;
+            for (const image of reply.images ?? []) {
+                const asset = await backend.asset(image.id);
+                if (!asset) continue;
+                out.push(
+                    text(
+                        `Image sent with ${reply.author.name ?? `the ${reply.author.kind}`}'s reply: ${image.name}`
+                    ),
+                    {
+                        type: "image",
+                        data: Buffer.from(asset.bytes).toString("base64"),
+                        mimeType: asset.mime,
+                    }
+                );
+            }
+        }
+        return out;
     }
 
     async function referenceContent(stored: StoredAnnotation): Promise<Content[]> {
@@ -622,7 +664,9 @@ export function createMcpServer(options: McpOptions): McpServer {
                 references: z
                     .boolean()
                     .default(true)
-                    .describe("Attach design reference images. Set false for text only."),
+                    .describe(
+                        "Attach design reference images and the images sent with replies. Set false for text only."
+                    ),
             },
             annotations: { readOnlyHint: true },
         },

@@ -228,6 +228,45 @@ describe.each(["postgres"] as const)("%s storage contract", (_kind) => {
         ).toHaveLength(0);
     });
 
+    it("finds a reply's images, and charges their bytes to the note", async () => {
+        const a = annotationFixture({ projectId: "alpha", screenshots: undefined });
+        await store.insertAnnotation(a);
+        const image = {
+            id: "f".repeat(64),
+            mime: "image/png" as const,
+            w: 1,
+            h: 1,
+            name: "wanted",
+        };
+        expect(await store.projectsWithAsset(image.id)).toEqual([]);
+        await store.updateAnnotation(
+            a.id,
+            (current) => ({
+                ...current,
+                thread: [
+                    {
+                        id: "with-image",
+                        createdAt: "2026-11-10T12:00:00.000Z",
+                        body: "",
+                        author: { kind: "human" },
+                        images: [image],
+                    },
+                ],
+            }),
+            1234
+        );
+        expect(await store.projectsWithAsset(image.id)).toEqual(["alpha"]);
+        const charged = await (
+            store as unknown as {
+                db: { query<T>(sql: string, values: unknown[]): Promise<T[]> };
+            }
+        ).db.query<{ asset_bytes: string }>(
+            "SELECT asset_bytes FROM notato.annotations WHERE id=$1",
+            [a.id]
+        );
+        expect(Number(charged[0]?.asset_bytes)).toBe(1234);
+    });
+
     it("serialises annotation updates without losing concurrent replies and rolls back invalid mutations", async () => {
         const a = annotationFixture({ projectId: "alpha" });
         await store.insertAnnotation(a);

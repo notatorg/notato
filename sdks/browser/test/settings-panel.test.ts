@@ -319,9 +319,10 @@ describe("the switches", () => {
         ["Computed styles", "styles"],
         ["Screenshots", "screenshots"],
         ["Only my notes", "mineOnly"],
+        ["Hide done annotations", "hideDone"],
     ] as const;
 
-    it("are four, each a switch with a label and a line of help", () => {
+    it("are five, each a switch with a label and a line of help", () => {
         mount({ stored: { name: "Dom" } });
         panel.open();
         expect(

@@ -1,11 +1,21 @@
 import {
+    attachedImage,
     canRequestRevert,
     type Detail as DetailLevel,
     pinNumber,
     renderAnnotation,
+    validateImageFile,
 } from "@notato/core";
-import type { Annotation, Severity, Status } from "@notato/schema";
-import { type KeyboardEvent, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { type Annotation, MAX_ATTACHED_IMAGES, type Severity, type Status } from "@notato/schema";
+import {
+    type ClipboardEvent,
+    type DragEvent,
+    type KeyboardEvent,
+    useEffect,
+    useLayoutEffect,
+    useRef,
+    useState,
+} from "react";
 import {
     chooseVariant,
     getAnnotation,
@@ -34,6 +44,13 @@ import { Screenshots } from "./Screenshots.tsx";
 import { useBoardName } from "./storage.ts";
 import { ASIDE_HINT, Thread } from "./Thread.tsx";
 import { copyText, FLASH_MS, Icon, StatusPill, When } from "./ui.tsx";
+
+/** An image picked for the next reply, with the local preview drawn for it. */
+interface Picked {
+    key: string;
+    file: File;
+    url: string;
+}
 
 interface Props {
     annotation: Annotation;
@@ -138,6 +155,17 @@ function LoadedDetail({
     const [text, setText] = useState("");
     /** The next reply goes as an aside: for the people on the thread, not the agent. */
     const [aside, setAside] = useState(false);
+    /** Images to send with the next reply, each with a local preview. */
+    const [images, setImages] = useState<Picked[]>([]);
+    const picker = useRef<HTMLInputElement>(null);
+    /** Every preview made here, so each is let go once the note is left. */
+    const previews = useRef(new Set<string>());
+    useEffect(() => {
+        const made = previews.current;
+        return () => {
+            for (const url of made) URL.revokeObjectURL(url);
+        };
+    }, []);
     /** Requests still on their way. Status buttons wait for them; the reply box never does. */
     const [pending, setPending] = useState(0);
     const busy = pending > 0;
@@ -243,19 +271,82 @@ function LoadedDetail({
         </button>
     );
 
-    /** Sends what is in the box, as an aside if that is pressed; the next one is for the agent again. */
-    const send = () => {
-        setAside(false);
-        run(() => reply(a.id, note, aside), text);
+    /** Adds images to the next reply: PNG, JPEG or WebP, at most three, whether chosen, pasted or dropped. */
+    const attach = (files: File[]) => {
+        if (!files.length) return;
+        const room = MAX_ATTACHED_IMAGES - images.length;
+        const added: Picked[] = [];
+        let problem: string | null = null;
+        for (const file of files) {
+            try {
+                validateImageFile(file);
+            } catch (e) {
+                problem = e instanceof Error ? e.message : String(e);
+                continue;
+            }
+            if (added.length >= room) {
+                problem = `A reply can carry at most ${MAX_ATTACHED_IMAGES} images.`;
+                break;
+            }
+            const url = URL.createObjectURL(file);
+            previews.current.add(url);
+            added.push({ key: url, file, url });
+        }
+        setError(problem);
+        if (added.length) setImages((current) => [...current, ...added]);
     };
+    const detach = (key: string) => {
+        setImages((current) => current.filter((image) => image.key !== key));
+        URL.revokeObjectURL(key);
+        previews.current.delete(key);
+    };
+
+    /**
+     * Sends what is in the box, with its images, as an aside if that is pressed; the next one is for the agent again.
+     * Images that fail to go come back to the box, like the words.
+     */
+    const send = () => {
+        const sending = images;
+        setAside(false);
+        setImages([]);
+        run(async () => {
+            try {
+                const prepared = await Promise.all(
+                    sending.map((image) => attachedImage(image.file))
+                );
+                const result = await reply(a.id, note, aside, prepared);
+                for (const image of sending) {
+                    URL.revokeObjectURL(image.url);
+                    previews.current.delete(image.url);
+                }
+                return result;
+            } catch (e) {
+                setImages((current) => [...sending, ...current].slice(0, MAX_ATTACHED_IMAGES));
+                throw e;
+            }
+        }, text);
+    };
+    const canSend = Boolean(note) || images.length > 0;
 
     const onComposerKey = (e: KeyboardEvent<HTMLTextAreaElement>) => {
         // Enter sends, Shift+Enter starts a new line.
         if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
             e.preventDefault();
-            if (note) send();
+            if (canSend) send();
         }
         if (e.key === "Escape") e.currentTarget.blur();
+    };
+    /** A pasted image goes with the reply; pasted text is left to the field. */
+    const onComposerPaste = (e: ClipboardEvent<HTMLTextAreaElement>) => {
+        const files = [...e.clipboardData.files].filter((f) => f.type.startsWith("image/"));
+        if (!files.length) return;
+        e.preventDefault();
+        attach(files);
+    };
+    const onComposerDrop = (e: DragEvent<HTMLTextAreaElement>) => {
+        if (!e.dataTransfer.types.includes("Files")) return;
+        e.preventDefault();
+        attach([...e.dataTransfer.files]);
     };
 
     /** What can happen next from where the note is now. */
@@ -492,6 +583,24 @@ function LoadedDetail({
                         {error}
                     </p>
                 ) : null}
+                {images.length ? (
+                    <ul className="reply-attachments" aria-label="Images to send">
+                        {images.map((image) => (
+                            <li key={image.key}>
+                                <img src={image.url} alt={image.file.name} />
+                                <button
+                                    type="button"
+                                    className="icon"
+                                    aria-label={`Remove ${image.file.name}`}
+                                    title="Remove"
+                                    onClick={() => detach(image.key)}
+                                >
+                                    <Icon name="close" size={12} />
+                                </button>
+                            </li>
+                        ))}
+                    </ul>
+                ) : null}
                 <div className="reply-field">
                     <textarea
                         ref={field}
@@ -503,9 +612,35 @@ function LoadedDetail({
                         value={text}
                         onChange={(e) => setText(e.target.value)}
                         onKeyDown={onComposerKey}
+                        onPaste={onComposerPaste}
+                        onDragOver={(e) => {
+                            if (e.dataTransfer.types.includes("Files")) e.preventDefault();
+                        }}
+                        onDrop={onComposerDrop}
                         rows={1}
                         aria-label="Reply"
                     />
+                    <input
+                        ref={picker}
+                        type="file"
+                        accept="image/png,image/jpeg,image/webp"
+                        multiple
+                        hidden
+                        onChange={(e) => {
+                            attach([...(e.target.files ?? [])]);
+                            e.target.value = "";
+                        }}
+                    />
+                    <button
+                        type="button"
+                        className="attach"
+                        aria-label="Add images"
+                        title={`Add images (up to ${MAX_ATTACHED_IMAGES}), or paste or drop them here`}
+                        disabled={images.length >= MAX_ATTACHED_IMAGES}
+                        onClick={() => picker.current?.click()}
+                    >
+                        <Icon name="image" size={15} />
+                    </button>
                     {/* On a People only note too: an aside stays from the agent if the note is shared later. */}
                     <button
                         type="button"
@@ -521,7 +656,7 @@ function LoadedDetail({
                         className="send"
                         aria-label="Send reply"
                         title="Send (Enter)"
-                        disabled={!note}
+                        disabled={!canSend}
                         onClick={send}
                     >
                         <Icon name="send" size={15} />

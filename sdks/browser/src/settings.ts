@@ -40,6 +40,8 @@ export interface Settings {
     markerColor: MarkerColorId;
     /** Show only the notes this person wrote. */
     mineOnly: boolean;
+    /** Leave out finished notes (resolved, reverted, dismissed), including ones finished later. */
+    hideDone: boolean;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -50,6 +52,7 @@ export const DEFAULT_SETTINGS: Settings = {
     screenshots: true,
     markerColor: "teal",
     mineOnly: false,
+    hideDone: false,
 };
 
 export interface SettingsStore {
@@ -106,6 +109,7 @@ export function loadSettings(): Settings {
               ? (OLD_COLORS[saved.markerColor] as MarkerColorId)
               : DEFAULT_SETTINGS.markerColor,
         mineOnly: flag("mineOnly") ?? DEFAULT_SETTINGS.mineOnly,
+        hideDone: flag("hideDone") ?? DEFAULT_SETTINGS.hideDone,
     };
 }
 

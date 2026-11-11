@@ -32,7 +32,7 @@ const until = async (check: () => boolean) => {
     throw new Error("The extension toolbar did not update");
 };
 
-it("the extension's toolbar hides in bulk, remembers across reloads, reveals questions and restores", async () => {
+it("the extension's toolbar hides done notes, remembers across reloads, reveals questions and shows them again", async () => {
     localStorage.clear();
     reducedMotion();
     document.body.innerHTML = '<main><button id="pay">Pay</button></main>';
@@ -103,7 +103,7 @@ it("the extension's toolbar hides in bulk, remembers across reloads, reveals que
     mount();
     await until(() => count() === "3");
     button("Settings").click();
-    button("Hide completed annotations (3)").click();
+    root()?.querySelector<HTMLButtonElement>('button[aria-label="Hide done annotations"]')?.click();
     await until(() => count() === "1");
     expect(controller?.list()).toEqual(original);
     expect(notes).toEqual(original);
@@ -122,7 +122,7 @@ it("the extension's toolbar hides in bulk, remembers across reloads, reveals que
     });
     await until(() => count() === "2");
     button("Settings").click();
-    button("Restore hidden annotations (3)").click();
+    root()?.querySelector<HTMLButtonElement>('button[aria-label="Hide done annotations"]')?.click();
     await until(() => count() === "3");
     expect(controller?.list()).toHaveLength(4);
     expect(methods.every((method) => method === "GET")).toBe(true);

@@ -130,6 +130,11 @@ blockquote {
 .shots.two {
     grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
 }
+.shot-note {
+    margin: -8px 0 0;
+    color: var(--muted);
+    font-size: 12.5px;
+}
 button.shot {
     position: relative;
     display: block;
@@ -327,7 +332,7 @@ button.tag.people.on {
 }
 button.aside-toggle {
     position: absolute;
-    right: 42px;
+    right: 76px;
     bottom: 9px;
     height: 24px;
     padding: 0 9px;
@@ -401,15 +406,94 @@ button.aside-toggle.on {
     position: relative;
     flex: 1 1 240px;
     min-width: 0;
+    container-type: inline-size;
 }
 .reply-field textarea {
     display: block;
     min-height: 42px;
-    padding: 10px 100px 10px 14px;
+    padding: 10px 220px 10px 14px;
     border-radius: 12px;
     resize: none;
     font-size: 14px;
     line-height: 1.45;
+}
+/* Too narrow for the words and the buttons side by side: the buttons go under the words. */
+@container (max-width: 520px) {
+    .reply-field textarea {
+        padding: 10px 14px 44px;
+    }
+}
+button.attach {
+    position: absolute;
+    right: 40px;
+    bottom: 6px;
+    width: 30px;
+    height: 30px;
+    padding: 0;
+    border-radius: 9px;
+    background: transparent;
+    color: var(--muted);
+}
+button.attach:hover:not(:disabled) {
+    background: var(--hover);
+    color: var(--text);
+}
+/* Images waiting to go with the next reply. */
+.reply-attachments {
+    flex-basis: 100%;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+.reply-attachments li {
+    position: relative;
+}
+.reply-attachments img {
+    display: block;
+    width: 64px;
+    height: 64px;
+    border-radius: 10px;
+    object-fit: cover;
+    box-shadow: inset 0 0 0 1px var(--line);
+    background: var(--hover);
+}
+.reply-attachments button {
+    position: absolute;
+    top: -6px;
+    right: -6px;
+    width: 20px;
+    height: 20px;
+    padding: 0;
+    border-radius: 999px;
+    background: var(--text);
+    color: var(--panel);
+}
+/* Images sent with a reply, in its bubble. */
+.reply-images {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 6px;
+}
+/* The whole image, at its own shape: a design mock is no use cropped. */
+button.reply-image {
+    height: 110px;
+    max-width: min(280px, 100%);
+    padding: 0;
+    overflow: hidden;
+    border-radius: 10px;
+    background: var(--panel);
+    box-shadow: 0 0 0 1px var(--line);
+}
+.reply-image img {
+    display: block;
+    width: auto;
+    max-width: 100%;
+    height: 100%;
+    object-fit: contain;
 }
 button.send {
     position: absolute;

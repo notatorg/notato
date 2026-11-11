@@ -48,10 +48,24 @@ const madeOrder = (a: NoteRecord, b: NoteRecord) => {
 export class NoteStore {
     private hidden: ReadonlySet<string> = new Set();
 
+    /** Every finished note is left out, those finished later too, until it is reopened. */
+    private hideDone = false;
+
     setHidden(ids: ReadonlySet<string>): void {
         if (ids === this.hidden) return;
         this.hidden = ids;
         this.screens.clear();
+    }
+
+    setHideDone(on: boolean): void {
+        if (on === this.hideDone) return;
+        this.hideDone = on;
+        this.screens.clear();
+    }
+
+    /** Whether a note is left out of the screens' lists: finished, and hidden one at a time or all at once. */
+    isHidden(annotation: Annotation): boolean {
+        return isCompleted(annotation) && (this.hideDone || this.hidden.has(annotation.id));
     }
     private records: NoteRecord[] = [];
     /** Where each note is in `records`, by id. */
@@ -169,13 +183,7 @@ export class NoteStore {
                 ? here
                       .sort(madeOrder)
                       .map((record, i) => ({ number: i + 1, record }))
-                      .filter(
-                          ({ record }) =>
-                              !(
-                                  isCompleted(record.annotation) &&
-                                  this.hidden.has(record.annotation.id)
-                              )
-                      )
+                      .filter(({ record }) => !this.isHidden(record.annotation))
                 : NONE;
             this.screens.set(key, list);
         }

@@ -3,6 +3,9 @@ package dev.notato.android
 import dev.notato.android.internal.NoteBook
 import dev.notato.android.internal.NoteRecord
 import dev.notato.android.internal.mergeList
+import dev.notato.android.model.NotatoJson
+import dev.notato.android.model.Reply
+import dev.notato.android.model.ReplyImage
 import dev.notato.android.model.Status
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -164,5 +167,20 @@ class NotesTest {
         assertEquals(15_000, notes.all.map { it.annotation.id }.toSet().size)
         assertNotEquals(null, notes["N14999"])
         assertTrue("took $ms ms", ms < 2_000)
+    }
+
+    @Test
+    fun aReplyReadsWithAndWithoutImages() {
+        val plain = NotatoJson.decodeFromString(Reply.serializer(), """{"id":"R1","author":{"kind":"human","name":"Ada"},"body":"Looks right","createdAt":"2026-11-10T10:00:00.000Z"}""")
+        assertNull(plain.images)
+        val json = """{"id":"R2","author":{"kind":"agent","name":"Claude"},"body":"Before and after","createdAt":"2026-11-10T10:01:00.000Z",""" +
+            """"images":[{"id":"i1","mime":"image/png","w":640,"h":480,"path":"replies/R2/i1.png","name":"before.png"},{"id":"i2","mime":"image/webp","w":10,"h":20,"name":"after.webp"}]}"""
+        val withImages = NotatoJson.decodeFromString(Reply.serializer(), json)
+        assertEquals(
+            listOf(ReplyImage("i1", "image/png", 640, 480, "replies/R2/i1.png", "before.png"), ReplyImage("i2", "image/webp", 10, 20, null, "after.webp")),
+            withImages.images,
+        )
+        // Written back as read: a note kept here keeps its replies' images.
+        assertEquals(withImages, NotatoJson.decodeFromString(Reply.serializer(), NotatoJson.encodeToString(Reply.serializer(), withImages)))
     }
 }

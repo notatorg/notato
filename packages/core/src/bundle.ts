@@ -79,8 +79,25 @@ function withPaths(bundle: Bundle): Bundle {
     const pad = (n: number) => String(n).padStart(2, "0");
     return {
         ...bundle,
-        annotations: bundle.annotations.map((a, i) => {
+        annotations: bundle.annotations.map((note, i) => {
             const n = pad(i + 1);
+            // Images sent with replies, numbered by the reply and then the image.
+            const a = note.thread.some((r) => r.images?.length)
+                ? {
+                      ...note,
+                      thread: note.thread.map((r, k) =>
+                          r.images
+                              ? {
+                                    ...r,
+                                    images: r.images.map((image, j) => ({
+                                        ...image,
+                                        path: `shots/${n}-reply-${k + 1}-${j + 1}.${extension(image)}`,
+                                    })),
+                                }
+                              : r
+                      ),
+                  }
+                : note;
             if (!a.screenshots)
                 return {
                     ...a,

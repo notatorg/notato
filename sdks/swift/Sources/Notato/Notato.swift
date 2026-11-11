@@ -195,6 +195,7 @@ public final class Notato {
     /// Forgets the choices made at runtime and goes back to `NOTATO_ENABLED` when it is set, and to the configuration.
     public func resetRuntimeState() {
         state.reset()
+        changedHidden()
         pinsVisible = true
         guard let configuration else { return }
         isToolbarVisible = configuration.showToolbar
@@ -301,7 +302,7 @@ public final class Notato {
     /// or forgotten, so the overlay can ask on every tick.
     func notes(onRoute route: String) -> ScreenNotes {
         syncHidden()
-        if screens?.generation != generation { screens = (generation, Self.byScreen(records, hidden: hidden.ids)) }
+        if screens?.generation != generation { screens = (generation, Self.byScreen(records, hidden: hidden.ids, hideDone: hideDone)) }
         return screens?.notes[route] ?? ScreenNotes()
     }
 
@@ -312,15 +313,23 @@ public final class Notato {
         }
     }
 
+    /// Whether every finished note is left out of the pins and lists, including ones finished later. Per device.
+    var hideDone: Bool { state.hideDone ?? false }
+    /// Whether a note is left out: hidden one at a time, or finished while `hideDone` is on.
+    private func isHidden(_ annotation: Annotation) -> Bool {
+        hidden.contains(annotation) || (hideDone && HiddenAnnotations.isCompleted(annotation.status))
+    }
+
+    /// The notes hidden one at a time.
     var hiddenCount: Int { syncHidden(); return hidden.ids.count }
-    var completedCount: Int { syncHidden(); return records.filter { HiddenAnnotations.isCompleted($0.annotation.status) && !hidden.contains($0.annotation) }.count }
-    var visibleCount: Int { syncHidden(); return records.filter { !hidden.contains($0.annotation) }.count }
+    var visibleCount: Int { syncHidden(); return records.filter { !isHidden($0.annotation) }.count }
 
     func hideAnnotation(_ id: String) {
         syncHidden()
         if let a = record(id)?.annotation, hidden.hide([a]) { saveHidden() }
     }
 
+    /// Hides the notes finished now, one at a time (`setHideDone` hides those finished later too).
     func hideCompleted() {
         syncHidden()
         if hidden.hide(annotations) { saveHidden() }
@@ -332,19 +341,32 @@ public final class Notato {
         saveHidden()
     }
 
+    /// Turns `hideDone` on or off, on this device, at once (the Settings switch does not wait for Save).
+    func setHideDone(_ on: Bool) {
+        guard on != hideDone else { return }
+        state.hideDone = on ? true : nil
+        changedHidden()
+    }
+
     private func saveHidden() {
         state.hiddenAnnotations = hidden.encoded
+        changedHidden()
+    }
+
+    private func changedHidden() {
         generation += 1
         #if canImport(UIKit)
         platform?.refresh()
         #endif
     }
 
-    static func byScreen(_ records: [NoteRecord], hidden: Set<String> = []) -> [String: ScreenNotes] {
+    static func byScreen(_ records: [NoteRecord], hidden: Set<String> = [], hideDone: Bool = false) -> [String: ScreenNotes] {
         var screens: [String: ScreenNotes] = [:]
         for (route, notes) in Dictionary(grouping: records, by: \.route) {
             let all = notes.sorted { ($0.createdAt, $0.id) < ($1.createdAt, $1.id) }
-            let visible = all.enumerated().filter { !(hidden.contains($0.element.id) && HiddenAnnotations.isCompleted($0.element.annotation.status)) }
+            let visible = all.enumerated().filter {
+                !((hideDone || hidden.contains($0.element.id)) && HiddenAnnotations.isCompleted($0.element.annotation.status))
+            }
             var pinned: [(number: Int, record: NoteRecord)] = []
             for (offset, record) in visible.reversed() where record.platform == platformName {
                 pinned.append((offset + 1, record))
@@ -481,9 +503,9 @@ public final class Notato {
         var sent: [String] = []
         for annotation in listed where annotation.projectId == project && !deletedHere.contains(annotation.id) {
             if let known = byId[annotation.id] ?? addedById[annotation.id] {
-                let wasHidden = hidden.contains(known.annotation)
+                let wasHidden = isHidden(known.annotation)
                 if Self.adopt(annotation, into: known, summary: summary) { sent.append(known.id) }
-                if wasHidden != hidden.contains(known.annotation) { generation += 1 }
+                if wasHidden != isHidden(known.annotation) { generation += 1 }
             } else {
                 let record = NoteRecord(annotation)
                 addedById[record.id] = record

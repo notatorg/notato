@@ -446,26 +446,24 @@ export function SettingsSheet(props: {
                         value={screenshots}
                         onChange={setScreenshots}
                     />
-                    <SheetButton
-                        title={`Hide completed annotations (${notato.completedCount})`}
-                        disabled={notato.completedCount === 0}
-                        testID="NotatoHideCompleted"
-                        onPress={() => {
-                            props.open(null);
-                            notato.hideCompleted();
-                        }}
+                    <FlagToggle
+                        tile={{ icon: "eyeOff" }}
+                        title="Hide done annotations"
+                        hint="Resolved, reverted and dismissed annotations, including ones finished later. The dashboard keeps them."
+                        value={state.hideDone}
+                        onChange={(on) => notato.setHideDone(on)}
+                        testID="NotatoHideDone"
                     />
-                    <Text style={[styles.hint, { color: p.muted }]}>
-                        Across this app, on this device. Kept in the dashboard.
-                    </Text>
-                    <SheetButton
-                        title={`Restore hidden annotations (${notato.hiddenCount})`}
-                        testID="NotatoRestoreHidden"
-                        onPress={() => {
-                            props.open(null);
-                            notato.restoreHidden();
-                        }}
-                    />
+                    {notato.hiddenCount > 0 ? (
+                        <SheetButton
+                            title={`Restore hidden annotations (${notato.hiddenCount})`}
+                            testID="NotatoRestoreHidden"
+                            onPress={() => {
+                                props.open(null);
+                                notato.restoreHidden();
+                            }}
+                        />
+                    ) : null}
                 </View>
             </SheetScroll>
             <View style={styles.buttons}>
@@ -543,6 +541,8 @@ function ThreadEntry({ reply }: { reply: Annotation["thread"][number] }) {
         );
     }
     const aside = reply.aside === true;
+    // A reply's images are shown on the board; here, only how many.
+    const images = reply.images?.length ?? 0;
     return (
         <View
             style={[
@@ -558,6 +558,11 @@ function ThreadEntry({ reply }: { reply: Annotation["thread"][number] }) {
                 <Text style={styles.bold}>{name}: </Text>
                 {reply.body}
             </Text>
+            {images ? (
+                <Text style={[styles.imagesLine, { color: p.muted }]}>
+                    {images === 1 ? "1 image attached" : `${images} images attached`}
+                </Text>
+            ) : null}
         </View>
     );
 }
@@ -875,6 +880,7 @@ const styles = StyleSheet.create({
     },
     asideLabel: { fontSize: 11, fontWeight: "700" },
     entryText: { fontSize: 14.5 },
+    imagesLine: { fontSize: 12, marginTop: 2 },
     card: { gap: 12, paddingHorizontal: 4 },
     badges: { flexDirection: "row", flexWrap: "wrap", gap: 5 },
     comment: { fontSize: 16 },

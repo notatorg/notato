@@ -696,7 +696,8 @@ export class PostgresStore implements Store, AuthStore {
     }
     async updateAnnotation(
         id: string,
-        mutate: (current: Annotation) => Annotation
+        mutate: (current: Annotation) => Annotation,
+        addedAssetBytes = 0
     ): Promise<StoredAnnotation | null> {
         return this.db.transaction(async (tx) => {
             if (this.limits || currentWorkPermit())
@@ -737,18 +738,20 @@ export class PostgresStore implements Store, AuthStore {
             }
             const next = Annotation.parse(mutate(parse(row).annotation));
             const charged = row as AnnotationRow & { asset_bytes: string };
-            await this.assertBudget(tx, next, Number(charged.asset_bytes), id);
+            const assetBytes = Number(charged.asset_bytes) + addedAssetBytes;
+            await this.assertBudget(tx, next, assetBytes, id);
             const values = [
                 next.status,
                 next.severity ?? null,
                 next.route,
                 JSON.stringify(next),
                 ...Object.values(annotationColumns(next)),
+                assetBytes,
                 new Date().toISOString(),
                 id,
             ];
             await tx.query(
-                `UPDATE notato.annotations SET status=$1,severity=$2,route=$3,json=$4,${derivedNames.map((name, i) => `${name}=$${i + 5}`).join(",")},activity_received_at=$${values.length - 1} WHERE id=$${values.length}`,
+                `UPDATE notato.annotations SET status=$1,severity=$2,route=$3,json=$4,${derivedNames.map((name, i) => `${name}=$${i + 5}`).join(",")},asset_bytes=$${values.length - 2},activity_received_at=$${values.length - 1} WHERE id=$${values.length}`,
                 values
             );
             const previous = parse(row).annotation;
@@ -1117,7 +1120,7 @@ export class PostgresStore implements Store, AuthStore {
                   : filter.feedbackScope === "all"
                     ? `(COALESCE(json::jsonb->>'visibility','shared')='shared' OR (json::jsonb->>'visibility'='personal' AND json::jsonb->>'createdBy'=${bind(filter.feedbackActorId ?? "")}) )`
                     : "TRUE",
-            `((json::jsonb #>> '{screenshots,full,id}') = $1 OR (json::jsonb #>> '{screenshots,crop,id}') = $1 OR (json::jsonb #>> '{screenshots,thumbnail,id}') = $1 OR (json::jsonb->'references') @> jsonb_build_array(jsonb_build_object('id', $1::text)))`,
+            `((json::jsonb #>> '{screenshots,full,id}') = $1 OR (json::jsonb #>> '{screenshots,crop,id}') = $1 OR (json::jsonb #>> '{screenshots,thumbnail,id}') = $1 OR (json::jsonb->'references') @> jsonb_build_array(jsonb_build_object('id', $1::text)) OR jsonb_path_exists(json::jsonb, '$.thread[*].images[*] ? (@.id == $id)', jsonb_build_object('id', $1::text)))`,
         ];
         return (
             await this.db.query<{ id: string }>(

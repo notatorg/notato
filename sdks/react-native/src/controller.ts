@@ -88,6 +88,8 @@ export interface NotatoState {
     author?: string;
     /** Whether this person wants screenshots (the server can still say no). */
     screenshots: boolean;
+    /** Every finished note (resolved, reverted, dismissed) is left out here, those finished later too. */
+    hideDone: boolean;
     /** Where the person left the toolbar (fractions of the room it has), and whether it is folded. */
     toolbar: { x?: number; y?: number; folded: boolean };
 }
@@ -126,6 +128,8 @@ export interface Host {
 /** What a person chose at runtime, kept across launches unless `rememberRuntimeState` is off. */
 interface Settings {
     hiddenAnnotations?: string;
+    /** Leave out every finished note, those finished later too. */
+    hideDone?: boolean;
     enabled?: boolean;
     toolbarVisible?: boolean;
     author?: string;
@@ -314,6 +318,7 @@ export class NotatoController {
             ...(this.server ? { server: this.server } : {}),
             ...(this.authorName ? { author: this.authorName } : {}),
             screenshots: this.screenshotsWanted,
+            hideDone: this.hideDone,
             toolbar: this.toolbarState(),
         };
     }
@@ -838,6 +843,22 @@ export class NotatoController {
             this.settings.hiddenAnnotations
         );
         this.store.setHidden(this.hidden.ids);
+        this.store.setHideDone(this.hideDone);
+    }
+
+    /** Every finished note is left out on this device, those finished later too; a reopened one comes back. */
+    get hideDone(): boolean {
+        return this.settings.hideDone ?? false;
+    }
+
+    /** Switches hiding every finished note on or off. Kept across launches unless `rememberRuntimeState` is off. */
+    setHideDone(on: boolean): void {
+        if (on === this.hideDone) return;
+        if (on) this.settings.hideDone = true;
+        else delete this.settings.hideDone;
+        this.store.setHideDone(on);
+        this.rememberSettings();
+        this.emit();
     }
 
     get hiddenCount(): number {
@@ -845,18 +866,17 @@ export class NotatoController {
         return this.hidden.ids.size;
     }
 
+    /** The finished notes still shown. */
     get completedCount(): number {
         this.syncHidden();
         return this.store.all.filter(
-            (r) => isCompleted(r.annotation) && !this.hidden.ids.has(r.annotation.id)
+            (r) => isCompleted(r.annotation) && !this.store.isHidden(r.annotation)
         ).length;
     }
 
     get visibleCount(): number {
         this.syncHidden();
-        return this.store.all.filter(
-            (r) => !(isCompleted(r.annotation) && this.hidden.ids.has(r.annotation.id))
-        ).length;
+        return this.store.all.filter((r) => !this.store.isHidden(r.annotation)).length;
     }
 
     hideAnnotation(id: string): void {
@@ -865,6 +885,7 @@ export class NotatoController {
         if (a && this.hidden.hide([a])) this.saveHidden();
     }
 
+    /** @deprecated Hides only the notes finished now; `setHideDone(true)` hides those finished later too. */
     hideCompleted(): void {
         this.syncHidden();
         if (this.hidden.hide(this.store.all.map((r) => r.annotation))) this.saveHidden();

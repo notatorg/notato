@@ -53,9 +53,10 @@ browser. It never deletes the note or changes the dashboard. Settings → **Rest
 hidden annotations** brings them back. A reopened task or a new agent question is
 visible even if it was hidden while completed.
 
-Settings → **Hide completed annotations** hides all completed notes across the app
-at once, including notes on other pages and beyond the 150 drawn pins. It respects
-**Only my notes** and uses the same browser preference as hiding a single note.
+Settings → **Hide done annotations** is a switch that hides every resolved,
+reverted and dismissed note across the app, on every page, including notes that
+are finished later. It stays on in this browser until you turn it off, works with
+**Only my notes**, and never changes the dashboard.
 
 Agents can call **notato_ask_question** to put a task in **Needs your answer**.
 Reply in the app or dashboard to resume it; an aside or a People only reply stays

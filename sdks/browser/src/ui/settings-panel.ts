@@ -42,10 +42,9 @@ export interface SettingsPanelOptions {
     serverScreenshots(): boolean;
     /** Hides Notato until the page is reloaded. */
     onHide(): void;
+    /** Notes hidden one at a time from their pins, and how to bring them back. */
     hiddenNotes?: {
         count(): number;
-        completedCount(): number;
-        hideCompleted(): void;
         restore(): void;
     };
     /** The panel opened or closed, however it happened (the toolbar shows its button pressed while it is open). */
@@ -112,7 +111,7 @@ export function createSettingsPanel(options: SettingsPanelOptions): SettingsPane
     function toggle(
         label: string,
         help: string,
-        key: "components" | "styles" | "screenshots" | "mineOnly",
+        key: "components" | "styles" | "screenshots" | "mineOnly" | "hideDone",
         locked: () => string | undefined = () => undefined
     ) {
         const on = () => settings.get()[key];
@@ -299,7 +298,12 @@ export function createSettingsPanel(options: SettingsPanelOptions): SettingsPane
                         ? undefined
                         : "Screenshots are unavailable until the server allows them."
                 ).row,
-                mine.row
+                mine.row,
+                toggle(
+                    "Hide done annotations",
+                    "Resolved, reverted and dismissed annotations, including ones finished later. The dashboard keeps them.",
+                    "hideDone"
+                ).row
             ),
             h("div", { class: "sfield" }, h("div", { class: "slabel" }, "Pin colour"), swatches),
         ];
@@ -323,15 +327,6 @@ export function createSettingsPanel(options: SettingsPanelOptions): SettingsPane
         }
         const hiddenNotes = options.hiddenNotes;
         if (hiddenNotes) {
-            const hideCompleted = h("button", {
-                class: "slink",
-                type: "button",
-                title: "Across this app, in this browser; keep them in the dashboard",
-                onclick: () => {
-                    close();
-                    hiddenNotes.hideCompleted();
-                },
-            });
             const restore = h("button", {
                 class: "slink",
                 type: "button",
@@ -341,13 +336,12 @@ export function createSettingsPanel(options: SettingsPanelOptions): SettingsPane
                 },
             });
             refreshHiddenActions = () => {
-                const count = hiddenNotes.completedCount();
-                hideCompleted.textContent = `Hide completed annotations (${count})`;
-                hideCompleted.disabled = count === 0;
-                restore.textContent = `Restore hidden annotations (${hiddenNotes.count()})`;
+                const count = hiddenNotes.count();
+                restore.textContent = `Restore hidden annotations (${count})`;
+                restore.hidden = count === 0;
             };
             refreshHiddenActions();
-            rows.push(hideCompleted, restore);
+            rows.push(restore);
         }
         rows.push(hide);
         return rows;

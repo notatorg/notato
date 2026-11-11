@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:notato/src/annotation.dart';
 import 'package:notato/src/controller.dart';
 import 'package:notato/src/runtime.dart';
 import 'package:notato/src/ui/sheets.dart';
@@ -72,4 +73,70 @@ void main() {
       await unmount(tester);
     });
   }
+
+  testWidgets('a reply with images says how many are attached', (tester) async {
+    Map<String, Object?> image(String id) => {'id': id, 'mime': 'image/png', 'w': 10, 'h': 10, 'name': '$id.png'};
+    final record = NoteRecord({
+      ...note(),
+      'status': 'open',
+      'thread': [
+        {
+          'id': 'r1',
+          'author': {'kind': 'agent', 'name': 'Claude'},
+          'body': 'One',
+          'createdAt': '2026-01-01T00:00:00Z',
+        },
+        {
+          'id': 'r2',
+          'author': {'kind': 'agent', 'name': 'Claude'},
+          'body': 'Two',
+          'createdAt': '2026-01-01T00:00:01Z',
+          'images': [image('a')],
+        },
+        {
+          'id': 'r3',
+          'author': {'kind': 'human', 'name': 'Ann'},
+          'body': 'Three',
+          'createdAt': '2026-01-01T00:00:02Z',
+          'images': [image('b'), image('c'), image('d')],
+        },
+      ],
+    });
+    await tester.pumpWidget(
+      app(
+        FakeServer(),
+        home: Scaffold(
+          body: NoteCard(runtime: runtime, record: record, number: 1, fromList: false, open: (_) {}, toast: (_) {}),
+        ),
+      ),
+    );
+    await settle(tester);
+    expect(find.text('1 image attached'), findsOneWidget);
+    expect(find.text('3 images attached'), findsOneWidget);
+    expect(replyImages((record.annotation['thread'] as List)[2] as Map<String, Object?>), hasLength(3));
+    await unmount(tester);
+  });
+
+  testWidgets('settings has a hide done switch, and restore only when notes are hidden one at a time', (tester) async {
+    await tester.pumpWidget(
+      app(
+        FakeServer(),
+        home: Scaffold(
+          body: SettingsSheet(runtime: runtime, open: (_) {}, toast: (_) {}),
+        ),
+      ),
+    );
+    await settle(tester);
+    expect(find.text('Hide done annotations'), findsOneWidget);
+    expect(find.textContaining('including ones finished later'), findsOneWidget);
+    expect(find.textContaining('Hide completed'), findsNothing);
+    expect(find.byKey(const ValueKey('NotatoRestoreHidden')), findsNothing);
+    expect(runtime.hideDone, isFalse);
+    await tester.tap(find.byKey(const ValueKey('NotatoHideDone')));
+    await tester.pump();
+    expect(runtime.hideDone, isTrue);
+    expect(tester.widget<Switch>(find.byType(Switch).last).value, isTrue);
+    runtime.setHideDone(false);
+    await unmount(tester);
+  });
 }

@@ -246,12 +246,31 @@ export const setStatus = (id: string, status: Status, note?: string) =>
 export const setSeverity = (id: string, severity: Severity | null) =>
     request<{ annotation: Annotation }>(annotationPath(id), json("PATCH", { severity }));
 
-/** Writes in the thread as this person; an aside is for the people on it, and the agent is not shown it. */
-export const reply = (id: string, body: string, aside = false) =>
-    request<{ annotation: Annotation }>(
-        `${annotationPath(id)}/replies`,
-        json("POST", { body, author: me(), ...(aside ? { aside } : {}) })
-    );
+/** An image ready to send with a reply: already shrunk and encoded (see `attachedImage` in @notato/core). */
+export interface ReplyImage {
+    blob: Blob;
+    name: string;
+}
+
+/**
+ * Writes in the thread as this person; an aside is for the people on it, and the agent is not shown it. With images it
+ * goes as multipart: the reply's JSON in `reply`, and each image as a file named `image`.
+ */
+export const reply = (id: string, body: string, aside = false, images: ReplyImage[] = []) => {
+    const said = { body, author: me(), ...(aside ? { aside } : {}) };
+    if (!images.length)
+        return request<{ annotation: Annotation }>(
+            `${annotationPath(id)}/replies`,
+            json("POST", said)
+        );
+    const form = new FormData();
+    form.set("reply", JSON.stringify(said));
+    for (const image of images) form.append("image", image.blob, image.name);
+    return request<{ annotation: Annotation }>(`${annotationPath(id)}/replies`, {
+        method: "POST",
+        body: form,
+    });
+};
 
 /** People only on or off: the server records who changed it in the thread. */
 export const setPeopleOnly = (id: string, on: boolean) =>

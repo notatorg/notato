@@ -10,6 +10,8 @@ export interface Policy {
     captureOnlyNow(): boolean;
     derivedScreenshotsNow(): boolean;
     referencesNow(): boolean;
+    /** Whether the server takes images sent with a reply: older ones take words only. */
+    replyImagesNow(): boolean;
     reviewsNow(): boolean;
     /** Supported list filters; older servers advertise none, so their lists must be read without a status filter. */
     annotationStatusesNow(): readonly Status[] | undefined;
@@ -34,6 +36,7 @@ export function createPolicy(options: {
     let captureOnly = false;
     let derived = false;
     let references = !options.baseUrl;
+    let replyImages = false;
     let reviews = !options.baseUrl;
     let annotationStatuses: Status[] | undefined;
     let askedAt = 0;
@@ -53,6 +56,7 @@ export function createPolicy(options: {
                 if (res.ok) {
                     const body = (await res.json()) as {
                         references?: unknown;
+                        replyImages?: unknown;
                         reviews?: unknown;
                         screenshots?: unknown;
                         captureOnly?: unknown;
@@ -65,6 +69,7 @@ export function createPolicy(options: {
                           )
                         : undefined;
                     references = body.references === true;
+                    replyImages = body.replyImages === true;
                     reviews = body.reviews === true;
                     allowed = body.screenshots === true;
                     captureOnly = body.captureOnly === true;
@@ -87,6 +92,7 @@ export function createPolicy(options: {
         captureOnlyNow: () => captureOnly,
         derivedScreenshotsNow: () => derived,
         referencesNow: () => references,
+        replyImagesNow: () => replyImages,
         reviewsNow: () => reviews,
         annotationStatusesNow: () => annotationStatuses,
         async screenshots() {

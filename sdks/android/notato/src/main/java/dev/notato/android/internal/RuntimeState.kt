@@ -49,6 +49,10 @@ internal class RuntimeState(private val store: Store) {
     var hiddenAnnotations: String?
         get() = get("hidden.annotations")
         set(value) = set("hidden.annotations", value)
+    /** Whether every finished note is left out of the pins and lists here. Unset is off. */
+    var hideDone: Boolean
+        get() = bool("hide.done") ?: false
+        set(value) = setBool("hide.done", value.takeIf { it })
     var author: String?
         get() = get("author")
         set(value) = set("author", value?.trim()?.ifEmpty { null })
@@ -71,6 +75,6 @@ internal class RuntimeState(private val store: Store) {
         set(value) = setBool("toolbar.collapsed", value.takeIf { it })
 
     fun reset() {
-        for (key in listOf("enabled", "toolbar", "screenshots", "pins", "author", "server", "toolbar.position", "toolbar.collapsed", "hidden.annotations")) set(key, null)
+        for (key in listOf("enabled", "toolbar", "screenshots", "pins", "author", "server", "toolbar.position", "toolbar.collapsed", "hidden.annotations", "hide.done")) set(key, null)
     }
 }

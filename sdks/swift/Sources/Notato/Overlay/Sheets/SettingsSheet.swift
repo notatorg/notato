@@ -1,7 +1,8 @@
 #if canImport(UIKit)
 import SwiftUI
 
-/// The person's name on their notes, a server to use instead of the configured one, and screenshots on or off.
+/// The person's name on their notes, a server to use instead of the configured one, screenshots on or off, and which
+/// notes this device leaves out.
 struct SettingsSheet: View {
     let notato: Notato
     let back: () -> Void
@@ -38,19 +39,17 @@ struct SettingsSheet: View {
                                   : notato.serverPolicy?.screenshots == false ? "The server has them turned off"
                                   : "None until the server says it takes them",
                               isOn: $screenshots)
-                    SheetButton("Hide completed annotations (\(notato.completedCount))") {
-                        close()
-                        notato.hideCompleted()
+                    ToggleRow(icon: .symbol("eye.slash"), title: "Hide done annotations",
+                              detail: "Resolved, reverted and dismissed annotations, including ones finished later. The dashboard keeps them.",
+                              isOn: Binding(get: { notato.hideDone }, set: { notato.setHideDone($0) }))
+                        .accessibilityIdentifier("NotatoHideDone")
+                    if notato.hiddenCount > 0 {
+                        SheetButton("Restore hidden annotations (\(notato.hiddenCount))") {
+                            close()
+                            notato.restoreHidden()
+                        }
+                        .accessibilityIdentifier("NotatoRestoreHidden")
                     }
-                    .disabled(notato.completedCount == 0)
-                    .accessibilityIdentifier("NotatoHideCompleted")
-                    Text("Across this app, on this device. Kept in the dashboard.")
-                        .font(.system(size: 12.5)).foregroundStyle(Palette.muted)
-                    SheetButton("Restore hidden annotations (\(notato.hiddenCount))") {
-                        close()
-                        notato.restoreHidden()
-                    }
-                    .accessibilityIdentifier("NotatoRestoreHidden")
                 }
             }
             HStack(spacing: 10) {
@@ -85,7 +84,7 @@ private struct ToggleRow: View {
                 SheetTile(icon: icon)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(title).font(.system(size: 15.5, weight: .semibold))
-                    Text(detail).font(.system(size: 12.5)).foregroundStyle(Palette.muted).lineLimit(2)
+                    Text(detail).font(.system(size: 12.5)).foregroundStyle(Palette.muted).fixedSize(horizontal: false, vertical: true)
                 }
             }
         }

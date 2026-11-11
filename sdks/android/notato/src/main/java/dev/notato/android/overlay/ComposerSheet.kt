@@ -9,8 +9,51 @@ import android.view.inputmethod.InputMethodManager
 import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.TextView
+import androidx.core.view.AccessibilityDelegateCompat
+import androidx.core.view.ViewCompat
+import androidx.core.view.accessibility.AccessibilityNodeInfoCompat
 import dev.notato.android.model.NoteIntent
 import dev.notato.android.model.Severity
+
+/**
+ * The composer's Visibility button and the two switches it opens: what it says for the switches, its icon, and whether
+ * it is open. A composer starts with it closed; the switches show only while it is open.
+ */
+internal class ComposerVisibility(var shared: Boolean = false, var hiddenFromAgent: Boolean = false) {
+    var open = false
+        private set
+
+    fun toggle() {
+        open = !open
+    }
+
+    /** The two switch rows ("Share with project", "Hide from agent") show under the button only while it is open. */
+    val switchesShown: Boolean get() = open
+
+    val label: String get() = label(shared, hiddenFromAgent)
+
+    /** What TalkBack says for the button (it adds expanded or collapsed). */
+    val description: String get() = "Visibility: $label"
+
+    /** A lock while the note is not shared, two people once it is. */
+    val icon: Icon get() = if (shared) Icon.PEOPLE else Icon.LOCK
+
+    /** The chevron points down while closed and up while open. */
+    val chevronRotation: Float get() = if (open) 180f else 0f
+
+    companion object {
+        /** The button's words, the web composer's: who will see the note. */
+        fun label(shared: Boolean, hiddenFromAgent: Boolean): String = when {
+            shared && hiddenFromAgent -> "Project, not agent"
+            shared -> "Shared with project"
+            hiddenFromAgent -> "Only you"
+            else -> "You and your agent"
+        }
+
+        /** The button's test id (UI Automator's resource id). */
+        const val TEST_ID = "NotatoVisibility"
+    }
+}
 
 /**
  * The note being written about the selected element: what, what is wanted, how bad, and whether it is People only
@@ -41,6 +84,12 @@ internal class ComposerSheet(
     private val shared = ui.toggleRow("Share with project", "Project members can see this feedback.").also { it.second.isChecked = sharedByDefault }
     private val peopleOnly = ui.toggleRow(PEOPLE_ONLY, PEOPLE_ONLY_HINT)
     private val error = ui.text(null, 12f, Ui.DANGER).apply { visibility = GONE }
+    private val visibilityState = ComposerVisibility(shared = sharedByDefault)
+    private val visibilityIcon = ui.icon(visibilityState.icon, ui.cardMuted, 14)
+    private val visibilityLabel = ui.text(null, 13.5f, maxLines = 1, weight = 600)
+    private val visibilityChevron = ui.icon(Icon.CHEVRON_DOWN, ui.cardMuted, 12)
+    private val visibilityButton: LinearLayout
+    private val switches: LinearLayout
     private val send: TextView
     private var busy = false
 
@@ -79,18 +128,41 @@ internal class ComposerSheet(
             override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
             override fun afterTextChanged(s: Editable?) = update()
         })
-        // A small heading over each group of controls, and a rule over the sharing switches, as the web composer has them.
-        val rule = View(context).apply { setBackgroundColor(ui.cardLine) }
-        val visibility = ui.own(LinearLayout(context)).apply {
-            orientation = LinearLayout.VERTICAL
-            addView(rule, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, ui.dp(1)))
-            addView(ui.text("Visibility", 13f, weight = 600), LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { topMargin = ui.dp(10) })
-            addView(shared.first, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { topMargin = ui.dp(10) })
-            addView(peopleOnly.first, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { topMargin = ui.dp(10) })
+        // The visibility button: a capsule as wide as what it says, opening the two switches under it.
+        visibilityButton = ui.row(6, visibilityIcon, visibilityLabel, visibilityChevron).apply {
+            setPadding(ui.dp(12), 0, ui.dp(12), 0)
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, ui.dp(34))
+            isClickable = true
+            isFocusable = true
+            setOnClickListener { toggleVisibility() }
         }
-        val intentGroup = ui.column(7, ui.text("Feedback type", 13f, weight = 600), intents.view)
-        val severityGroup = ui.column(7, ui.text("Severity", 13f, weight = 600), severities.view)
-        addView(ui.card(ui.column(12, header, comment, intentGroup, severityGroup, visibility, error, footer)))
+        ViewCompat.setAccessibilityDelegate(visibilityButton, object : AccessibilityDelegateCompat() {
+            override fun onInitializeAccessibilityNodeInfo(host: View, info: AccessibilityNodeInfoCompat) {
+                super.onInitializeAccessibilityNodeInfo(host, info)
+                info.className = android.widget.Button::class.java.name
+                info.viewIdResourceName = ComposerVisibility.TEST_ID
+                info.stateDescription = if (visibilityState.open) "Expanded" else "Collapsed"
+                info.addAction(if (visibilityState.open) AccessibilityNodeInfoCompat.AccessibilityActionCompat.ACTION_COLLAPSE else AccessibilityNodeInfoCompat.AccessibilityActionCompat.ACTION_EXPAND)
+            }
+
+            override fun performAccessibilityAction(host: View, action: Int, args: android.os.Bundle?): Boolean {
+                val wanted = when (action) {
+                    AccessibilityNodeInfoCompat.ACTION_EXPAND -> true
+                    AccessibilityNodeInfoCompat.ACTION_COLLAPSE -> false
+                    else -> return super.performAccessibilityAction(host, action, args)
+                }
+                if (wanted != visibilityState.open) toggleVisibility()
+                return true
+            }
+        })
+        switches = ui.column(10, shared.first, peopleOnly.first)
+        shared.second.setOnCheckedChangeListener { _, _ -> showVisibility() }
+        peopleOnly.second.setOnCheckedChangeListener { _, _ -> showVisibility() }
+        // The type over the comment and the severity under it, with no headings: the groups keep their names for TalkBack.
+        titled(intents.view, "Feedback type")
+        titled(severities.view, "Severity")
+        addView(ui.card(ui.column(12, header, intents.view, comment, severities.view, visibilityButton, switches, error, footer)))
+        showVisibility()
         update()
     }
 
@@ -104,6 +176,40 @@ internal class ComposerSheet(
         titleView.text = title
         subtitleView.text = subtitle
         subtitleView.visibility = if (subtitle.isNullOrEmpty()) GONE else VISIBLE
+    }
+
+    /** Names a group of chips for TalkBack, where a heading over it used to. */
+    private fun titled(group: View, title: String) {
+        ViewCompat.setAccessibilityDelegate(group, object : AccessibilityDelegateCompat() {
+            override fun onInitializeAccessibilityNodeInfo(host: View, info: AccessibilityNodeInfoCompat) {
+                super.onInitializeAccessibilityNodeInfo(host, info)
+                info.containerTitle = title
+            }
+        })
+    }
+
+    private fun toggleVisibility() {
+        visibilityState.toggle()
+        showVisibility()
+        val turn = visibilityChevron.animate()
+        turn.cancel()
+        if (Motion.enabled(context) && isAttachedToWindow) {
+            turn.rotation(visibilityState.chevronRotation).setDuration(Motion.IN_MS).setInterpolator(Motion.SETTLE).start()
+        } else {
+            visibilityChevron.rotation = visibilityState.chevronRotation
+        }
+    }
+
+    /** The button and the switches as the state has them: called when it opens or closes and when a switch changes. */
+    private fun showVisibility() {
+        visibilityState.shared = shared.second.isChecked
+        visibilityState.hiddenFromAgent = peopleOnly.second.isChecked
+        val open = visibilityState.open
+        visibilityLabel.text = visibilityState.label
+        visibilityIcon.background = IconDrawable(visibilityState.icon, ui.cardMuted)
+        visibilityButton.background = ui.pressable(if (open) ui.soft else android.graphics.Color.TRANSPARENT, ui.soft, 17, ui.cardLine)
+        visibilityButton.contentDescription = visibilityState.description
+        switches.visibility = if (visibilityState.switchesShown) VISIBLE else GONE
     }
 
     private fun update() {

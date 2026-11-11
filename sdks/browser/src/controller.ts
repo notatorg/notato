@@ -1,5 +1,6 @@
 import {
     type AnnotationRecord,
+    attachedImage,
     createMemoryStore,
     createPipeline,
     type Detail,
@@ -360,6 +361,7 @@ export function createController(props: NotatoProps): NotatoController {
                 (r) =>
                     r.annotation.status !== "dismissed" &&
                     !hiddenNotes.has(r.annotation) &&
+                    !(settings.get().hideDone && isFinished(r.annotation)) &&
                     (!settings.get().mineOnly || isMine(r.annotation))
             ));
     const pins = createPins({
@@ -383,7 +385,18 @@ export function createController(props: NotatoProps): NotatoController {
         // Choosing between versions, and asking for different ones, are conversations with the agent through the server.
         fallbackAnchor: (a) => (a.variants ? variants.anchor(a.variants.group) : null),
         onTakeBackVariant: actions ? (id) => actions.chooseVariant(id, null) : undefined,
-        onReply: actions ? (id, note, aside) => actions.reply(id, note, aside) : undefined,
+        onReply: actions
+            ? async (id, note, aside, images) =>
+                  actions.reply(
+                      id,
+                      note,
+                      aside,
+                      images?.length
+                          ? await Promise.all(images.map((f) => attachedImage(f)))
+                          : undefined
+                  )
+            : undefined,
+        replyImages: () => Boolean(actions) && policy.replyImagesNow(),
         // Recorded on the live server, or here when there is no server.
         onPeopleOnly: !server || actions ? (id, on) => setPeopleOnly(id, on) : undefined,
         agentName,
@@ -633,12 +646,7 @@ export function createController(props: NotatoProps): NotatoController {
         anchor: () => settingsButton.el.getBoundingClientRect(),
         serverScreenshots: () => policy.screenshotsNow(),
         onHide: () => setHidden(true),
-        hiddenNotes: {
-            count: hiddenNotes.count,
-            completedCount: () => shown().filter((r) => isFinished(r.annotation)).length,
-            hideCompleted: () => void hiddenNotes.hideMany(shown().map((r) => r.annotation)),
-            restore: hiddenNotes.clear,
-        },
+        hiddenNotes: { count: hiddenNotes.count, restore: hiddenNotes.clear },
         onToggle: (open) => settingsButton.setExpanded(open),
         owner: () => settingsButton.el,
         server:

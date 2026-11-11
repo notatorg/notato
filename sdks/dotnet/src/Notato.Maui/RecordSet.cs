@@ -24,6 +24,7 @@ internal sealed class RecordSet : IEnumerable<NoteRecord>
     private Dictionary<string, Screen>? _screens;
     private int _screensVersion = -1;
     private IReadOnlySet<string> _hidden = new HashSet<string>(StringComparer.Ordinal);
+    private bool _hideDone;
 
     public void SetHidden(IReadOnlySet<string> ids)
     {
@@ -35,6 +36,22 @@ internal sealed class RecordSet : IEnumerable<NoteRecord>
         _hidden = ids;
         Touch();
     }
+
+    /// <summary>Leaves out every finished note while on, however and whenever it finished; one reopened comes back by itself.</summary>
+    public void SetHideDone(bool on)
+    {
+        if (on == _hideDone)
+        {
+            return;
+        }
+
+        _hideDone = on;
+        Touch();
+    }
+
+    /// <summary>Whether a note is left out of the screens' lists and pins: finished, and hidden on its own or with every finished note.</summary>
+    public bool IsHidden(Annotation annotation) =>
+        HiddenAnnotations.IsCompleted(annotation.Status) && (_hideDone || _hidden.Contains(annotation.Id));
 
     /// <summary>A screen's notes, oldest first and numbered, and those of them that get a pin.</summary>
     private sealed record Screen(IReadOnlyList<(int Number, NoteRecord Record)> All, IReadOnlyList<(int Number, NoteRecord Record)> Pinned);
@@ -165,7 +182,7 @@ internal sealed class RecordSet : IEnumerable<NoteRecord>
             List<(int Number, NoteRecord Record)> pinned = [];
             for (int i = 0; i < group.Count; i++)
             {
-                if (HiddenAnnotations.IsCompleted(group[i].Annotation.Status) && _hidden.Contains(group[i].Annotation.Id))
+                if (IsHidden(group[i].Annotation))
                 {
                     continue;
                 }

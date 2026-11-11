@@ -278,8 +278,24 @@ internal sealed class PinCard : ContentView
             MaxLines = 6,
             FormattedText = text,
         };
+        View content = line;
+        if (ImagesLine(reply) is { } attached)
+        {
+            Label images = Ui.Text(attached, 11.5, Ui.CardMuted, maxLines: 1);
+            images.AutomationId = "NotatoReplyImages";
+            content = Ui.Plain(new VerticalStackLayout { Spacing = 3, Children = { line, images } });
+        }
+
         return aside
-            ? Ui.Box(line, Colors.Transparent, 8, new Thickness(10, 7), Ui.CardLine, 1)
-            : Ui.Box(line, Ui.Soft, 8, new Thickness(10, 7));
+            ? Ui.Box(content, Colors.Transparent, 8, new Thickness(10, 7), Ui.CardLine, 1)
+            : Ui.Box(content, Ui.Soft, 8, new Thickness(10, 7));
     }
+
+    /// <summary>The line under a reply that came with pictures: "1 image attached", "2 images attached". The board shows them.</summary>
+    internal static string? ImagesLine(Reply reply) => reply.Images?.Count switch
+    {
+        null or 0 => null,
+        1 => "1 image attached",
+        int n => $"{n.ToString(CultureInfo.InvariantCulture)} images attached",
+    };
 }

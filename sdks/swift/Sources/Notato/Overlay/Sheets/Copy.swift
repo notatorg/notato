@@ -10,4 +10,6 @@ enum PeopleOnlyCopy {
 enum CardCopy {
     /// A note's card with no server to send it to (test mode): where the note is, and how it leaves.
     static let keptHere = "Kept on this device. Package it from the menu to share it."
+    /// The quiet line under a reply with images: `1 image attached`, `2 images attached`.
+    static func imagesAttached(_ count: Int) -> String { count == 1 ? "1 image attached" : "\(count) images attached" }
 }

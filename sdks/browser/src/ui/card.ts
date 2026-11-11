@@ -1,5 +1,11 @@
-import { agentLogoSvg, annotationStatusLabel, canRequestRevert, knownAgent } from "@notato/core";
-import type { Annotation, Author } from "@notato/schema";
+import {
+    agentLogoSvg,
+    annotationStatusLabel,
+    canRequestRevert,
+    knownAgent,
+    validateImageFile,
+} from "@notato/core";
+import { type Annotation, type Author, MAX_ATTACHED_IMAGES } from "@notato/schema";
 import { colorForName } from "../settings.ts";
 import { capitalize, messageOf } from "../text.ts";
 import { h, ICONS, icon } from "./dom.ts";
@@ -24,8 +30,8 @@ export interface CardState {
     reverting?: FormState;
     /** The "ask for different versions" form, likewise. */
     asking?: FormState;
-    /** The reply line, with what has been typed in it so far, and whether it goes as an aside. */
-    replying?: FormState & { aside?: boolean };
+    /** The reply line, with what has been typed in it so far, whether it goes as an aside, and its images. */
+    replying?: FormState & { aside?: boolean; images?: File[] };
     /** People only is being changed, or could not be. */
     sharing?: { busy: boolean; error?: string };
 }
@@ -49,7 +55,9 @@ export interface CardActions {
      * Writes in the annotation's thread as the person, for example to ask for different versions; an aside is for the
      * people on the thread, kept from the agent. Only passed with a server.
      */
-    onReply?(id: string, note: string, aside?: boolean): Promise<void>;
+    onReply?(id: string, note: string, aside?: boolean, images?: File[]): Promise<void>;
+    /** Whether images can go with a reply now: the server takes them. */
+    replyImages?(): boolean;
     /** Turns People only on or off for an annotation. Left out where the change cannot be made now. */
     onPeopleOnly?(id: string, on: boolean): Promise<void>;
     /** The connected agent's name ("Codex") when there is exactly one, so the card can say who it is asking. */
@@ -116,13 +124,14 @@ export function closeForms(state: CardState): void {
     state.optionsOpen = false;
     if (!state.reverting?.busy) state.reverting = undefined;
     if (!state.asking?.busy) state.asking = undefined;
-    if (!state.replying?.busy && !state.replying?.note) state.replying = undefined;
+    if (!state.replying?.busy && !state.replying?.note && !state.replying?.images?.length)
+        state.replying = undefined;
 }
 
 /** Whether a card has something in it to lose: held open, a reply typed, or a request under way. */
 export const hasWorkInProgress = (state: CardState): boolean =>
     state.pinned ||
-    Boolean(state.replying?.busy || state.replying?.note) ||
+    Boolean(state.replying?.busy || state.replying?.note || state.replying?.images?.length) ||
     Boolean(state.reverting?.busy || state.asking?.busy || state.sharing?.busy);
 
 /**
@@ -344,7 +353,16 @@ function cardContents(draw: CardDraw, actions: CardActions): HTMLElement[] {
                               )
                             : null
                     ),
-                    r.body
+                    r.body,
+                    ...(r.images?.length
+                        ? [
+                              h(
+                                  "span",
+                                  { class: "reply-images" },
+                                  `${r.images.length} image${r.images.length === 1 ? "" : "s"} attached`
+                              ),
+                          ]
+                        : [])
                 )
             );
         }),
@@ -516,13 +534,55 @@ function replyControls(draw: CardDraw, actions: CardActions): HTMLElement[] {
     say.addEventListener("focus", () => {
         state.pinned = true; // keep the card up while someone types in it
     });
+    const canAttach = Boolean(actions.replyImages?.());
+    const images = () => reply.images ?? [];
+    /** Adds images to the reply, chosen or pasted: PNG, JPEG or WebP, at most three. */
+    const attach = (files: File[]) => {
+        if (!files.length) return;
+        reply.error = undefined;
+        const kept = [...images()];
+        for (const file of files) {
+            try {
+                validateImageFile(file);
+            } catch (error) {
+                reply.error = messageOf(error);
+                continue;
+            }
+            if (kept.length >= MAX_ATTACHED_IMAGES) {
+                reply.error = `A reply can carry at most ${MAX_ATTACHED_IMAGES} images.`;
+                break;
+            }
+            kept.push(file);
+        }
+        reply.images = kept;
+        state.pinned = true;
+        draw.redraw();
+    };
+    say.addEventListener("paste", (ev) => {
+        const files = [...(ev.clipboardData?.files ?? [])].filter((f) =>
+            f.type.startsWith("image/")
+        );
+        if (!canAttach || !files.length) return;
+        ev.preventDefault();
+        attach(files);
+    });
     say.addEventListener("keydown", (ev) => {
-        if (ev.key !== "Enter" || ev.isComposing || !reply.note.trim() || reply.busy) return;
+        if (
+            ev.key !== "Enter" ||
+            ev.isComposing ||
+            (!reply.note.trim() && !images().length) ||
+            reply.busy
+        )
+            return;
         ev.preventDefault();
         reply.busy = true;
         reply.error = undefined;
         say.disabled = true;
-        onReply(a.id, reply.note.trim(), Boolean(reply.aside)).then(
+        const files = images();
+        (files.length
+            ? onReply(a.id, reply.note.trim(), Boolean(reply.aside), files)
+            : onReply(a.id, reply.note.trim(), Boolean(reply.aside))
+        ).then(
             () => {
                 // The next reply is for the agent again unless they say otherwise.
                 state.replying = undefined;
@@ -535,8 +595,55 @@ function replyControls(draw: CardDraw, actions: CardActions): HTMLElement[] {
             }
         );
     });
+    const picker = h("input", {
+        type: "file",
+        accept: "image/png,image/jpeg,image/webp",
+        multiple: true,
+        hidden: true,
+        "aria-label": "Images to send with the reply",
+    });
+    picker.addEventListener("change", () => {
+        attach([...(picker.files ?? [])]);
+        picker.value = "";
+    });
+    const add = canAttach
+        ? h(
+              "button",
+              {
+                  class: "btn reply-attach",
+                  type: "button",
+                  "aria-label": "Add images to the reply",
+                  title: `Add up to ${MAX_ATTACHED_IMAGES} PNG, JPEG or WebP images, or paste one`,
+                  disabled: reply.busy || images().length >= MAX_ATTACHED_IMAGES,
+                  onclick: () => picker.click(),
+              },
+              icon(ICONS.paperclip)
+          )
+        : null;
+    const chips = images().map((file, i) =>
+        h(
+            "span",
+            { class: "reply-file", title: file.name },
+            h("span", { class: "reply-file-name" }, file.name),
+            h(
+                "button",
+                {
+                    class: "reply-file-remove",
+                    type: "button",
+                    "aria-label": `Remove ${file.name}`,
+                    disabled: reply.busy,
+                    onclick: () => {
+                        reply.images = images().filter((_, j) => j !== i);
+                        draw.redraw();
+                    },
+                },
+                "×"
+            )
+        )
+    );
     return [
-        h("div", { class: "say-row" }, say),
+        h("div", { class: "say-row" }, say, ...(add ? [add, picker] : [])),
+        ...(chips.length ? [h("div", { class: "reply-files" }, ...chips)] : []),
         ...(reply.aside
             ? [h("p", { class: "reply-privacy", role: "status" }, "Next reply hidden from agent")]
             : []),

@@ -537,7 +537,20 @@ class NotatoRuntime extends ChangeNotifier implements NotatoController {
       server == _config?.server ? _config?.token : null,
       authorName,
     ], _settings['hiddenAnnotations'] as String?);
-    _notes.setHidden(_hidden.ids);
+    _notes.setHidden(_hidden.ids, hideDone: hideDone);
+  }
+
+  /// Whether every finished note (resolved, reverted, dismissed) is left out of pins and lists on this device, including
+  /// notes finished later. The dashboard keeps them.
+  bool get hideDone => _settings['hideDone'] as bool? ?? false;
+
+  /// Turns [hideDone] on or off, and remembers it.
+  void setHideDone(bool on) {
+    if (on == hideDone) return;
+    _settings['hideDone'] = on;
+    _syncHidden();
+    _saveSettings();
+    notifyListeners();
   }
 
   int get hiddenCount {
@@ -545,27 +558,15 @@ class NotatoRuntime extends ChangeNotifier implements NotatoController {
     return _hidden.ids.length;
   }
 
-  int get completedCount {
-    _syncHidden();
-    return notes
-        .where((r) => HiddenAnnotations.isCompleted(r.annotation['status']) && !_hidden.contains(r.annotation))
-        .length;
-  }
-
   int get visibleCount {
     _syncHidden();
-    return notes.where((r) => !_hidden.contains(r.annotation)).length;
+    return notes.where((r) => !_notes.isHidden(r)).length;
   }
 
   void hideAnnotation(String id) {
     _syncHidden();
     final a = _notes[id]?.annotation;
     if (a != null && _hidden.hide([a])) _saveHidden();
-  }
-
-  void hideCompleted() {
-    _syncHidden();
-    if (_hidden.hide(notes.map((r) => r.annotation))) _saveHidden();
   }
 
   void restoreHidden() {
@@ -576,7 +577,7 @@ class NotatoRuntime extends ChangeNotifier implements NotatoController {
 
   void _saveHidden() {
     _settings['hiddenAnnotations'] = _hidden.encoded;
-    _notes.setHidden(_hidden.ids);
+    _notes.setHidden(_hidden.ids, hideDone: hideDone);
     _saveSettings();
     notifyListeners();
   }

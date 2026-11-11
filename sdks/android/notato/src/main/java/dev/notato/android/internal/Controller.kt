@@ -377,22 +377,31 @@ internal class Controller(
     }
 
     private fun syncHidden() {
-        if (hidden.select(listOf(server, config.project, mode.name, server?.let { config.tokenFor(it) }, authorName), runtime.hiddenAnnotations)) sync.notes.changed()
+        val selected = hidden.select(listOf(server, config.project, mode.name, server?.let { config.tokenFor(it) }, authorName), runtime.hiddenAnnotations)
+        val hideDone = runtime.hideDone
+        if (selected || hidden.hideDone != hideDone) {
+            hidden.hideDone = hideDone
+            sync.notes.changed()
+        }
     }
 
     val hiddenCount: Int get() { syncHidden(); return hidden.ids.size }
-    val completedCount: Int get() { syncHidden(); return sync.notes.all.count { HiddenAnnotations.isCompleted(it.annotation.status) && !hidden.contains(it.annotation) } }
     val visibleCount: Int get() { syncHidden(); return sync.notes.all.count { !hidden.contains(it.annotation) } }
+
+    /** Settings' "Hide done annotations": every finished note left out of the pins and lists, until it is reopened. */
+    val hideDone: Boolean get() = runtime.hideDone
+
+    fun setHideDone(on: Boolean) {
+        if (runtime.hideDone == on) return
+        runtime.hideDone = on
+        syncHidden()
+        publish()
+    }
 
     fun hideAnnotation(id: String) {
         syncHidden()
         val a = sync.notes[id]?.annotation ?: return
         if (hidden.hide(listOf(a))) saveHidden()
-    }
-
-    fun hideCompleted() {
-        syncHidden()
-        if (hidden.hide(sync.notes.all.map { it.annotation })) saveHidden()
     }
 
     fun restoreHidden() {

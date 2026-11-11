@@ -85,6 +85,27 @@ describe("the composer", () => {
         popover.destroy();
     });
 
+    it("folds who can see it into one button that says so, and opens the switches", () => {
+        const popover = open();
+        const toggle = layer.querySelector(".visibility-toggle") as HTMLButtonElement;
+        const panel = layer.querySelector(".composer-visibility") as HTMLElement;
+        expect(toggle.textContent).toBe("You and your agent");
+        expect(panel.hidden).toBe(true);
+        expect(toggle.getAttribute("aria-expanded")).toBe("false");
+        toggle.click();
+        expect(panel.hidden).toBe(false);
+        expect(toggle.getAttribute("aria-expanded")).toBe("true");
+        button(layer, "Share with project")?.click();
+        expect(toggle.textContent).toBe("Shared with project");
+        button(layer, "Hide from agent")?.click();
+        expect(toggle.textContent).toBe("Project, not agent");
+        button(layer, "Share with project")?.click();
+        expect(toggle.textContent).toBe("Only you");
+        toggle.click();
+        expect(panel.hidden).toBe(true);
+        popover.destroy();
+    });
+
     it("marks the note People only when it is", async () => {
         const popover = open();
         button(layer, "Hide from agent")?.click();
@@ -203,6 +224,47 @@ describe("a card", () => {
         send("make it blue");
         await settle();
         expect(onReply).toHaveBeenLastCalledWith("a1", "make it blue", false);
+    });
+
+    it("sends images with a reply, even with no words, when the server takes them, and says how many a reply has", async () => {
+        const onReply = vi.fn(
+            async (_id: string, _note: string, _aside?: boolean, _images?: File[]) => {}
+        );
+        const withImages = mount(
+            {
+                thread: [
+                    reply("see these", {
+                        images: [
+                            { id: "i1", mime: "image/png", w: 1, h: 1, name: "one" },
+                            { id: "i2", mime: "image/png", w: 1, h: 1, name: "two" },
+                        ],
+                    }),
+                ],
+            },
+            { onReply, replyImages: () => true }
+        );
+        expect(withImages.card().querySelector(".reply-images")?.textContent).toBe(
+            "2 images attached"
+        );
+        const picker = withImages.card().querySelector('input[type="file"]') as HTMLInputElement;
+        const png = new File([new Uint8Array([1])], "after.png", { type: "image/png" });
+        const svg = new File(["<svg/>"], "bad.svg", { type: "image/svg+xml" });
+        Object.defineProperty(picker, "files", { value: [png, svg], configurable: true });
+        picker.dispatchEvent(new Event("change"));
+        expect(withImages.card().querySelector(".reply-file-name")?.textContent).toBe("after.png");
+        expect(withImages.card().querySelector(".say-err")?.textContent).toContain(
+            "PNG, JPEG or WebP"
+        );
+        const say = withImages.card().querySelector(".say") as HTMLInputElement;
+        say.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter" }));
+        await settle();
+        expect(onReply).toHaveBeenLastCalledWith("a1", "", false, [png]);
+        expect(withImages.card().querySelector(".reply-file")).toBeNull();
+    });
+
+    it("offers no images where the server takes words only", () => {
+        const t = mount({}, { onReply: async () => {}, replyImages: () => false });
+        expect(t.card().querySelector(".reply-attach")).toBeNull();
     });
 
     it("offers Aside on a People only note too, which stays from the agent if the note is shared later", () => {

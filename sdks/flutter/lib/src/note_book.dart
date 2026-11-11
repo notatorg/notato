@@ -16,11 +16,19 @@ int _madeOrder(NoteRecord a, NoteRecord b) {
 class NoteBook {
   Set<String> _hidden = {};
 
-  void setHidden(Set<String> ids) {
-    if (identical(ids, _hidden)) return;
+  bool _hideDone = false;
+
+  void setHidden(Set<String> ids, {bool hideDone = false}) {
+    if (identical(ids, _hidden) && hideDone == _hideDone) return;
     _hidden = ids;
+    _hideDone = hideDone;
     _screens.clear();
   }
+
+  /// Whether a note is left out of pins and lists here: finished, and either every finished note is hidden or this one
+  /// was hidden on its own. A reopened note is shown again by itself.
+  bool isHidden(NoteRecord r) =>
+      HiddenAnnotations.isCompleted(r.annotation['status']) && (_hideDone || _hidden.contains(r.id));
 
   List<NoteRecord> _records = const [];
 
@@ -83,8 +91,7 @@ class NoteBook {
           ? const <({int number, NoteRecord record})>[]
           : [
               for (final (i, r) in here.indexed)
-                if (!(HiddenAnnotations.isCompleted(r.annotation['status']) && _hidden.contains(r.id)))
-                  (number: i + 1, record: r),
+                if (!isHidden(r)) (number: i + 1, record: r),
             ];
     }();
   }

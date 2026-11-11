@@ -8,26 +8,29 @@ namespace Notato.Maui.Overlay;
 /// <summary>
 /// A row of equal choices of which at most one is on; tapping the one that is on turns it off. The one that is on is
 /// filled with the text colour, as on the web, and <c>dots</c> puts a colour beside a choice's label (the severity's).
+/// The row has no heading on screen: <c>group</c> (such as "Severity") is each choice's hint for screen readers.
 /// </summary>
 internal sealed class ChipRow : Grid
 {
     private readonly List<(string Value, Border Box, Label Label)> _chips = [];
     private string? _selected;
 
-    public ChipRow(IEnumerable<(string Value, string Label)> options, IReadOnlyDictionary<string, Color>? dots = null)
+    public ChipRow(string group, IEnumerable<(string Value, string Label)> options, IReadOnlyDictionary<string, Color>? dots = null)
     {
         Ui.Plain(this);
+        Group = group;
         ColumnSpacing = 6;
         int column = 0;
         foreach ((string value, string label) in options)
         {
             ColumnDefinitions.Add(new ColumnDefinition(GridLength.Star));
             Label text = Ui.Text(label, 14, Ui.CardText, maxLines: 1, semibold: true);
+            text.VerticalOptions = LayoutOptions.Center;
             View content = text;
             if (dots is not null && dots.TryGetValue(value, out Color? dotColor))
             {
                 BoxView dot = new() { Color = dotColor, WidthRequest = 7, HeightRequest = 7, CornerRadius = 3.5, VerticalOptions = LayoutOptions.Center };
-                content = new HorizontalStackLayout { Spacing = 5, HorizontalOptions = LayoutOptions.Center, Children = { dot, text } };
+                content = new HorizontalStackLayout { Spacing = 5, HorizontalOptions = LayoutOptions.Center, VerticalOptions = LayoutOptions.Center, Children = { dot, text } };
             }
             else
             {
@@ -38,11 +41,15 @@ internal sealed class ChipRow : Grid
             box.VerticalOptions = LayoutOptions.Fill;
             Ui.OnTap(box, () => Selected = Selected == value ? null : value);
             SemanticProperties.SetDescription(box, label);
+            SemanticProperties.SetHint(box, group);
             _chips.Add((value, box, text));
             Children.Add(box);
             SetColumn((BindableObject)box, column++);
         }
     }
+
+    /// <summary>What the choices are, read out with each one.</summary>
+    public string Group { get; }
 
     public string? Selected
     {

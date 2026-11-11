@@ -12,9 +12,11 @@ import {
 } from "@notato/core";
 import {
     Annotation,
+    type AttachedImage,
     type Author,
     annotationAssets,
     ExternalLink,
+    MAX_ATTACHED_IMAGES,
     type Severity,
     type Status,
     type VariantOption,
@@ -157,6 +159,20 @@ async function referenceDimensions(bytes: Uint8Array) {
         );
     }
 }
+
+/** An image sent with a reply, as it arrives: its bytes, and the name the person's file had. */
+export interface ReplyImageUpload {
+    name: string;
+    bytes: Uint8Array;
+}
+
+/** A file name fit to show: one line, at most 120 characters, never empty. */
+const imageName = (name: string) =>
+    name
+        .replace(/\p{Cc}+/gu, " ")
+        .trim()
+        .slice(0, 120)
+        .trim() || "image";
 
 /** Raised for input the caller can fix; the HTTP layer turns it into a 4xx. */
 export class RequestError extends Error {
@@ -495,7 +511,23 @@ export class LocalBackend implements Backend {
                 return { ...image, ref: { ...ref, w: meta.width, h: meta.height } };
             })
         );
-        const referenceBytes = references.reduce((n, r) => n + r.bytes.byteLength, 0);
+        // Only an import that keeps the note's lifecycle keeps its thread, and so the images sent with its replies.
+        const replyImages = options.preserveLifecycle
+            ? await Promise.all(
+                  annotation.thread.map((reply) =>
+                      Promise.all(
+                          (reply.images ?? []).map(async (ref) => {
+                              const image = await bytesOf(ref);
+                              const meta = await referenceDimensions(image.bytes);
+                              return { ...image, ref: { ...ref, w: meta.width, h: meta.height } };
+                          })
+                      )
+                  )
+              )
+            : [];
+        const referenceBytes =
+            references.reduce((n, r) => n + r.bytes.byteLength, 0) +
+            replyImages.flat().reduce((n, r) => n + r.bytes.byteLength, 0);
         let assetBytes = referenceBytes;
         if (!annotation.screenshots || !this.config().screenshots) {
             // Screenshots are off: whatever a client sent is dropped here, so none is ever stored, whatever the page did.
@@ -570,6 +602,25 @@ export class LocalBackend implements Backend {
                     }))
                 ),
             };
+
+        if (replyImages.some((images) => images.length)) {
+            const stored = await Promise.all(
+                replyImages.map((images) =>
+                    Promise.all(
+                        images.map(async (image) => ({
+                            ...(await store(image)),
+                            name: image.ref.name,
+                        }))
+                    )
+                )
+            );
+            annotation = {
+                ...annotation,
+                thread: annotation.thread.map((reply, i) =>
+                    stored[i]?.length ? { ...reply, images: stored[i] } : reply
+                ),
+            };
+        }
 
         if (!options.preserveLifecycle) {
             annotation = {
@@ -693,11 +744,12 @@ export class LocalBackend implements Backend {
 
     /** Deletes the bytes of screenshots no remaining note shows. */
     protected async forgetScreenshots(gone: Annotation[]) {
-        const ids = new Set<string>();
-        for (const a of gone) {
-            for (const ref of annotationAssets(a)) ids.add(ref.id);
-        }
-        for (const id of ids) {
+        await this.forgetAssets(gone.flatMap((a) => annotationAssets(a).map((ref) => ref.id)));
+    }
+
+    /** Deletes the bytes of each of these images that no remaining note shows. */
+    protected async forgetAssets(ids: Iterable<string>) {
+        for (const id of new Set(ids)) {
             if ((await this.store.projectsWithAsset(id)).length === 0) await this.blobs.delete(id);
         }
     }
@@ -801,13 +853,18 @@ export class LocalBackend implements Backend {
     protected async mutate(
         id: string,
         change: (current: Annotation) => Annotation,
-        type: EventType = "updated"
+        type: EventType = "updated",
+        addedAssetBytes = 0
     ): Promise<StoredAnnotation | null> {
         let before: Annotation | undefined;
-        const updated = await this.store.updateAnnotation(id, (current) => {
-            before = current;
-            return change(current);
-        });
+        const updated = await this.store.updateAnnotation(
+            id,
+            (current) => {
+                before = current;
+                return change(current);
+            },
+            addedAssetBytes || undefined
+        );
         if (updated) this.emit(type, updated, before);
         return updated;
     }
@@ -923,10 +980,68 @@ export class LocalBackend implements Backend {
         });
     }
 
-    /** `aside`: a remark for the people on the thread, kept from the agent. Only a person's reply can be one. */
-    reply(id: string, body: string, author: Author = HUMAN, options: { aside?: boolean } = {}) {
+    /**
+     * `aside`: a remark for the people on the thread, kept from the agent. Only a person's reply can be one.
+     * `images`: up to three PNG or WebP images sent with it, checked and stored like design references. A reply with
+     * images may have no words.
+     */
+    async reply(
+        id: string,
+        body: string,
+        author: Author = HUMAN,
+        options: { aside?: boolean; images?: readonly ReplyImageUpload[] } = {}
+    ): Promise<StoredAnnotation | null> {
         if (options.aside && author.kind !== "human")
             throw new RequestError("only a person's reply can be an aside", 400);
+        const uploads = options.images ?? [];
+        if (!uploads.length) {
+            if (!body.trim()) throw new RequestError("a reply needs words or an image");
+            return this.replyWith(id, body, author, options.aside);
+        }
+        if (uploads.length > MAX_ATTACHED_IMAGES)
+            throw new RequestError(`a reply can carry at most ${MAX_ATTACHED_IMAGES} images`);
+        return this.serialAssets(async () => {
+            // Every image is checked before any is written, so a refused reply leaves nothing behind.
+            const checked = await Promise.all(
+                uploads.map(async (upload) => {
+                    const mime = sniffImageMime(upload.bytes);
+                    if (!mime) throw new RequestError("Reply images must be PNG or WebP images.");
+                    const meta = await referenceDimensions(upload.bytes);
+                    return { ...upload, mime: mime as AttachedImage["mime"], meta };
+                })
+            );
+            if (!(await this.store.getAnnotation(id))) return null;
+            const images: AttachedImage[] = [];
+            for (const image of checked) {
+                const { id: assetId } = await this.blobs.put(image.bytes);
+                images.push({
+                    id: assetId,
+                    mime: image.mime,
+                    w: image.meta.width,
+                    h: image.meta.height,
+                    name: imageName(image.name),
+                });
+            }
+            const bytes = checked.reduce((n, image) => n + image.bytes.byteLength, 0);
+            let updated: StoredAnnotation | null = null;
+            try {
+                updated = await this.replyWith(id, body, author, options.aside, images, bytes);
+                return updated;
+            } finally {
+                // Not stored after all (the note went, the thread is full, no room left): its images go too.
+                if (!updated) await this.forgetAssets(images.map((image) => image.id));
+            }
+        });
+    }
+
+    private replyWith(
+        id: string,
+        body: string,
+        author: Author,
+        aside?: boolean,
+        images?: AttachedImage[],
+        imageBytes = 0
+    ) {
         return this.mutate(
             id,
             (a) => {
@@ -940,7 +1055,7 @@ export class LocalBackend implements Backend {
                     ...a,
                     ...(a.status === "awaiting_response" &&
                     author.kind === "human" &&
-                    !options.aside &&
+                    !aside &&
                     !a.peopleOnly
                         ? {
                               status: a.awaitingResponse?.resumeStatus ?? "acknowledged",
@@ -951,12 +1066,14 @@ export class LocalBackend implements Backend {
                         ...a.thread,
                         {
                             ...this.makeReply(author, body),
-                            ...(options.aside ? { aside: true } : {}),
+                            ...(aside ? { aside: true } : {}),
+                            ...(images?.length ? { images } : {}),
                         },
                     ],
                 };
             },
-            "replied"
+            "replied",
+            imageBytes
         );
     }
 
@@ -1070,7 +1187,10 @@ export class LocalBackend implements Backend {
             if (parsed.data.review?.draft)
                 throw new RequestError("Send the review before uploading its notes.");
             const bundledAssets = assetsFor(a, files);
-            for (const ref of parsed.data.references ?? []) {
+            for (const ref of [
+                ...(parsed.data.references ?? []),
+                ...parsed.data.thread.flatMap((r) => r.images ?? []),
+            ]) {
                 const bytes = bundledAssets.get(ref.id);
                 if (!bytes)
                     throw new RequestError(`missing reference image bytes for asset "${ref.id}"`);

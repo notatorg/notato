@@ -1,6 +1,8 @@
-import type { Annotation, Reply } from "@notato/schema";
+import type { Annotation, AttachedImage, Reply } from "@notato/schema";
+import { useState } from "react";
+import { assetHref } from "./api.ts";
 import { ago, authorName } from "./model.ts";
-import { Avatar, Logo, When } from "./ui.tsx";
+import { Avatar, Logo, Modal, When } from "./ui.tsx";
 
 /** Said wherever an aside can be chosen, in the board, the toolbar and the mobile SDKs. */
 export const ASIDE_HINT = "Just for people: the agent won't see this reply.";
@@ -64,8 +66,36 @@ function Message({ reply: r }: { reply: Reply }) {
                     ) : null}{" "}
                     <When iso={r.createdAt}>{ago(r.createdAt)}</When>
                 </div>
-                <div className="bubble-body">{r.body}</div>
+                {r.body ? <div className="bubble-body">{r.body}</div> : null}
+                {r.images?.length ? <ReplyImages images={r.images} /> : null}
             </div>
         </li>
+    );
+}
+
+/** The images sent with a reply: small in the bubble, whole in a dialog when one is picked. */
+function ReplyImages({ images }: { images: AttachedImage[] }) {
+    const [open, setOpen] = useState<AttachedImage | null>(null);
+    return (
+        <div className="reply-images">
+            {images.map((image, i) => (
+                <button
+                    // biome-ignore lint/suspicious/noArrayIndexKey: the same image may be sent twice in one reply
+                    key={`${image.id}-${i}`}
+                    type="button"
+                    className="reply-image"
+                    onClick={() => setOpen(image)}
+                    aria-label={`Enlarge image: ${image.name}`}
+                    title={image.name}
+                >
+                    <img src={assetHref(image.id)} alt={image.name} loading="lazy" />
+                </button>
+            ))}
+            {open ? (
+                <Modal title={open.name} onClose={() => setOpen(null)}>
+                    <img className="reference-full" src={assetHref(open.id)} alt={open.name} />
+                </Modal>
+            ) : null}
+        </div>
     );
 }

@@ -37,6 +37,12 @@ export const ICONS = {
     people: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3.2"/><path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6M16 5.2a3.2 3.2 0 0 1 0 5.6M18 14.4c1.8.8 3 2.7 3 5.6"/></svg>',
     lock: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="10" width="14" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3M12 14v3"/></svg>',
     image: '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L6 21"/></svg>',
+    versions:
+        '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="8" width="11" height="13" rx="2"/><path d="M8 5.5V5a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2h-.5"/><path d="M6.5 12.5h4M6.5 16h2.5"/></svg>',
+    paperclip:
+        '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="m20.5 11.5-8.3 8.3a5 5 0 0 1-7-7l8.6-8.6a3.3 3.3 0 0 1 4.7 4.7l-8.6 8.6a1.7 1.7 0 0 1-2.4-2.4l7.9-7.9"/></svg>',
+    chevron:
+        '<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>',
     review: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="7" y="3" width="14" height="15" rx="2"/><path d="M17 21H5a2 2 0 0 1-2-2V7M11 7h6M11 11h6M11 15h3"/></svg>',
     crosshair:
         '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="12" cy="12" r="8"/><path d="M12 1.5V6M12 18v4.5M1.5 12H6M18 12h4.5"/></svg>',
@@ -136,4 +142,6 @@ export const isElement = (n: unknown): n is Element => Boolean(n) && (n as Node)
 export const isDocument = (n: unknown): n is Document => Boolean(n) && (n as Node).nodeType === 9;
 export const isShadowRoot = (n: unknown): n is ShadowRoot =>
     Boolean(n) && (n as Node).nodeType === 11 && "host" in (n as object);
-export const isIframe = (n: Element): n is HTMLIFrameElement => n.localName === "iframe";
+/** An `<iframe>`, or a `<frame>` of an old `<frameset>` page, which holds a document the same way. */
+export const isIframe = (n: Element): n is HTMLIFrameElement =>
+    n.localName === "iframe" || n.localName === "frame";

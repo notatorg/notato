@@ -30,7 +30,16 @@ const open = (init: Partial<PopoverInit> = {}) =>
 
 const intentChip = (intent: Intent) =>
     layer.querySelector(`[data-intent="${intent}"]`) as HTMLButtonElement;
-const intentChips = () => [...layer.querySelectorAll<HTMLButtonElement>("[data-intent]")];
+const intentChips = () => [...layer.querySelectorAll<HTMLButtonElement>(".chip[data-intent]")];
+const mode = (m: "note" | "variants") =>
+    layer.querySelector(`.composer-mode [data-mode="${m}"]`) as HTMLButtonElement;
+const pressedMode = () =>
+    [...layer.querySelectorAll<HTMLButtonElement>(".composer-mode [data-mode]")]
+        .filter((b) => b.getAttribute("aria-pressed") === "true")
+        .map((b) => b.dataset.mode);
+const intentsShown = () =>
+    !(layer.querySelector('[aria-label="Feedback type"]') as HTMLElement).hidden;
+const explainerShown = () => !(layer.querySelector(".variants-explainer") as HTMLElement).hidden;
 const pressedIntents = () =>
     intentChips()
         .filter((c) => c.getAttribute("aria-pressed") === "true")
@@ -41,65 +50,86 @@ const textarea = () => layer.querySelector("textarea") as HTMLTextAreaElement;
 const note = (text: string) => {
     textarea().value = text;
 };
-const save = () => {
-    const button = [...layer.querySelectorAll("button")].find(
-        (b) => b.textContent === "Save note"
-    ) as HTMLButtonElement;
-    button.click();
-};
+const saveButton = () => layer.querySelector(".composer-footer .btn.primary") as HTMLButtonElement;
+const save = () => saveButton().click();
 const saved = () => onSave.mock.calls[0]?.[0];
 
-describe("the Variants chip", () => {
+describe("the Note / Variants switch", () => {
     it("is not offered unless the caller says a request for variants can be made", () => {
         open();
-        expect(intentChip("variants")).toBeNull();
+        expect(layer.querySelector(".composer-mode")).toBeNull();
         popover.close();
         open({ variants: false });
-        expect(intentChip("variants")).toBeNull();
+        expect(layer.querySelector(".composer-mode")).toBeNull();
         expect(intentChips().map((c) => c.dataset.intent)).toEqual([
             "fix",
             "change",
             "question",
             "approve",
         ]);
+        expect(intentsShown()).toBe(true);
     });
 
-    it("is offered after the others when it can be made, with a note on what it does", () => {
+    it("sits above the note and the kinds of note, on Note to begin with", () => {
         open({ variants: true });
-        expect(intentChips().map((c) => c.dataset.intent)).toEqual([
-            "fix",
-            "change",
-            "question",
-            "approve",
-            "variants",
+        const order = [
+            ...layer.querySelectorAll(".composer-mode, [aria-label='Feedback type'], textarea"),
+        ];
+        expect(order.map((e) => e.className || e.tagName)).toEqual([
+            "composer-mode",
+            "composer-options",
+            "TEXTAREA",
         ]);
-        expect(intentChip("variants").textContent).toBe("Variants");
-        expect(intentChip("variants").title).toContain("versions");
-        expect(pressedIntents()).toEqual([]);
+        expect(pressedMode()).toEqual(["note"]);
+        expect(mode("variants").textContent).toBe("Variants");
+        expect(mode("variants").title).toContain("versions");
+        expect(intentsShown()).toBe(true);
+        expect(explainerShown()).toBe(false);
     });
 
     it("is offered only for the open that asked for it", () => {
         open({ variants: true });
         popover.close();
         open();
-        expect(intentChip("variants")).toBeNull();
+        expect(layer.querySelector(".composer-mode")).toBeNull();
 
         open({ variants: true }); // the next element picked, without closing the first
-        expect(intentChip("variants")).not.toBeNull();
+        expect(layer.querySelector(".composer-mode")).not.toBeNull();
         open();
-        expect(intentChip("variants")).toBeNull();
+        expect(layer.querySelector(".composer-mode")).toBeNull();
     });
 
-    it("is pressed when clicked, and alone", () => {
+    it("swaps the kinds of note for a line on what Variants does, and back", () => {
         open({ variants: true });
-        intentChip("fix").click();
-        intentChip("variants").click();
-        expect(pressedIntents()).toEqual(["variants"]);
+        mode("variants").click();
+        expect(pressedMode()).toEqual(["variants"]);
+        expect(intentsShown()).toBe(false);
+        expect(explainerShown()).toBe(true);
+        expect(layer.querySelector(".variants-explainer")?.textContent).toContain("Use this");
+
+        mode("note").click();
+        expect(pressedMode()).toEqual(["note"]);
+        expect(intentsShown()).toBe(true);
+        expect(explainerShown()).toBe(false);
+    });
+
+    it("stays on Variants when Variants is clicked again", () => {
+        open({ variants: true });
+        mode("variants").click();
+        mode("variants").click();
+        expect(pressedMode()).toEqual(["variants"]);
+    });
+
+    it("moves the typing to the note when switched", () => {
+        open({ variants: true });
+        mode("variants").focus();
+        mode("variants").click();
+        expect(document.activeElement).toBe(textarea());
     });
 
     it("passes the intent variants to onSave with the comment", () => {
         open({ variants: true });
-        intentChip("variants").click();
+        mode("variants").click();
         note("  Three layouts for this header  ");
         save();
         expect(onSave).toHaveBeenCalledOnce();
@@ -113,18 +143,37 @@ describe("the Variants chip", () => {
 
     it("passes it along with a severity", () => {
         open({ variants: true });
-        intentChip("variants").click();
+        mode("variants").click();
         severityChip("minor").click();
         note("Try a few");
         save();
         expect(saved()).toMatchObject({ intent: "variants", severity: "minor" });
     });
 
-    it("passes no intent once it is clicked off again", () => {
+    it("asks for variants even if a kind of note was chosen before switching", () => {
         open({ variants: true });
-        intentChip("variants").click();
-        intentChip("variants").click();
-        expect(pressedIntents()).toEqual([]);
+        intentChip("fix").click();
+        mode("variants").click();
+        note("Try a few");
+        save();
+        expect(saved()?.intent).toBe("variants");
+    });
+
+    it("finds the kind of note chosen before, on going back to Note", () => {
+        open({ variants: true });
+        intentChip("question").click();
+        mode("variants").click();
+        mode("note").click();
+        expect(pressedIntents()).toEqual(["question"]);
+        note("Why is this grey?");
+        save();
+        expect(saved()?.intent).toBe("question");
+    });
+
+    it("passes no intent after going back to Note with nothing chosen", () => {
+        open({ variants: true });
+        mode("variants").click();
+        mode("note").click();
         note("Never mind");
         save();
         expect(saved()?.intent).toBeUndefined();
@@ -132,35 +181,26 @@ describe("the Variants chip", () => {
 
     it("does not save an empty note, variants or not", () => {
         open({ variants: true });
-        intentChip("variants").click();
+        mode("variants").click();
         save();
         expect(onSave).not.toHaveBeenCalled();
     });
 
     describe("the note's placeholder", () => {
-        it("changes to ask what the versions should explore, and goes back when it is unchosen", () => {
+        it("changes to ask what the versions should explore, and goes back on Note", () => {
             open({ variants: true });
             const usual = textarea().placeholder;
             expect(usual).not.toBe("");
 
-            intentChip("variants").click();
+            mode("variants").click();
             expect(textarea().placeholder).not.toBe(usual);
             expect(textarea().placeholder).toContain("versions");
 
-            intentChip("variants").click();
+            mode("note").click();
             expect(textarea().placeholder).toBe(usual);
         });
 
-        it("goes back when another chip is chosen instead", () => {
-            open({ variants: true });
-            const usual = textarea().placeholder;
-            intentChip("variants").click();
-            intentChip("question").click();
-            expect(pressedIntents()).toEqual(["question"]);
-            expect(textarea().placeholder).toBe(usual);
-        });
-
-        it("stays the usual one for the other chips", () => {
+        it("stays the usual one for the kinds of note", () => {
             open({ variants: true });
             const usual = textarea().placeholder;
             for (const intent of ["fix", "change", "question", "approve"] as const) {
@@ -172,22 +212,46 @@ describe("the Variants chip", () => {
         it("leaves what has been typed alone when it changes", () => {
             open({ variants: true });
             note("Something already written");
-            intentChip("variants").click();
+            mode("variants").click();
             expect(textarea().value).toBe("Something already written");
         });
 
         it("is the usual one in the next popover, even if the last was left on Variants", () => {
             open({ variants: true });
             const usual = textarea().placeholder;
-            intentChip("variants").click();
+            mode("variants").click();
             open({ variants: true });
             expect(textarea().placeholder).toBe(usual);
-            expect(pressedIntents()).toEqual([]);
+            expect(pressedMode()).toEqual(["note"]);
         });
     });
 
-    describe("the other chips", () => {
-        it("still work when it is offered", () => {
+    describe("the save button", () => {
+        it("says Ask for variants on Variants, and Save note again on Note", () => {
+            open({ variants: true });
+            expect(saveButton().textContent).toBe("Save note");
+            mode("variants").click();
+            expect(saveButton().textContent).toBe("Ask for variants");
+            mode("note").click();
+            expect(saveButton().textContent).toBe("Save note");
+        });
+
+        it("says Save note in the next popover", () => {
+            open({ variants: true });
+            mode("variants").click();
+            open({ variants: true });
+            expect(saveButton().textContent).toBe("Save note");
+        });
+
+        it("keeps Add to review in a review", () => {
+            open({ variants: true, reviewInstruction: "Check the spacing" });
+            mode("variants").click();
+            expect(saveButton().textContent).toBe("Add to review");
+        });
+    });
+
+    describe("the kinds of note", () => {
+        it("still work when Variants is offered", () => {
             open({ variants: true });
             intentChip("change").click();
             severityChip("major").click();
@@ -201,34 +265,19 @@ describe("the Variants chip", () => {
             });
         });
 
-        it("each replace Variants as the chosen one", () => {
-            for (const intent of ["fix", "change", "question", "approve"] as const) {
-                popover.close();
-                onSave.mockClear();
-                open({ variants: true });
-                intentChip("variants").click();
-                intentChip(intent).click();
-                expect(pressedIntents(), intent).toEqual([intent]);
-                note("Hmm");
-                save();
-                expect(saved()?.intent, intent).toBe(intent);
-            }
-        });
-
-        it("can be cleared and chosen again around it", () => {
+        it("are one at a time, and can be cleared", () => {
             open({ variants: true });
             intentChip("fix").click();
-            intentChip("fix").click();
-            intentChip("variants").click();
-            intentChip("variants").click();
             intentChip("approve").click();
             expect(pressedIntents()).toEqual(["approve"]);
+            intentChip("approve").click();
+            expect(pressedIntents()).toEqual([]);
         });
     });
 
-    it("starts with nothing chosen in the next popover, so a request for variants is never sent by accident", () => {
+    it("starts on Note in the next popover, so a request for variants is never sent by accident", () => {
         open({ variants: true });
-        intentChip("variants").click();
+        mode("variants").click();
         open({ variants: true });
         note("A different element");
         save();
@@ -237,9 +286,9 @@ describe("the Variants chip", () => {
 
     it("keeps the choice while the targets are updated", () => {
         open({ variants: true });
-        intentChip("variants").click();
+        mode("variants").click();
         popover.update({ title: "2 elements", targets: ["header.site", "nav.main"] });
-        expect(pressedIntents()).toEqual(["variants"]);
+        expect(pressedMode()).toEqual(["variants"]);
         expect(textarea().placeholder).toContain("versions");
         note("Both together");
         save();

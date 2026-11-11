@@ -66,6 +66,7 @@ describe("loadSettings", () => {
             screenshots: true,
             markerColor: "teal",
             mineOnly: false,
+            hideDone: false,
         });
     });
 
@@ -210,6 +211,7 @@ describe("createSettings", () => {
             screenshots: true,
             markerColor: "teal",
             mineOnly: false,
+            hideDone: false,
         });
     });
 

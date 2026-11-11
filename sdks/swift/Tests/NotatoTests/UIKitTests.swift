@@ -9,6 +9,13 @@ import UIKit
 @Suite("On iOS")
 @MainActor
 struct UIKitTests {
+    @Test func theComposersVisibilityButtonSaysWhoCanSeeTheNoteAsOnTheWeb() {
+        #expect(VisibilityButton.summary(shared: false, peopleOnly: false) == "You and your agent")
+        #expect(VisibilityButton.summary(shared: true, peopleOnly: false) == "Shared with project")
+        #expect(VisibilityButton.summary(shared: false, peopleOnly: true) == "Only you")
+        #expect(VisibilityButton.summary(shared: true, peopleOnly: true) == "Project, not agent")
+    }
+
     private func window(_ x: CGFloat) -> UIWindow {
         let window = UIWindow(frame: CGRect(x: x, y: 0, width: 400, height: 800))
         window.isHidden = false
