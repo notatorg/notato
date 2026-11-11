@@ -67,7 +67,7 @@ a separate Worker and not an environment of the production one.
 | Build command | `bun run build:site` | `bun run build:site` |
 | Deploy command | `bun run deploy:site` (`wrangler deploy`) | `bun run preview:site` (`wrangler deploy --env preview`) |
 | Builds for preview branches | Off | Off |
-| Build variable | `BUN_VERSION=1.4.3`, matching CI | `BUN_VERSION=1.4.3` |
+| Build variable | `BUN_VERSION=1.4.4`, matching CI | `BUN_VERSION=1.4.4` |
 | Address | `notato.dev` | `preview.notato.dev` |
 
 The preview Worker is the `env.preview` block of `wrangler.json`; its custom domain never touches production, and

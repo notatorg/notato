@@ -10,7 +10,7 @@ Everyone taking part agrees to the [code of conduct](CODE_OF_CONDUCT.md).
 
 ## Set up
 
-CI and the current dependency baseline use [Bun](https://bun.sh) 1.4.3 and Node 26.12.1 (the TypeScript tests run on Vitest under Node). The native SDKs need their own tools, but only for the SDK you work on (see [Each SDK](#each-sdk)). The [dependency baseline](docs/dependencies.md) records the reviewed stable versions and compatibility constraints.
+CI and the current dependency baseline use [Bun](https://bun.sh) 1.4.4 and Node 26.12.1 (the TypeScript tests run on Vitest under Node). The native SDKs need their own tools, but only for the SDK you work on (see [Each SDK](#each-sdk)). The [dependency baseline](docs/dependencies.md) records the reviewed stable versions and compatibility constraints.
 
 ```bash
 git clone https://github.com/notatorg/notato

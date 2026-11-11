@@ -41,15 +41,15 @@
         }
     },
     "devDependencies": {
-        "@biomejs/biome": "^2.6.2",
-        "@modelcontextprotocol/sdk": "^1.32.1",
+        "@biomejs/biome": "^2.6.6",
+        "@modelcontextprotocol/sdk": "^1.32.2",
         "@notato/schema": "workspace:*",
-        "@types/bun": "1.4.3",
+        "@types/bun": "1.4.4",
         "ajv": "^8.20.0",
         "typescript": "^7.0.2",
         "vite": "^8.3.5",
         "vite7": "npm:vite@^7.3.7",
         "vitest": "^5.0.5",
-        "wrangler": "4.151.3"
+        "wrangler": "4.155.0"
     }
 }

@@ -10,7 +10,7 @@
 # that is. Dependabot moves the FROM images (the syntax line above is moved by hand). Bun here is the version CI uses
 # (.github/workflows): move them together.
 
-FROM oven/bun:1.4.3@sha256:ec06c3b6cea04192ae6770c434f668ca41d343ad19fa6472216c7b48be39c598 AS build
+FROM oven/bun:1.4.4@sha256:1d22548f177f4ff38e0c15baa3c2c46c6c2060ba2d1bc573bb4720b407548f1d AS build
 WORKDIR /src
 # Manifests first, so dependency installs are cached until a package.json changes. Every workspace is listed
 # (scripts/repo.test.ts checks), or the frozen install would not match the lockfile.

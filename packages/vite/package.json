@@ -21,7 +21,7 @@
         "vite": ">=5"
     },
     "dependencies": {
-        "@babel/parser": "^8.0.7",
-        "magic-string": "^1.4.3"
+        "@babel/parser": "^8.0.8",
+        "magic-string": "^1.4.5"
     }
 }

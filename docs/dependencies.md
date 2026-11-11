@@ -4,9 +4,9 @@ Reviewed against the upstream registries on 21 October 2026. Application version
 
 | Area | Stable baseline |
 | --- | --- |
-| JavaScript runtime and tooling | Bun 1.4.3, Node 26.12.1, TypeScript 7.0.2, Biome 2.6.2, Vite 8.3.5, Vitest 5.0.5, Wrangler 4.151.3 |
+| JavaScript runtime and tooling | Bun 1.4.4, Node 26.12.1, TypeScript 7.0.2, Biome 2.6.6, Vite 8.3.5, Vitest 5.0.5, Wrangler 4.155.0 |
 | Web SDKs and boards | React 19.3.1, Angular 22.2.3, Happy DOM 21.0.4 |
-| React Native SDK and example | React Native 0.88.0, Expo 58.0.16, view-shot 6.1.1, SDWebImageWebPCoder 0.15.0 and libwebp 1.6.0; the example has its own npm lockfile |
+| React Native SDK and example | React Native 0.88.1, Expo 58.0.23, view-shot 6.1.1, SDWebImageWebPCoder 0.15.0 and libwebp 1.6.0; the example has its own npm lockfile |
 | Full server | Better Auth 1.7.12, pg 8.23.1, Nodemailer 10.1.7, AWS S3 client 3.1154.0, PGlite 0.5.10 |
 | .NET | SDK 10.0.402, workload set 10.0.402.1, MAUI Controls 10.0.110, Microsoft.Extensions 10.0.13, Aspire 13.6.2 |
 | .NET supporting libraries | SkiaSharp 4.153.1, Microsoft.NET.Test.Sdk 18.11.0, xUnit 2.9.3, Visual Studio adapter 4.0.1, JsonSchema.Net 9.4.1 |
@@ -14,7 +14,7 @@ Reviewed against the upstream registries on 21 October 2026. Application version
 | Android libraries | Coroutines 1.11.0, serialization 1.12.0, core-ktx 1.19.1, activity-compose 1.13.0, appcompat 1.8.0, Material 1.14.0 |
 | Flutter | Flutter 3.47.7 stable / Dart 3.13.5; archive 4.5.2, HTTP 1.6.0, image-compress 2.5.1, path-provider 2.1.6, share-plus 13.3.1 |
 | Swift | libwebp-Xcode 1.6.0; CI selects stable Xcode 27.1 (build 27A9275) explicitly |
-| Containers | Dockerfile frontend 1.28.0, Bun 1.4.3, Debian trixie-slim, PostgreSQL 18.6, SeaweedFS 4.48, Mailpit 1.31.6, Caddy 2.11.7, cloudflared 2026.10.2 |
+| Containers | Dockerfile frontend 1.28.0, Bun 1.4.4, Debian trixie-slim, PostgreSQL 18.6, SeaweedFS 4.48, Mailpit 1.31.6, Caddy 2.11.7, cloudflared 2026.10.2 |
 
 Npm versions were checked against the [npm registry](https://registry.npmjs.org/), .NET packages against [NuGet](https://api.nuget.org/v3/index.json), Android packages against [Google Maven](https://maven.google.com/) and [Maven Central](https://repo.maven.apache.org/maven2/), Dart packages against [pub.dev](https://pub.dev/), and React Native's iOS codec against [CocoaPods](https://cocoapods.org/pods/SDWebImageWebPCoder). Tool and image versions were checked against their maintainers' stable release metadata and Docker manifests. Container images and workflow actions keep immutable digests or commit pins.
 
