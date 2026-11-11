@@ -1,4 +1,4 @@
-import type { Annotation } from "@notato/schema";
+import type { Annotation, Reply } from "@notato/schema";
 import { agentView } from "./agent-view.ts";
 import { screenshotCrop, screenshotProblem } from "./screenshot.ts";
 
@@ -256,10 +256,18 @@ const threadLines = (a: Annotation) => {
             : []),
         ...shown.map(
             (r) =>
-                `  - ${inline(r.author.name ?? r.author.kind)}${r.aside ? " (aside)" : ""}: ${clip(r.body, 400)}`
+                `  - ${inline(r.author.name ?? r.author.kind)}${r.aside ? " (aside)" : ""}: ${clip(r.body, 400)}${imagesNote(r)}`
         ),
     ];
 };
+
+/** What a reply's images are, after its words: their names and asset ids, never their bytes. */
+const imagesNote = (r: Reply) =>
+    r.images?.length
+        ? ` [${r.images.length === 1 ? "image" : `${r.images.length} images`} attached: ${r.images
+              .map((i) => `${inline(i.name)} · ${i.w}×${i.h} · asset ${i.id}`)
+              .join("; ")}]`
+        : "";
 
 /** One line: for scanning a lot of them. */
 function compactLine(a: Annotation): string {

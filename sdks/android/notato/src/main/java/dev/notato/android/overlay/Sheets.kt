@@ -79,6 +79,17 @@ internal object SheetCopy {
     /** Under a long thread: how many replies the card does not show. */
     fun earlier(replies: Int): String? = (replies - THREAD_SHOWN).takeIf { it > 0 }?.let { "$it earlier on the board." }
 
+    /** Under a reply with images: they are only counted here, the board shows them. Null with none. */
+    fun imagesAttached(count: Int): String? = when {
+        count <= 0 -> null
+        count == 1 -> "1 image attached"
+        else -> "$count images attached"
+    }
+
+    /** Settings' switch that leaves out every finished note: the same words in every SDK. */
+    const val HIDE_DONE = "Hide done annotations"
+    const val HIDE_DONE_HINT = "Resolved, reverted and dismissed annotations, including ones finished later. The dashboard keeps them."
+
     fun settings(project: String, mode: NotatoMode) = "Project $project · ${mode.name.lowercase().replaceFirstChar { it.uppercase() }} mode"
 
     /** How long ago [iso] was, as the sheets say it: "just now", "5m ago", "2h ago", "3d ago". Null when it cannot be read. */

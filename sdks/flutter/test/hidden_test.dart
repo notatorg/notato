@@ -18,9 +18,9 @@ void main() {
       (i) => NoteRecord({...note(), 'id': 'note-$i', 'route': i.isEven ? '/one' : '/two', 'status': 'resolved'}),
     );
     runtime.debugSetRecords(notes);
-    runtime.hideAnnotation(notes[0].id);
-    expect(runtime.hiddenCount, 1);
-    runtime.hideCompleted();
+    for (final r in notes) {
+      runtime.hideAnnotation(r.id);
+    }
     expect(runtime.hiddenCount, 2001);
     expect(runtime.notes.length, 2001);
     expect(runtime.notesOn('/one'), isEmpty);
@@ -43,6 +43,55 @@ void main() {
     reload.restoreHidden();
     expect(reload.visibleCount, 2001);
     expect(reload.hiddenCount, 0);
+    runtime.dispose();
+    reload.dispose();
+  });
+
+  test('hide done hides every finished note, including ones finished later, and is remembered', () async {
+    final storage = MemoryStorage();
+    final config = NotatoConfig(project: 'shop', enabled: false);
+    final runtime = NotatoRuntime();
+    await runtime.configure(config, storage: (_) async => storage);
+    NoteRecord at(String id, String status) => NoteRecord({...note(), 'id': id, 'route': '/one', 'status': status});
+    final notes = [at('a', 'resolved'), at('b', 'reverted'), at('c', 'dismissed'), at('d', 'open')];
+    runtime.debugSetRecords(notes);
+    expect(runtime.hideDone, isFalse);
+    expect(runtime.visibleCount, 4);
+
+    runtime.setHideDone(true);
+    expect([for (final n in runtime.notesOn('/one')) n.record.id], ['d']);
+    expect(runtime.pinsOn('/one').single.number, 4);
+    expect(runtime.visibleCount, 1);
+    expect(runtime.hiddenCount, 0, reason: 'one at a time hiding is kept apart');
+    expect(runtime.notes.length, 4, reason: 'the feedback itself is kept');
+
+    // Finished after the switch went on: hidden too.
+    final finishedLater = [...notes.take(3), at('d', 'resolved')];
+    runtime.debugSetRecords(finishedLater);
+    expect(runtime.notesOn('/one'), isEmpty);
+    expect(runtime.visibleCount, 0);
+
+    // Reopened: back by itself.
+    final reopened = [at('a', 'open'), ...finishedLater.skip(1)];
+    runtime.debugSetRecords(reopened);
+    expect([for (final n in runtime.notesOn('/one')) n.record.id], ['a']);
+
+    // Remembered across a restart.
+    expect(storage.loadSettings()['hideDone'], isTrue);
+    final reload = NotatoRuntime();
+    await reload.configure(config, storage: (_) async => storage);
+    reload.debugSetRecords(reopened);
+    expect(reload.hideDone, isTrue);
+    expect(reload.visibleCount, 1);
+
+    // Off: every note again, apart from one hidden on its own.
+    reload.hideAnnotation('b');
+    reload.setHideDone(false);
+    expect(reload.visibleCount, 3);
+    expect([for (final n in reload.pinsOn('/one')) n.record.id], unorderedEquals(['a', 'c', 'd']));
+    reload.restoreHidden();
+    expect(reload.visibleCount, 4);
+    expect(storage.loadSettings()['hideDone'], isFalse);
     runtime.dispose();
     reload.dispose();
   });

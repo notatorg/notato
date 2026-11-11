@@ -26,6 +26,8 @@ struct RuntimeState {
     var screenshots: Bool? { get { bool("screenshots") } set { setBool("screenshots", newValue) } }
     var pinsVisible: Bool? { get { bool("pins") } set { setBool("pins", newValue) } }
     var hiddenAnnotations: String? { get { get("hidden.annotations") } set { set("hidden.annotations", newValue) } }
+    /// Leave every finished note out of the pins and lists, including ones finished later; unset is off.
+    var hideDone: Bool? { get { bool("hide.done") } set { setBool("hide.done", newValue) } }
     /// The name on this person's notes; blank is none.
     var author: String? {
         get { get("author") }
@@ -56,6 +58,6 @@ struct RuntimeState {
     var toolbarCollapsed: Bool? { get { bool("toolbar.collapsed") } set { setBool("toolbar.collapsed", newValue) } }
 
     mutating func reset() {
-        for key in ["enabled", "toolbar", "screenshots", "pins", "author", "server", "toolbar.position", "toolbar.collapsed", "hidden.annotations"] { set(key, nil) }
+        for key in ["enabled", "toolbar", "screenshots", "pins", "author", "server", "toolbar.position", "toolbar.collapsed", "hidden.annotations", "hide.done"] { set(key, nil) }
     }
 }

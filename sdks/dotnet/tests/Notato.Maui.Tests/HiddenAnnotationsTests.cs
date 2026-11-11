@@ -21,9 +21,11 @@ public class HiddenAnnotationsTests
         }
 
         controller.HideAnnotation(annotations[0].Id);
-        Assert.Equal(1, controller.HiddenCount);
-        controller.HideCompleted();
-        Assert.Equal(2001, controller.HiddenCount);
+        controller.HideAnnotation(annotations[1].Id);
+        Assert.Equal(2, controller.HiddenCount);
+        Assert.Equal(1999, controller.VisibleCount);
+        controller.SetHideDone(true);
+        Assert.Equal(2, controller.HiddenCount);
         Assert.Equal(2001, controller.Annotations.Count);
         Assert.Empty(controller.Records.On("/one"));
         Assert.Empty(controller.Records.PinnedOn("/two"));
@@ -31,11 +33,79 @@ public class HiddenAnnotationsTests
         controller.Records.Add(new NoteRecord(annotations[1] with { Status = "awaiting_response" }));
         Assert.Single(controller.Records.On("/one"));
         Assert.Single(controller.Records.On("/two"));
-        controller.HideAnnotation(annotations[0].Id);
-        Assert.Equal(2, controller.VisibleCount);
+        controller.SetHideDone(false);
+        controller.HideAnnotation(annotations[2].Id);
+        Assert.Equal(2000, controller.VisibleCount);
         controller.RestoreHidden();
         Assert.Equal(2001, controller.VisibleCount);
         Assert.Equal(0, controller.HiddenCount);
+    }
+
+    [Fact]
+    public void Hide_done_leaves_out_notes_finished_later_until_reopened_or_turned_off()
+    {
+        NotatoController controller = Fixtures.Controller();
+        Annotation open = Fixtures.Annotation() with { Id = "open", Route = "/one", Status = Statuses.Open };
+        Annotation resolved = Fixtures.Annotation() with { Id = "resolved", Route = "/one", Status = Statuses.Resolved };
+        Annotation reverted = Fixtures.Annotation() with { Id = "reverted", Route = "/one", Status = Statuses.Reverted };
+        Annotation dismissed = Fixtures.Annotation() with { Id = "dismissed", Route = "/two", Status = Statuses.Dismissed };
+        foreach (Annotation a in new[] { open, resolved, reverted, dismissed })
+        {
+            controller.Records.Add(new NoteRecord(a));
+        }
+
+        Assert.False(controller.HideDone);
+        Assert.Equal(4, controller.VisibleCount);
+
+        controller.SetHideDone(true);
+        Assert.True(controller.HideDone);
+        Assert.Equal(["open"], controller.Records.On("/one").Select(x => x.Record.Annotation.Id));
+        Assert.Equal(["open"], controller.Records.PinnedOn("/one").Select(x => x.Record.Annotation.Id));
+        Assert.Empty(controller.Records.On("/two"));
+        Assert.Equal(1, controller.VisibleCount);
+        // Nothing was hidden one at a time, and the notes themselves are all still there.
+        Assert.Equal(0, controller.HiddenCount);
+        Assert.Equal(4, controller.Annotations.Count);
+
+        // Finished after the switch went on: left out too.
+        controller.Records.Add(new NoteRecord(open with { Status = Statuses.Resolved }));
+        Assert.Empty(controller.Records.On("/one"));
+        Assert.Equal(0, controller.VisibleCount);
+
+        // Reopened: back by itself, keeping its number.
+        controller.Records.Add(new NoteRecord(resolved with { Status = Statuses.Open }));
+        Assert.Equal([(2, "resolved")], controller.Records.On("/one").Select(x => (x.Number, x.Record.Annotation.Id)));
+        controller.Records.Add(new NoteRecord(dismissed with { Status = "awaiting_response" }));
+        Assert.Single(controller.Records.On("/two"));
+
+        controller.SetHideDone(false);
+        Assert.False(controller.HideDone);
+        Assert.Equal(3, controller.Records.On("/one").Count);
+        Assert.Equal(4, controller.VisibleCount);
+    }
+
+    [Fact]
+    public void Hide_done_is_remembered_on_the_device_until_reset()
+    {
+        RuntimeState state = new(remember: false);
+        Annotation resolved = Fixtures.Annotation() with { Id = "resolved", Route = "/one", Status = Statuses.Resolved };
+        NotatoController first = Fixtures.Controller(state: state);
+        first.SetHideDone(true);
+        Assert.True(state.HideDone);
+
+        NotatoController restarted = Fixtures.Controller(state: state);
+        restarted.Records.Add(new NoteRecord(resolved));
+        Assert.True(restarted.HideDone);
+        Assert.Empty(restarted.Records.On("/one"));
+        Assert.Equal(0, restarted.VisibleCount);
+
+        restarted.SetHideDone(false);
+        Assert.Null(state.HideDone);
+        Assert.False(Fixtures.Controller(state: state).HideDone);
+
+        state.HideDone = true;
+        state.Reset();
+        Assert.Null(state.HideDone);
     }
 
     [Fact]

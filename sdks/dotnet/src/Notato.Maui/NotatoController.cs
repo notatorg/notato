@@ -56,7 +56,8 @@ internal sealed partial class NotatoController : INotato, IDisposable
     /// <param name="monitor">The options.</param>
     /// <param name="logger">Where problems are said.</param>
     /// <param name="handler">What carries requests to the server: the platform's own unless given (tests give one).</param>
-    internal NotatoController(IOptionsMonitor<NotatoOptions> monitor, ILogger<NotatoController> logger, HttpMessageHandler? handler)
+    /// <param name="state">What was chosen on the device: read from the platform's preferences unless given (tests give one, to restart with it).</param>
+    internal NotatoController(IOptionsMonitor<NotatoOptions> monitor, ILogger<NotatoController> logger, HttpMessageHandler? handler, RuntimeState? state = null)
     {
         _monitor = monitor;
         _logger = logger;
@@ -64,7 +65,8 @@ internal sealed partial class NotatoController : INotato, IDisposable
         // Each request sets its own limits (see NotatoClient): the event stream has none at all.
         _http.Timeout = Timeout.InfiniteTimeSpan;
         NotatoOptions options = monitor.CurrentValue;
-        _state = new RuntimeState(options.RememberRuntimeState);
+        _state = state ?? new RuntimeState(options.RememberRuntimeState);
+        _records.SetHideDone(HideDone);
         _fold = new ToolbarFold(_state, () => Options.ToolbarCollapsed);
         _inspector = new ElementInspector(new SourceLocator(options.ProjectPath));
         _invalid = Validate(options);

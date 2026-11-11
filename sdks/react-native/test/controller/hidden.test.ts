@@ -1,5 +1,7 @@
-import { sampleAnnotation } from "@notato/schema";
+import { type Annotation, sampleAnnotation } from "@notato/schema";
 import { describe, expect, it, vi } from "vitest";
+import { PLATFORM } from "../../src/annotation.ts";
+import type { NotatoController } from "../../src/controller.ts";
 import { HiddenAnnotations } from "../../src/hidden.ts";
 import { memoryStorage } from "../../src/storage.ts";
 import { fakeServer, start } from "./harness.ts";
@@ -81,6 +83,109 @@ describe("hiding annotations on this device", () => {
         notato.restoreHidden();
         expect(notato.visibleCount).toBe(2002);
         expect(notato.hiddenCount).toBe(0);
+        notato.disable();
+    });
+
+    it("hides every done note, those finished later too, until it is switched off, and remembers it", async () => {
+        const server = fakeServer();
+        const storage = memoryStorage();
+        const note = (id: string, status: Annotation["status"]) => ({
+            ...sampleAnnotation,
+            id,
+            projectId: "shop",
+            route: "/shop",
+            status,
+            environment: { ...sampleAnnotation.environment, platform: PLATFORM },
+        });
+        for (const a of [
+            note("resolved", "resolved"),
+            note("reverted", "reverted"),
+            note("dismissed", "dismissed"),
+            note("open", "open"),
+            note("later", "awaiting_response"),
+        ])
+            server.stored.set(a.id, a);
+        const config = {
+            project: "shop",
+            server: "http://stub.test",
+            token: "test-credential",
+            allowTokenInRelease: true,
+            rememberRuntimeState: true,
+        };
+        const change = async (a: Annotation) => {
+            server.stored.set(a.id, a);
+            await server.event("updated", { annotation: a });
+        };
+        const shown = (n: NotatoController) =>
+            n.notesOn("/shop").map((x) => x.record.annotation.id);
+        let { notato } = start(config, server, storage);
+        await server.hello();
+        expect(notato.getState().hideDone).toBe(false);
+        expect(shown(notato)).toHaveLength(5);
+
+        notato.setHideDone(true);
+        expect(notato.getState().hideDone).toBe(true);
+        expect(shown(notato)).toEqual(["later", "open"]);
+        expect(notato.pinsOn("/shop").map((x) => x.record.annotation.id)).toEqual([
+            "later",
+            "open",
+        ]);
+        expect(notato.visibleCount).toBe(2);
+        expect(notato.completedCount).toBe(0);
+        // The switch hides nothing one at a time, and changes nothing on the server.
+        expect(notato.hiddenCount).toBe(0);
+        expect(server.transport.setStatus).not.toHaveBeenCalled();
+
+        // Finished after the switch went on: hidden too.
+        await change(note("later", "resolved"));
+        expect(shown(notato)).toEqual(["open"]);
+        expect(notato.visibleCount).toBe(1);
+
+        // Reopened: back by itself, with its pin number.
+        await change(note("resolved", "open"));
+        expect(notato.notesOn("/shop").map((x) => [x.record.annotation.id, x.number])).toEqual([
+            ["open", 3],
+            ["resolved", 4],
+        ]);
+
+        // Remembered across a restart.
+        expect(storage.loadSettings()).toMatchObject({ hideDone: true });
+        notato.disable();
+        ({ notato } = start(config, server, storage));
+        notato.enable();
+        await server.hello();
+        expect(notato.getState().hideDone).toBe(true);
+        expect(shown(notato)).toEqual(["open", "resolved"]);
+
+        // Off: every note shows again.
+        notato.setHideDone(false);
+        expect(notato.getState().hideDone).toBe(false);
+        expect(shown(notato)).toHaveLength(5);
+        expect(notato.visibleCount).toBe(5);
+        expect(storage.loadSettings()).not.toHaveProperty("hideDone");
+        notato.disable();
+    });
+
+    it("keeps notes hidden one at a time when the switch goes off", async () => {
+        const server = fakeServer();
+        for (const id of ["a", "b"])
+            server.stored.set(id, {
+                ...sampleAnnotation,
+                id,
+                projectId: "shop",
+                route: "/shop",
+                status: "resolved",
+            });
+        const { notato } = start({ project: "shop", server: "http://stub.test" }, server);
+        await server.hello();
+        notato.hideAnnotation("a");
+        notato.setHideDone(true);
+        expect(notato.notesOn("/shop")).toEqual([]);
+        notato.setHideDone(false);
+        expect(notato.notesOn("/shop").map((x) => x.record.annotation.id)).toEqual(["b"]);
+        expect(notato.hiddenCount).toBe(1);
+        notato.restoreHidden();
+        expect(notato.notesOn("/shop")).toHaveLength(2);
         notato.disable();
     });
 

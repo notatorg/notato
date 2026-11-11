@@ -1,6 +1,7 @@
 export * from "./agent-view.ts";
 export * from "./agents.ts";
 export * from "./annotation-state.ts";
+export * from "./attached-image.ts";
 export * from "./bundle.ts";
 export * from "./markdown.ts";
 export * from "./memory-store.ts";

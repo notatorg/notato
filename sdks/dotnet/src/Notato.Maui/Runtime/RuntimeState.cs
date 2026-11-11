@@ -72,6 +72,8 @@ internal sealed class RuntimeState(bool remember)
     public bool? Screenshots { get => Bool(Get("screenshots")); set => Set("screenshots", Bool(value)); }
     public bool? PinsVisible { get => Bool(Get("pins")); set => Set("pins", Bool(value)); }
     public string? HiddenAnnotations { get => Get("hidden.annotations"); set => Set("hidden.annotations", value); }
+    /// <summary>Whether finished notes (resolved, reverted, dismissed) are left out of the pins and lists, now and as they finish.</summary>
+    public bool? HideDone { get => Bool(Get("hide.done")); set => Set("hide.done", Bool(value)); }
     public string? Author { get => Get("author"); set => Set("author", string.IsNullOrWhiteSpace(value) ? null : value.Trim()); }
     public string? Server { get => Get("server"); set => Set("server", string.IsNullOrWhiteSpace(value) ? null : value.Trim().TrimEnd('/')); }
 
@@ -101,7 +103,7 @@ internal sealed class RuntimeState(bool remember)
 
     public void Reset()
     {
-        foreach (string key in new[] { "enabled", "toolbar", "screenshots", "pins", "author", "server", "toolbar.position", "toolbar.collapsed", "hidden.annotations" })
+        foreach (string key in new[] { "enabled", "toolbar", "screenshots", "pins", "author", "server", "toolbar.position", "toolbar.collapsed", "hidden.annotations", "hide.done" })
         {
             Set(key, null);
         }

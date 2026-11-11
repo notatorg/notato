@@ -115,4 +115,11 @@ class SheetsTest {
         assertFalse(buttonsFit(listOf(100, 160), room = 300, gap = 10))
         assertTrue(buttonsFit(listOf(400), room = 300, gap = 10))
     }
+
+    @Test
+    fun aReplyWithImagesSaysHowMany() {
+        assertNull(SheetCopy.imagesAttached(0))
+        assertEquals("1 image attached", SheetCopy.imagesAttached(1))
+        assertEquals("3 images attached", SheetCopy.imagesAttached(3))
+    }
 }

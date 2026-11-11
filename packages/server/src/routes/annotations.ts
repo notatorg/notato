@@ -1,8 +1,9 @@
-import { DETAILS, parseDetail, renderAnnotation, renderAnnotations } from "@notato/core";
+import { agentView, DETAILS, parseDetail, renderAnnotation, renderAnnotations } from "@notato/core";
 import {
     Annotation,
     Author,
     annotationAssets,
+    MAX_ATTACHED_IMAGES,
     SafeId,
     Severity,
     Status,
@@ -10,7 +11,7 @@ import {
 } from "@notato/schema";
 import { z } from "zod";
 import { Authenticator, canAccessProject, type Principal, samePrincipal } from "../auth.ts";
-import { type LocalBackend, RequestError, TEXT_MAX } from "../backend.ts";
+import { type LocalBackend, type ReplyImageUpload, RequestError, TEXT_MAX } from "../backend.ts";
 import { captureReceipt, captureScope } from "../capture-receipt.ts";
 import { canReadSession, ReviewSessions } from "../collaboration.ts";
 import { filterFromQuery } from "../query.ts";
@@ -55,7 +56,8 @@ const PatchBody = z
     .strict();
 
 const ReplyBody = z.object({
-    body: Text,
+    /** May be empty when images come with it (a multipart reply). */
+    body: z.string().max(TEXT_MAX),
     author: Author.optional(),
     /** A remark for the people on the thread, kept from the agent. */
     aside: z.boolean().optional(),
@@ -130,6 +132,47 @@ function detailFrom(query: URLSearchParams) {
     const detail = parseDetail(query.get("detail") ?? "standard");
     if (!detail) throw new RequestError(`detail must be one of ${DETAILS.join(", ")}`);
     return detail;
+}
+
+/**
+ * A reply as JSON, or, with images, multipart: the JSON in a `reply` field and each image as a file named `image`.
+ */
+async function readReply(
+    req: Request,
+    max: number
+): Promise<{ body: z.infer<typeof ReplyBody>; images: ReplyImageUpload[] }> {
+    if (!(req.headers.get("content-type") ?? "").startsWith("multipart/form-data"))
+        return { body: await readJson(req, ReplyBody), images: [] };
+    if (Number(req.headers.get("content-length") ?? 0) > max)
+        throw new RequestError(`upload exceeds ${max} bytes`, 413);
+    const form = await req.formData();
+    const raw = form.get("reply");
+    if (typeof raw !== "string") throw new RequestError('missing "reply" field');
+    let parsed: unknown;
+    try {
+        parsed = JSON.parse(raw);
+    } catch {
+        throw new RequestError('"reply" is not valid JSON');
+    }
+    const body = ReplyBody.safeParse(parsed);
+    if (!body.success) {
+        const issue = body.error.issues[0];
+        throw new RequestError(
+            `invalid reply: ${issue?.path.join(".") || "(root)"}: ${issue?.message}`
+        );
+    }
+    const images: ReplyImageUpload[] = [];
+    let total = raw.length;
+    for (const entry of form.getAll("image") as unknown as Array<string | File>) {
+        if (typeof entry === "string") continue;
+        // Chunked uploads carry no Content-Length, so the limit is enforced on what was actually received too.
+        total += entry.size;
+        if (total > max) throw new RequestError(`upload exceeds ${max} bytes`, 413);
+        if (images.length >= MAX_ATTACHED_IMAGES)
+            throw new RequestError(`a reply can carry at most ${MAX_ATTACHED_IMAGES} images`);
+        images.push({ name: entry.name, bytes: new Uint8Array(await entry.arrayBuffer()) });
+    }
+    return { body: body.data, images };
 }
 
 /**
@@ -471,9 +514,12 @@ export const annotationRoutes: Routes = async (route, app) => {
     if (replies && method === "POST") {
         const id = replies[0] ?? "";
         const existing = await annotation(id);
-        const body = await readJson(req, ReplyBody);
+        const { body, images } = await readReply(req, app.limits.upload);
         const updated = existing
-            ? await backend.reply(id, body.body, author(body.author), { aside: body.aside })
+            ? await backend.reply(id, body.body, author(body.author), {
+                  aside: body.aside,
+                  images,
+              })
             : null;
         return updated ? json(updated, 201) : notFound();
     }
@@ -552,7 +598,12 @@ async function screenshot(
 ): Promise<Response> {
     if (principal.developmentContextId || isAgentToken(principal)) {
         const items = await app.backend.list(forReader(principal, { feedbackScope }));
-        if (!items.some(({ annotation }) => annotationAssets(annotation).some((r) => r?.id === id)))
+        // What the agent is shown: an aside's images are as private as its words.
+        if (
+            !items.some(({ annotation }) =>
+                annotationAssets(agentView(annotation)).some((r) => r?.id === id)
+            )
+        )
             return notFound();
     }
     const owners = await app.backend.projectsWithAsset(id, forReader(principal, { feedbackScope }));

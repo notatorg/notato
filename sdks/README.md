@@ -47,7 +47,8 @@ The native SDKs (`swift`, `android`, `dotnet`, `react-native`, `flutter`) have o
 ## Hiding completed annotations
 
 Every SDK can hide a completed note locally with **More options → Hide from this app**.
-**Settings → Hide completed annotations** hides completed notes across all screens,
-and **Restore hidden annotations** brings them back. Feedback remains in the
+**Settings → Hide done annotations** is a switch that hides every finished note on
+all screens, including notes finished later, until it is turned off. **Restore
+hidden annotations** brings back notes hidden one at a time. Feedback remains in the
 dashboard; reopened tasks and agent questions remain visible. Web
 preferences are kept in the browser, and native preferences on the device.
