@@ -128,6 +128,15 @@ button, input, textarea { font: inherit; }
 .badge.people { color: var(--p-mute); box-shadow: inset 0 0 0 1px var(--p-line); }
 .say-row { display: flex; gap: 6px; align-items: center; }
 .say-row .say { flex: 1; min-width: 0; }
+.reply-attach { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px; padding: 0; }
+.reply-files { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
+.reply-file {
+  display: inline-flex; align-items: center; gap: 4px; max-width: 100%; padding: 2px 4px 2px 8px; border-radius: 999px;
+  background: var(--p-field, rgba(127,127,127,.12)); font-size: 11.5px;
+}
+.reply-file-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 160px; }
+.reply-file-remove { border: 0; background: transparent; color: inherit; cursor: pointer; padding: 0 4px; font-size: 13px; line-height: 1; }
+.bubble .reply-images { display: block; margin-top: 2px; font-size: 11.5px; opacity: .7; }
 .card .chip { padding: 3px 9px; font-size: 12px; }
 .say {
   display: block; width: 100%; padding: 7px 11px; border: 1px solid var(--p-line); border-radius: 9px;
@@ -340,6 +349,7 @@ button, input, textarea { font: inherit; }
   text-align: left; text-decoration: underline; cursor: pointer;
 }
 .slink:hover { color: var(--b-fg); }
+.slink[hidden] { display: none; }
 .scode {
   display: block; padding: 6px 8px; border-radius: 8px; background: var(--b-field); font-family: var(--fm); color: var(--b-acc);
   font-size: 12px; overflow-x: auto; white-space: nowrap;

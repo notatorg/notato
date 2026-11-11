@@ -135,6 +135,21 @@ public data class Reply(
      * note.
      */
     val peopleOnly: Boolean? = null,
+    /** Up to three images attached to the reply, shaped like a note's design references. Only their count is shown here. */
+    val images: List<ReplyImage>? = null,
+)
+
+/** An image attached to a reply, as the server keeps it: the same shape as a note's design references. */
+@Serializable
+public data class ReplyImage(
+    val id: String,
+    /** `image/png` or `image/webp`. */
+    val mime: String,
+    val w: Int,
+    val h: Int,
+    /** Where the server keeps it, once it has it. */
+    val path: String? = null,
+    val name: String,
 )
 
 /** The window's size in dp. */

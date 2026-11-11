@@ -67,6 +67,19 @@ abstract final class PeopleOnlyCopy {
   static const off = 'Shared this with the agent.';
 }
 
+/// The images attached to a reply (`images`, at most 3, each shaped as a note's `references` entry), or none. A reply
+/// stays the map the server sent, so the field is kept as it is when the note is stored or sent on.
+List<Map<String, Object?>> replyImages(Map<String, Object?> reply) => [
+  for (final image in (reply['images'] as List? ?? const []))
+    if (image is Map) image.cast<String, Object?>(),
+];
+
+/// "1 image attached" or "N images attached" under a reply that has images; nothing for one without.
+String? imagesAttachedLabel(Map<String, Object?> reply) {
+  final n = replyImages(reply).length;
+  return n == 0 ? null : (n == 1 ? '1 image attached' : '$n images attached');
+}
+
 /// The thread's record of People only being turned on or off, as the server writes it.
 Map<String, Object?> peopleOnlyChange(bool on, Map<String, Object?> author, [DateTime? now]) {
   final at = now ?? DateTime.now();

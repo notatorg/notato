@@ -163,6 +163,20 @@ public struct Reply: Codable, Sendable, Equatable, Identifiable {
     public var aside: Bool?
     /// Only on the automatic entry recording People only turned on (`true`) or off (`false`).
     public var peopleOnly: Bool?
+    /// Images attached to the reply, at most 3. Shown here only as a count.
+    public var images: [ImageAttachment]?
+}
+
+/// An image attached by a person, shaped like an annotation's `references` entries: an `AssetRef` with a file name.
+public struct ImageAttachment: Codable, Sendable, Equatable {
+    public var id: String
+    /// `image/png` or `image/webp`.
+    public var mime: String
+    public var w: Int
+    public var h: Int
+    /// Where it is in a bundle zip; nil elsewhere.
+    public var path: String?
+    public var name: String
 }
 
 extension Reply {

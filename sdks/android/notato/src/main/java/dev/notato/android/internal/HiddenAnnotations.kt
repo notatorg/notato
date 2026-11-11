@@ -16,6 +16,9 @@ internal class HiddenAnnotations {
     var ids: Set<String> = emptySet()
         private set
 
+    /** Every finished note is left out, including ones finished later: the Settings switch, kept apart from [ids]. */
+    var hideDone: Boolean = false
+
     fun select(parts: List<String?>, saved: String?): Boolean {
         if (signature == parts && encoded == saved) return false
         signature = parts
@@ -27,7 +30,7 @@ internal class HiddenAnnotations {
         return true
     }
 
-    fun contains(a: Annotation): Boolean = isCompleted(a.status) && a.id in ids
+    fun contains(a: Annotation): Boolean = isCompleted(a.status) && (hideDone || a.id in ids)
 
     fun hide(annotations: Iterable<Annotation>): Boolean {
         val next = ids.toMutableSet()

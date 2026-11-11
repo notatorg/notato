@@ -170,10 +170,14 @@ export interface Store {
     getCaptureReceipt?(id: string): Promise<CaptureReceipt | null>;
     getAnnotation(id: string): Promise<StoredAnnotation | null>;
     listAnnotations(filter?: AnnotationFilter): Promise<StoredAnnotation[]>;
-    /** Applies `mutate` to the stored annotation atomically. Returns null when the id is unknown. */
+    /**
+     * Applies `mutate` to the stored annotation atomically. Returns null when the id is unknown. `addedAssetBytes` is the
+     * size of images the change brings (a reply's), added to what the note is charged, like `insertAnnotation`'s.
+     */
     updateAnnotation(
         id: string,
-        mutate: (current: Annotation) => Annotation
+        mutate: (current: Annotation) => Annotation,
+        addedAssetBytes?: number
     ): Promise<StoredAnnotation | null>;
     deleteAnnotation(id: string): Promise<boolean>;
     /** Records that an agent was handed each note's latest word (the reply with that id). Not part of the note. */

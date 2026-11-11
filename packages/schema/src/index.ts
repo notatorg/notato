@@ -103,6 +103,12 @@ export const ElementIdentity = z.object({
     platformId: z.string().optional(),
 });
 
+/** An image a person attached on purpose (not a screenshot Notato took): a design reference, or one sent with a reply. */
+export const AttachedImage = AssetRef.extend({ name: z.string().min(1).max(120) });
+
+/** The most images one note's references, or one reply, may carry. */
+export const MAX_ATTACHED_IMAGES = 3;
+
 export const AgentStep = z.object({
     action: z.string(),
     target: z.string().optional(),
@@ -129,6 +135,8 @@ export const Reply = z.object({
     peopleOnly: z.boolean().optional(),
     /** Automatic audit entry for an explicit feedback visibility change. */
     visibility: z.enum(["personal", "shared"]).optional(),
+    /** Images sent with the reply (a person's), for the agent and the people on the thread to look at. */
+    images: z.array(AttachedImage).min(1).max(MAX_ATTACHED_IMAGES).optional(),
 });
 
 /**
@@ -272,10 +280,7 @@ export const Annotation = z.object({
 
     // evidence
     /** Explicitly attached design references; independent of automatic screenshot capture. */
-    references: z
-        .array(AssetRef.extend({ name: z.string().min(1).max(120) }))
-        .max(3)
-        .optional(),
+    references: z.array(AttachedImage).max(MAX_ATTACHED_IMAGES).optional(),
     /** `full` has the target outlined. Absent when screenshots are turned off (see `notato config`). */
     screenshots: z
         .object({ full: AssetRef, crop: AssetRef.optional(), thumbnail: AssetRef.optional() })
@@ -336,6 +341,7 @@ export type Rect = z.infer<typeof Rect>;
 export type AssetRef = z.infer<typeof AssetRef>;
 export type ElementIdentity = z.infer<typeof ElementIdentity>;
 export type AgentStep = z.infer<typeof AgentStep>;
+export type AttachedImage = z.infer<typeof AttachedImage>;
 export type Reply = z.infer<typeof Reply>;
 export type Environment = z.infer<typeof Environment>;
 export type Target = z.infer<typeof Target>;
@@ -343,11 +349,17 @@ export type Annotation = z.infer<typeof Annotation>;
 export type ExternalLink = z.infer<typeof ExternalLink>;
 export type Bundle = z.infer<typeof Bundle>;
 
-/** Every image belonging to a note, for transport, authorisation, quotas and garbage collection. */
-export function annotationAssets(a: Pick<Annotation, "screenshots" | "references">): AssetRef[] {
+/**
+ * Every image belonging to a note, for transport, authorisation, quotas and garbage collection: its screenshots, its
+ * design references and the images sent with its replies.
+ */
+export function annotationAssets(
+    a: Pick<Annotation, "screenshots" | "references"> & { thread?: readonly Reply[] }
+): AssetRef[] {
     return [
         ...Object.values(a.screenshots ?? {}).filter((r): r is AssetRef => !!r),
         ...(a.references ?? []),
+        ...(a.thread ?? []).flatMap((r) => r.images ?? []),
     ];
 }
 

@@ -71,7 +71,7 @@ internal fun Ui.toggleRow(title: String, hint: String, checked: Boolean = false)
  * the words flips the switch.
  */
 @SuppressLint("UseSwitchCompatOrMaterialCode")
-internal fun Ui.switchRow(icon: Icon, title: String, sub: String, checked: Boolean): Pair<LinearLayout, Switch> {
+internal fun Ui.switchRow(icon: Icon, title: String, sub: String, checked: Boolean, subLines: Int = 2): Pair<LinearLayout, Switch> {
     val switch = own(Switch(context)).apply {
         isChecked = checked
         contentDescription = title
@@ -83,7 +83,7 @@ internal fun Ui.switchRow(icon: Icon, title: String, sub: String, checked: Boole
         minimumHeight = dp(58)
         setPadding(dp(4), dp(7), dp(4), dp(7))
         addView(tile(icon))
-        addView(column(2, text(title, 15.5f, weight = 600), text(sub, 12.5f, cardMuted, maxLines = 2)), LinearLayout.LayoutParams(0, -2, 1f).apply { marginStart = dp(14) })
+        addView(column(2, text(title, 15.5f, weight = 600), text(sub, 12.5f, cardMuted, maxLines = subLines)), LinearLayout.LayoutParams(0, -2, 1f).apply { marginStart = dp(14) })
         addView(switch, LinearLayout.LayoutParams(-2, -2).apply { marginStart = dp(10) })
         setOnClickListener { if (switch.isEnabled) switch.toggle() }
     }

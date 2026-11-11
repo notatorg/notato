@@ -243,6 +243,11 @@ internal sealed partial class NotatoOverlay
         ShowSheet(Ui.Sheet(body, CloseSheet), dim: true, fromBar: true);
     }
 
+    /// <summary>Settings' switch for leaving out every finished note, in the words every SDK uses.</summary>
+    internal const string HideDoneLabel = "Hide done annotations";
+
+    internal const string HideDoneHint = "Resolved, reverted and dismissed annotations, including ones finished later. The dashboard keeps them.";
+
     private void OpenSettings()
     {
         Entry name = Fields.Text(_controller.AuthorName, "Your name, on your notes");
@@ -251,6 +256,10 @@ internal sealed partial class NotatoOverlay
         (Grid shotsRow, Switch screenshots) = Ui.SwitchTileRow(Ui.IconTile(Ui.IconCamera), "Screenshots",
             _controller.ServerScreenshotsAllowed || _controller.Server is null ? "Each note takes one of the screen" : "Off until the server says it takes them",
             _controller.ScreenshotsWanted, "NotatoScreenshots");
+        (Grid hideDoneRow, Switch hideDone) = Ui.SwitchTileRow(Ui.IconTile(Ui.IconEyeOff), HideDoneLabel, HideDoneHint, _controller.HideDone, "NotatoHideDone");
+        // A view preference, as on every SDK: it takes effect as it is flipped, Save or not.
+        hideDone.Toggled += (_, e) => _controller.SetHideDone(e.Value);
+        int hiddenCount = _controller.HiddenCount;
 
         Label connection = Ui.Text(_controller.DescribeConnection(), 12, Ui.CardMuted);
         connection.Margin = new Thickness(4, 0);
@@ -263,11 +272,17 @@ internal sealed partial class NotatoOverlay
                 Ui.Plain(new VerticalStackLayout { Spacing = 6, Children = { Ui.FieldLabel("Your name"), Fields.Box(name) } }),
                 Ui.Plain(new VerticalStackLayout { Spacing = 6, Children = { Ui.FieldLabel("Server"), Fields.Box(server), connection } }),
                 shotsRow,
-                Ui.SheetButton($"Hide completed annotations ({_controller.CompletedCount})", () => { CloseSheet(); _controller.HideCompleted(); }),
-                Ui.Text("Across this app, on this device. Kept in the dashboard.", 12.5, Ui.CardMuted),
-                Ui.SheetButton($"Restore hidden annotations ({_controller.HiddenCount})", () => { CloseSheet(); _controller.RestoreHidden(); }),
+                hideDoneRow,
             },
         });
+        if (hiddenCount > 0)
+        {
+            // Notes hidden one at a time from their cards.
+            Border restore = Ui.SheetButton($"Restore hidden annotations ({hiddenCount.ToString(CultureInfo.InvariantCulture)})", () => { CloseSheet(); _controller.RestoreHidden(); });
+            restore.AutomationId = "NotatoRestoreHidden";
+            fields.Children.Add(restore);
+        }
+
         VerticalStackLayout body = Ui.Plain(new VerticalStackLayout
         {
             Spacing = 14,

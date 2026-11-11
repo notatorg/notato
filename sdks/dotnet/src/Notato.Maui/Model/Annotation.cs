@@ -159,6 +159,21 @@ public sealed record Reply
     /// the note.
     /// </summary>
     public bool? PeopleOnly { get; init; }
+    /// <summary>Pictures sent with the reply (at most 3), shaped as a note's reference images. Absent when there are none.</summary>
+    public IReadOnlyList<ReferenceImage>? Images { get; init; }
+}
+
+/// <summary>A picture someone attached: an image the server keeps, with the name it was given.</summary>
+public sealed record ReferenceImage
+{
+    public required string Id { get; init; }
+    /// <summary><c>image/png</c> or <c>image/webp</c>.</summary>
+    public required string Mime { get; init; }
+    public required int W { get; init; }
+    public required int H { get; init; }
+    public string? Path { get; init; }
+    /// <summary>What it is called, 1 to 120 characters.</summary>
+    public required string Name { get; init; }
 }
 
 /// <summary>The window's size, in device-independent units.</summary>

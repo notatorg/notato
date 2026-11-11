@@ -161,13 +161,21 @@ internal class SheetBuilder(private val controller: Controller, private val sess
                 setSpan(StyleSpan(Typeface.BOLD), 0, length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
                 append(reply.body)
             }
+            // Images attached to a reply are only counted here; the board shows them.
+            val attached = SheetCopy.imagesAttached(reply.images?.size ?: 0)
             rows += if (reply.aside == true) {
                 // An aside is muted and outlined rather than filled, and says so: it was kept from the agent.
                 val label = ui.row(4, ui.icon(Icon.USERS, ui.cardMuted, 11), ui.text("Hidden from agent", 11f, ui.cardMuted, maxLines = 1, weight = 700))
-                ui.column(3, label, ui.text(text, 13f, ui.cardMuted)).apply {
+                val parts = listOfNotNull(label, ui.text(text, 13f, ui.cardMuted), attached?.let { ui.text(it, 11.5f, ui.cardMuted) })
+                ui.column(3, *parts.toTypedArray()).apply {
                     background = ui.rounded(Color.TRANSPARENT, 12, ui.cardLine)
                     setPadding(ui.dp(11), ui.dp(6), ui.dp(11), ui.dp(7))
-                    contentDescription = "Hidden from agent. $text"
+                    contentDescription = listOfNotNull("Hidden from agent. $text", attached).joinToString(". ")
+                }
+            } else if (attached != null) {
+                ui.column(2, ui.text(text, 13f), ui.text(attached, 11.5f, ui.cardMuted)).apply {
+                    background = ui.rounded(ui.soft, 12)
+                    setPadding(ui.dp(11), ui.dp(7), ui.dp(11), ui.dp(7))
                 }
             } else {
                 ui.text(text, 13f).apply {
@@ -430,13 +438,17 @@ internal class SheetBuilder(private val controller: Controller, private val sess
             },
             controller.screenshotsWanted,
         )
+        // A view preference, so it applies at once rather than on Save.
+        val (hideDoneRow, hideDone) = ui.switchRow(Icon.EYE_OFF, SheetCopy.HIDE_DONE, SheetCopy.HIDE_DONE_HINT, controller.hideDone, subLines = 4)
+        hideDone.setOnCheckedChangeListener { _, on -> controller.setHideDone(on) }
         val body = ui.column(14,
             ui.column(6, ui.fieldLabel("Your name"), name),
             ui.column(6, ui.fieldLabel("Server"), server, serverError, inset(ui.text(controller.describeConnection(), 12f, ui.cardMuted))),
             shotsRow,
-            ui.sheetButton("Hide completed annotations (${controller.completedCount})") { close(); controller.hideCompleted() }.apply { isEnabled = controller.completedCount > 0 },
-            ui.text("Across this app, on this device. Kept in the dashboard.", 12.5f, ui.cardMuted),
-            ui.sheetButton("Restore hidden annotations (${controller.hiddenCount})") { close(); controller.restoreHidden() },
+            hideDoneRow,
+            *listOfNotNull(
+                controller.hiddenCount.takeIf { it > 0 }?.let { n -> ui.sheetButton("Restore hidden annotations ($n)") { close(); controller.restoreHidden() } },
+            ).toTypedArray(),
         )
         val buttons = ButtonRow(ui, listOf(
             ui.sheetButton("Reset") {

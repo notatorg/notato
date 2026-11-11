@@ -29,6 +29,7 @@ export const statusRoutes: Routes = async ({ req, url, path, method, principal }
         return json({
             screenshots: backend.config().screenshots,
             references: true,
+            replyImages: true,
             reviews: true,
             annotationStatuses: Status.options,
             derivedScreenshots: backend.derivedScreenshots,

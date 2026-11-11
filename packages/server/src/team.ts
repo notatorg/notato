@@ -1,5 +1,6 @@
 import { AsyncLocalStorage } from "node:async_hooks";
-import type { Annotation } from "@notato/schema";
+import { agentView } from "@notato/core";
+import { type Annotation, annotationAssets } from "@notato/schema";
 import { type Backend, RequestError } from "./backend.ts";
 import type { Store, StoredAnnotation } from "./storage.ts";
 
@@ -365,10 +366,9 @@ export function teamBackend(
                 peopleOnly: false,
             });
             await valid();
+            // What the agent is shown: an aside's images are as private as its words.
             return items.some(({ annotation: a }) =>
-                [...Object.values(a.screenshots ?? {}), ...(a.references ?? [])].some(
-                    (r) => r?.id === id
-                )
+                annotationAssets(agentView(a)).some((r) => r.id === id)
             )
                 ? inner.asset(id)
                 : null;

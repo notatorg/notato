@@ -503,7 +503,7 @@ describe("the server's list", () => {
     });
 });
 
-describe("hiding completed annotations in bulk", () => {
+describe("hiding done annotations", () => {
     beforeEach(() => {
         localStorage.clear();
         reducedMotion();
@@ -522,7 +522,10 @@ describe("hiding completed annotations in bulk", () => {
         server.notes.set(id, { ...sampleAnnotation, id, route: "/", ...over });
     };
 
-    it("hides completed notes across pages beyond the pin limit, retains them and restores them", async () => {
+    const hideDone = () =>
+        ui().querySelector<HTMLButtonElement>('button[aria-label="Hide done annotations"]');
+
+    it("hides done notes with a switch that stays on, including notes finished later", async () => {
         const server = fakeServer();
         for (let i = 0; i < 160; i++) add(server, `done-${i}`, { status: "resolved" });
         add(server, "other-page", { status: "reverted", route: "/other" });
@@ -535,9 +538,13 @@ describe("hiding completed annotations in bulk", () => {
         await until(() => count() === "162");
         expect(ui().querySelectorAll(".pin")).toHaveLength(150);
         button("Settings").click();
-        button("Hide completed annotations (161)").click();
+        expect(hideDone()?.getAttribute("aria-checked")).toBe("false");
+        hideDone()?.click();
+        expect(hideDone()?.getAttribute("aria-checked")).toBe("true");
         await until(() => count() === "2");
         expect(ui().querySelectorAll(".pin")).toHaveLength(2);
+        // Nothing was hidden one at a time, so there is nothing to restore.
+        expect(button("Restore hidden annotations")?.hidden).toBe(true);
         expect(notato.list()).toEqual(original);
         expect([...server.notes.values()]).toEqual(original);
         expect(server.deletes).toEqual([]);
@@ -553,18 +560,21 @@ describe("hiding completed annotations in bulk", () => {
         await server.hello();
         await until(() => count() === "2");
         expect(notato.list()).toHaveLength(163);
+        // Reopened notes come back, and a note finished after the switch went on is hidden too.
         server.say("updated", { annotation: { ...server.notes.get("done-0"), status: "open" } });
         server.say("updated", {
             annotation: { ...server.notes.get("done-1"), status: "awaiting_response" },
         });
         await until(() => count() === "4");
+        server.say("updated", { annotation: { ...server.notes.get("open"), status: "resolved" } });
+        await until(() => count() === "3");
         button("Settings").click();
-        expect(button("Hide completed annotations (0)").disabled).toBe(true);
-        button("Restore hidden annotations (161)").click();
+        expect(hideDone()?.getAttribute("aria-checked")).toBe("true");
+        hideDone()?.click();
         await until(() => count() === "162");
     });
 
-    it("respects Only my notes and updates the available count when filters or statuses change", async () => {
+    it("works with Only my notes", async () => {
         localStorage.setItem("notato:author", "Alice");
         const server = fakeServer();
         add(server, "mine", { status: "open", author: { kind: "human", name: "Alice" } });
@@ -573,22 +583,16 @@ describe("hiding completed annotations in bulk", () => {
         await server.hello();
         await until(() => count() === "2");
         button("Settings").click();
-        expect(button("Hide completed annotations (1)").disabled).toBe(false);
-        const mineOnly = () =>
-            ui().querySelector<HTMLButtonElement>('button[aria-label="Only my notes"]');
-        mineOnly()?.click();
-        expect(button("Hide completed annotations (0)").disabled).toBe(true);
+        hideDone()?.click();
+        await until(() => count() === "1");
+        ui().querySelector<HTMLButtonElement>('button[aria-label="Only my notes"]')?.click();
+        await until(() => count() === "1");
         server.say("updated", {
             annotation: { ...server.notes.get("mine"), status: "resolved" },
         });
-        await until(() => Boolean(button("Hide completed annotations (1)")));
-        button("Hide completed annotations (1)").click();
         await until(() => count() === "0");
-        button("Settings").click();
-        mineOnly()?.click();
+        hideDone()?.click();
         await until(() => count() === "1");
-        expect(button("Restore hidden annotations (1)")).toBeDefined();
-        expect(button("Hide completed annotations (1)").disabled).toBe(false);
     });
 });
 

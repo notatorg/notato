@@ -2,6 +2,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Notato.Maui.Model;
+using Notato.Maui.Runtime;
 using System.Net;
 using System.Text;
 using System.Text.Json;
@@ -111,7 +112,7 @@ internal static class Fixtures
     /// A controller as the app's DI makes it, never switched on (so no overlay, no sync loop), talking to
     /// <paramref name="server"/> through <paramref name="handler"/> when given.
     /// </summary>
-    public static NotatoController Controller(NotatoMode mode = NotatoMode.Dev, string? server = "http://127.0.0.1:9", HttpMessageHandler? handler = null)
+    public static NotatoController Controller(NotatoMode mode = NotatoMode.Dev, string? server = "http://127.0.0.1:9", HttpMessageHandler? handler = null, RuntimeState? state = null)
     {
         IServiceCollection services = new ServiceCollection().AddLogging();
         services.AddNotato(configure: o =>
@@ -123,7 +124,7 @@ internal static class Fixtures
             o.RememberRuntimeState = false;
         });
         ServiceProvider provider = services.BuildServiceProvider();
-        return new NotatoController(provider.GetRequiredService<IOptionsMonitor<NotatoOptions>>(), provider.GetRequiredService<ILogger<NotatoController>>(), handler);
+        return new NotatoController(provider.GetRequiredService<IOptionsMonitor<NotatoOptions>>(), provider.GetRequiredService<ILogger<NotatoController>>(), handler, state);
     }
 
     /// <summary>A note as the server stores it, answered as JSON.</summary>

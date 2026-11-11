@@ -240,9 +240,10 @@ Notato draws its UI in SwiftUI, in a window of its own above the app's window in
 ## Hiding completed annotations
 
 On a resolved or reverted note, open **More options → Hide from this app** to hide
-its pin and card on this device. In **Settings**, **Hide completed annotations**
-hides completed notes across every screen at once, including notes beyond the
-150 drawn pins. **Restore hidden annotations** brings them back.
+its pin and card on this device. **Restore hidden annotations** in **Settings**
+brings those back. The **Hide done annotations** switch in **Settings** leaves out
+every resolved, reverted and dismissed note across every screen, including notes
+finished after it was turned on; turn it off to show them again.
 
 Hiding keeps the feedback, screenshots and thread in the dashboard and exports.
 It never changes the note on the server. Reopened tasks and new agent questions
