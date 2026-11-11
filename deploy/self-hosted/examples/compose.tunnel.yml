@@ -6,15 +6,15 @@
 # http://server:4799, and put its token in .env as CLOUDFLARE_TUNNEL_TOKEN. Also set NOTATO_PUBLIC_URL to that
 # hostname. See docs/reverse-proxy.md. This file is not covered by the repository's tests.
 services:
-  server:
-    # Only the tunnel reaches Notato now.
-    ports: !reset []
-    environment:
-      NOTATO_TRUST_PROXY: "1"
-  tunnel:
-    image: cloudflare/cloudflared:latest
-    restart: unless-stopped
-    command: tunnel --no-autoupdate run
-    environment:
-      TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN:?Set CLOUDFLARE_TUNNEL_TOKEN}
-    depends_on: [server]
+    server:
+        # Only the tunnel reaches Notato now.
+        ports: !reset []
+        environment:
+            NOTATO_TRUST_PROXY: "1"
+    tunnel:
+        image: cloudflare/cloudflared:2026.10.2@sha256:0e56c13c7058fcef9c4f0e7d83372f82330548dbf8f8b366f3d8b506526d93b2
+        restart: unless-stopped
+        command: tunnel --no-autoupdate run
+        environment:
+            TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN:?Set CLOUDFLARE_TUNNEL_TOKEN}
+        depends_on: [server]

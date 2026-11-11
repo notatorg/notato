@@ -36,16 +36,19 @@ it("every relative link in the self-hosting guides points at a file and heading 
 });
 
 it("the Compose file lets each bundled service be switched off by profile, and requires nothing for them", () => {
-    const compose = readFileSync(join(base, "compose.yml"), "utf8");
+    const compose = Bun.YAML.parse(readFileSync(join(base, "compose.yml"), "utf8")) as {
+        services: Record<string, { profiles?: string[] }>;
+    };
     for (const [service, profile] of [
         ["postgres", "db"],
         ["objects", "storage"],
         ["mailpit", "mail"],
-    ] as const)
-        expect(compose).toMatch(new RegExp(`\\n  ${service}:\\n    profiles: \\[${profile}\\]`));
-    // Compose reads every service, even a switched-off one, so a required variable there would block anyone using their own.
-    const bundled = compose.slice(compose.indexOf("\n  postgres:"), compose.indexOf("\nvolumes:"));
-    expect(bundled).not.toContain(":?");
+    ] as const) {
+        const bundled = compose.services[service];
+        expect(bundled?.profiles).toEqual([profile]);
+        // Required settings on a switched-off service would block users bringing their own.
+        expect(JSON.stringify(bundled)).not.toContain(":?");
+    }
     expect(readFileSync(join(base, "init.ts"), "utf8")).toContain(
         "COMPOSE_PROFILES=db,storage,mail"
     );

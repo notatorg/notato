@@ -6,5 +6,11 @@ export default defineConfig({
         // Every SDK written in TypeScript keeps its tests in test/; the others have their own tools.
         include: ["packages/{schema,core,vite}/test/**/*.test.ts", "sdks/*/test/**/*.test.ts"],
         environment: "node",
+        environmentOptions: {
+            happyDOM: {
+                // Same-origin iframe fixtures need their own document and window.
+                settings: { enableIframePageLoading: true },
+            },
+        },
     },
 });

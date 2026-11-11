@@ -1,4 +1,4 @@
-import { type RefObject, useCallback, useState } from "react";
+import { type ComponentRef, type RefObject, useCallback, useState } from "react";
 import type { View } from "react-native";
 import { shootRaw, windowIsSecure } from "../capture.ts";
 import type { NotatoController } from "../controller.ts";
@@ -25,9 +25,9 @@ const nextFrames = () =>
 export function useScreenshots(options: {
     notato: NotatoController;
     /** The view the app and the stage share: the full screenshot is of it. */
-    outer: RefObject<View | null>;
+    outer: RefObject<ComponentRef<typeof View> | null>;
     /** The app's own view, whose private views are covered. */
-    app: RefObject<View | null>;
+    app: RefObject<ComponentRef<typeof View> | null>;
     stage: Stage;
     /** Where the overlay is on the page. */
     origin(): Promise<Point>;
